@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TernOO-5500FP</title>
+  <meta name="description" content="An introduction to TernOO-5500FP, an experimental self-describing word architecture for the 5500FP balanced ternary processor." />
+  <style>
+    :root {
+      --bg: #f5f1e8;
+      --paper: #fffdf8;
+      --ink: #1f1d1a;
+      --muted: #625a4d;
+      --rule: #d7cdbd;
+      --accent: #6e4b1f;
+      --accent-soft: #efe5d3;
+      --link: #5b3f1d;
+      --max: 860px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 18px/1.7 Georgia, "Times New Roman", serif;
+    }
+
+    a {
+      color: var(--link);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(91, 63, 29, 0.35);
+    }
+
+    a:hover {
+      border-bottom-color: rgba(91, 63, 29, 0.8);
+    }
+
+    .wrap {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+
+    .page {
+      background: var(--paper);
+      border: 1px solid var(--rule);
+      box-shadow: 0 8px 30px rgba(40, 30, 20, 0.06);
+    }
+
+    header {
+      padding: 56px 56px 32px;
+      border-bottom: 1px solid var(--rule);
+      background: linear-gradient(to bottom, #fffaf1 0%, #fffdf8 100%);
+    }
+
+    .kicker {
+      font-size: 13px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 0 0 12px;
+    }
+
+    h1, h2, h3 {
+      font-weight: normal;
+      line-height: 1.2;
+      margin: 0;
+    }
+
+    h1 {
+      font-size: clamp(2.2rem, 5vw, 3.4rem);
+      letter-spacing: -0.02em;
+      margin-bottom: 14px;
+    }
+
+    .subtitle {
+      max-width: 42rem;
+      font-size: 1.15rem;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    nav {
+      padding: 18px 56px;
+      border-bottom: 1px solid var(--rule);
+      background: #fcf8ef;
+      font-size: 0.98rem;
+    }
+
+    nav a {
+      margin-right: 18px;
+      white-space: nowrap;
+    }
+
+    main {
+      padding: 28px 56px 56px;
+    }
+
+    section {
+      padding: 22px 0;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    section:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    h2 {
+      font-size: 1.6rem;
+      margin-bottom: 14px;
+    }
+
+    p {
+      margin: 0 0 16px;
+    }
+
+    p:last-child {
+      margin-bottom: 0;
+    }
+
+    .lead {
+      font-size: 1.08rem;
+    }
+
+    .callout {
+      background: var(--accent-soft);
+      border: 1px solid #deceb1;
+      padding: 18px 20px;
+      margin: 18px 0;
+    }
+
+    .callout p {
+      margin: 0;
+    }
+
+    ul {
+      margin: 12px 0 0 1.2rem;
+      padding: 0;
+    }
+
+    li {
+      margin: 0 0 10px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 18px;
+    }
+
+    .card {
+      border: 1px solid var(--rule);
+      background: #fffaf2;
+      padding: 18px;
+    }
+
+    .card h3 {
+      font-size: 1.1rem;
+      margin-bottom: 8px;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    footer {
+      padding: 24px 56px 40px;
+      border-top: 1px solid var(--rule);
+      color: var(--muted);
+      font-size: 0.95rem;
+      background: #fcf8ef;
+    }
+
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.92em;
+      background: #f2ece0;
+      padding: 0.12em 0.35em;
+      border-radius: 3px;
+    }
+
+    @media (max-width: 760px) {
+      header,
+      nav,
+      main,
+      footer {
+        padding-left: 22px;
+        padding-right: 22px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      body {
+        font-size: 17px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="page">
+      <header>
+        <p class="kicker">Experimental architecture</p>
+        <h1>TernOO-5500FP</h1>
+        <p class="subtitle">
+          A self-describing word architecture for the 5500FP balanced ternary processor.
+        </p>
+      </header>
+
+      <nav>
+        <a href="#overview">Overview</a>
+        <a href="#difference">What makes it different</a>
+        <a href="#ternary">Why ternary</a>
+        <a href="#visual">Visual programming</a>
+        <a href="#status">Current status</a>
+        <a href="#next">Next steps</a>
+        <a href="#links">Links</a>
+      </nav>
+
+      <main>
+        <section id="overview">
+          <h2>Overview</h2>
+          <p class="lead">
+            TernOO-5500FP is an experimental computer architecture built for the 5500FP balanced ternary processor. Instead of treating a machine word as anonymous storage that only gains meaning after extra interpretation, TernOO treats each 24-trit word as something that already carries its own role and structure. [file:1]
+          </p>
+          <p>
+            In this design, a word can represent executable behaviour, a data value, a coordinate in space, a stream endpoint, or part of a neural or visual structure, depending on the fields encoded inside it. The white paper describes this as a 2-trit primary field, a 4-trit qualifier field, and an 18-trit payload, all packed into a single self-describing word. [file:1]
+          </p>
+          <div class="callout">
+            <p>
+              The core idea is simple: move more meaning into the machine word itself, so less of the system depends on external lookup tables, translation layers, or separate representations of the same thing. [file:1]
+            </p>
+          </div>
+        </section>
+
+        <section id="difference">
+          <h2>What makes it different</h2>
+          <p>
+            Most modern systems draw hard boundaries between code, data, objects, interfaces, and diagrams. TernOO-5500FP explores what happens when those boundaries are softened at the word level, so the same underlying structure can be read as executable behaviour, program state, geometric position, or a visual symbol. [file:1]
+          </p>
+          <p>
+            The white paper defines nine primary type slots, with current emphasis on EXEC, MAP, DATA, NEURAL, and I/O. It also introduces mechanisms such as Double Null for user-defined meta-constructs, PIGART for rendering directly from word structures, and GristMill as a proposed content-addressed component model built around MAP-word coordinates. [file:1]
+          </p>
+
+          <div class="grid">
+            <div class="card">
+              <h3>Self-describing words</h3>
+              <p class="muted">
+                Each word carries its own category and semantics in its bit-pattern equivalent, rather than relying on separate metadata structures. [file:1]
+              </p>
+            </div>
+            <div class="card">
+              <h3>Objects as native words</h3>
+              <p class="muted">
+                The USER-DEF pointer/object form is described as a compact launch descriptor containing code, data, and cursor information in one word. [file:1]
+              </p>
+            </div>
+            <div class="card">
+              <h3>Visual structure</h3>
+              <p class="muted">
+                MAP words and renderer opcodes allow geometry and program structure to share the same underlying representation. [file:1]
+              </p>
+            </div>
+            <div class="card">
+              <h3>Room to grow</h3>
+              <p class="muted">
+                The draft keeps some primary slots open or reserved so the architecture can extend without abandoning the original layout. [file:1]
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section id="ternary">
+          <h2>Why ternary</h2>
+          <p>
+            TernOO-5500FP is built around balanced ternary, where each digit can take one of three values: negative, zero, or positive. The white paper argues that this is not just a historical curiosity but a mathematically elegant base for representation, especially when a system wants compact symmetry, signed values, and naturally three-way distinctions. [file:1]
+          </p>
+          <p>
+            The 5500FP substrate itself is a 24-trit balanced ternary processor, and the draft uses that structure directly rather than translating ternary ideas back into binary conventions. The paper also points to recent work on ternary-quantised neural models as a separate sign that three-valued representation can be efficient in practice, though TernOO’s own neural ideas remain architectural work in progress. [file:1]
+          </p>
+        </section>
+
+        <section id="visual">
+          <h2>Visual programming</h2>
+          <p>
+            One of the most distinctive ideas in the project is that diagrams should not merely document a program after the fact. In the TernOO model, the same words that define a program can also be rendered as points, lines, symbols, and connections, so the visual form and the executable form are two views of one structure. [file:1]
+          </p>
+          <p>
+            This is where FlowCode and PIGART come in. The paper describes FlowCode as a visual environment in which flowchart symbols, spreadsheet-like formulas, and interface components can map directly to TernOO words, while PIGART provides renderer opcodes that draw from those same words rather than from a separate design file or compiled intermediate form. [file:1]
+          </p>
+          <ul>
+            <li>Process symbols can correspond to object words. [file:1]</li>
+            <li>Connection arrows can correspond to executable call relationships. [file:1]</li>
+            <li>Position can be encoded through MAP words. [file:1]</li>
+            <li>The display and the program can therefore share one source structure. [file:1]</li>
+          </ul>
+        </section>
+
+        <section id="status">
+          <h2>Current status</h2>
+          <p>
+            The current public implementation is a Python emulator, described in the white paper as version 0.3. It includes a CPU model for 24-trit arithmetic and execution, word constructor functions, decoding and inspection tools, segment helpers, Double Null support, a first-stage PIGART renderer, an interactive REPL, and test coverage for the main architecture elements. [file:1]
+          </p>
+          <p>
+            The paper says the emulator runs with Python 3.12 and no external dependencies, and it lists passing tests for primary types, word constructors, arithmetic, rendering, and neural word construction. It also presents the emulator as scaffolding for a longer path toward native execution on 5500FP hardware rather than as the final destination of the project. [file:1]
+          </p>
+
+          <div class="grid">
+            <div class="card">
+              <h3>Implemented now</h3>
+              <p class="muted">
+                Core word encoding, decoding, constructor functions, emulator execution loop, segment helpers, Double Null support, renderer primitives, REPL tooling, and tests. [file:1]
+              </p>
+            </div>
+            <div class="card">
+              <h3>Still ahead</h3>
+              <p class="muted">
+                Native execution workflow, later rendering backends, fuller neural inference, and wider system pieces such as the more developed GristMill and GHOST concepts. [file:1]
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section id="next">
+          <h2>Next steps</h2>
+          <p>
+            The roadmap described in the draft moves from emulator validation to a FlowCode environment, then to an assembly bridge, then to native execution on 5500FP hardware, and eventually to a self-hosting visual system where programs can be constructed and modified directly through the same word structures they run on. [file:1]
+          </p>
+          <p>
+            Some of the later concepts, especially GHOST and the fuller GristMill storage model, should be read as exploratory architecture rather than finished software. The value of the project today is that the core word model and its supporting emulator already give those larger ideas a concrete base to grow from. [file:1]
+          </p>
+        </section>
+
+        <section id="links">
+          <h2>Links</h2>
+          <p>
+            White paper draft: <a href="#">TernOO-5500FP White Paper</a>
+          </p>
+          <p>
+            Companion implementation: <a href="https://github.com/SkepticusMaximus/TernOO-5500FP">github.com/SkepticusMaximus/TernOO-5500FP</a> [file:1]
+          </p>
+          <p>
+            Target processor reference: <a href="https://doi.org/10.5281/zenodo.18881738">5500FP: A 24-Trit Balanced Ternary RISC Processor</a> [file:1]
+          </p>
+        </section>
+      </main>
+
+      <footer>
+        <p>
+          This page is a public-facing introduction to the project. For the full technical specification, word layouts, implementation notes, and references, see the white paper draft. [file:1]
+        </p>
+      </footer>
+    </div>
+  </div>
+</body>
+</html>
