@@ -1,0 +1,6 @@
+__pycache__/
+*.kate-swp
+*.swp
+*.pyc
+ternoo_word_brain.json
+ternoo_generative_brain.json
