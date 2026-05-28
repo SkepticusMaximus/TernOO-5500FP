@@ -361,7 +361,7 @@ def build_uint_word(value: int) -> int:
 
 def build_string_word(encoding: int, length_or_addr: int) -> int:
     """DATA/STRING word. Qualifier: T21=+1(string), T20=+1, T19=encoding"""
-    qual = _data_qualifier(+1, +1, encoding, 0)
+    qual = _data_qualifier(+1, -1, encoding, 0)
     return _make_word(PRIMARY_DATA, qual, length_or_addr)
 
 def build_pointer_word(model: Tuple[int,int], payload: int) -> int:
@@ -493,7 +493,7 @@ def decode_word(w: int) -> dict:
             enc = {SCALAR_FLOAT:'float',SCALAR_INT:'int',SCALAR_UINT:'uint'}.get(t19,'?')
             return {'type':'SCALAR','encoding':enc,'value':pay}
 
-        elif t21 == +1 and t20 == +1:  # STRING
+        elif t21 == +1 and t20 == -1:  # STRING
             enc = {STRING_UNICODE:'unicode',STRING_ASCII:'ascii',
                    STRING_TERNARY:'ternary'}.get(t19,'?')
             return {'type':'STRING','encoding':enc,'length_or_addr':pay}
