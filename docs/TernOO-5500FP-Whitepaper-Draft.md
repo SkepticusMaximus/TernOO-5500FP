@@ -60,63 +60,6 @@ fungible and liquid, intended for exchange like currency whether physical or
 digital. The distinction preserves disambiguation potential that careless
 interchangeable usage wastes.
 
-### 1.2 The Case for Ternary
-
-Binary computing dominates modern hardware for an accident of fabrication
-history rather than mathematinow:
-Viewed a file, edited a file, read a file
-
-GHOST is now Section 7.6, properly placed alongside FlowCode and before the implementation details. The section makes three things clear: what GHOST actually is (the NEURAL word substrate in operation), the closed loop it forms with FlowCode and GristMill, and the self-implementing property that makes it genuinely different from text-based AI code generation.
-
-The last line — "GHOST is not a chatbot appended to the system. It is the system, when the system is ready." — is the most important sentence. It draws the right distinction without being unkind about what was attempted.
-
-The next implementation milestone for GHOST is the NEURAL word forward-pass engine. That's tractable — it's a loop over NEURAL_CONNECTION words in memory, applying 9-level ternary weight multiplication using our existing trit arithmetic. Want to tackle that next, or continue on other outstanding items first?
-Ternoo 5500fp whitepaper draft
-Document · MD
-You're out of usage credits. Buy more to keep going now, or wait until 1:40 AM when your plan usage resets.
-
-
-Claude is AI and can make mistakes. Please double-check responses.
-Ternoo 5500fp whitepaper draft · MD
-TernOO: A Self-Describing Object Architecture for Balanced Ternary
-
-Stevo (SkepticusMaximus) Independent Developer, Adelaide, South Australia https://github.com/SkepticusMaximus
-
-Draft v0.3 — May 2026 Companion implementation: https://github.com/SkepticusMaximus/TernOO-5500FP
-Abstract
-
-We present TernOO-5500FP, a word architecture for the 5500FP balanced ternary
-processor in which every 24-trit word is self-describing. A 2-trit primary field
-identifies one of nine primary types — including executable code (EXEC), spatial
-coordinate (MAP), data value (DATA), neural network primitives (NEURAL), and
-input/output streams (I/O) — and a 4-trit qualifier field encodes the word's full
-operational semantics without any additional memory fetch or runtime type check.
-An 18-trit payload carries the value, coordinate, or structured content. In the
-most general case, a single word carries its own code segment reference, data
-segment reference, and internal cursor: a complete process launch descriptor in
-24 trits.
-
-We describe the word grammar, the Double Null mechanism for defining
-user-extensible meta-constructs without reserved words or additional primary
-types, PIGART (Primitive Graphics And Rendering Tool) renderer opcodes in which
-geometric primitives emerge directly from MAP words, and GristMill, a
-content-addressable component repository that treats MAP word octree coordinates
-as native storage addresses. The result is an architecture in which the
-distinction between code and data, between object and pointer, and between
-diagram and program dissolves at the word level — not as a software abstraction
-but as a structural property of the machine.
-
-A Python emulator implementing the full architecture is available as open source.
-The architecture targets the 5500FP processor described in La Rosa (2026) and is
-designed as a candidate ISA extension for that platform.
-1. Introduction
-1.1 Terminology Note
-
-This paper uses "word" in two distinct senses. A machine word is the native 24-trit unit of the 5500FP processor. A TernOO word is any machine word interpreted under the TernOO architecture — a machine word whose trit fields carry type and semantic information. Where ambiguity might arise we prefer "machine word" or "TernOO word" for precision.
-
-We distinguish symbols (the primitive elements of a flowchart — process rectangles, decision diamonds, and so on) from nodes (the vertices of a network topology graph). TernOO-5500FP supports both, and conflating the terms in a system that explicitly represents both would cause genuine confusion.
-
-We distinguish tokens from coins. A token is an intangible, not-normatively- liquid digital asset representing value within a specific system — earned, spent, and meaningful within that system but not designed as general currency. A coin is fungible and liquid, intended for exchange like currency whether physical or digital. The distinction preserves disambiguation potential that careless interchangeable usage wastes.
 1.2 The Case for Ternary
 
 Binary computing dominates modern hardware for an accident of fabrication history rather than mathematical necessity. The radix that minimises the product of the number of digits and the base — the radix economy — is e ≈ 2.718. The nearest integer is three.
