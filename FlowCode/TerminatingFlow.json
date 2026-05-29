@@ -1,0 +1,96 @@
+{
+  "symbols": [
+    {
+      "id": 1,
+      "kind": "io",
+      "x": 200,
+      "y": 80,
+      "label": "I1",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0
+    },
+    {
+      "id": 2,
+      "kind": "process",
+      "x": 200,
+      "y": 240,
+      "label": "P2",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0
+    },
+    {
+      "id": 3,
+      "kind": "decision",
+      "x": 200,
+      "y": 400,
+      "label": "D3",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0
+    },
+    {
+      "id": 4,
+      "kind": "io",
+      "x": 200,
+      "y": 560,
+      "label": "I4",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0
+    },
+    {
+      "id": 5,
+      "kind": "io",
+      "x": 440,
+      "y": 400,
+      "label": "I5",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0
+    }
+  ],
+  "edges": [
+    {
+      "src": 1,
+      "dst": 2,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": []
+    },
+    {
+      "src": 2,
+      "dst": 3,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": []
+    },
+    {
+      "src": 3,
+      "dst": 4,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": []
+    },
+    {
+      "src": 3,
+      "dst": 5,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": []
+    }
+  ]
+}
