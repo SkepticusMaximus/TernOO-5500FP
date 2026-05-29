@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """
-FlowCode  v0.3.0
+FlowCode  v0.4.0
 ================
 Visual programming IDE for TernOO-5500FP.
+
+New in v0.4.0:
+  - Symbol properties dialog (double-click symbol): label, code_seg, data_seg, offset
+  - Edge properties dialog (double-click edge): condition label, call_style, privilege, return_type
+  - Condition labels shown on canvas edges in yellow
+  - Live TernOO word preview inside both dialogs
 
 New in v0.3.0:
   - PIL-rendered palette icons (crisp symbol previews at 36x30px)
@@ -268,11 +274,12 @@ class FCEdge:
     def __init__(self, src_id, dst_id,
                  privilege=EXEC_PRIV_USER, call_style=EXEC_CALL_REGISTER,
                  return_type=EXEC_RET_DATA, seg_idx=0, offset=0,
-                 waypoints=None):
+                 waypoints=None, condition=''):
         self.src_id=src_id; self.dst_id=dst_id
         self.privilege=privilege; self.call_style=call_style
         self.return_type=return_type; self.seg_idx=seg_idx; self.offset=offset
         self.waypoints: List[Tuple[int,int]] = waypoints or []
+        self.condition: str = condition  # branch label e.g. 'yes','no','true','false'
 
     def to_exec_word(self):
         return build_exec_word(self.privilege,self.call_style,self.return_type,
@@ -282,7 +289,8 @@ class FCEdge:
         return {'src':self.src_id,'dst':self.dst_id,
                 'privilege':self.privilege,'call_style':self.call_style,
                 'return_type':self.return_type,'seg_idx':self.seg_idx,
-                'offset':self.offset,'waypoints':self.waypoints}
+                'offset':self.offset,'waypoints':self.waypoints,
+                'condition':self.condition}
 
     @classmethod
     def from_dict(cls,d):
@@ -290,7 +298,8 @@ class FCEdge:
                    d.get('call_style',EXEC_CALL_REGISTER),
                    d.get('return_type',EXEC_RET_DATA),
                    d.get('seg_idx',0),d.get('offset',0),
-                   [tuple(w) for w in d.get('waypoints',[])])
+                   [tuple(w) for w in d.get('waypoints',[])],
+                   d.get('condition',''))
 
 
 class FCCanvas:
@@ -419,7 +428,7 @@ class FCCanvas:
 # ── Headless demo ─────────────────────────────────────────────────────────────
 
 def run_headless_demo():
-    print("="*60+"\nFlowCode v0.3.0 — Headless Demo\n"+"="*60)
+    print("="*60+"\nFlowCode v0.4.0 — Headless Demo\n"+"="*60)
     canvas=FCCanvas()
     start=canvas.add_symbol(SYMBOL_IO,200,80,"START")
     check=canvas.add_symbol(SYMBOL_DECISION,200,240,"CHECK")
@@ -468,7 +477,7 @@ def run_gui():
 
     # ── Root ─────────────────────────────────────────────────────────────────
     root = tk.Tk()
-    root.title("FlowCode v0.3.0 — TernOO-5500FP Visual IDE")
+    root.title("FlowCode v0.4.0 — TernOO-5500FP Visual IDE")
     root.configure(bg=C['bg'])
     root.resizable(True,True)
 
@@ -696,7 +705,7 @@ def run_gui():
     _action_btn("📂 Open",     do_open,   icon_key='open')
     _action_btn("🗑 Clear",    do_clear,  fg='#ff8888', icon_key='clear')
 
-    tk.Label(palette_frame,text=f"v0.3.0\n{os.path.basename(_emu_path)}",
+    tk.Label(palette_frame,text=f"v0.4.0\n{os.path.basename(_emu_path)}",
              bg=C['palette'],fg=C['dim'],font=('Monospace',7),pady=4
              ).pack(side='bottom',fill='x')
 
@@ -782,6 +791,9 @@ def run_gui():
             ret={-1:'X',0:'M',1:'D'}.get(e.return_type,'?')
             tk_canvas.create_text(mx,my,text=f"EXEC {priv}/{call}→{ret}",
                                   fill=col,font=('Monospace',7))
+            if e.condition:
+                tk_canvas.create_text(mx,my-12,text=f"[{e.condition}]",
+                                      fill=C['waypoint'],font=('Monospace',8,'bold'))
 
     def draw_edge_in_progress():
         """Draw the edge being constructed with waypoints collected so far."""
@@ -855,6 +867,7 @@ def run_gui():
                     sl=src.label if src else f"#{e.src_id}"
                     dl=dst.label if dst else f"#{e.dst_id}"
                     call={-1:'stack',0:'register',1:'message'}.get(e.call_style,'?')
+                    cond_str = f"  condition='{e.condition}'" if e.condition else ""
                     set_inspect(
                         f"Edge  {sl} → {dl}"
                         f"  ({len(e.waypoints)} waypoints)\n"
@@ -862,7 +875,8 @@ def run_gui():
                         f"        {word_to_str(ew)}\n"
                         f"  Call: {call}  "
                         f"Priv: {['kernel','user','sandbox'][e.privilege+1]}  "
-                        f"Ret: {['EXEC','MAP','DATA'][e.return_type+1]}")
+                        f"Ret: {['EXEC','MAP','DATA'][e.return_type+1]}"
+                        f"{cond_str}")
                     break
         else:
             set_inspect("Select a symbol or edge to inspect its TernOO word")
@@ -967,14 +981,204 @@ def run_gui():
         state['dragging']=False
 
     def on_double_click(event):
-        hit=canvas_model.symbol_at(event.x,event.y)
-        if hit:
-            new=simpledialog.askstring("Rename",f"Label for {hit.label}:",
-                                       initialvalue=hit.label,parent=root)
-            if new and new.strip():
-                hit.label=new.strip()
-                set_status(f"Renamed → '{hit.label}'")
-                update_inspect(); redraw()
+        hit_s = canvas_model.symbol_at(event.x, event.y)
+        hit_e = canvas_model.edge_near(event.x, event.y)
+        if hit_s:
+            _open_symbol_props(hit_s)
+        elif hit_e:
+            _open_edge_props(hit_e)
+
+    def _open_symbol_props(s):
+        """Modal dialog to edit symbol label, code_seg, data_seg, offset."""
+        dlg = tk.Toplevel(root)
+        dlg.title(f"Symbol Properties — {s.label}")
+        dlg.configure(bg=C['bg'])
+        dlg.resizable(False, False)
+
+        def _row(parent, text, row):
+            tk.Label(parent, text=text, bg=C['bg'], fg=C['inspect_fg'],
+                     font=('Monospace', 9), anchor='e', width=12
+                     ).grid(row=row, column=0, padx=8, pady=4, sticky='e')
+            var = tk.StringVar()
+            ent = tk.Entry(parent, textvariable=var, bg=C['canvas'],
+                           fg=C['text'], insertbackground=C['text'],
+                           font=('Monospace', 10), width=20,
+                           relief='flat', bd=4)
+            ent.grid(row=row, column=1, padx=8, pady=4)
+            return var
+
+        frm = tk.Frame(dlg, bg=C['bg']); frm.pack(padx=12, pady=8)
+
+        tk.Label(frm, text=f"{s.kind.upper()}  #{s.id}",
+                 bg=C['bg'], fg=C['pal_border'],
+                 font=('Monospace', 10, 'bold')
+                 ).grid(row=0, column=0, columnspan=2, pady=(0,8))
+
+        v_label    = _row(frm, "Label:",    1)
+        v_code_seg = _row(frm, "code_seg:", 2)
+        v_data_seg = _row(frm, "data_seg:", 3)
+        v_offset   = _row(frm, "offset:",   4)
+
+        v_label.set(s.label)
+        v_code_seg.set(str(s.code_seg))
+        v_data_seg.set(str(s.data_seg))
+        v_offset.set(str(s.offset))
+
+        # TernOO word preview label
+        preview = tk.Label(frm, text="", bg=C['inspect'], fg=C['inspect_fg'],
+                           font=('Monospace', 8), anchor='w', justify='left',
+                           padx=6, pady=4, width=38)
+        preview.grid(row=5, column=0, columnspan=2, padx=0, pady=4, sticky='ew')
+
+        def _update_preview(*_):
+            try:
+                cs = int(v_code_seg.get() or 0)
+                ds = int(v_data_seg.get() or 0)
+                off = int(v_offset.get() or 0)
+                t1, t0 = SYMBOL_SUBCLASS[s.kind]
+                w = build_udp_word(t1, t0, off, cs, ds)
+                preview.config(text=f"UDP: {describe_word(w)}\n     {word_to_str(w)}")
+            except Exception:
+                preview.config(text="(invalid values)")
+
+        for v in (v_label, v_code_seg, v_data_seg, v_offset):
+            v.trace_add('write', _update_preview)
+        _update_preview()
+
+        def _apply():
+            lbl = v_label.get().strip()
+            if lbl: s.label = lbl
+            try: s.code_seg = int(v_code_seg.get() or 0)
+            except ValueError: pass
+            try: s.data_seg = int(v_data_seg.get() or 0)
+            except ValueError: pass
+            try: s.offset   = int(v_offset.get() or 0)
+            except ValueError: pass
+            set_status(f"Updated {s.label}  code_seg={s.code_seg}"
+                       f"  data_seg={s.data_seg}  offset={s.offset}")
+            update_inspect(); redraw(); dlg.destroy()
+
+        btn_frm = tk.Frame(dlg, bg=C['bg']); btn_frm.pack(pady=8)
+        tk.Button(btn_frm, text="Apply", command=_apply,
+                  bg=C['pal_active'], fg=C['text'],
+                  font=('Monospace', 9, 'bold'),
+                  relief='flat', padx=12, pady=4,
+                  cursor='hand2').pack(side='left', padx=6)
+        tk.Button(btn_frm, text="Cancel", command=dlg.destroy,
+                  bg=C['pal_btn'], fg=C['dim'],
+                  font=('Monospace', 9),
+                  relief='flat', padx=12, pady=4,
+                  cursor='hand2').pack(side='left', padx=6)
+        dlg.bind('<Return>', lambda e: _apply())
+        dlg.bind('<Escape>', lambda e: dlg.destroy())
+        dlg.update_idletasks()
+        dlg.grab_set()
+        dlg.focus_force()
+
+    def _open_edge_props(e):
+        """Modal dialog to edit edge condition, call_style, privilege, return_type."""
+        src = canvas_model.symbols.get(e.src_id)
+        dst = canvas_model.symbols.get(e.dst_id)
+        sl  = src.label if src else f"#{e.src_id}"
+        dl  = dst.label if dst else f"#{e.dst_id}"
+
+        dlg = tk.Toplevel(root)
+        dlg.title(f"Edge Properties — {sl} → {dl}")
+        dlg.configure(bg=C['bg'])
+        dlg.resizable(False, False)
+
+        frm = tk.Frame(dlg, bg=C['bg']); frm.pack(padx=12, pady=8)
+
+        tk.Label(frm, text=f"Edge  {sl} → {dl}",
+                 bg=C['bg'], fg=C['pal_border'],
+                 font=('Monospace', 10, 'bold')
+                 ).grid(row=0, column=0, columnspan=2, pady=(0,8))
+
+        def _lbl(text, row):
+            tk.Label(frm, text=text, bg=C['bg'], fg=C['inspect_fg'],
+                     font=('Monospace', 9), anchor='e', width=14
+                     ).grid(row=row, column=0, padx=8, pady=4, sticky='e')
+
+        # Condition label (free text)
+        _lbl("Condition:", 1)
+        v_cond = tk.StringVar(value=e.condition)
+        tk.Entry(frm, textvariable=v_cond, bg=C['canvas'], fg=C['text'],
+                 insertbackground=C['text'], font=('Monospace', 10), width=18,
+                 relief='flat', bd=4
+                 ).grid(row=1, column=1, padx=8, pady=4)
+
+        # Call style
+        _lbl("Call style:", 2)
+        call_opts = ['stack', 'register', 'message']
+        call_vals = [-1, 0, 1]
+        v_call = tk.StringVar(value=call_opts[e.call_style + 1])
+        tk.OptionMenu(frm, v_call, *call_opts
+                      ).grid(row=2, column=1, padx=8, pady=4, sticky='ew')
+
+        # Privilege
+        _lbl("Privilege:", 3)
+        priv_opts = ['kernel', 'user', 'sandbox']
+        priv_vals = [-1, 0, 1]
+        v_priv = tk.StringVar(value=priv_opts[e.privilege + 1])
+        tk.OptionMenu(frm, v_priv, *priv_opts
+                      ).grid(row=3, column=1, padx=8, pady=4, sticky='ew')
+
+        # Return type
+        _lbl("Return type:", 4)
+        ret_opts = ['EXEC', 'MAP', 'DATA']
+        ret_vals = [-1, 0, 1]
+        v_ret = tk.StringVar(value=ret_opts[e.return_type + 1])
+        tk.OptionMenu(frm, v_ret, *ret_opts
+                      ).grid(row=4, column=1, padx=8, pady=4, sticky='ew')
+
+        # EXEC word preview
+        preview = tk.Label(frm, text="", bg=C['inspect'], fg=C['inspect_fg'],
+                           font=('Monospace', 8), anchor='w', justify='left',
+                           padx=6, pady=4, width=38)
+        preview.grid(row=5, column=0, columnspan=2, padx=0, pady=4, sticky='ew')
+
+        def _update_preview(*_):
+            try:
+                cs = call_vals[call_opts.index(v_call.get())]
+                pr = priv_vals[priv_opts.index(v_priv.get())]
+                rt = ret_vals[ret_opts.index(v_ret.get())]
+                w  = build_exec_word(pr, cs, rt, e.seg_idx, e.offset)
+                cond = v_cond.get().strip()
+                cond_str = f"  [{cond}]" if cond else ""
+                preview.config(text=f"EXEC: {describe_word(w)}{cond_str}\n"
+                                    f"      {word_to_str(w)}")
+            except Exception:
+                preview.config(text="(invalid)")
+
+        for v in (v_cond, v_call, v_priv, v_ret):
+            v.trace_add('write', _update_preview)
+        _update_preview()
+
+        def _apply():
+            e.condition   = v_cond.get().strip()
+            e.call_style  = call_vals[call_opts.index(v_call.get())]
+            e.privilege   = priv_vals[priv_opts.index(v_priv.get())]
+            e.return_type = ret_vals[ret_opts.index(v_ret.get())]
+            set_status(f"Edge {sl}→{dl}  condition='{e.condition}'"
+                       f"  call={v_call.get()}  priv={v_priv.get()}")
+            update_inspect(); redraw(); dlg.destroy()
+
+        btn_frm = tk.Frame(dlg, bg=C['bg']); btn_frm.pack(pady=8)
+        tk.Button(btn_frm, text="Apply", command=_apply,
+                  bg=C['pal_active'], fg=C['text'],
+                  font=('Monospace', 9, 'bold'),
+                  relief='flat', padx=12, pady=4,
+                  cursor='hand2').pack(side='left', padx=6)
+        tk.Button(btn_frm, text="Cancel", command=dlg.destroy,
+                  bg=C['pal_btn'], fg=C['dim'],
+                  font=('Monospace', 9),
+                  relief='flat', padx=12, pady=4,
+                  cursor='hand2').pack(side='left', padx=6)
+        dlg.bind('<Return>', lambda e: _apply())
+        dlg.bind('<Escape>', lambda e: dlg.destroy())
+        dlg.update_idletasks()
+        dlg.grab_set()
+        dlg.focus_force()
 
     def on_key(event):
         k=event.keysym.lower()
