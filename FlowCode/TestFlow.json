@@ -1,0 +1,191 @@
+{
+  "symbols": [
+    {
+      "id": 1,
+      "kind": "process",
+      "x": 200,
+      "y": 240,
+      "label": "P1",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0
+    },
+    {
+      "id": 2,
+      "kind": "io",
+      "x": 200,
+      "y": 80,
+      "label": "I2",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0
+    },
+    {
+      "id": 3,
+      "kind": "decision",
+      "x": 200,
+      "y": 400,
+      "label": "D3",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0
+    },
+    {
+      "id": 4,
+      "kind": "process",
+      "x": 200,
+      "y": 560,
+      "label": "P4",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0
+    },
+    {
+      "id": 5,
+      "kind": "decision",
+      "x": 480,
+      "y": 400,
+      "label": "D5",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0
+    },
+    {
+      "id": 6,
+      "kind": "io",
+      "x": 200,
+      "y": 720,
+      "label": "I6",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0
+    },
+    {
+      "id": 7,
+      "kind": "process",
+      "x": 480,
+      "y": 560,
+      "label": "P7",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0
+    },
+    {
+      "id": 8,
+      "kind": "decision",
+      "x": 480,
+      "y": 720,
+      "label": "D8",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0
+    },
+    {
+      "id": 9,
+      "kind": "io",
+      "x": 680,
+      "y": 720,
+      "label": "I9",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0
+    }
+  ],
+  "edges": [
+    {
+      "src": 1,
+      "dst": 2,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": []
+    },
+    {
+      "src": 1,
+      "dst": 3,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": []
+    },
+    {
+      "src": 4,
+      "dst": 3,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": []
+    },
+    {
+      "src": 3,
+      "dst": 5,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": []
+    },
+    {
+      "src": 5,
+      "dst": 1,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [
+        [
+          480,
+          240
+        ]
+      ]
+    },
+    {
+      "src": 4,
+      "dst": 6,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": []
+    },
+    {
+      "src": 7,
+      "dst": 5,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": []
+    },
+    {
+      "src": 7,
+      "dst": 8,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": []
+    },
+    {
+      "src": 8,
+      "dst": 9,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": []
+    }
+  ]
+}
