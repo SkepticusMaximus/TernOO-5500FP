@@ -1,0 +1,138 @@
+{
+  "symbols": [
+    {
+      "id": 1,
+      "kind": "terminator",
+      "x": 240,
+      "y": 80,
+      "label": "START",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0,
+      "default_output": ""
+    },
+    {
+      "id": 2,
+      "kind": "decision",
+      "x": 240,
+      "y": 440,
+      "label": "AGE TEST",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0,
+      "default_output": ""
+    },
+    {
+      "id": 3,
+      "kind": "io",
+      "x": 240,
+      "y": 680,
+      "label": "ACCEPT AGE",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0,
+      "default_output": ""
+    },
+    {
+      "id": 4,
+      "kind": "io",
+      "x": 240,
+      "y": 240,
+      "label": "GET AGE",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0,
+      "default_output": ""
+    },
+    {
+      "id": 5,
+      "kind": "terminator",
+      "x": 560,
+      "y": 680,
+      "label": "END",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0,
+      "default_output": ""
+    },
+    {
+      "id": 6,
+      "kind": "io",
+      "x": 560,
+      "y": 440,
+      "label": "UNDER AGE",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0,
+      "default_output": ""
+    }
+  ],
+  "edges": [
+    {
+      "src": 2,
+      "dst": 3,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 3,
+      "dst": 5,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 2,
+      "dst": 6,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 1,
+      "dst": 4,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 4,
+      "dst": 2,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 6,
+      "dst": 5,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    }
+  ]
+}
