@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
 """
-FlowCode  v0.4.1
+FlowCode  v0.5.0
 ================
 Visual programming IDE for TernOO-5500FP.
+
+New in v0.5.0:
+  - Terminator symbol (oval) for START/END — keyboard shortcut T
+  - Canvas clutter removed: UDP/EXEC text only on selected symbol/edge
+  - Condition labels always visible on edges
+  - Hover tooltip (700ms) shows UDP/EXEC word for any symbol or edge
+  - default_output dropdown on Decision nodes (from outgoing edge conditions)
+  - Arrowheads trimmed to symbol boundary
 
 New in v0.4.0:
   - Symbol properties dialog (double-click symbol): label, code_seg, data_seg, offset
@@ -75,10 +83,16 @@ if _interp_path:
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-SYMBOL_PROCESS  = 'process'
-SYMBOL_DECISION = 'decision'
-SYMBOL_IO       = 'io'
-SYMBOL_SUBCLASS = {SYMBOL_PROCESS:(0,0), SYMBOL_DECISION:(0,+1), SYMBOL_IO:(+1,0)}
+SYMBOL_PROCESS    = 'process'
+SYMBOL_DECISION   = 'decision'
+SYMBOL_IO         = 'io'
+SYMBOL_TERMINATOR = 'terminator'
+SYMBOL_SUBCLASS = {
+    SYMBOL_PROCESS:   (0,   0),
+    SYMBOL_DECISION:  (0,  +1),
+    SYMBOL_IO:        (+1,  0),
+    SYMBOL_TERMINATOR:(+1, +1),
+}
 SYMBOL_W, SYMBOL_H, GRID = 120, 60, 40
 
 def snap(v): return round(v/GRID)*GRID
@@ -88,7 +102,7 @@ C = {
     'bg':'#1a1a2e',       'canvas':'#16213e',    'grid':'#1e2a4a',
     'palette':'#0d1117',  'pal_btn':'#1e2a4a',   'pal_active':'#0f3460',
     'pal_border':'#4a9eff','process':'#0f3460',   'decision':'#533483',
-    'io':'#1a6b5e',       'border':'#4a9eff',    'selected':'#ff6b35',
+    'io':'#1a6b5e',       'terminator':'#1a4a6b', 'border':'#4a9eff',    'selected':'#ff6b35',
     'edge':'#7ab4ff',     'edge_msg':'#ff9f43',  'edge_stk':'#ff6b9d',
     'text':'#e0e0e0',     'dim':'#556080',        'status':'#0d1117',
     'inspect':'#0a0f1a',  'inspect_fg':'#7ab4ff','waypoint':'#ffdd57',
@@ -147,6 +161,12 @@ def _make_icons():
     d.line([2+r,3,W-2-r,3], fill=col(C['border']), width=2)
     d.line([2+r,H-3,W-2-r,H-3], fill=col(C['border']), width=2)
     icons['io'] = img
+
+    # Terminator — full oval
+    img,d = new()
+    d.ellipse([2,3,W-2,H-3], fill=col(C['terminator']),
+              outline=col(C['border']), width=2)
+    icons['terminator'] = img
 
     # Edge — arrow
     img,d = new()
@@ -230,6 +250,7 @@ class FCSymbol:
         self.x        = snap(x); self.y = snap(y)
         self.label    = label or f"{kind[0].upper()}{self.id}"
         self.code_seg = code_seg; self.data_seg = data_seg; self.offset = 0
+        self.default_output: str = ''  # Decision only: fallback if no handler
         self.default_output: str = ''  # Decision only: pushed to stack if no handler
 
     def connection_points(self):
@@ -349,12 +370,32 @@ class FCCanvas:
         return None
 
     def _edge_points(self, e: FCEdge) -> List[Tuple[int,int]]:
-        """Return full point list for an edge including waypoints."""
+        """Return point list trimmed to destination symbol boundary."""
         src = self.symbols.get(e.src_id)
         dst = self.symbols.get(e.dst_id)
         if not src or not dst: return []
-        pts = [(src.x, src.y)] + list(e.waypoints) + [(dst.x, dst.y)]
-        return pts
+        hw, hh = SYMBOL_W//2, SYMBOL_H//2
+        pts_before = [(src.x, src.y)] + list(e.waypoints)
+        cx, cy = dst.x, dst.y
+        px, py = pts_before[-1]
+        dx, dy = cx - px, cy - py
+        dist = (dx*dx + dy*dy) ** 0.5
+        if dist > 0:
+            import math as _m
+            adx, ady = abs(dx)/dist, abs(dy)/dist
+            if dst.kind == SYMBOL_DECISION:
+                margin = hw*adx + hh*ady
+            elif dst.kind in (SYMBOL_IO, SYMBOL_TERMINATOR):
+                a = _m.atan2(dy, dx)
+                margin = (hw*hh)/max(1,_m.sqrt((hh*_m.cos(a))**2+(hw*_m.sin(a))**2))
+            else:
+                margin = min(hw/max(adx,0.001), hh/max(ady,0.001))
+                margin = min(margin, hw)
+            ex = cx - dx/dist*(margin+3)
+            ey = cy - dy/dist*(margin+3)
+        else:
+            ex, ey = cx, cy
+        return pts_before + [(int(ex), int(ey))]
 
     def _ortho_points(self, e: FCEdge) -> List[Tuple[int,int]]:
         """Return orthogonal (right-angle) routing through waypoints."""
@@ -431,7 +472,7 @@ class FCCanvas:
 # ── Headless demo ─────────────────────────────────────────────────────────────
 
 def run_headless_demo():
-    print("="*60+"\nFlowCode v0.4.1 — Headless Demo\n"+"="*60)
+    print("="*60+"\nFlowCode v0.5.0 — Headless Demo\n"+"="*60)
     canvas=FCCanvas()
     start=canvas.add_symbol(SYMBOL_IO,200,80,"START")
     check=canvas.add_symbol(SYMBOL_DECISION,200,240,"CHECK")
@@ -480,7 +521,7 @@ def run_gui():
 
     # ── Root ─────────────────────────────────────────────────────────────────
     root = tk.Tk()
-    root.title("FlowCode v0.4.1 — TernOO-5500FP Visual IDE")
+    root.title("FlowCode v0.5.0 — TernOO-5500FP Visual IDE")
     root.configure(bg=C['bg'])
     root.resizable(True,True)
 
@@ -519,6 +560,7 @@ def run_gui():
                      relief='sunken' if m==mode else 'flat')
         hints={
             'select':         'Click to select · Drag to move · Dbl-click to rename',
+            'place_terminator':'Click canvas to place Terminator [UDP word]',
             'place_process':  'Click canvas to place Process  [UDP word]',
             'place_decision': 'Click canvas to place Decision [UDP word]',
             'place_io':       'Click canvas to place I/O      [UDP word]',
@@ -570,6 +612,8 @@ def run_gui():
         elif mode=='place_decision':
             c.create_polygon([W//2,3,W-2,H//2,W//2,H-3,2,H//2],
                              fill=C['decision'],outline=C['border'],width=1)
+        elif mode=='place_terminator':
+            c.create_oval(2,5,W-2,H-5,fill=C['terminator'],outline=C['border'],width=1)
         elif mode=='place_io':
             c.create_oval(2,5,16,H-5,fill=C['io'],outline=C['border'],width=1)
             c.create_oval(W-16,5,W-2,H-5,fill=C['io'],outline=C['border'],width=1)
@@ -594,9 +638,10 @@ def run_gui():
     _pal_btn('select','Select','move·edit','select')
     _pal_btn('delete','Delete','click to del','delete',fg='#ff6b6b')
     _pal_section("SYMBOLS → UDP")
+    _pal_btn('place_terminator','Terminator','oval · start/end','terminator')
     _pal_btn('place_process','Process','rectangle','process')
     _pal_btn('place_decision','Decision','diamond','decision')
-    _pal_btn('place_io','I/O','rounded','io')
+    _pal_btn('place_io','I/O','parallelogram','io')
     _pal_section("CONNECT → EXEC")
     _pal_btn('edge_src','Edge','src→[wp]→dst','edge')
     tk.Frame(palette_frame,bg=C['dim'],height=1).pack(fill='x',padx=6,pady=4)
@@ -708,7 +753,7 @@ def run_gui():
     _action_btn("📂 Open",     do_open,   icon_key='open')
     _action_btn("🗑 Clear",    do_clear,  fg='#ff8888', icon_key='clear')
 
-    tk.Label(palette_frame,text=f"v0.4.0\n{os.path.basename(_emu_path)}",
+    tk.Label(palette_frame,text=f"v0.5.0\n{os.path.basename(_emu_path)}",
              bg=C['palette'],fg=C['dim'],font=('Monospace',7),pady=4
              ).pack(side='bottom',fill='x')
 
@@ -724,7 +769,8 @@ def run_gui():
         sel = s.id==state['selected_sym']
         fill = C['selected'] if sel else {
             SYMBOL_PROCESS:C['process'],SYMBOL_DECISION:C['decision'],
-            SYMBOL_IO:C['io']}.get(s.kind,C['process'])
+            SYMBOL_IO:C['io'],SYMBOL_TERMINATOR:C['terminator']
+        }.get(s.kind,C['process'])
         bor = C['selected'] if sel else C['border']
         lw = 3 if sel else 2
         x,y=s.x,s.y; hw,hh=SYMBOL_W//2,SYMBOL_H//2
@@ -742,6 +788,9 @@ def run_gui():
             tk_canvas.create_oval(x+hw-r*2,y-hh,x+hw,y+hh,fill=fill,outline=bor,width=lw)
             tk_canvas.create_line(x-hw+r,y-hh,x+hw-r,y-hh,fill=bor,width=lw)
             tk_canvas.create_line(x-hw+r,y+hh,x+hw-r,y+hh,fill=bor,width=lw)
+        elif s.kind==SYMBOL_TERMINATOR:
+            tk_canvas.create_oval(x-hw,y-hh,x+hw,y+hh,
+                                  fill=fill,outline=bor,width=lw)
 
         tk_canvas.create_text(x,y,text=s.label,fill=C['text'],
                               font=('Monospace',10,'bold'))
@@ -789,17 +838,20 @@ def run_gui():
             tk_canvas.create_oval(wx-5,wy-5,wx+5,wy+5,
                                   fill=C['waypoint'],outline=C['border'],width=1)
 
-        # Edge label at midpoint of first segment
+        # Edge labels: condition always, EXEC on selected only
         if len(pts)>=2:
-            mx=(pts[0][0]+pts[1][0])//2; my=(pts[0][1]+pts[1][1])//2-12
-            priv={-1:'K',0:'U',1:'S'}.get(e.privilege,'?')
-            call={-1:'stk',0:'reg',1:'msg'}.get(e.call_style,'?')
-            ret={-1:'X',0:'M',1:'D'}.get(e.return_type,'?')
-            tk_canvas.create_text(mx,my,text=f"EXEC {priv}/{call}→{ret}",
-                                  fill=col,font=('Monospace',7))
+            # Place label 2/3 along first segment, away from source symbol
+            mx=(pts[0][0]+pts[1][0]*2)//3; my=(pts[0][1]+pts[1][1]*2)//3-10
             if e.condition:
-                tk_canvas.create_text(mx,my-12,text=f"[{e.condition}]",
+                tk_canvas.create_text(mx,my,text=f"[{e.condition}]",
                                       fill=C['waypoint'],font=('Monospace',8,'bold'))
+            if is_sel:
+                priv={-1:'K',0:'U',1:'S'}.get(e.privilege,'?')
+                call={-1:'stk',0:'reg',1:'msg'}.get(e.call_style,'?')
+                ret={-1:'X',0:'M',1:'D'}.get(e.return_type,'?')
+                tk_canvas.create_text(mx,my+(14 if e.condition else 0),
+                                      text=f"EXEC {priv}/{call}→{ret}",
+                                      fill=col,font=('Monospace',7))
 
     def draw_edge_in_progress():
         """Draw the edge being constructed with waypoints collected so far."""
@@ -834,21 +886,29 @@ def run_gui():
         for s in canvas_model.symbols.values(): draw_symbol(s)
         draw_edge_in_progress()
         if (state['ghost'] and
-                state['mode'] in ('place_process','place_decision','place_io')):
+                state['mode'] in ('place_terminator','place_process',
+                                  'place_decision','place_io')):
             _draw_placement_ghost(*state['ghost'])
 
     def _draw_placement_ghost(x,y):
         sx,sy=snap(x),snap(y); hw,hh=SYMBOL_W//2,SYMBOL_H//2
         mode=state['mode']
         fill='#161b30'; bor='#3a4060'
-        if mode=='place_process':
+        if mode=='place_terminator':
+            tk_canvas.create_oval(sx-hw,sy-hh,sx+hw,sy+hh,
+                                  fill=fill,outline=bor,width=1,dash=(4,4))
+        elif mode=='place_process':
             tk_canvas.create_rectangle(sx-hw,sy-hh,sx+hw,sy+hh,
                                        fill=fill,outline=bor,width=1,dash=(4,4))
         elif mode=='place_decision':
             tk_canvas.create_polygon([sx,sy-hh,sx+hw,sy,sx,sy+hh,sx-hw,sy],
                                      fill=fill,outline=bor,width=1)
         elif mode=='place_io':
-            tk_canvas.create_oval(sx-hw,sy-hh,sx+hw,sy+hh,
+            r=12
+            tk_canvas.create_rectangle(sx-hw+r,sy-hh,sx+hw-r,sy+hh,fill=fill,outline=fill)
+            tk_canvas.create_oval(sx-hw,sy-hh,sx-hw+r*2,sy+hh,
+                                  fill=fill,outline=bor,width=1,dash=(4,4))
+            tk_canvas.create_oval(sx+hw-r*2,sy-hh,sx+hw,sy+hh,
                                   fill=fill,outline=bor,width=1,dash=(4,4))
         tk_canvas.create_text(sx,sy+hh+10,text=f"snap ({sx},{sy})",
                               fill='#2a3050',font=('Monospace',7))
@@ -887,6 +947,54 @@ def run_gui():
         else:
             set_inspect("Select a symbol or edge to inspect its TernOO word")
 
+
+    # ── Tooltip ───────────────────────────────────────────────────────────────
+
+    _tooltip_win  = [None]
+    _tooltip_after = [None]
+
+    def _show_tooltip(x, y, text):
+        _hide_tooltip()
+        tw = tk.Toplevel(root)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{root.winfo_rootx()+x+16}+{root.winfo_rooty()+y+10}")
+        tk.Label(tw, text=text, bg='#1a1f2e', fg=C['inspect_fg'],
+                 font=('Monospace', 8), relief='flat', bd=1,
+                 padx=6, pady=3).pack()
+        _tooltip_win[0] = tw
+
+    def _hide_tooltip():
+        if _tooltip_after[0]:
+            try: root.after_cancel(_tooltip_after[0])
+            except Exception: pass
+            _tooltip_after[0] = None
+        if _tooltip_win[0]:
+            try: _tooltip_win[0].destroy()
+            except Exception: pass
+            _tooltip_win[0] = None
+
+    def _schedule_tooltip(event):
+        _hide_tooltip()
+        sym = canvas_model.symbol_at(event.x, event.y)
+        if sym:
+            tip = f"{sym.kind.upper()} #{sym.id}  '{sym.label}'\nUDP: {describe_word(sym.to_udp_word())}"
+            if sym.kind == SYMBOL_DECISION and getattr(sym,'default_output',''):
+                tip += f"\ndefault → {sym.default_output}"
+            ex, ey = event.x, event.y
+            _tooltip_after[0] = root.after(700, lambda: _show_tooltip(ex, ey, tip))
+        else:
+            edg = canvas_model.edge_near(event.x, event.y)
+            if edg:
+                srcs = canvas_model.symbols.get(edg.src_id)
+                dsts = canvas_model.symbols.get(edg.dst_id)
+                sl = srcs.label if srcs else f"#{edg.src_id}"
+                dl = dsts.label if dsts else f"#{edg.dst_id}"
+                tip = f"Edge  {sl} → {dl}"
+                if edg.condition: tip += f"\ncondition: {edg.condition}"
+                tip += f"\n{describe_word(edg.to_exec_word())}"
+                ex, ey = event.x, event.y
+                _tooltip_after[0] = root.after(700, lambda: _show_tooltip(ex, ey, tip))
+
     # ── Event handlers ────────────────────────────────────────────────────────
 
     def on_motion(event):
@@ -896,6 +1004,9 @@ def run_gui():
             if s:
                 dx,dy=state['drag_offset']
                 s.x=snap(event.x-dx); s.y=snap(event.y-dy)
+            _hide_tooltip()
+        else:
+            _schedule_tooltip(event)
         redraw()
 
     def on_click(event):
@@ -903,8 +1014,9 @@ def run_gui():
         mode=state['mode']
 
         # Placement modes
-        if mode in ('place_process','place_decision','place_io'):
-            kind={'place_process':SYMBOL_PROCESS,
+        if mode in ('place_terminator','place_process','place_decision','place_io'):
+            kind={'place_terminator':SYMBOL_TERMINATOR,
+                  'place_process':SYMBOL_PROCESS,
                   'place_decision':SYMBOL_DECISION,
                   'place_io':SYMBOL_IO}[mode]
             s=canvas_model.add_symbol(kind,x,y)
@@ -1025,26 +1137,38 @@ def run_gui():
         v_data_seg = _row(frm, "data_seg:", 3)
         v_offset   = _row(frm, "offset:",   4)
 
-        # Default output — decision nodes only
-        v_default = None
-        if s.kind == SYMBOL_DECISION:
-            v_default = _row(frm, "default out:", 5)
-            v_default.set(s.default_output)
-            tk.Label(frm, text="(pushed to stack if no handler — matches edge condition)",
-                     bg=C['bg'], fg=C['dim'], font=('Monospace', 7),
-                     ).grid(row=6, column=0, columnspan=2, pady=(0,4))
-
         v_label.set(s.label)
         v_code_seg.set(str(s.code_seg))
         v_data_seg.set(str(s.data_seg))
         v_offset.set(str(s.offset))
 
-        # TernOO word preview label
+        # Default output dropdown — decision nodes only
+        v_default = None
+        if s.kind == SYMBOL_DECISION:
+            outgoing_conds = [e.condition for e in canvas_model.edges
+                              if e.src_id == s.id and e.condition]
+            tk.Label(frm, text='default out:', bg=C['bg'], fg=C['inspect_fg'],
+                     font=('Monospace', 9), anchor='e', width=12
+                     ).grid(row=5, column=0, padx=8, pady=4, sticky='e')
+            v_default = tk.StringVar(value=s.default_output or '(none)')
+            opts = ['(none)'] + outgoing_conds
+            om = tk.OptionMenu(frm, v_default, *opts)
+            om.config(bg=C['canvas'], fg=C['text'], activebackground=C['pal_active'],
+                      activeforeground=C['text'], font=('Monospace', 9),
+                      relief='flat', highlightthickness=0)
+            om['menu'].config(bg=C['canvas'], fg=C['text'], font=('Monospace', 9))
+            om.grid(row=5, column=1, padx=8, pady=4, sticky='ew')
+            tk.Label(frm, text='fallback branch if no runtime result',
+                     bg=C['bg'], fg=C['dim'], font=('Monospace', 7),
+                     ).grid(row=6, column=0, columnspan=2, pady=(0,4))
+
+        # TernOO word preview
         preview_row = 7 if s.kind == SYMBOL_DECISION else 5
-        preview = tk.Label(frm, text="", bg=C['inspect'], fg=C['inspect_fg'],
+        preview = tk.Label(frm, text='', bg=C['inspect'], fg=C['inspect_fg'],
                            font=('Monospace', 8), anchor='w', justify='left',
                            padx=6, pady=4, width=38)
-        preview.grid(row=preview_row, column=0, columnspan=2, padx=0, pady=4, sticky='ew')
+        preview.grid(row=preview_row, column=0, columnspan=2,
+                     padx=0, pady=4, sticky='ew')
 
         def _update_preview(*_):
             try:
@@ -1071,7 +1195,8 @@ def run_gui():
             try: s.offset   = int(v_offset.get() or 0)
             except ValueError: pass
             if v_default is not None:
-                s.default_output = v_default.get().strip()
+                chosen = v_default.get()
+                s.default_output = '' if chosen == '(none)' else chosen
             set_status(f"Updated {s.label}  code_seg={s.code_seg}"
                        f"  data_seg={s.data_seg}  offset={s.offset}")
             update_inspect(); redraw(); dlg.destroy()
@@ -1200,7 +1325,8 @@ def run_gui():
 
     def on_key(event):
         k=event.keysym.lower()
-        if k=='r': set_mode('place_process')
+        if k=='t': set_mode('place_terminator')
+        elif k=='r': set_mode('place_process')
         elif k=='d': set_mode('place_decision')
         elif k=='i': set_mode('place_io')
         elif k=='e': set_mode('edge_src')
@@ -1230,6 +1356,7 @@ def run_gui():
     tk_canvas.bind('<Motion>',on_motion)
     tk_canvas.bind('<ButtonRelease-1>',on_release)
     tk_canvas.bind('<Double-Button-1>',on_double_click)
+    tk_canvas.bind('<Leave>', lambda e: _hide_tooltip())
     root.bind('<Key>',on_key)
 
     set_mode('select')
