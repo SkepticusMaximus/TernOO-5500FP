@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FlowCode  v0.5.0
+FlowCode  v0.5.1
 ================
 Visual programming IDE for TernOO-5500FP.
 
@@ -472,7 +472,7 @@ class FCCanvas:
 # ── Headless demo ─────────────────────────────────────────────────────────────
 
 def run_headless_demo():
-    print("="*60+"\nFlowCode v0.5.0 — Headless Demo\n"+"="*60)
+    print("="*60+"\nFlowCode v0.5.1 — Headless Demo\n"+"="*60)
     canvas=FCCanvas()
     start=canvas.add_symbol(SYMBOL_IO,200,80,"START")
     check=canvas.add_symbol(SYMBOL_DECISION,200,240,"CHECK")
@@ -497,7 +497,7 @@ def run_headless_demo():
 def run_gui():
     try:
         import tkinter as tk
-        from tkinter import filedialog, simpledialog
+        from tkinter import filedialog, simpledialog, messagebox
     except ImportError:
         print("tkinter not available — sudo apt install python3-tk")
         run_headless_demo(); return
@@ -521,7 +521,7 @@ def run_gui():
 
     # ── Root ─────────────────────────────────────────────────────────────────
     root = tk.Tk()
-    root.title("FlowCode v0.5.0 — TernOO-5500FP Visual IDE")
+    root.title("FlowCode v0.5.1 — TernOO-5500FP Visual IDE")
     root.configure(bg=C['bg'])
     root.resizable(True,True)
 
@@ -741,10 +741,14 @@ def run_gui():
             state['selected_sym']=None; state['selected_edge']=None
             set_status(f"Loaded: {os.path.basename(p)}"); redraw()
     def do_clear():
+        if canvas_model.symbols:
+            if not messagebox.askyesno('Clear Canvas',
+                    'Clear the canvas? Unsaved changes will be lost.'):
+                return
         canvas_model.symbols.clear(); canvas_model.edges.clear()
         state['selected_sym']=None; state['selected_edge']=None
         FCSymbol._next_id=1
-        set_inspect("Canvas cleared"); set_status("Cleared"); redraw()
+        set_inspect('Canvas cleared'); set_status('Cleared'); redraw()
 
     _action_btn("⬇ Word Dump", do_dump,   icon_key='dump')
     _action_btn("▶ Load→EMU",  do_load,   fg='#7aff7a', icon_key='load')
@@ -1359,6 +1363,14 @@ def run_gui():
     tk_canvas.bind('<Leave>', lambda e: _hide_tooltip())
     root.bind('<Key>',on_key)
 
+    def on_close():
+        if canvas_model.symbols:
+            ans = messagebox.askyesnocancel('Quit FlowCode',
+                    'Save canvas before closing?')
+            if ans is None: return
+            if ans: do_save()
+        root.destroy()
+    root.protocol('WM_DELETE_WINDOW', on_close)
     set_mode('select')
     root.after(100,redraw)
     root.mainloop()
