@@ -503,3 +503,152 @@ an intermediate representation layer.
 
 *"Each 24-trit word is a complete process launch descriptor."*  
 *— Stevo, 2026*
+
+---
+
+## Part E — v0.5.x Development Log
+
+---
+
+### v0.5.0 — FlowCode major feature update (31 May 2026, Adelaide)
+
+**Changes:**
+- Terminator symbol (oval) added — correct START/END marker, separate from I/O
+- Canvas clutter removed: UDP/EXEC word text shown on selected symbol/edge only
+- Hover tooltip (700ms delay) shows UDP/EXEC word for any symbol or edge
+- `default_output` dropdown on Decision nodes — populated from outgoing edge
+  condition labels, selects fallback branch when no runtime trit arrives
+- Arrowheads trimmed to symbol boundary — visible on all shape types
+- Condition labels always visible on edges; EXEC word on selected edge only
+- Keyboard shortcut T for Terminator placement
+- Interpreter updated to recognise `terminator` kind as valid start/end node
+
+**Commit:** `b41d259`
+
+---
+
+### v0.5.1 — Data safety features (31 May 2026, Adelaide)
+
+**Changes:**
+- Confirm dialog before Clear ("Unsaved changes will be lost")
+- Save prompt on window close (Yes/No/Cancel)
+
+**Commit:** `09b4660`
+
+---
+
+### AgeTest2.json — First semantically correct flowgram (31 May 2026, Adelaide)
+
+Proper symbol semantics throughout:
+- START, END → Terminator (oval)
+- GET AGE, UNDER AGE, ACCEPT AGE → I/O (parallelogram)
+- AGE TEST → Decision (diamond)
+
+Interpreter trace confirmed: 5 steps, `✓ END reached: END`, all TernOO
+word fields decoded natively. Python is the runtime host; the execution
+model is TernOO words throughout.
+
+**Commit:** `56a2638`
+
+---
+
+### I/O Subclass Matrix — Design Decision (31 May 2026, Adelaide)
+
+**Status: Experimental — prototype required before whitepaper update**
+
+**Background:** The Gemini MMIO clipboard implementation (`!learn_clipbd`,
+register `0x6000` in `5500fp_ternoo_v03.py`) established the architectural
+pattern: external data enters the TernOO machine through a memory-mapped I/O
+register address carried in the I/O word's 18-trit payload field. The UDP
+subclass trits describe what the symbol does in the flowgraph; the MMIO
+address ties it to the ISA-level I/O channel.
+
+**Proposed encoding for UDP subclass trits on I/O symbols:**
+
+```
+T21 — Channel type:   −1 = file        0 = stream (network/pipe/IPC)   +1 = prompt (human-facing)
+T20 — Operation:      −1 = read/listen  0 = bidirectional/passthrough   +1 = write/send/respond
+```
+
+**Common combinations:**
+
+| Symbol role         | T21 | T20 | Example                        |
+|---------------------|-----|-----|--------------------------------|
+| User input prompt   | +1  | −1  | GET AGE dialog                 |
+| User output message | +1  | +1  | ACCEPT AGE / UNDER AGE display |
+| File read           | −1  | −1  | Load config                    |
+| File write          | −1  | +1  | Save result                    |
+| Network receive     |  0  | −1  | P2PCP inbound                  |
+| Network send        |  0  | +1  | P2PCP outbound                 |
+
+**Relationship to Section 3.6 (I/O Words):** The 3.6 spec
+(Direction/Buffering/Blocking) operates at ISA level — how the hardware
+channel behaves. This matrix operates at FlowCode level — what the symbol
+does in the flowgraph. They are complementary layers, not duplicates.
+
+**Outstanding question:** We are consuming two user-defined subclass trits
+with a system definition. The right long-term solution is to register this
+as a named Double Null context rather than hardcoding it into the base spec,
+preserving the user-extensible subclass space. To be resolved when prototype
+confirms the encoding is correct.
+
+**Proposed experiment:** Wire the interpreter to dispatch I/O nodes based on
+T21/T20 subclass — prompt-read nodes open a tkinter input dialog and push
+the result to the eval stack; prompt-write nodes pop the stack and display
+a tkinter message box.
+
+---
+
+### Versioning Policy (31 May 2026, Adelaide)
+
+Semantic versioning: `MAJOR.MINOR.PATCH`
+
+PATCH = fixes without new features. MINOR = new features. MAJOR = backward
+incompatible architecture change.
+
+Design goal: when FlowCode and GristMill are properly implemented, there will
+be one final MAJOR version bump — after which every edit is backward and
+forward compatible. The last MAJOR version is the one that makes MAJOR
+versions obsolete. We are currently pre-1.0 (0.x = architecture still
+being settled).
+
+---
+
+
+---
+
+### v0.3.0 — I/O Subclass Dispatcher (31 May 2026, Adelaide)
+
+**Module:** `5500fp/ternoo_interpreter.py`
+**Block:** `io_subclass()`, `_register_builtins()`, `_io_dispatch()`,
+           `_io_prompt_read()`, `_io_prompt_write()`
+
+**What it does:** I/O symbols now dispatch at runtime based on their T21/T20
+subclass trits. A prompt-read symbol (`GET AGE`) opens a tkinter input dialog
+and pushes the result to the eval stack. A prompt-write symbol (`ACCEPT AGE`,
+`UNDER AGE`) pops the stack and displays a tkinter message box. File and stream
+operations are stubbed with "not yet implemented" trace messages.
+
+**Bootstrap approximation:** Until the symbol properties dialog exposes T21/T20
+explicitly, subclass detection uses label keyword heuristics. Words like GET,
+READ, INPUT → prompt-read. Words like ACCEPT, OUTPUT, SHOW → prompt-write.
+This is explicitly a bootstrap — once the FlowCode palette has distinct I/O
+sub-symbols with correct UDP words, the heuristic is replaced by reading T21/T20
+directly from the word.
+
+**Design note:** The Gemini MMIO clipboard work (`!learn_clipbd`, register
+`0x6000`) is the architectural ancestor of `_io_prompt_read`. Both read from
+an external channel and write the result into the machine's memory space. The
+difference is that `_io_prompt_read` operates at the TernOO word level rather
+than at the raw memory address level. When the assembly bridge exists, the
+tkinter call will be replaced by a MMIO write to the appropriate register
+address carried in the I/O word's 18-trit payload field.
+
+**MiniMind / shadow-GHOST note:** Once AgeTest2 runs interactively end-to-end,
+it becomes training data for a MiniMind model. The sequence
+`[terminator] → [io:prompt-read] → [decision] → [io:prompt-write] → [terminator]`
+is a complete program in a 5-token vocabulary. Even a tiny model trained on a
+handful of such flowgrams learns the grammar of TernOO programs. That is the
+first step toward GHOST — not a code generator, but a symbol-sequence predictor
+that makes the next step obvious to the programmer.
+
