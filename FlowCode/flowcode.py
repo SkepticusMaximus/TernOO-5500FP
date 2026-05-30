@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FlowCode  v0.4.0
+FlowCode  v0.4.1
 ================
 Visual programming IDE for TernOO-5500FP.
 
@@ -230,6 +230,7 @@ class FCSymbol:
         self.x        = snap(x); self.y = snap(y)
         self.label    = label or f"{kind[0].upper()}{self.id}"
         self.code_seg = code_seg; self.data_seg = data_seg; self.offset = 0
+        self.default_output: str = ''  # Decision only: pushed to stack if no handler
 
     def connection_points(self):
         """Return dict of named edge attachment points."""
@@ -259,13 +260,15 @@ class FCSymbol:
     def to_dict(self):
         return {'id':self.id,'kind':self.kind,'x':self.x,'y':self.y,
                 'label':self.label,'code_seg':self.code_seg,
-                'data_seg':self.data_seg,'offset':self.offset}
+                'data_seg':self.data_seg,'offset':self.offset,
+                'default_output':self.default_output}
 
     @classmethod
     def from_dict(cls,d):
         s = cls(d['kind'],d['x'],d['y'],d.get('label',''),
                 d.get('code_seg',0),d.get('data_seg',0))
         s.id=d['id']; s.offset=d.get('offset',0)
+        s.default_output = d.get('default_output','')
         FCSymbol._next_id = max(FCSymbol._next_id, s.id+1)
         return s
 
@@ -428,7 +431,7 @@ class FCCanvas:
 # ── Headless demo ─────────────────────────────────────────────────────────────
 
 def run_headless_demo():
-    print("="*60+"\nFlowCode v0.4.0 — Headless Demo\n"+"="*60)
+    print("="*60+"\nFlowCode v0.4.1 — Headless Demo\n"+"="*60)
     canvas=FCCanvas()
     start=canvas.add_symbol(SYMBOL_IO,200,80,"START")
     check=canvas.add_symbol(SYMBOL_DECISION,200,240,"CHECK")
@@ -477,7 +480,7 @@ def run_gui():
 
     # ── Root ─────────────────────────────────────────────────────────────────
     root = tk.Tk()
-    root.title("FlowCode v0.4.0 — TernOO-5500FP Visual IDE")
+    root.title("FlowCode v0.4.1 — TernOO-5500FP Visual IDE")
     root.configure(bg=C['bg'])
     root.resizable(True,True)
 
@@ -744,6 +747,9 @@ def run_gui():
                               font=('Monospace',10,'bold'))
         tk_canvas.create_text(x,y+hh+10,text=describe_word(s.to_udp_word())[:28],
                               fill=C['dim'],font=('Monospace',7))
+        if s.kind == SYMBOL_DECISION and s.default_output:
+            tk_canvas.create_text(x,y+hh+22,text=f"→{s.default_output}",
+                                  fill=C['waypoint'],font=('Monospace',7,'bold'))
         if sel:
             tk_canvas.create_text(x,y-hh-10,text=f"({x},{y})",
                                   fill=C['selected'],font=('Monospace',7))
@@ -1019,16 +1025,26 @@ def run_gui():
         v_data_seg = _row(frm, "data_seg:", 3)
         v_offset   = _row(frm, "offset:",   4)
 
+        # Default output — decision nodes only
+        v_default = None
+        if s.kind == SYMBOL_DECISION:
+            v_default = _row(frm, "default out:", 5)
+            v_default.set(s.default_output)
+            tk.Label(frm, text="(pushed to stack if no handler — matches edge condition)",
+                     bg=C['bg'], fg=C['dim'], font=('Monospace', 7),
+                     ).grid(row=6, column=0, columnspan=2, pady=(0,4))
+
         v_label.set(s.label)
         v_code_seg.set(str(s.code_seg))
         v_data_seg.set(str(s.data_seg))
         v_offset.set(str(s.offset))
 
         # TernOO word preview label
+        preview_row = 7 if s.kind == SYMBOL_DECISION else 5
         preview = tk.Label(frm, text="", bg=C['inspect'], fg=C['inspect_fg'],
                            font=('Monospace', 8), anchor='w', justify='left',
                            padx=6, pady=4, width=38)
-        preview.grid(row=5, column=0, columnspan=2, padx=0, pady=4, sticky='ew')
+        preview.grid(row=preview_row, column=0, columnspan=2, padx=0, pady=4, sticky='ew')
 
         def _update_preview(*_):
             try:
@@ -1054,6 +1070,8 @@ def run_gui():
             except ValueError: pass
             try: s.offset   = int(v_offset.get() or 0)
             except ValueError: pass
+            if v_default is not None:
+                s.default_output = v_default.get().strip()
             set_status(f"Updated {s.label}  code_seg={s.code_seg}"
                        f"  data_seg={s.data_seg}  offset={s.offset}")
             update_inspect(); redraw(); dlg.destroy()
