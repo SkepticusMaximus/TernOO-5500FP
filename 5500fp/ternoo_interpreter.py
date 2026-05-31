@@ -747,6 +747,87 @@ class TernOOInterpreter:
             self._emit(f"{indent}  {GREEN}[push] {threshold}{RESET}")
             return threshold
 
+        # ── FILE SELECT — open file dialog, push chosen path ─────────────
+        # Trigger: label contains FILE and (SELECT|CHOOSE|OPEN|PICK|LOAD|BROWSE)
+        file_hints   = {'FILE','OPEN','LOAD','BROWSE'}
+        select_hints = {'SELECT','CHOOSE','PICK','BROWSE','OPEN','FILE'}
+        if ('FILE' in words or 'SELECT' in words or 'BROWSE' in words) and \
+           (file_hints & set(words)) and (select_hints & set(words) or 'FILE' in words):
+            self._emit(f"{indent}  {GREEN}[file-select] opening file dialog{RESET}")
+            try:
+                import tkinter as tk
+                from tkinter import filedialog
+                _p = self.tk_parent
+                if _p is None:
+                    _p = tk.Tk(); _p.withdraw()
+                    path = filedialog.askopenfilename(
+                        parent   = _p,
+                        title    = 'Select training file for GHOST',
+                        filetypes= [
+                            ('TernOO GUI training', '*.tgui'),
+                            ('Glade / GTK UI',      '*.ui *.glade'),
+                            ('Cambalache project',  '*.cmb'),
+                            ('All files',           '*.*'),
+                        ]
+                    )
+                    _p.destroy()
+                else:
+                    path = filedialog.askopenfilename(
+                        parent   = _p,
+                        title    = 'Select training file for GHOST',
+                        filetypes= [
+                            ('TernOO GUI training', '*.tgui'),
+                            ('Glade / GTK UI',      '*.ui *.glade'),
+                            ('Cambalache project',  '*.cmb'),
+                            ('All files',           '*.*'),
+                        ]
+                    )
+                path = path or ''
+                self._emit(f"{indent}    → selected {path!r}")
+                return path
+            except Exception as e:
+                self._emit(f"{indent}  {YELLOW}file dialog unavailable: {e}{RESET}")
+                return ''
+
+        # ── TRAIN GHOST — convert + train brain on file from eval stack ───
+        # Trigger: label contains TRAIN and (GHOST|BRAIN|NEURAL|AI)
+        train_hints = {'TRAIN','TEACH','LEARN','FIT'}
+        ghost_hints = {'GHOST','BRAIN','NEURAL','AI','MODEL'}
+        if (train_hints & set(words)) and (ghost_hints & set(words)):
+            path = self.eval_stack.pop() if self.eval_stack else ''
+            self._emit(f"{indent}  {GREEN}[train-ghost] training on {path!r}{RESET}")
+            if not path:
+                self._emit(f"{indent}  {YELLOW}[train-ghost] no file path on stack — cancelled{RESET}")
+                return 'No file selected'
+            try:
+                import importlib.util as _ilu, os as _os
+                _bridge_path = _os.path.join(
+                    _os.path.dirname(_os.path.abspath(__file__)),
+                    'ternoo_cambalache_bridge.py')
+                _spec = _ilu.spec_from_file_location('cambalache_bridge', _bridge_path)
+                _bridge = _ilu.module_from_spec(_spec)
+                _spec.loader.exec_module(_bridge)
+
+                ext = _os.path.splitext(path)[1].lower()
+                if ext == '.tgui':
+                    tgui_path = path
+                elif ext in ('.ui', '.glade', '.xml', '.cmb'):
+                    tgui_path = _os.path.splitext(path)[0] + '.tgui'
+                    _bridge.convert(path, tgui_path)
+                    self._emit(f"{indent}    → converted to {tgui_path!r}")
+                else:
+                    self._emit(f"{indent}  {YELLOW}[train-ghost] unknown file type {ext!r}{RESET}")
+                    return f'Unknown type: {ext}'
+
+                _bridge.train_brain_on_tgui(tgui_path)
+                fname = _os.path.basename(path)
+                result = f'GHOST trained on {fname}'
+                self._emit(f"{indent}    → {result}")
+                return result
+            except Exception as e:
+                self._emit(f"{indent}  {YELLOW}[train-ghost] error: {e}{RESET}")
+                return f'Training error: {e}'
+
         return None
 
 

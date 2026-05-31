@@ -1,0 +1,105 @@
+{
+  "symbols": [
+    {
+      "id": 1,
+      "kind": "terminator",
+      "x": 300,
+      "y": 80,
+      "label": "START",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0,
+      "default_output": ""
+    },
+    {
+      "id": 2,
+      "kind": "process",
+      "x": 300,
+      "y": 240,
+      "label": "FILE SELECT",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0,
+      "default_output": ""
+    },
+    {
+      "id": 3,
+      "kind": "process",
+      "x": 300,
+      "y": 400,
+      "label": "TRAIN GHOST",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0,
+      "default_output": ""
+    },
+    {
+      "id": 4,
+      "kind": "io",
+      "x": 300,
+      "y": 560,
+      "label": "SHOW RESULT",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0,
+      "default_output": ""
+    },
+    {
+      "id": 5,
+      "kind": "terminator",
+      "x": 300,
+      "y": 720,
+      "label": "END",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0,
+      "default_output": ""
+    }
+  ],
+  "edges": [
+    {
+      "src": 1,
+      "dst": 2,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 2,
+      "dst": 3,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 3,
+      "dst": 4,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 4,
+      "dst": 5,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    }
+  ]
+}
