@@ -101,6 +101,58 @@ def _find_brain_file():
         if os.path.exists(p): return os.path.abspath(p)
     return None
 
+def _find_ghost_brain():
+    candidates = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), '../5500fp/ghost_gui_brain.json'),
+        os.path.expanduser('~/dev/SkepticusMaximus/TernOO-5500FP/5500fp/ghost_gui_brain.json'),
+    ]
+    for p in candidates:
+        if os.path.exists(p): return os.path.abspath(p)
+    return None
+
+def _find_bridge():
+    candidates = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), '../5500fp/ternoo_cambalache_bridge.py'),
+        os.path.expanduser('~/dev/SkepticusMaximus/TernOO-5500FP/5500fp/ternoo_cambalache_bridge.py'),
+    ]
+    for p in candidates:
+        if os.path.exists(p): return os.path.abspath(p)
+    return None
+
+# ── GHOST brain + palette — loaded once at startup ────────────────────────────
+
+_ghost_weights: dict = {}
+_ghost_brain_path = _find_ghost_brain()
+if _ghost_brain_path:
+    try:
+        with open(_ghost_brain_path) as _gf:
+            _ghost_weights = json.load(_gf).get('weights', {})
+        print(f"[FlowCode] GHOST brain loaded: {len(_ghost_weights)} types")
+    except Exception as _ge:
+        print(f"[FlowCode] GHOST brain load failed: {_ge}")
+
+# palette: list of (mmoe_type, y_lo) sorted containers → menus
+_ghost_palette_types: list = []
+_bridge_path_fc = _find_bridge()
+if _bridge_path_fc:
+    try:
+        from importlib.util import spec_from_file_location as _sfl2, module_from_spec as _mfs2
+        _bspec = _sfl2('_ghost_bridge', _bridge_path_fc)
+        _bmod  = _mfs2(_bspec)
+        _bspec.loader.exec_module(_bmod)
+        for _bt, _bi in _bmod.GUI_MMOE_TYPES.items():
+            if _bt == 'gui_unknown': continue
+            _ghost_palette_types.append((_bt, _bi.get('y_range', (0, 0))[0]))
+        _ghost_palette_types.sort(key=lambda t: (-t[1], t[0]))
+        print(f"[FlowCode] GHOST palette: {len(_ghost_palette_types)} widget types")
+    except Exception as _gpe:
+        print(f"[FlowCode] GHOST palette load failed: {_gpe}")
+
+if not _ghost_palette_types:   # fallback if bridge not found
+    _ghost_palette_types = [(t, 0) for t in [
+        'gui_window','gui_box','gui_button','gui_entry',
+        'gui_label','gui_dialog','gui_menu','gui_treeview']]
+
 _neural_path = _find_neural()
 _FlowCodeBrain = None
 _brain_instance = None
@@ -544,7 +596,7 @@ def run_headless_demo():
 def run_gui():
     try:
         import tkinter as tk
-        from tkinter import filedialog, simpledialog, messagebox
+        from tkinter import filedialog, simpledialog, messagebox, ttk
     except ImportError:
         print("tkinter not available — sudo apt install python3-tk")
         run_headless_demo(); return
@@ -575,18 +627,44 @@ def run_gui():
     outer = tk.Frame(root,bg=C['bg']); outer.pack(fill='both',expand=True)
     palette_frame = tk.Frame(outer,bg=C['palette'],width=PALETTE_W)
     palette_frame.pack(side='left',fill='y'); palette_frame.pack_propagate(False)
-    right = tk.Frame(outer,bg=C['bg']); right.pack(side='left',fill='both',expand=True)
-    tk_canvas = tk.Canvas(right,bg=C['canvas'],highlightthickness=0)
+
+    # ── Tabbed right panel ────────────────────────────────────────────────────
+    right_outer = tk.Frame(outer,bg=C['bg'])
+    right_outer.pack(side='left',fill='both',expand=True)
+
+    # Style the notebook to match dark theme
+    _nb_style = ttk.Style()
+    _nb_style.theme_use('default')
+    _nb_style.configure('TNotebook', background=C['palette'], borderwidth=0)
+    _nb_style.configure('TNotebook.Tab', background=C['pal_btn'], foreground=C['text'],
+                        padding=[12, 4], font=('Monospace', 9))
+    _nb_style.map('TNotebook.Tab',
+                  background=[('selected', C['pal_active'])],
+                  foreground=[('selected', C['pal_border'])])
+
+    notebook = ttk.Notebook(right_outer)
+    notebook.pack(side='top',fill='both',expand=True)
+
+    status = tk.Label(right_outer,text="Ready",anchor='w',
+                      bg=C['status'],fg=C['pal_border'],
+                      font=('Monospace',9),padx=8)
+    status.pack(side='bottom',fill='x',ipady=3)
+
+    # ── Tab 1: FlowCode ───────────────────────────────────────────────────────
+    fc_tab = tk.Frame(notebook,bg=C['bg'])
+    notebook.add(fc_tab, text='  FlowCode  ')
+
+    tk_canvas = tk.Canvas(fc_tab,bg=C['canvas'],highlightthickness=0)
     tk_canvas.pack(side='top',fill='both',expand=True)
-    inspect = tk.Label(right,text="Select a symbol or edge to inspect",
+    inspect = tk.Label(fc_tab,text="Select a symbol or edge to inspect",
                        bg=C['inspect'],fg=C['inspect_fg'],
                        font=('Monospace',9),anchor='nw',justify='left',
                        padx=8,pady=4,height=6)
     inspect.pack(side='top',fill='x')
-    status = tk.Label(right,text="Ready",anchor='w',
-                      bg=C['status'],fg=C['pal_border'],
-                      font=('Monospace',9),padx=8)
-    status.pack(side='bottom',fill='x',ipady=3)
+
+    # ── Tab 2: GHOST Canvas (built below after FlowCode palette) ─────────────
+    ghost_tab = tk.Frame(notebook,bg=C['bg'])
+    notebook.add(ghost_tab, text='  GHOST Canvas  ')
 
     def set_status(m): status.config(text=m)
     def set_inspect(m): inspect.config(text=m)
@@ -1426,6 +1504,8 @@ def run_gui():
         dlg.focus_force()
 
     def on_key(event):
+        if notebook.index('current') != 0:
+            return   # Let GHOST canvas handle its own keys
         k=event.keysym.lower()
         if k=='t': set_mode('place_terminator')
         elif k=='r': set_mode('place_process')
@@ -1452,6 +1532,334 @@ def run_gui():
             if k=='s': do_save()
             elif k=='o': do_open()
             elif k=='z': set_mode('select')  # Ctrl+Z as cancel/escape
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # GHOST Canvas tab
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    GW, GH = 140, 52   # widget block size on ghost canvas
+
+    # Category colour by Y-range bracket
+    def _ghost_cat_color(y_lo):
+        if y_lo >= 500: return '#0f3060'   # containers  — blue
+        if y_lo >= 400: return '#3a1060'   # controls    — purple
+        if y_lo >= 300: return '#0f3a3a'   # inputs      — teal
+        if y_lo >= 200: return '#0f3a1a'   # display     — green
+        if y_lo >= 100: return '#3a2a0f'   # dialogs     — amber
+        return '#3a0f1a'                    # menus       — dark red
+
+    _gc_color = {t: _ghost_cat_color(y) for t, y in _ghost_palette_types}
+
+    # ── GHOST canvas state ────────────────────────────────────────────────────
+    gst = {
+        'widgets':    {},    # id → {id, kind, x, y, label}
+        'edges':      [],    # [{src, dst}, …]
+        'selected':   None,
+        'mode':       'select',   # select | place | edge_src | edge_dst | delete
+        'place_kind': None,
+        'edge_src':   None,
+        'next_id':    0,
+        'dragging':   False,
+        'drag_offset':(0, 0),
+    }
+
+    # ── Ghost canvas layout ───────────────────────────────────────────────────
+    gc_pal   = tk.Frame(ghost_tab, bg=C['palette'], width=PALETTE_W)
+    gc_pal.pack(side='left', fill='y'); gc_pal.pack_propagate(False)
+    gc_right = tk.Frame(ghost_tab, bg=C['bg'])
+    gc_right.pack(side='left', fill='both', expand=True)
+    gc       = tk.Canvas(gc_right, bg=C['canvas'], highlightthickness=0)
+    gc.pack(fill='both', expand=True)
+    gc_bar   = tk.Label(gc_right,
+                        text="GHOST Canvas — pick a widget type from the palette",
+                        bg=C['status'], fg=C['pal_border'],
+                        font=('Monospace', 9), anchor='w', padx=8)
+    gc_bar.pack(side='bottom', fill='x', ipady=3)
+
+    def gc_set_status(m): gc_bar.config(text=m)
+
+    def gc_set_mode(m, kind=None):
+        gst['mode'] = m; gst['place_kind'] = kind
+        if m == 'select':   gc_set_status("GHOST Canvas — select, drag, or connect widgets")
+        elif m == 'place':  gc_set_status(f"Click canvas to place  {kind}  (Esc to cancel)")
+        elif m == 'edge_src': gc_set_status("Click the parent (source) widget")
+        elif m == 'edge_dst': gc_set_status("Click the child (destination) widget")
+        elif m == 'delete': gc_set_status("Click a widget or edge to delete it")
+
+    # ── Palette ───────────────────────────────────────────────────────────────
+    tk.Label(gc_pal, text="GHOST", bg=C['palette'], fg=C['pal_border'],
+             font=('Monospace', 9, 'bold'), pady=6).pack(fill='x')
+    tk.Label(gc_pal, text="WIDGETS", bg=C['palette'], fg=C['pal_border'],
+             font=('Monospace', 9, 'bold')).pack(fill='x')
+    tk.Frame(gc_pal, bg=C['dim'], height=1).pack(fill='x', padx=6, pady=2)
+
+    _gc_pal_inner = tk.Frame(gc_pal, bg=C['palette'])
+    _gc_pal_inner.pack(fill='x')
+
+    _gc_grp_cur = [None]
+    _gc_grp_names = {
+        5: 'CONTAINERS', 4: 'CONTROLS', 3: 'INPUTS',
+        2: 'DISPLAY', 1: 'DIALOGS', 0: 'MENUS',
+    }
+    for wtype, y_lo in _ghost_palette_types:
+        grp_key = y_lo // 100
+        if grp_key != _gc_grp_cur[0]:
+            _gc_grp_cur[0] = grp_key
+            tk.Label(_gc_pal_inner, text=_gc_grp_names.get(grp_key, ''),
+                     bg=C['palette'], fg=C['dim'],
+                     font=('Monospace', 7), pady=1).pack(fill='x', padx=4)
+        col   = _gc_color.get(wtype, C['pal_btn'])
+        short = wtype.replace('gui_', '')
+        tk.Button(_gc_pal_inner, text=short,
+                  bg=col, fg=C['text'],
+                  font=('Monospace', 8), relief='flat', bd=0,
+                  padx=4, pady=2, cursor='hand2', anchor='w',
+                  command=lambda k=wtype: gc_set_mode('place', k)
+                  ).pack(fill='x', padx=4, pady=1)
+
+    tk.Frame(gc_pal, bg=C['dim'], height=1).pack(fill='x', padx=6, pady=4)
+
+    # ── Action buttons ────────────────────────────────────────────────────────
+    def gc_do_connect(): gc_set_mode('edge_src')
+    def gc_do_delete():  gc_set_mode('delete')
+
+    def gc_do_suggest():
+        sel = gst['selected']
+        if sel is None or sel not in gst['widgets']:
+            gc_set_status("Select a widget first, then Suggest"); return
+        kind = gst['widgets'][sel]['kind']
+        row  = {k: v for k, v in _ghost_weights.get(kind, {}).items() if k != kind}
+        if not row:
+            gc_set_status(f"No suggestions for {kind} — train more first"); return
+        best  = max(row, key=row.get)
+        total = sum(row.values())
+        pct   = int(100 * row[best] / total) if total else 0
+        # Auto-place suggested widget to the right of selected
+        sw  = gst['widgets'][sel]
+        nid = gst['next_id']; gst['next_id'] += 1
+        gst['widgets'][nid] = {
+            'id': nid, 'kind': best,
+            'x': snap(sw['x'] + GW + 30), 'y': sw['y'],
+            'label': best.replace('gui_', ''),
+        }
+        gst['edges'].append({'src': sel, 'dst': nid})
+        gst['selected'] = nid
+        gc_set_status(f"GHOST suggests: {kind} → {best}  ({pct}%)")
+        gc_redraw()
+
+    def gc_do_clear():
+        if gst['widgets']:
+            from tkinter import messagebox as _mb2
+            if not _mb2.askyesno('Clear', 'Clear GHOST canvas?'): return
+        gst['widgets'].clear(); gst['edges'].clear()
+        gst['selected'] = None; gst['next_id'] = 0
+        gc_set_mode('select'); gc_redraw()
+
+    def gc_do_save():
+        if not gst['widgets']:
+            gc_set_status("Nothing to save"); return
+        path = filedialog.asksaveasfilename(
+            parent=root, title='Save GHOST design as .tgui',
+            defaultextension='.tgui',
+            filetypes=[('TernOO GUI training', '*.tgui'), ('All files', '*.*')])
+        if not path: return
+        syms  = [{'id': w['id'], 'kind': w['kind'], 'label': w['label'],
+                  'gtk_class': '', 'x': w['x'], 'y': w['y'], 'depth': 0,
+                  'properties': [], 'signals': []}
+                 for w in gst['widgets'].values()]
+        edges = [{'src': e['src'], 'dst': e['dst'],
+                  'privilege': 0, 'call_style': 0, 'return_type': 1,
+                  'seg_idx': 0, 'offset': 0, 'waypoints': [], 'condition': ''}
+                 for e in gst['edges']]
+        tgui  = {
+            'tgui_version': '0.1',
+            'source_file':  os.path.basename(path),
+            'source_type':  'ghost_canvas',
+            'symbols':      syms,
+            'edges':        edges,
+            'sequence':     [w['id'] for w in gst['widgets'].values()],
+            'tgui_meta': {
+                'widget_count':    len(syms),
+                'edge_count':      len(edges),
+                'mmoe_types_used': list({w['kind'] for w in gst['widgets'].values()}),
+            },
+        }
+        with open(path, 'w') as _sf:
+            json.dump(tgui, _sf, indent=2)
+        gc_set_status(f"Saved: {os.path.basename(path)}")
+
+    for _lbl, _cmd, _fg in [
+        ('⬡ Connect', gc_do_connect, '#7aff7a'),
+        ('✕ Delete',  gc_do_delete,  '#ff8888'),
+        ('💡 Suggest', gc_do_suggest, '#ffcc44'),
+        ('🗑 Clear',  gc_do_clear,   '#ff8888'),
+        ('💾 Save',   gc_do_save,    '#7ab4ff'),
+    ]:
+        tk.Button(gc_pal, text=_lbl, command=_cmd,
+                  bg=C['pal_btn'], fg=_fg,
+                  font=('Monospace', 8), relief='flat', bd=0,
+                  padx=4, pady=3, cursor='hand2', anchor='w'
+                  ).pack(fill='x', padx=4, pady=1)
+
+    tk.Label(gc_pal, text="GHOST Canvas\nv0.1",
+             bg=C['palette'], fg=C['dim'],
+             font=('Monospace', 7), pady=4
+             ).pack(side='bottom', fill='x')
+
+    # ── Drawing ───────────────────────────────────────────────────────────────
+    def gc_draw_grid():
+        w = gc.winfo_width() or 860; h = gc.winfo_height() or 660
+        for x in range(0, w, GRID): gc.create_line(x, 0, x, h, fill=C['grid'])
+        for y in range(0, h, GRID): gc.create_line(0, y, w, y, fill=C['grid'])
+
+    def gc_draw_widget(w):
+        sel  = (w['id'] == gst['selected'])
+        col  = _gc_color.get(w['kind'], C['pal_btn'])
+        bor  = C['selected'] if sel else C['pal_border']
+        lw   = 3 if sel else 1
+        x, y = w['x'], w['y']
+        hw, hh = GW // 2, GH // 2
+        gc.create_rectangle(x - hw, y - hh, x + hw, y + hh,
+                             fill=col, outline=bor, width=lw)
+        badge = w['kind'].replace('gui_', '')
+        gc.create_text(x, y - 7, text=badge,
+                       fill=C['text'], font=('Monospace', 8, 'bold'))
+        lbl = w.get('label', '')
+        if lbl and lbl != badge:
+            gc.create_text(x, y + 9, text=lbl[:20],
+                           fill=C['dim'], font=('Monospace', 7))
+        if sel:
+            gc.create_text(x, y + hh + 11, text=f"#{w['id']} ({x},{y})",
+                           fill=C['selected'], font=('Monospace', 7))
+        # Show edge-src indicator
+        if gst['mode'] == 'edge_dst' and gst['edge_src'] == w['id']:
+            gc.create_rectangle(x - hw - 3, y - hh - 3, x + hw + 3, y + hh + 3,
+                                 outline=C['waypoint'], width=2, dash=(4, 3))
+
+    def gc_draw_edge(e):
+        src = gst['widgets'].get(e['src']); dst = gst['widgets'].get(e['dst'])
+        if not src or not dst: return
+        x1, y1 = src['x'], src['y'] + GH // 2
+        x2, y2 = dst['x'], dst['y'] - GH // 2
+        # If same row, draw a horizontal arc
+        if abs(y1 - dst['y']) < GH:
+            mx = (x1 + x2) // 2; my = y1 + 30
+            gc.create_line(x1, y1, mx, my, x2, y2,
+                           fill=C['edge'], width=2,
+                           arrow='last', arrowshape=(12, 16, 5), smooth=True)
+        else:
+            gc.create_line(x1, y1, x2, y2,
+                           fill=C['edge'], width=2,
+                           arrow='last', arrowshape=(12, 16, 5))
+
+    def gc_redraw():
+        gc.delete('all'); gc_draw_grid()
+        for e in gst['edges']:      gc_draw_edge(e)
+        for w in gst['widgets'].values(): gc_draw_widget(w)
+
+    def gc_widget_at(x, y):
+        hw, hh = GW // 2, GH // 2
+        for w in reversed(list(gst['widgets'].values())):
+            if abs(w['x'] - x) <= hw and abs(w['y'] - y) <= hh:
+                return w
+        return None
+
+    # ── Events ────────────────────────────────────────────────────────────────
+    def gc_on_click(event):
+        x, y = event.x, event.y
+        mode = gst['mode']
+
+        if mode == 'place':
+            nid = gst['next_id']; gst['next_id'] += 1
+            sx, sy = snap(x), snap(y)
+            kind = gst['place_kind']
+            gst['widgets'][nid] = {'id': nid, 'kind': kind,
+                                    'x': sx, 'y': sy,
+                                    'label': kind.replace('gui_', '')}
+            gst['selected'] = nid
+            gc_set_status(f"Placed {kind} — click to place another, Esc to stop")
+            gc_redraw(); return
+
+        if mode == 'delete':
+            hit = gc_widget_at(x, y)
+            if hit:
+                gst['widgets'].pop(hit['id'])
+                gst['edges'] = [e for e in gst['edges']
+                                 if e['src'] != hit['id'] and e['dst'] != hit['id']]
+                if gst['selected'] == hit['id']: gst['selected'] = None
+                gc_set_status(f"Deleted {hit['kind']} #{hit['id']}")
+            gc_redraw(); return
+
+        if mode == 'edge_src':
+            hit = gc_widget_at(x, y)
+            if hit:
+                gst['edge_src'] = hit['id']; gst['mode'] = 'edge_dst'
+                gc_set_status(f"From  {hit['kind']} — now click the child widget")
+            gc_redraw(); return
+
+        if mode == 'edge_dst':
+            hit = gc_widget_at(x, y)
+            if hit and hit['id'] != gst['edge_src']:
+                gst['edges'].append({'src': gst['edge_src'], 'dst': hit['id']})
+                src_w = gst['widgets'].get(gst['edge_src'])
+                gc_set_status(f"Connected  {src_w['kind'] if src_w else '?'}  →  {hit['kind']}")
+                gst['edge_src'] = None; gc_set_mode('select')
+            elif hit and hit['id'] == gst['edge_src']:
+                gc_set_status("Can't connect to self")
+            gc_redraw(); return
+
+        # Select / drag
+        hit = gc_widget_at(x, y)
+        if hit:
+            gst['selected'] = hit['id']; gst['dragging'] = True
+            gst['drag_offset'] = (x - hit['x'], y - hit['y'])
+            gc_set_status(f"Selected  {hit['kind']}  #{hit['id']}")
+        else:
+            gst['selected'] = None; gst['dragging'] = False
+        gc_redraw()
+
+    def gc_on_motion(event):
+        if gst['dragging'] and gst['selected'] is not None:
+            w = gst['widgets'].get(gst['selected'])
+            if w:
+                dx, dy = gst['drag_offset']
+                w['x'] = snap(event.x - dx); w['y'] = snap(event.y - dy)
+            gc_redraw()
+
+    def gc_on_release(event):
+        gst['dragging'] = False
+
+    def gc_on_key(event):
+        k = event.keysym.lower()
+        if k == 'escape':        gc_set_mode('select')
+        elif k == 'e':           gc_set_mode('edge_src')
+        elif k == 'delete':
+            sel = gst['selected']
+            if sel is not None and sel in gst['widgets']:
+                w = gst['widgets'].pop(sel)
+                gst['edges'] = [e for e in gst['edges']
+                                 if e['src'] != sel and e['dst'] != sel]
+                gst['selected'] = None
+                gc_set_status(f"Deleted {w['kind']} #{w['id']}")
+                gc_redraw()
+
+    gc.bind('<Button-1>',      gc_on_click)
+    gc.bind('<B1-Motion>',     gc_on_motion)
+    gc.bind('<ButtonRelease-1>', gc_on_release)
+    gc.bind('<Enter>',         lambda e: gc.focus_set())
+    gc.bind('<Key>',           gc_on_key)
+
+    def _on_tab_change(event):
+        idx = notebook.index('current')
+        if idx == 1: gc_redraw()
+        else: redraw()
+    notebook.bind('<<NotebookTabChanged>>', _on_tab_change)
+
+    root.after(200, gc_redraw)
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # End GHOST Canvas
+    # ═══════════════════════════════════════════════════════════════════════════
 
     tk_canvas.bind('<Button-1>',on_click)
     tk_canvas.bind('<B1-Motion>',on_motion)
