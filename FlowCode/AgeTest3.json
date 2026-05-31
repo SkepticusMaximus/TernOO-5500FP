@@ -71,7 +71,18 @@
       "kind": "process",
       "x": 240,
       "y": 400,
-      "label": "COMPARE 18",
+      "label": "COMPARE 14 18",
+      "code_seg": 0,
+      "data_seg": 0,
+      "offset": 0,
+      "default_output": ""
+    },
+    {
+      "id": 8,
+      "kind": "io",
+      "x": 720,
+      "y": 560,
+      "label": "ADULT SUPERVISION",
       "code_seg": 0,
       "data_seg": 0,
       "offset": 0,
@@ -148,6 +159,28 @@
     {
       "src": 7,
       "dst": 2,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 2,
+      "dst": 8,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 8,
+      "dst": 5,
       "privilege": 0,
       "call_style": 0,
       "return_type": 1,

@@ -515,6 +515,20 @@ class TernOOInterpreter:
                                    f"'{node.label}' stack='{val}' → "
                                    f"'{lnk.condition}' (label match){RESET}")
                         return lnk
+        # Full ternary dispatch — 3 outgoing edges map to all three trits
+        # Edge 0 = positive (+1), Edge 1 = negative (-1), Edge 2 = zero (0)
+        if len(outgoing) == 3 and self.eval_stack:
+            val = self.eval_stack[-1]
+            if val > 0:
+                idx = 0; branch = "POSITIVE (+1)"
+            elif val < 0:
+                idx = 1; branch = "NEGATIVE (−1)"
+            else:
+                idx = 2; branch = "ZERO (0)"
+            self._emit(f"{indent}  {YELLOW}◈ Decision '{node.label}' "
+                       f"stack={val} → {branch}{RESET}")
+            return outgoing[idx]
+
         if len(outgoing) == 2 and self.eval_stack:
             val = self.eval_stack[-1]
             # Edge 0 = True/positive, Edge 1 = False/negative
@@ -628,7 +642,14 @@ class TernOOInterpreter:
     def _io_prompt_write(self, node, indent):
         self._emit(f"{indent}  {GREEN}[prompt-write] '{node.label}'{RESET}")
         value = self.eval_stack.pop() if self.eval_stack else None
-        msg = str(value) if value is not None else f"[{node.label}]"
+        # If the stack held a raw ternary trit (-1/0/+1), show a human message
+        # rather than the raw integer.  A preceding numeric value (e.g. the age
+        # entered by the user) is displayed as-is.
+        _TRIT_MSG = {-1: 'Access denied', 0: 'Adult Supervision Required', 1: 'Access granted'}
+        if isinstance(value, int) and value in _TRIT_MSG:
+            msg = _TRIT_MSG[value]
+        else:
+            msg = str(value) if value is not None else f"[{node.label}]"
         try:
             import tkinter as tk
             from tkinter import messagebox
@@ -669,31 +690,43 @@ class TernOOInterpreter:
         label = node.label.upper().replace('_',' ')
         words = label.split()
 
-        # Extract numeric threshold
-        threshold = None
+        # Extract numeric thresholds (up to two — supports range compare)
+        thresholds = []
         for w in words:
             try:
-                threshold = int(w.strip('>=<≥≤!:'))
-                break
+                thresholds.append(int(w.strip('>=<≥≤!:')))
             except ValueError:
                 pass
+        threshold  = thresholds[0] if thresholds else None
+        threshold2 = thresholds[1] if len(thresholds) > 1 else None
 
         # Comparison → push ternary trit
+        # Two-threshold form (e.g. COMPARE 14 18):
+        #   val <  lo  → -1
+        #   lo ≤ val < hi → 0
+        #   val ≥  hi  → +1
+        # Single-threshold form (e.g. COMPARE 18):
+        #   val < ref → -1 | val == ref → 0 | val > ref → +1
         cmp_hints = {'COMPARE','CHECK','CMP','ASSERT','VERIFY','VALIDATE','EVAL'}
         if any(w in cmp_hints for w in words):
             val = self.eval_stack[-1] if self.eval_stack else 0
-            ref = threshold if threshold is not None else 0
-            if any(k in words for k in ('GTE','>=','OVER','ABOVE','OLDER','ADULT')):
-                trit = +1 if val >= ref else -1
-            elif any(k in words for k in ('LTE','<=','UNDER','BELOW','YOUNGER')):
-                trit = +1 if val <= ref else -1
-            elif any(k in words for k in ('GT','>','GREATER')):
-                trit = +1 if val > ref else -1
-            elif any(k in words for k in ('LT','<','LESS')):
-                trit = +1 if val < ref else -1
+            if threshold2 is not None:
+                lo, hi = threshold, threshold2
+                trit = -1 if val < lo else (0 if val < hi else +1)
+                self._emit(f"{indent}  {GREEN}[compare] {val} in [{lo},{hi}) → trit={trit:+d}{RESET}")
             else:
-                trit = +1 if val > ref else (0 if val == ref else -1)
-            self._emit(f"{indent}  {GREEN}[compare] {val} vs {ref} → trit={trit:+d}{RESET}")
+                ref = threshold if threshold is not None else 0
+                if any(k in words for k in ('GTE','>=','OVER','ABOVE','OLDER','ADULT')):
+                    trit = +1 if val >= ref else -1
+                elif any(k in words for k in ('LTE','<=','UNDER','BELOW','YOUNGER')):
+                    trit = +1 if val <= ref else -1
+                elif any(k in words for k in ('GT','>','GREATER')):
+                    trit = +1 if val > ref else -1
+                elif any(k in words for k in ('LT','<','LESS')):
+                    trit = +1 if val < ref else -1
+                else:
+                    trit = +1 if val > ref else (0 if val == ref else -1)
+                self._emit(f"{indent}  {GREEN}[compare] {val} vs {ref} → trit={trit:+d}{RESET}")
             if self.eval_stack: self.eval_stack.pop()
             return trit
 
