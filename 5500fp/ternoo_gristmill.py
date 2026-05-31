@@ -138,11 +138,18 @@ class MMID:
         y = y_lo + (instance_hash(self.mmoe_type, self.instance) %
                     max(1, y_hi - y_lo))
         z = z_lo + (self.instance % max(1, z_hi - z_lo))
+        # Cache raw coordinates for distance_to() — decoding the MAP word
+        # back to Y/Z requires re-applying sign bits which decode_map_word
+        # does not do, so we keep the originals here.
+        self._y = y
+        self._z = z
+        # Payload: upper 9 trits = abs(Y), lower 9 trits = abs(Z).
+        # Multiplier is 3^9 = 19683, not 3^6 = 729.
         self._word = build_map_word(
             0,
             1 if y >= 0 else -1,
             1 if z >= 0 else -1,
-            abs(y) * 729 + abs(z)
+            abs(y) * 19683 + abs(z)
         )
 
     @property
@@ -153,17 +160,15 @@ class MMID:
         """
         Geometric distance between two MMIDs in octree space.
         Structurally similar objects are close. Dissimilar objects are distant.
+        Uses cached _y/_z rather than decoding the MAP word — decode_map_word
+        returns raw trit-field values without re-applying the qualifier sign
+        bits, so reconstructed coordinates would be unsigned and wrong.
         """
-        d1 = decode_map_word(self._word)
-        d2 = decode_map_word(other._word)
-        y1 = d1.get('Y', 0); z1 = d1.get('Z', 0)
-        y2 = d2.get('Y', 0); z2 = d2.get('Z', 0)
-        return math.sqrt((y1-y2)**2 + (z1-z2)**2)
+        return math.sqrt((self._y - other._y)**2 + (self._z - other._z)**2)
 
     def __repr__(self):
-        d = decode_map_word(self._word)
         return (f"MMID({self.mmoe_type}#{self.instance} "
-                f"Y={d.get('Y',0)} Z={d.get('Z',0)} "
+                f"Y={self._y} Z={self._z} "
                 f"word={self._word})")
 
 
