@@ -148,12 +148,14 @@ def extract_widget_atom(gtk_class_name: str, Gtk, GObject) -> dict:
     except Exception:
         pass
 
-    # MMOE type
+    # MMOE type — try bare name first, then with Gtk prefix, then parent
     mmoe_type = widget_class_to_mmoe(gtk_class_name)
     if mmoe_type == 'gui_unknown':
-        # Infer from parent if possible
-        if parent_name:
-            mmoe_type = widget_class_to_mmoe(parent_name)
+        mmoe_type = widget_class_to_mmoe('Gtk' + gtk_class_name)
+    if mmoe_type == 'gui_unknown' and parent_name:
+        mmoe_type = widget_class_to_mmoe(parent_name)
+    if mmoe_type == 'gui_unknown' and parent_name:
+        mmoe_type = widget_class_to_mmoe('Gtk' + parent_name)
 
     # Compute MMID for this atom
     mmid = MMID(mmoe_type, instance=hash(gtk_class_name) & 0xFFFF)
@@ -340,27 +342,60 @@ def extract_library(output_dir: str = None) -> dict:
 
 # ── GHOST GUI brain training ──────────────────────────────────────────────────
 
+def _markov_train(weights: dict, tgui: dict, rate: int = 1):
+    """
+    Train an open-vocabulary Markov weight dict on one .tgui canvas.
+    weights: { src_kind: { dst_kind: count } }
+    Uses the BFS sequence + edges to observe transitions.
+    """
+    symbols  = {s['id']: s for s in tgui.get('symbols', [])}
+    edges    = tgui.get('edges', [])
+    sequence = tgui.get('sequence', [])
+
+    # Edge-based transitions
+    for e in edges:
+        src = symbols.get(e['src'])
+        dst = symbols.get(e['dst'])
+        if src and dst:
+            sk = src.get('kind', 'gui_unknown')
+            dk = dst.get('kind', 'gui_unknown')
+            weights.setdefault(sk, {})
+            weights[sk][dk] = weights[sk].get(dk, 0) + rate
+
+    # Sequential transitions from BFS order (captures sibling patterns)
+    for i in range(len(sequence) - 1):
+        src = symbols.get(sequence[i])
+        dst = symbols.get(sequence[i + 1])
+        if src and dst:
+            sk = src.get('kind', 'gui_unknown')
+            dk = dst.get('kind', 'gui_unknown')
+            weights.setdefault(sk, {})
+            weights[sk][dk] = weights[sk].get(dk, 0) + rate
+
+
 def train_ghost_gui_brain(corpus_path: str = None, library_dir: str = None):
     """
     Train the GUI hemisphere brain (ghost_gui_brain.json) on the atomic
     widget corpus. Completely separate from flowcode_brain.json.
 
-    Stage 1: individual atoms (vocabulary)
+    Uses an open-vocabulary Markov weight dict — any MMOE type can appear,
+    not restricted to FlowCodeBrain's fixed 5-type vocabulary.
+
+    Format: { "gui_button": { "gui_label": 3, "gui_box": 2 }, ... }
+
+    Stage 1: individual atoms (vocabulary — each widget's self-description)
     Stage 2: combined corpus with successor edges (grammar seeds)
     """
-    from ternoo_neural import FlowCodeBrain
-
     brain_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
         'ghost_gui_brain.json')
 
-    brain = FlowCodeBrain()
-
     # Load existing GUI brain if present (never touches flowcode_brain.json)
+    weights = {}
     if os.path.exists(brain_path):
         with open(brain_path) as f:
             data = json.load(f)
-        brain.weights = data.get('weights', {})
+        weights = data.get('weights', {})
         print(f"  Loaded existing GUI brain: {brain_path}")
     else:
         print(f"  Creating new GUI brain: {brain_path}")
@@ -378,7 +413,7 @@ def train_ghost_gui_brain(corpus_path: str = None, library_dir: str = None):
                 path = os.path.join(library_dir, fname)
                 with open(path) as f:
                     tgui = json.load(f)
-                brain.train_on_flowcode(tgui)
+                _markov_train(weights, tgui)
                 atom_count += 1
 
     print(f"  Stage 1 complete: {atom_count} widget atoms")
@@ -387,26 +422,34 @@ def train_ghost_gui_brain(corpus_path: str = None, library_dir: str = None):
     if corpus_path and os.path.exists(corpus_path):
         with open(corpus_path) as f:
             corpus = json.load(f)
-        brain.train_on_flowcode(corpus)
+        _markov_train(weights, corpus, rate=2)   # corpus edges weighted higher
         print(f"  Stage 2 complete: corpus grammar")
 
-    # Save — to ghost_gui_brain.json, never flowcode_brain.json
-    brain.save(brain_path)
+    # Save — ghost_gui_brain.json only, flowcode_brain.json untouched
+    brain_data = {
+        'brain_type': 'ghost_gui',
+        'hemisphere': 'structural',
+        'vocab_size': len(weights),
+        'weights': weights,
+    }
+    with open(brain_path, 'w') as f:
+        json.dump(brain_data, f, indent=2)
     print(f"\n  GUI brain saved: {brain_path}")
+    print(f"  Vocabulary: {len(weights)} MMOE types")
     print(f"  flowcode_brain.json untouched ✓")
 
-    # Show learned transitions
+    # Show top learned transitions
     print(f"\n  Top GUI transitions learned:")
-    print(f"  {'From':<22} → {'To':<22} {'Weight':>6}")
-    print(f"  {'-'*22}   {'-'*22} {'-'*6}")
+    print(f"  {'From':<24} → {'To':<24} {'Weight':>6}")
+    print(f"  {'-'*24}   {'-'*24} {'-'*6}")
     rows = []
-    for src, dsts in brain.weights.items():
+    for src, dsts in weights.items():
         for dst, w in dsts.items():
-            if w > 0:
+            if w > 0 and src != dst:
                 rows.append((src, dst, w))
     rows.sort(key=lambda x: -x[2])
     for src, dst, w in rows[:20]:
-        print(f"  {src:<22} → {dst:<22} {w:>6}")
+        print(f"  {src:<24} → {dst:<24} {w:>6}")
 
 
 # ── Single atom preview ───────────────────────────────────────────────────────
@@ -443,6 +486,8 @@ if __name__ == '__main__':
                 cls = getattr(Gtk, name)
                 if isinstance(cls, type) and issubclass(cls, Gtk.Widget) and cls is not Gtk.Widget:
                     mmoe = widget_class_to_mmoe(name)
+                    if mmoe == 'gui_unknown':
+                        mmoe = widget_class_to_mmoe('Gtk' + name)
                     names.append((name, mmoe))
             except Exception:
                 pass

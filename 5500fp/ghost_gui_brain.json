@@ -1,0 +1,255 @@
+{
+  "brain_type": "ghost_gui",
+  "hemisphere": "structural",
+  "vocab_size": 40,
+  "weights": {
+    "gui_dialog": {
+      "gui_dialog": 12,
+      "gui_box": 8,
+      "gui_button": 2,
+      "gui_label": 2,
+      "gui_colorpicker": 2,
+      "gui_canvas": 2,
+      "gui_unknown": 2
+    },
+    "gui_label": {
+      "gui_label": 2,
+      "gui_button": 2,
+      "gui_entry": 2,
+      "gui_actionbar": 2,
+      "gui_unknown": 2
+    },
+    "gui_unknown": {
+      "gui_unknown": 94,
+      "gui_combo": 4,
+      "gui_frame": 4,
+      "gui_box": 6,
+      "gui_check": 2,
+      "gui_dialog": 4,
+      "gui_expander": 2,
+      "gui_listbox": 2,
+      "gui_button": 6,
+      "gui_grid": 2,
+      "gui_paned": 4,
+      "gui_scale": 2,
+      "gui_separator": 4,
+      "gui_headerbar": 2,
+      "gui_label": 2,
+      "gui_progress": 2,
+      "gui_menu": 4,
+      "gui_scroll": 2,
+      "gui_entry": 2,
+      "gui_spinbutton": 2,
+      "gui_menuitem": 2,
+      "gui_toolbar": 2,
+      "gui_window": 2
+    },
+    "gui_combo": {
+      "gui_combo": 6,
+      "gui_label": 2,
+      "gui_entry": 2,
+      "gui_dialog": 2,
+      "gui_unknown": 2
+    },
+    "gui_box": {
+      "gui_box": 40,
+      "gui_button": 4,
+      "gui_label": 2,
+      "gui_entry": 2,
+      "gui_window": 4,
+      "gui_calendar": 2,
+      "gui_unknown": 12,
+      "gui_revealer": 2,
+      "gui_statusbar": 2
+    },
+    "gui_window": {
+      "gui_window": 10,
+      "gui_box": 2,
+      "gui_grid": 2,
+      "gui_headerbar": 2,
+      "gui_unknown": 8,
+      "gui_overlay": 2
+    },
+    "gui_frame": {
+      "gui_frame": 2,
+      "gui_box": 2,
+      "gui_label": 2,
+      "gui_window": 2,
+      "gui_unknown": 2
+    },
+    "gui_button": {
+      "gui_button": 16,
+      "gui_label": 2,
+      "gui_box": 4,
+      "gui_dialog": 6,
+      "gui_listbox": 2,
+      "gui_menu": 2,
+      "gui_menuitem": 2,
+      "gui_notebook": 2,
+      "gui_unknown": 2
+    },
+    "gui_menuitem": {
+      "gui_menuitem": 10,
+      "gui_button": 2,
+      "gui_box": 2,
+      "gui_unknown": 4,
+      "gui_textview": 2
+    },
+    "gui_entry": {
+      "gui_entry": 2,
+      "gui_button": 2,
+      "gui_label": 2,
+      "gui_unknown": 2,
+      "gui_separator": 2
+    },
+    "gui_listbox": {
+      "gui_listbox": 2,
+      "gui_label": 2,
+      "gui_button": 2,
+      "gui_unknown": 4
+    },
+    "gui_paned": {
+      "gui_paned": 4,
+      "gui_box": 2,
+      "gui_treeview": 2,
+      "gui_unknown": 2,
+      "gui_scroll": 2,
+      "gui_scale": 2
+    },
+    "gui_scale": {
+      "gui_scale": 4,
+      "gui_label": 2,
+      "gui_unknown": 4,
+      "gui_button": 2
+    },
+    "gui_separator": {
+      "gui_separator": 4,
+      "gui_label": 2,
+      "gui_button": 2,
+      "gui_unknown": 2,
+      "gui_menuitem": 2,
+      "gui_scroll": 2
+    },
+    "gui_progress": {
+      "gui_progress": 2,
+      "gui_label": 2,
+      "gui_button": 4,
+      "gui_radio": 2
+    },
+    "gui_menu": {
+      "gui_menu": 4,
+      "gui_menuitem": 2,
+      "gui_menubar": 2,
+      "gui_progress": 2,
+      "gui_box": 2
+    },
+    "gui_scroll": {
+      "gui_scroll": 4,
+      "gui_textview": 2,
+      "gui_treeview": 2,
+      "gui_box": 2,
+      "gui_window": 2,
+      "gui_unknown": 4
+    },
+    "gui_toggle": {
+      "gui_toggle": 2,
+      "gui_label": 2,
+      "gui_unknown": 4
+    },
+    "gui_actionbar": {
+      "gui_button": 2,
+      "gui_unknown": 2
+    },
+    "gui_calendar": {
+      "gui_button": 2,
+      "gui_unknown": 2
+    },
+    "gui_check": {
+      "gui_label": 2,
+      "gui_menuitem": 2
+    },
+    "gui_colorpicker": {
+      "gui_button": 2,
+      "gui_box": 2
+    },
+    "gui_expander": {
+      "gui_box": 2,
+      "gui_label": 2,
+      "gui_button": 2
+    },
+    "gui_grid": {
+      "gui_button": 2,
+      "gui_label": 2,
+      "gui_entry": 2,
+      "gui_box": 2
+    },
+    "gui_headerbar": {
+      "gui_button": 2,
+      "gui_label": 2,
+      "gui_iconview": 2
+    },
+    "gui_iconview": {
+      "gui_label": 2,
+      "gui_image": 2
+    },
+    "gui_image": {
+      "gui_label": 2,
+      "gui_menuitem": 2
+    },
+    "gui_menubar": {
+      "gui_menu": 2,
+      "gui_menuitem": 2,
+      "gui_button": 2
+    },
+    "gui_notebook": {
+      "gui_box": 2,
+      "gui_label": 2,
+      "gui_window": 2
+    },
+    "gui_overlay": {
+      "gui_box": 2,
+      "gui_button": 2,
+      "gui_paned": 2
+    },
+    "gui_radio": {
+      "gui_label": 2,
+      "gui_radio": 2,
+      "gui_unknown": 2
+    },
+    "gui_revealer": {
+      "gui_box": 2,
+      "gui_scale": 2
+    },
+    "gui_spinbutton": {
+      "gui_label": 2,
+      "gui_spinner": 2
+    },
+    "gui_spinner": {
+      "gui_label": 2,
+      "gui_stack": 2
+    },
+    "gui_stack": {
+      "gui_box": 2,
+      "gui_unknown": 2
+    },
+    "gui_textview": {
+      "gui_button": 2,
+      "gui_label": 2,
+      "gui_toggle": 2
+    },
+    "gui_toolbar": {
+      "gui_button": 2,
+      "gui_treeview": 2
+    },
+    "gui_treeview": {
+      "gui_label": 2,
+      "gui_box": 2
+    },
+    "gui_canvas": {
+      "gui_entry": 2
+    },
+    "gui_statusbar": {
+      "gui_toggle": 2
+    }
+  }
+}
