@@ -643,12 +643,7 @@ def run_gui():
                   foreground=[('selected', C['pal_border'])])
 
     notebook = ttk.Notebook(right_outer)
-    notebook.pack(side='top',fill='both',expand=True)
-
-    status = tk.Label(right_outer,text="Ready",anchor='w',
-                      bg=C['status'],fg=C['pal_border'],
-                      font=('Monospace',9),padx=8)
-    status.pack(side='bottom',fill='x',ipady=3)
+    notebook.pack(fill='both',expand=True)
 
     # ── Tab 1: FlowCode ───────────────────────────────────────────────────────
     fc_tab = tk.Frame(notebook,bg=C['bg'])
@@ -661,6 +656,10 @@ def run_gui():
                        font=('Monospace',9),anchor='nw',justify='left',
                        padx=8,pady=4,height=6)
     inspect.pack(side='top',fill='x')
+    status = tk.Label(fc_tab,text="Ready",anchor='w',
+                      bg=C['status'],fg=C['pal_border'],
+                      font=('Monospace',9),padx=8)
+    status.pack(side='bottom',fill='x',ipady=3)
 
     # ── Tab 2: GHOST Canvas (built below after FlowCode palette) ─────────────
     ghost_tab = tk.Frame(notebook,bg=C['bg'])
@@ -1719,22 +1718,312 @@ def run_gui():
         lw   = 3 if sel else 1
         x, y = w['x'], w['y']
         hw, hh = GW // 2, GH // 2
-        gc.create_rectangle(x - hw, y - hh, x + hw, y + hh,
-                             fill=col, outline=bor, width=lw)
-        badge = w['kind'].replace('gui_', '')
-        gc.create_text(x, y - 7, text=badge,
-                       fill=C['text'], font=('Monospace', 8, 'bold'))
-        lbl = w.get('label', '')
-        if lbl and lbl != badge:
-            gc.create_text(x, y + 9, text=lbl[:20],
-                           fill=C['dim'], font=('Monospace', 7))
-        if sel:
-            gc.create_text(x, y + hh + 11, text=f"#{w['id']} ({x},{y})",
-                           fill=C['selected'], font=('Monospace', 7))
-        # Show edge-src indicator
+        L, R, T, B = x - hw, x + hw, y - hh, y + hh
+        kind = w['kind']
+        txt  = C['text']; dim = C['dim']
+
+        # ── kind-specific widget renderers ────────────────────────────────────
+
+        if kind in ('gui_window', 'gui_applicationwindow', 'gui_offscreenwindow',
+                    'gui_plug', 'gui_socket', 'gui_shortcutswindow'):
+            gc.create_rectangle(L, T, R, B, fill='#0a1828', outline=bor, width=lw)
+            gc.create_rectangle(L, T, R, T+14, fill='#0d2040', outline=bor, width=1)
+            gc.create_text(x, T+7, text=w.get('label','Window')[:18],
+                           fill=txt, font=('Monospace',7,'bold'))
+            for i,(fc) in enumerate(['#cc4444','#ccaa00','#44aa44']):
+                gc.create_oval(R-10-i*13,T+3,R-4-i*13,T+9, fill=fc, outline='')
+            gc.create_rectangle(L+4,T+18,R-4,B-4, fill='#07101e', outline=dim, width=1, dash=(3,3))
+
+        elif kind in ('gui_dialog','gui_messagedialog','gui_aboutdialog','gui_assistant'):
+            gc.create_rectangle(L, T, R, B, fill='#1a1008', outline=bor, width=lw)
+            gc.create_rectangle(L, T, R, T+13, fill='#2a1a0a', outline=bor, width=1)
+            gc.create_text(x, T+6, text=w.get('label','Dialog')[:18],
+                           fill=txt, font=('Monospace',7,'bold'))
+            gc.create_oval(R-8,T+3,R-3,T+9, fill='#cc4444', outline='')
+            bw = 28
+            gc.create_rectangle(R-bw-4,B-14,R-4,B-4, fill='#0f3060', outline=dim, width=1)
+            gc.create_text(R-bw//2-4,B-9, text='OK', fill=txt, font=('Monospace',7))
+            gc.create_rectangle(R-bw*2-8,B-14,R-bw-8,B-4, fill='#3a1010', outline=dim, width=1)
+            gc.create_text(R-bw*3//2-8,B-9, text='Cancel', fill=txt, font=('Monospace',7))
+
+        elif kind == 'gui_button':
+            gc.create_rectangle(L+2,T+6,R-2,B-6, fill='#1a4a7a', outline=dim, width=1)
+            gc.create_rectangle(L+2,T+6,R-2,T+10, fill='#2a5a8a', outline='')
+            gc.create_rectangle(L+2,B-10,R-2,B-6, fill='#0d2a4a', outline='')
+            gc.create_text(x, y, text=w.get('label','Button')[:14],
+                           fill=txt, font=('Monospace',8,'bold'))
+
+        elif kind in ('gui_toggle','gui_link','gui_menubutton'):
+            gc.create_rectangle(L+2,T+6,R-2,B-6, fill='#2a1a5a', outline=dim, width=1)
+            gc.create_text(x, y, text=w.get('label',kind.replace('gui_',''))[:14],
+                           fill='#aaffcc', font=('Monospace',8))
+
+        elif kind == 'gui_check':
+            cx = L+10
+            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
+            gc.create_rectangle(cx-7,y-7,cx+7,y+7, fill='#070d1a', outline=dim, width=1)
+            gc.create_line(cx-4,y,cx,y+5,cx+6,y-5, fill='#44cc44', width=2)
+            gc.create_text(cx+16+(hw//2),y, text=w.get('label','Check')[:10],
+                           fill=txt, font=('Monospace',8))
+
+        elif kind == 'gui_radio':
+            cx = L+10
+            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
+            gc.create_oval(cx-7,y-7,cx+7,y+7, fill='#070d1a', outline=dim, width=1)
+            gc.create_oval(cx-3,y-3,cx+3,y+3, fill='#4a9eff', outline='')
+            gc.create_text(cx+16+(hw//2),y, text=w.get('label','Radio')[:10],
+                           fill=txt, font=('Monospace',8))
+
+        elif kind == 'gui_switch':
+            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
+            pw,ph = 40,18
+            ox,oy = x-4, y
+            gc.create_oval(ox-pw//2,oy-ph//2,ox-pw//2+ph,oy+ph//2, fill='#1a6b3a',outline=dim)
+            gc.create_rectangle(ox-pw//2+ph//2,oy-ph//2,ox+pw//2-ph//2,oy+ph//2, fill='#1a6b3a',outline=dim)
+            gc.create_oval(ox+pw//2-ph,oy-ph//2,ox+pw//2,oy+ph//2, fill='#1a6b3a',outline=dim)
+            gc.create_oval(ox+pw//2-ph+2,oy-ph//2+2,ox+pw//2-2,oy+ph//2-2, fill='#e0e0e0',outline='')
+            gc.create_text(ox+pw//2+14,oy, text='ON', fill='#44cc44', font=('Monospace',7,'bold'))
+
+        elif kind == 'gui_entry':
+            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
+            gc.create_rectangle(L+4,T+10,R-4,B-10, fill='#050a12', outline=dim, width=1)
+            gc.create_line(L+10,y,L+50,y, fill='#2a3050', width=1)
+            gc.create_line(L+10,T+13,L+10,B-13, fill=C['pal_border'], width=1)
+
+        elif kind == 'gui_searchentry':
+            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
+            gc.create_rectangle(L+4,T+10,R-4,B-10, fill='#050a12', outline=dim, width=1)
+            gc.create_oval(L+8,T+13,L+16,B-13, outline=dim, width=1)
+            gc.create_line(L+15,B-14,L+19,B-10, fill=dim, width=1)
+            gc.create_line(L+22,y,L+55,y, fill='#2a3050', width=1)
+
+        elif kind == 'gui_textview':
+            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
+            gc.create_rectangle(L+3,T+4,R-3,B-4, fill='#050a12', outline=dim, width=1)
+            for i in range(3):
+                yl = T+12+i*10
+                gc.create_line(L+7,yl, R-7-(i*9)%18,yl, fill='#2a3050', width=1)
+
+        elif kind == 'gui_label':
+            gc.create_rectangle(L,T,R,B, fill=col, outline='', width=0)
+            gc.create_text(x, y, text=w.get('label','Label')[:20],
+                           fill=txt, font=('Monospace',9))
+
+        elif kind == 'gui_image':
+            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
+            inn = 8
+            gc.create_rectangle(L+inn,T+inn,R-inn,B-inn, fill='#0a1220', outline=dim, width=1)
+            mx,my = x, B-inn-4
+            gc.create_polygon(mx-14,my,mx,T+inn+6,mx+14,my, fill=dim, outline='')
+            gc.create_polygon(mx+4,my,mx+18,T+inn+12,mx+28,my, fill='#1a2a3a', outline='')
+            gc.create_oval(L+inn+4,T+inn+4,L+inn+12,T+inn+12, fill='#ccaa00', outline='')
+
+        elif kind == 'gui_progress':
+            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
+            gc.create_rectangle(L+6,y-7,R-6,y+7, fill='#050a12', outline=dim, width=1)
+            gc.create_rectangle(L+6,y-7,L+6+(R-L-12)//2,y+7, fill='#1a6b3a', outline='')
+            gc.create_text(x, y, text='50%', fill=txt, font=('Monospace',7))
+
+        elif kind == 'gui_level':
+            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
+            seg_w = (R-L-10)//5
+            for i in range(5):
+                sx2 = L+5+i*seg_w
+                fc2 = '#1a6b3a' if i<3 else '#ccaa00' if i<4 else '#cc3333'
+                gc.create_rectangle(sx2+1,y-6,sx2+seg_w-1,y+6, fill=fc2, outline='')
+
+        elif kind == 'gui_scale':
+            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
+            gc.create_line(L+10,y,R-10,y, fill=dim, width=3)
+            tx = x-10
+            gc.create_oval(tx-7,y-7,tx+7,y+7, fill='#1a5a8a', outline=C['pal_border'], width=1)
+
+        elif kind in ('gui_box','gui_grid','gui_canvas'):
+            gc.create_rectangle(L,T,R,B, fill='#06090f', outline=bor, width=lw, dash=(5,3))
+            badge2 = kind.replace('gui_','')
+            gc.create_text(x,T+9, text=f'‹ {badge2} ›', fill=dim, font=('Monospace',7,'italic'))
+            if kind in ('gui_box','gui_grid'):
+                for i in range(1,3):
+                    gx = L+(R-L)*i//3
+                    gc.create_line(gx,T+16,gx,B-4, fill=dim, width=1, dash=(2,4))
+
+        elif kind in ('gui_frame','gui_bin','gui_alignment','gui_aspectframe',
+                      'gui_handlebox','gui_eventbox'):
+            gc.create_rectangle(L,T,R,B, fill='#060b10', outline=dim, width=1)
+            gc.create_rectangle(L,T,R,B, fill='', outline=bor, width=lw, dash=(4,3))
+            gc.create_text(L+10,T+1, text=w.get('label','frame')[:12],
+                           fill=dim, font=('Monospace',7), bg='#060b10')
+
+        elif kind == 'gui_notebook':
+            gc.create_rectangle(L,T,R,B, fill='#06090f', outline=bor, width=lw)
+            for i,tab_lbl in enumerate(['Tab 1','Tab 2']):
+                tx0=L+i*48+2; tx1=tx0+46; ty0=T; ty1=T+14
+                gc.create_rectangle(tx0,ty0,tx1,ty1,
+                                     fill='#1a3a5a' if i==0 else '#0a1a2a', outline=dim, width=1)
+                gc.create_text((tx0+tx1)//2,(ty0+ty1)//2, text=tab_lbl, fill=txt, font=('Monospace',7))
+            gc.create_rectangle(L,T+13,R,B, fill='#07101e', outline=dim, width=1)
+
+        elif kind == 'gui_paned':
+            gc.create_rectangle(L,T,R,B, fill='#06090f', outline=bor, width=lw)
+            mid = y
+            gc.create_rectangle(L+3,T+3,R-3,mid-2, fill='#07101e', outline=dim, width=1, dash=(3,3))
+            gc.create_rectangle(L+3,mid+2,R-3,B-3, fill='#07101e', outline=dim, width=1, dash=(3,3))
+            gc.create_line(L+3,mid,R-3,mid, fill=dim, width=2)
+
+        elif kind == 'gui_scrolled':
+            gc.create_rectangle(L,T,R,B, fill='#06090f', outline=bor, width=lw)
+            gc.create_rectangle(R-10,T+2,R-2,B-2, fill='#0a1220', outline=dim, width=1)
+            gc.create_rectangle(R-10,T+2,R-2,T+18, fill='#1a3a5a', outline='')
+            gc.create_rectangle(L+2,T+2,R-12,B-2, fill='#07101e', outline=dim, width=1, dash=(3,3))
+
+        elif kind == 'gui_expander':
+            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
+            gc.create_text(L+9,T+10, text='▶', fill=C['pal_border'], font=('Monospace',9), anchor='w')
+            gc.create_text(L+22,T+10, text=w.get('label','Expander')[:14],
+                           fill=txt, font=('Monospace',8), anchor='w')
+            gc.create_rectangle(L+2,T+18,R-2,B-2, fill='#07101e', outline=dim, width=1, dash=(3,3))
+
+        elif kind in ('gui_revealer','gui_overlay','gui_stack'):
+            gc.create_rectangle(L,T,R,B, fill='#06090f', outline=bor, width=lw, dash=(4,2))
+            for i in range(3,0,-1):
+                off=i*3
+                gc.create_rectangle(L+off,T+off,R-off+6,B-off+6, fill='#0a1020', outline=dim, width=1)
+            gc.create_text(x+3,y+3, text=kind.replace('gui_',''), fill=dim, font=('Monospace',7,'italic'))
+
+        elif kind in ('gui_flowbox','gui_listbox'):
+            gc.create_rectangle(L,T,R,B, fill='#06090f', outline=bor, width=lw)
+            bx2,by2 = L+4,T+8
+            for i in range(6):
+                bw2=22+(i%2)*8; bh2=14
+                if bx2+bw2>R-4: bx2=L+4; by2+=bh2+2
+                gc.create_rectangle(bx2,by2,bx2+bw2,by2+bh2, fill='#0a1a30', outline=dim, width=1)
+                bx2+=bw2+2
+
+        elif kind == 'gui_headerbar':
+            gc.create_rectangle(L,T,R,B, fill='#0a1830', outline=bor, width=lw)
+            for i in range(2):
+                bx=L+11+i*20
+                gc.create_oval(bx-7,y-7,bx+7,y+7, fill='#1a3a5a', outline=dim)
+                gc.create_text(bx,y, text=['◀','▶'][i], fill=dim, font=('Monospace',8))
+            gc.create_text(x,y, text=w.get('label','Header')[:14], fill=txt, font=('Monospace',8,'bold'))
+            gc.create_rectangle(R-24,y-8,R-4,y+8, fill='#0f3060', outline=dim)
+            gc.create_text(R-14,y, text='☰', fill=txt, font=('Monospace',9))
+
+        elif kind == 'gui_menubar':
+            gc.create_rectangle(L,T,R,B, fill='#140808', outline=bor, width=lw)
+            for i,item in enumerate(['File','Edit','View','Help']):
+                gc.create_text(L+10+i*34,y, text=item, fill=txt, font=('Monospace',7), anchor='w')
+
+        elif kind in ('gui_menu','gui_popover'):
+            gc.create_rectangle(L,T,R,B, fill='#100808', outline=dim, width=lw)
+            gc.create_rectangle(L+2,T+2,R-2,B-2, fill='#0d0606', outline='')
+            for i,(itm,clr) in enumerate([('Item 1',txt),('Item 2',txt),('---',dim)]):
+                iy = T+10+i*11
+                if itm=='---': gc.create_line(L+4,iy,R-4,iy, fill=dim, width=1)
+                else: gc.create_text(L+8,iy, text=itm, fill=clr, font=('Monospace',7), anchor='w')
+
+        elif kind == 'gui_menuitem':
+            gc.create_rectangle(L,T,R,B, fill='#100808', outline=bor, width=lw)
+            gc.create_text(L+10,y, text='▶ '+w.get('label','Item')[:14],
+                           fill=txt, font=('Monospace',8), anchor='w')
+
+        elif kind in ('gui_toolbar','gui_actionbar'):
+            gc.create_rectangle(L,T,R,B, fill='#0a100a', outline=bor, width=lw)
+            for i in range(4):
+                bx=L+12+i*28
+                gc.create_rectangle(bx-9,y-9,bx+9,y+9, fill='#1a2a1a', outline=dim, width=1)
+                gc.create_text(bx,y, text=['📁','💾','✂','📋'][i], font=('Monospace',9))
+
+        elif kind == 'gui_treeview':
+            gc.create_rectangle(L,T,R,B, fill='#060c12', outline=bor, width=lw)
+            gc.create_rectangle(L,T,R,T+13, fill='#0a1a30', outline=dim, width=1)
+            gc.create_text(L+22,T+6, text='Name', fill=txt, font=('Monospace',7), anchor='w')
+            gc.create_text(R-24,T+6, text='Val', fill=txt, font=('Monospace',7), anchor='w')
+            for i in range(2):
+                ry=T+13+i*12
+                gc.create_rectangle(L,ry,R,ry+12,
+                                     fill='#070d1a' if i%2 else '#080f20', outline='')
+                gc.create_text(L+8,ry+6, text=f'▶ row {i+1}',
+                               fill=dim, font=('Monospace',7), anchor='w')
+
+        elif kind == 'gui_iconview':
+            gc.create_rectangle(L,T,R,B, fill='#060c12', outline=bor, width=lw)
+            for ix in range(3):
+                for iy in range(2):
+                    bx=L+10+ix*40; by=T+6+iy*22
+                    gc.create_rectangle(bx,by,bx+28,by+14, fill='#0a1a30', outline=dim, width=1)
+
+        elif kind == 'gui_combobox':
+            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
+            gc.create_rectangle(L+4,T+10,R-18,B-10, fill='#050a12', outline=dim, width=1)
+            gc.create_rectangle(R-18,T+10,R-4,B-10, fill='#1a3a5a', outline=dim, width=1)
+            gc.create_text(R-11,y, text='▼', fill=txt, font=('Monospace',8))
+            gc.create_line(L+10,y,L+36,y, fill='#2a3050', width=1)
+
+        elif kind == 'gui_spinbutton':
+            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
+            gc.create_rectangle(L+4,T+10,R-17,B-10, fill='#050a12', outline=dim, width=1)
+            midh=(T+B)//2
+            gc.create_rectangle(R-17,T+10,R-3,midh, fill='#0f2a0f', outline=dim, width=1)
+            gc.create_rectangle(R-17,midh,R-3,B-10, fill='#0f0a0f', outline=dim, width=1)
+            gc.create_text(R-10,T+16, text='▲', fill=txt, font=('Monospace',7))
+            gc.create_text(R-10,B-16, text='▼', fill=txt, font=('Monospace',7))
+
+        elif kind == 'gui_calendar':
+            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
+            gc.create_rectangle(L,T,R,T+13, fill='#0f2060', outline=dim, width=1)
+            gc.create_text(x,T+6, text='Jun 2026', fill=txt, font=('Monospace',7))
+            for ci in range(7):
+                for ri in range(3):
+                    day=ci+ri*7+1
+                    if day<=30:
+                        gc.create_text(L+5+ci*18,T+18+ri*10, text=str(day),
+                                       fill=dim, font=('Monospace',6))
+
+        elif kind == 'gui_separator':
+            gc.create_rectangle(L,T,R,B, fill=col, outline='', width=0)
+            gc.create_line(L+4,y,R-4,y, fill=dim, width=2)
+            gc.create_oval(x-4,y-4,x+4,y+4, fill=dim, outline='')
+
+        elif kind in ('gui_statusbar','gui_infobar'):
+            gc.create_rectangle(L,T,R,B, fill='#080d0a', outline=bor, width=lw)
+            gc.create_text(L+8,y, text='● Ready', fill='#44cc44', font=('Monospace',8), anchor='w')
+            if kind=='gui_infobar':
+                gc.create_rectangle(R-28,T+5,R-4,B-5, fill='#0f3060', outline=dim)
+                gc.create_text(R-16,y, text='✕', fill=txt, font=('Monospace',8))
+
+        elif kind == 'gui_filechooser':
+            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
+            gc.create_rectangle(L+2,T+4,R-2,T+14, fill='#050a12', outline=dim, width=1)
+            gc.create_text(L+6,T+9, text='📁 /home/', fill=dim, font=('Monospace',7), anchor='w')
+            gc.create_text(L+8,T+22, text='📄 file.txt', fill=txt, font=('Monospace',7), anchor='w')
+
+        elif kind == 'gui_colorchooser':
+            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
+            for ci,fc2 in enumerate(['#cc2222','#22cc22','#2222cc',
+                                      '#cccc22','#cc22cc','#22cccc']):
+                gci=L+6+(ci%3)*20; gri=T+6+(ci//3)*14
+                gc.create_oval(gci,gri,gci+16,gri+10, fill=fc2, outline='')
+
+        elif kind == 'gui_fontchooser':
+            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
+            gc.create_text(x,T+16, text='Aa Bb Cc', fill=txt, font=('Monospace',10))
+            gc.create_text(x,B-12, text='Serif  Sans  Mono', fill=dim, font=('Monospace',6))
+
+        else:
+            # Generic fallback for any type not listed above
+            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
+            gc.create_text(x, y, text=kind.replace('gui_','')[:14],
+                           fill=txt, font=('Monospace',8,'bold'))
+
+        # ── Selection + edge-src overlay (always on top) ──────────────────────
         if gst['mode'] == 'edge_dst' and gst['edge_src'] == w['id']:
-            gc.create_rectangle(x - hw - 3, y - hh - 3, x + hw + 3, y + hh + 3,
-                                 outline=C['waypoint'], width=2, dash=(4, 3))
+            gc.create_rectangle(L-3,T-3,R+3,B+3,
+                                 outline=C['waypoint'], width=2, dash=(4,3))
+        if sel:
+            gc.create_rectangle(L,T,R,B, outline=C['selected'], width=3)
+            gc.create_text(x, B+11, text=f"#{w['id']} ({x},{y})",
+                           fill=C['selected'], font=('Monospace',7))
 
     def gc_draw_edge(e):
         src = gst['widgets'].get(e['src']); dst = gst['widgets'].get(e['dst'])
