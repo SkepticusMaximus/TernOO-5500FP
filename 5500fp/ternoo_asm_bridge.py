@@ -50,7 +50,7 @@ EXEC_CALL_REGISTER = _mod.EXEC_CALL_REGISTER
 EXEC_RET_DATA   = _mod.EXEC_RET_DATA
 
 
-# ── Symbol kind → UDP subclass mapping ───────────────────────────────────────
+# ── Symbol kind -> UDP subclass mapping ───────────────────────────────────────
 # Added: 31 May 2026, Adelaide
 KIND_SUBCLASS = {
     'process':    (0,   0),
@@ -88,8 +88,8 @@ class AsmEmitter:
         self._indent     = '    '
 
         # Build adjacency map
-        self.outgoing = {}   # src_id → [edge]
-        self.incoming = {}   # dst_id → [edge]
+        self.outgoing = {}   # src_id -> [edge]
+        self.incoming = {}   # dst_id -> [edge]
         for e in self.edges:
             self.outgoing.setdefault(e['src'], []).append(e)
             self.incoming.setdefault(e['dst'], []).append(e)
@@ -111,10 +111,11 @@ class AsmEmitter:
         parts = [mnemonic] + list(args)
         self._emit(f"{self._indent}{' '.join(str(a) for a in parts)}")
 
-    def _word_directive(self, word: int):
-        """Emit a TernOO word as a .word directive with decode comment."""
+    def _word_directive(self, word: int, reg: str = 'R0'):
+        """Emit a TernOO word as a ld.w immediate load with decode comment."""
         d = describe_word(word)
-        self._emit(f"{self._indent}.word {word}  ; {d}")
+        self._comment(f"word: {d}")
+        self._instr(f"ld.w", reg + ",", "R0,", str(word))
 
     def emit_header(self):
         """Emit file header and metadata."""
@@ -143,7 +144,7 @@ class AsmEmitter:
         self._comment("TernOO Word Table")
         self._comment("UDP words (symbol descriptors)")
         self._comment("-"*40)
-        self._emit("word_table:")
+        self._comment("word_table — TernOO words as immediate constants")
 
         for sym in self.canvas.get('symbols', []):
             kind = sym.get('kind', 'process')
@@ -152,8 +153,7 @@ class AsmEmitter:
                                   sym.get('offset', 0),
                                   sym.get('code_seg', 0),
                                   sym.get('data_seg', 0))
-            self._comment(f"Symbol {sym['id']}: {sym.get('label','')} [{kind}]")
-            self._word_directive(udp)
+            self._comment(f"Symbol {sym['id']}: {sym.get('label','')} [{kind}] = {udp}  ({describe_word(udp)})")
 
         self._emit("")
         self._comment("EXEC words (edge descriptors)")
@@ -166,9 +166,8 @@ class AsmEmitter:
                 edge.get('offset', 0)
             )
             cond = edge.get('condition', '')
-            self._comment(f"Edge {edge['src']}→{edge['dst']}"
-                          + (f" [{cond}]" if cond else ""))
-            self._word_directive(exec_w)
+            self._comment(f"Edge {edge['src']}->{edge['dst']}"
+                          + (f" [{cond}]" if cond else "") + f" = {exec_w}  ({describe_word(exec_w)})")
 
         self._emit("")
 
@@ -197,20 +196,22 @@ class AsmEmitter:
 
         self._emit(f"{asm_lbl}:")
         self._comment(f"{kind.upper()} '{label}' — UDP: {describe_word(udp)}")
-        self._instr(f"LD.W", REG_WORD, f"#{udp}")
+        self._instr(f"ld.w", REG_WORD + ",", REG_TEMP + ",", str(udp))
 
         out_edges = self.outgoing.get(sym_id, [])
 
         if kind == 'terminator':
             if not self.incoming.get(sym_id):
                 # START — entry point
-                self._comment("START — program entry")
-                self._instr("PUSHAG")      # save all registers
+                self._comment("START — program entry, save working registers")
+                for r in ('R1','R2','R3','R4','R5'):
+                    self._instr(f"push.w", r)
             else:
                 # END — program exit
-                self._comment("END — program exit")
-                self._instr("POPAG")       # restore all registers
-                self._instr("HLT")         # halt
+                self._comment("END — program exit, restore working registers")
+                for r in reversed(['R1','R2','R3','R4','R5']):
+                    self._instr(f"pop.w", r)
+                self._instr("hlt")
                 return                     # no outgoing jump needed
 
         elif kind == 'io':
@@ -220,12 +221,12 @@ class AsmEmitter:
                        'ACCEPT','UNDER','PASS','FAIL','TELL','SAY','RESPOND'}
             if words & write_h:
                 self._comment(f"I/O prompt-write: OUT to display channel")
-                self._instr("OUT.W", REG_ACCUM, "#0")  # channel 0 = display
+                self._instr("out.w", REG_ACCUM + ",", REG_TEMP + ",", "0")
             else:
                 self._comment(f"I/O prompt-read: IN from input channel")
-                self._instr("IN.W",  REG_ACCUM, "#1")  # channel 1 = input
+                self._instr("in.w",  REG_ACCUM + ",", REG_TEMP + ",", "1")
                 self._comment("Result in REG_ACCUM — push to eval stack")
-                self._instr("PUSH.W", REG_ACCUM)
+                self._instr("push.w", REG_ACCUM)
 
         elif kind == 'process':
             self._comment("Process: execute code segment")
@@ -244,20 +245,20 @@ class AsmEmitter:
                 lbl0  = self._label(e0['dst'])
                 lbl1  = self._label(e1['dst'])
                 # Map condition labels to branch instructions
-                # Positive trit (+1) → first edge (fall through or JMP)
-                # Negative trit (-1) → second edge (JB)
-                self._instr("JB",  lbl1)   # negative → edge 1
-                self._instr("JMP", lbl0)   # positive/zero → edge 0
+                # Positive trit (+1) -> first edge (fall through or JMP)
+                # Negative trit (-1) -> second edge (JB)
+                self._instr("jeq", REG_ACCUM + ",", REG_TEMP + ",", lbl1)  # zero/neg - edge 1
+                self._instr("jmp", lbl0)   # positive -> edge 0
                 self._emit("")
                 return                     # jumps already emitted
             elif len(out_edges) == 1:
-                self._instr("JMP", self._label(out_edges[0]['dst']))
+                self._instr("jmp", self._label(out_edges[0]['dst']))
                 self._emit("")
                 return
 
         # Single outgoing edge — unconditional jump
         if len(out_edges) == 1:
-            self._instr("JMP", self._label(out_edges[0]['dst']))
+            self._instr("jmp", self._label(out_edges[0]['dst']))
         elif len(out_edges) == 0:
             pass   # terminal node — no jump needed
         self._emit("")
@@ -296,8 +297,8 @@ class AsmEmitter:
         self._emit("")
 
         # Emit entry jump
-        self._emit(".entry")
-        self._instr("JMP", self._label(ordered[0]['id']))
+        self._emit(".code")
+        self._instr("jmp", self._label(ordered[0]['id']))
         self._emit("")
 
         for sym in ordered:
@@ -330,7 +331,7 @@ def main():
     if out_path:
         with open(out_path, 'w') as f:
             f.write(asm)
-        print(f"Assembly written → {out_path}")
+        print(f"Assembly written -> {out_path}")
     else:
         print(asm)
 

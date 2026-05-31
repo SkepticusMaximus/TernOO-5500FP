@@ -16,84 +16,80 @@
 ; TernOO Word Table
 ; UDP words (symbol descriptors)
 ; ----------------------------------------
-word_table:
-; Symbol 1: START [terminator]
-    .word -48642794730  ; UDP sub=(1,1) off=0 CS+0 DS+0
-; Symbol 2: AGE TEST [decision]
-    .word -48771934893  ; UDP sub=(0,1) off=0 CS+0 DS+0
-; Symbol 3: ACCEPT AGE [io]
-    .word -48685841451  ; UDP sub=(1,0) off=0 CS+0 DS+0
-; Symbol 4: GET AGE [io]
-    .word -48685841451  ; UDP sub=(1,0) off=0 CS+0 DS+0
-; Symbol 5: END [terminator]
-    .word -48642794730  ; UDP sub=(1,1) off=0 CS+0 DS+0
-; Symbol 6: UNDER AGE [io]
-    .word -48685841451  ; UDP sub=(1,0) off=0 CS+0 DS+0
+; word_table — TernOO words as immediate constants
+; Symbol 1: START [terminator] = -48642794730  (UDP sub=(1,1) off=0 CS+0 DS+0)
+; Symbol 2: AGE TEST [decision] = -48771934893  (UDP sub=(0,1) off=0 CS+0 DS+0)
+; Symbol 3: ACCEPT AGE [io] = -48685841451  (UDP sub=(1,0) off=0 CS+0 DS+0)
+; Symbol 4: GET AGE [io] = -48685841451  (UDP sub=(1,0) off=0 CS+0 DS+0)
+; Symbol 5: END [terminator] = -48642794730  (UDP sub=(1,1) off=0 CS+0 DS+0)
+; Symbol 6: UNDER AGE [io] = -48685841451  (UDP sub=(1,0) off=0 CS+0 DS+0)
 
 ; EXEC words (edge descriptors)
-; Edge 2→3
-    .word -124878537621  ; EXEC priv=user call=register ret=DATA CS0+0 ar=0 v=0
-; Edge 3→5
-    .word -124878537621  ; EXEC priv=user call=register ret=DATA CS0+0 ar=0 v=0
-; Edge 2→6
-    .word -124878537621  ; EXEC priv=user call=register ret=DATA CS0+0 ar=0 v=0
-; Edge 1→4
-    .word -124878537621  ; EXEC priv=user call=register ret=DATA CS0+0 ar=0 v=0
-; Edge 4→2
-    .word -124878537621  ; EXEC priv=user call=register ret=DATA CS0+0 ar=0 v=0
-; Edge 6→5
-    .word -124878537621  ; EXEC priv=user call=register ret=DATA CS0+0 ar=0 v=0
+; Edge 2->3 = -124878537621  (EXEC priv=user call=register ret=DATA CS0+0 ar=0 v=0)
+; Edge 3->5 = -124878537621  (EXEC priv=user call=register ret=DATA CS0+0 ar=0 v=0)
+; Edge 2->6 = -124878537621  (EXEC priv=user call=register ret=DATA CS0+0 ar=0 v=0)
+; Edge 1->4 = -124878537621  (EXEC priv=user call=register ret=DATA CS0+0 ar=0 v=0)
+; Edge 4->2 = -124878537621  (EXEC priv=user call=register ret=DATA CS0+0 ar=0 v=0)
+; Edge 6->5 = -124878537621  (EXEC priv=user call=register ret=DATA CS0+0 ar=0 v=0)
 
 ; ----------------------------------------
 ; Program blocks
 ; ----------------------------------------
 
-.entry
-    JMP START_1
+.code
+    jmp START_1
 
 START_1:
 ; TERMINATOR 'START' — UDP: UDP sub=(1,1) off=0 CS+0 DS+0
-    LD.W R6 #-48642794730
-; START — program entry
-    PUSHAG
-    JMP GET_AGE_4
+    ld.w R6, R2, -48642794730
+; START — program entry, save working registers
+    push.w R1
+    push.w R2
+    push.w R3
+    push.w R4
+    push.w R5
+    jmp GET_AGE_4
 
 GET_AGE_4:
 ; IO 'GET AGE' — UDP: UDP sub=(1,0) off=0 CS+0 DS+0
-    LD.W R6 #-48685841451
+    ld.w R6, R2, -48685841451
 ; I/O prompt-read: IN from input channel
-    IN.W R1 #1
+    in.w R1, R2, 1
 ; Result in REG_ACCUM — push to eval stack
-    PUSH.W R1
-    JMP AGE_TEST_2
+    push.w R1
+    jmp AGE_TEST_2
 
 AGE_TEST_2:
 ; DECISION 'AGE TEST' — UDP: UDP sub=(0,1) off=0 CS+0 DS+0
-    LD.W R6 #-48771934893
+    ld.w R6, R2, -48771934893
 ; Decision: compare REG_ACCUM against zero (ternary)
 ;   JB  = branch if negative (trit = -1)
 ;   JEQ = branch if zero     (trit =  0)
 ;   >0  = fall through        (trit = +1)
-    JB UNDER_AGE_6
-    JMP ACCEPT_AGE_3
+    jeq R1, R2, UNDER_AGE_6
+    jmp ACCEPT_AGE_3
 
 ACCEPT_AGE_3:
 ; IO 'ACCEPT AGE' — UDP: UDP sub=(1,0) off=0 CS+0 DS+0
-    LD.W R6 #-48685841451
+    ld.w R6, R2, -48685841451
 ; I/O prompt-write: OUT to display channel
-    OUT.W R1 #0
-    JMP END_5
+    out.w R1, R2, 0
+    jmp END_5
 
 UNDER_AGE_6:
 ; IO 'UNDER AGE' — UDP: UDP sub=(1,0) off=0 CS+0 DS+0
-    LD.W R6 #-48685841451
+    ld.w R6, R2, -48685841451
 ; I/O prompt-write: OUT to display channel
-    OUT.W R1 #0
-    JMP END_5
+    out.w R1, R2, 0
+    jmp END_5
 
 END_5:
 ; TERMINATOR 'END' — UDP: UDP sub=(1,1) off=0 CS+0 DS+0
-    LD.W R6 #-48642794730
-; END — program exit
-    POPAG
-    HLT
+    ld.w R6, R2, -48642794730
+; END — program exit, restore working registers
+    pop.w R5
+    pop.w R4
+    pop.w R3
+    pop.w R2
+    pop.w R1
+    hlt
