@@ -422,18 +422,78 @@ class FlowCodeBrain(TernOOBrain):
               f"{len(transitions)} transitions observed")
         return transitions
 
-    def predict_next(self, current_type: str) -> str:
+    def predict_next(self, current_type: str,
+                        use_gristmill: bool = True) -> tuple:
         """
-        Given the current symbol type, predict the most likely next type.
-        Returns the token with the highest outgoing connection weight.
+        Predict the most likely next symbol type.
+        Blends two signals:
+          1. Learned weights from FlowCodeBrain (experience)
+          2. GristMill structural successors (grammar)
+        Returns (predicted_type, confidence_str)
+        Added: 31 May 2026, Adelaide
         """
         src_id = FLOWCODE_VOCAB.get(current_type, 0)
-        best_w, best_tok = -5, 'terminator'
+
+        # Signal 1: learned weights
+        learned = {}
         for (s, d), w in self._weights.items():
-            if s == src_id and w > best_w:
-                best_w = w
-                best_tok = FLOWCODE_VOCAB_INV.get(d, 'terminator')
-        return best_tok
+            if s == src_id and w > 0:
+                tok = FLOWCODE_VOCAB_INV.get(d, 'terminator')
+                learned[tok] = w
+
+        # Signal 2: GristMill structural successors
+        gristmill_boost = {}
+        if use_gristmill:
+            try:
+                import importlib.util as _ilu, os as _os
+                _gpath = _os.path.join(_os.path.dirname(
+                    _os.path.abspath(__file__)), 'ternoo_gristmill.py')
+                if _os.path.exists(_gpath):
+                    _gs = _ilu.spec_from_file_location('gristmill', _gpath)
+                    _gm = _ilu.module_from_spec(_gs)
+                    _gs.loader.exec_module(_gm)
+                    for succ in _gm.GristMill().successors(current_type):
+                        if succ in FLOWCODE_VOCAB:
+                            gristmill_boost[succ] = gristmill_boost.get(succ,0) + 1
+            except Exception:
+                pass
+
+        # Blend: learned weight + structural boost
+        scores = {}
+        all_candidates = set(list(learned.keys()) + list(gristmill_boost.keys()))
+        for tok in all_candidates:
+            scores[tok] = learned.get(tok, 0) + gristmill_boost.get(tok, 0)
+
+        if not scores:
+            return ('terminator', 'no data')
+
+        best_tok = max(scores, key=lambda t: scores[t])
+        best_score = scores[best_tok]
+        learned_w = learned.get(best_tok, 0)
+        boosted = best_tok in gristmill_boost
+
+        source = []
+        if learned_w > 0: source.append(f"learned:{learned_w}")
+        if boosted: source.append("grammar")
+        confidence = "+".join(source) if source else "default"
+
+        return (best_tok, confidence)
+
+    def predict_sequence(self, start_type: str, length: int = 5) -> list:
+        """
+        Generate a predicted symbol sequence from a starting type.
+        Uses blended learned+structural prediction at each step.
+        Added: 31 May 2026, Adelaide
+        """
+        sequence = [start_type]
+        current = start_type
+        for _ in range(length - 1):
+            nxt, _ = self.predict_next(current)
+            sequence.append(nxt)
+            current = nxt
+            if nxt == 'terminator' and len(sequence) > 1:
+                break
+        return sequence
 
     def show_weights(self):
         """Print the learned transition weight matrix."""
@@ -563,8 +623,8 @@ def demo_train_flowcode():
 
     print("\nPredictions:")
     for tok in FLOWCODE_VOCAB:
-        nxt = brain.predict_next(tok)
-        print(f"  after {tok:<14} → {nxt}")
+        nxt, conf = brain.predict_next(tok)
+        print(f"  after {tok:<14} -> {nxt:<14} ({conf})")
 
     # Save trained brain
     out_path = os.path.join(base, 'flowcode_brain.json')

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FlowCode  v0.5.2
+FlowCode  v0.5.3
 ================
 Visual programming IDE for TernOO-5500FP.
 
@@ -519,7 +519,7 @@ class FCCanvas:
 # ── Headless demo ─────────────────────────────────────────────────────────────
 
 def run_headless_demo():
-    print("="*60+"\nFlowCode v0.5.2 — Headless Demo\n"+"="*60)
+    print("="*60+"\nFlowCode v0.5.3 — Headless Demo\n"+"="*60)
     canvas=FCCanvas()
     start=canvas.add_symbol(SYMBOL_IO,200,80,"START")
     check=canvas.add_symbol(SYMBOL_DECISION,200,240,"CHECK")
@@ -568,7 +568,7 @@ def run_gui():
 
     # ── Root ─────────────────────────────────────────────────────────────────
     root = tk.Tk()
-    root.title("FlowCode v0.5.2 — TernOO-5500FP Visual IDE")
+    root.title("FlowCode v0.5.3 — TernOO-5500FP Visual IDE")
     root.configure(bg=C['bg'])
     root.resizable(True,True)
 
@@ -838,12 +838,9 @@ def run_gui():
             tok = _fst(sym.to_dict())
         except Exception:
             tok = sym.kind
-        nxt = _brain_instance.predict_next(tok)
-        confidence = _brain_instance._get_weight(
-            _brain_instance._weights and
-            list(_brain_instance._weights.keys())[0] and 0 or 0, 0)
-        set_status(f"Brain suggests: after {tok} → place {nxt.upper()}")
-        print(f"[FlowCode] Brain suggestion: {tok} → {nxt}")
+        nxt, conf = _brain_instance.predict_next(tok)
+        set_status(f"Brain suggests: after {tok} → {nxt.upper()} ({conf})")
+        print(f"[FlowCode] Brain suggestion: {tok} → {nxt} ({conf})")
 
     _action_btn("⬇ Word Dump", do_dump,   icon_key='dump')
     _action_btn("▶ Load→EMU",  do_load,   fg='#7aff7a', icon_key='load')
