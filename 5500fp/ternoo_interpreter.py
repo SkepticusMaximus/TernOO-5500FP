@@ -274,17 +274,17 @@ class TernOOInterpreter:
 
     MAX_STEPS = 1000   # prevent infinite loops in cyclic graphs
 
-    def __init__(self, trace: bool = True):
+    def __init__(self, trace: bool = True, tk_parent=None):
         self.trace      = trace
+        self.tk_parent  = tk_parent
         self.program:   Optional[FCProgram]   = None
         self.cpu:       CPU5500FP             = CPU5500FP()
         self.eval_stack: List[Any]            = []
         self.call_stack: List[int]            = []
-        self.env:        Dict[str, Any]       = {}   # variable store
-        self.handlers:   Dict[str, Callable]  = {}   # label → callable
+        self.env:        Dict[str, Any]       = {}
+        self.handlers:   Dict[str, Callable]  = {}
         self.step_count: int                  = 0
         self.log:        List[str]            = []
-        # Register default handlers
         self._register_builtins()
 
     # ── Loading ───────────────────────────────────────────────────────────────
@@ -570,6 +570,14 @@ class TernOOInterpreter:
             except Exception as e:
                 self._emit(f"{indent}  {RED}Handler error '{node.label}': "
                            f"{e}{RESET}")
+        # ── Process builtin dispatch (31 May 2026, Adelaide) ─────────────
+        if node.kind == SYMBOL_PROCESS:
+            result = self._process_builtin(node, depth)
+            if result is not None:
+                self.eval_stack.append(result)
+                self._emit(f"{indent}  {GREEN}process pushed {result!r}{RESET}")
+            return None  # always continue after process
+
         # ── I/O subclass dispatch (31 May 2026, Adelaide) ────────────────
         if node.kind == SYMBOL_IO and getattr(self,'_io_kind_dispatch',False):
             ch, op = io_subclass(node)
@@ -597,9 +605,13 @@ class TernOOInterpreter:
         try:
             import tkinter as tk
             from tkinter import simpledialog
-            root = tk.Tk(); root.withdraw()
-            raw = simpledialog.askstring(node.label, f"{node.label}:", parent=root)
-            root.destroy()
+            _p = self.tk_parent
+            if _p is None:
+                _p = tk.Tk(); _p.withdraw()
+                raw = simpledialog.askstring(node.label, f"{node.label}:", parent=_p)
+                _p.destroy()
+            else:
+                raw = simpledialog.askstring(node.label, f"{node.label}:", parent=_p)
             if raw is not None:
                 try:    value = int(raw)
                 except: 
@@ -620,13 +632,90 @@ class TernOOInterpreter:
         try:
             import tkinter as tk
             from tkinter import messagebox
-            root = tk.Tk(); root.withdraw()
-            messagebox.showinfo(node.label, msg, parent=root)
-            root.destroy()
+            _p = self.tk_parent
+            if _p:
+                dlg = tk.Toplevel(_p)
+                dlg.title(node.label)
+                dlg.configure(bg='#0a0f1a')
+                dlg.resizable(False, False)
+                dlg.grab_set()
+                tk.Label(dlg, text=msg, bg='#0a0f1a', fg='white',
+                         font=('Monospace',14), padx=20, pady=16).pack()
+                tk.Button(dlg, text='OK', command=dlg.destroy,
+                          bg='#1a4a6b', fg='white', font=('Monospace',10),
+                          relief='flat', padx=16, pady=6,
+                          cursor='hand2').pack(pady=(0,12))
+                dlg.bind('<Return>', lambda e: dlg.destroy())
+                dlg.bind('<Escape>', lambda e: dlg.destroy())
+                _p.wait_window(dlg)
+            else:
+                _r = tk.Tk(); _r.withdraw()
+                messagebox.showinfo(node.label, msg, parent=_r)
+                _r.destroy()
         except Exception:
             print(f"  [{node.label}]: {msg}")
         self._emit(f"{indent}    → displayed {msg!r}")
         return None
+
+    # ── Process builtins (31 May 2026, Adelaide) ─────────────────────────────
+
+    def _process_builtin(self, node, depth) -> Any:
+        """
+        Built-in process operations dispatched from label keywords.
+        In native TernOO these are CMP/ADD/SUB instructions.
+        Returns trit result or None if no builtin matched.
+        """
+        indent = '  ' * depth
+        label = node.label.upper().replace('_',' ')
+        words = label.split()
+
+        # Extract numeric threshold
+        threshold = None
+        for w in words:
+            try:
+                threshold = int(w.strip('>=<≥≤!:'))
+                break
+            except ValueError:
+                pass
+
+        # Comparison → push ternary trit
+        cmp_hints = {'COMPARE','CHECK','CMP','ASSERT','VERIFY','VALIDATE','EVAL'}
+        if any(w in cmp_hints for w in words):
+            val = self.eval_stack[-1] if self.eval_stack else 0
+            ref = threshold if threshold is not None else 0
+            if any(k in words for k in ('GTE','>=','OVER','ABOVE','OLDER','ADULT')):
+                trit = +1 if val >= ref else -1
+            elif any(k in words for k in ('LTE','<=','UNDER','BELOW','YOUNGER')):
+                trit = +1 if val <= ref else -1
+            elif any(k in words for k in ('GT','>','GREATER')):
+                trit = +1 if val > ref else -1
+            elif any(k in words for k in ('LT','<','LESS')):
+                trit = +1 if val < ref else -1
+            else:
+                trit = +1 if val > ref else (0 if val == ref else -1)
+            self._emit(f"{indent}  {GREEN}[compare] {val} vs {ref} → trit={trit:+d}{RESET}")
+            if self.eval_stack: self.eval_stack.pop()
+            return trit
+
+        # Arithmetic
+        if 'ADD' in words or 'PLUS' in words or 'INCREMENT' in words:
+            val = self.eval_stack.pop() if self.eval_stack else 0
+            result = val + (threshold or 1)
+            self._emit(f"{indent}  {GREEN}[add] {val}+{threshold or 1}={result}{RESET}")
+            return result
+
+        if 'SUB' in words or 'MINUS' in words or 'DECREMENT' in words:
+            val = self.eval_stack.pop() if self.eval_stack else 0
+            result = val - (threshold or 1)
+            self._emit(f"{indent}  {GREEN}[sub] {val}-{threshold or 1}={result}{RESET}")
+            return result
+
+        if 'PUSH' in words and threshold is not None:
+            self._emit(f"{indent}  {GREEN}[push] {threshold}{RESET}")
+            return threshold
+
+        return None
+
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

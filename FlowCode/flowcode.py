@@ -779,13 +779,17 @@ def run_gui():
     def do_save():
         p=filedialog.asksaveasfilename(defaultextension='.json',
             filetypes=[('FlowCode JSON','*.json'),('All','*.*')])
-        if p: canvas_model.save(p); set_status(f"Saved: {os.path.basename(p)}")
+        if p:
+            canvas_model.save(p)
+            root.title(f"FlowCode v0.5.3 — {os.path.basename(p)}")
+            set_status(f"Saved: {os.path.basename(p)}")
     def do_open():
         p=filedialog.askopenfilename(
             filetypes=[('FlowCode JSON','*.json'),('All','*.*')])
         if p:
             canvas_model.load(p)
             state['selected_sym']=None; state['selected_edge']=None
+            root.title(f"FlowCode v0.5.3 — {os.path.basename(p)}")
             set_status(f"Loaded: {os.path.basename(p)}"); redraw()
     def do_clear():
         if canvas_model.symbols:
@@ -851,7 +855,7 @@ def run_gui():
     _action_btn("🧠 Learn",   do_learn,  fg='#7affcc')
     _action_btn("💡 Suggest", do_suggest, fg='#ffcc44')
 
-    tk.Label(palette_frame,text=f"v0.5.0\n{os.path.basename(_emu_path)}",
+    tk.Label(palette_frame,text=f"v0.5.3\n{os.path.basename(_emu_path)}",
              bg=C['palette'],fg=C['dim'],font=('Monospace',7),pady=4
              ).pack(side='bottom',fill='x')
 
