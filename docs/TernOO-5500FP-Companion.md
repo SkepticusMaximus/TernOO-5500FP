@@ -652,3 +652,47 @@ handful of such flowgrams learns the grammar of TernOO programs. That is the
 first step toward GHOST — not a code generator, but a symbol-sequence predictor
 that makes the next step obvious to the programmer.
 
+
+---
+
+### NEURAL Forward-Pass Engine Skeleton (31 May 2026, Adelaide)
+
+**File:** `5500fp/ternoo_neural.py`
+**Status:** Skeleton — architecture proven, not production
+
+**What it does:**
+Implements a TernOO native neural network using NEURAL/UNIT and
+NEURAL/CONNECTION words from the 5500FP emulator. Runs a single-layer
+forward pass using ternary arithmetic — weight range ±4 (2 trits, 9 levels),
+state range ±13 (3 trits, 27 levels).
+
+**Forward pass algorithm:**
+1. Load input values into input NEURAL/UNIT states
+2. For each NEURAL/CONNECTION: target.accumulator += source.state × weight
+3. For each non-input unit: state = clamp(accumulator + bias)
+
+**Key classes:**
+- `NeuralUnit` — wraps a NEURAL/UNIT word; serialises/deserialises cleanly
+- `NeuralConnection` — wraps a NEURAL/CONNECTION word
+- `TernOOBrain` — network of units and connections; `forward(inputs)` runs
+  one pass; `to_words()` emits the full network as TernOO word list;
+  `to_json()` / `from_json()` / `load()` handle brain files
+
+**Gemini prior art honoured:**
+`TernOOBrain.load()` detects legacy Markov format and converts via
+`_from_markov()` — each Markov token becomes a NEURAL/UNIT, each transition
+becomes a NEURAL/CONNECTION with weight=+1. The word brain (15 tokens,
+18 connections) and generative brain (12 tokens, 36 connections) both
+convert and run a forward pass successfully.
+
+**Path to GHOST:**
+This engine is the substrate GHOST runs on. The next layer is:
+1. Wire TernOOBrain into the interpreter — NEURAL symbols in FlowCode
+   delegate forward passes to this engine
+2. Train on FlowCode symbol sequences — input/decision/output patterns
+3. Use output unit states to suggest next symbol type (autocomplete)
+4. Iterate until the model predicts TernOO-idiomatic programs
+
+**Demonstrated:** XOR-like ternary logic demo runs correctly.
+Both Gemini brain files convert to TernOO format and execute.
+
