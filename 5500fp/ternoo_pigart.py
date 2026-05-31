@@ -97,11 +97,16 @@ def map_word_to_screen(word: int, canvas_w: int = 800,
 
 class SceneEntry:
     """One entry in the PIGART scene graph."""
-    def __init__(self, opcode: str, words: list, label: str = ''):
-        self.opcode = opcode   # 'RPOINT','RLINE','RNODE','REDGE','RENDER'
-        self.words  = words    # TernOO words for this entry
-        self.label  = label    # human-readable label (from UDP)
-        self.dirty  = True     # needs redraw
+    def __init__(self, opcode: str, words: list, label: str = '',
+                 canvas_x: int = 0, canvas_y: int = 0,
+                 kind: str = 'process'):
+        self.opcode   = opcode
+        self.words    = words
+        self.label    = label
+        self.canvas_x = canvas_x   # original FlowCode canvas x
+        self.canvas_y = canvas_y   # original FlowCode canvas y
+        self.kind     = kind       # symbol kind for shape dispatch
+        self.dirty    = True
 
 
 class PigartCanvas:
@@ -144,7 +149,8 @@ class PigartCanvas:
 
     def RNODE(self, pos_word: int, dims_word: int,
               shape_word: int, udp_word: int,
-              label: str = '') -> int:
+              label: str = '', canvas_x: int = 400,
+              canvas_y: int = 300, kind: str = 'process') -> int:
         """
         RNODE Rd, Rs1, Rs2, Rs3, Rs4
         Rs1=MAP (position), Rs2=DATA (dimensions),
@@ -154,7 +160,8 @@ class PigartCanvas:
         """
         entry = SceneEntry('RNODE',
                            [pos_word, dims_word, shape_word, udp_word],
-                           label=label)
+                           label=label, canvas_x=canvas_x,
+                           canvas_y=canvas_y, kind=kind)
         self.entries.append(entry)
         return len(self.entries) - 1
 
@@ -261,7 +268,9 @@ class PigartCanvas:
                 pos_w   = e.words[0]
                 dims_w  = e.words[1]
                 shape_w = e.words[2]
-                sx, sy  = map_word_to_screen(pos_w, self.width, self.height)
+                # Use stored canvas coords directly — MAP word is the data carrier
+                sx = e.canvas_x
+                sy = e.canvas_y
                 node_positions[addr] = (sx, sy)
 
                 # Dimensions from DATA word payload
@@ -269,27 +278,35 @@ class PigartCanvas:
                 hw = abs(d_dims.get('value', 60))
                 hh = max(20, hw // 2)
 
-                d_shape = decode_word(shape_w)
-                enc = d_shape.get('encoding','int')
-
-                fill = '#1a4a6b'   # default terminator teal
-                if enc == 'int':
-                    fill = '#0f3460'  # process blue
+                kind = e.kind
+                if kind == 'process':
+                    fill = '#0f3460'
                     tk_c.create_rectangle(sx-hw, sy-hh, sx+hw, sy+hh,
                                           fill=fill, outline='#4a9eff',
                                           width=2, tags='pigart')
-                elif enc == 'float':
-                    fill = '#533483'  # decision purple
+                elif kind == 'decision':
+                    fill = '#533483'
                     tk_c.create_polygon(
                         [sx, sy-hh, sx+hw, sy, sx, sy+hh, sx-hw, sy],
                         fill=fill, outline='#4a9eff',
                         width=2, tags='pigart')
-                elif enc == 'uint':
-                    fill = '#1a6b5e'  # I/O teal
-                    tk_c.create_oval(sx-hw, sy-hh, sx+hw, sy+hh,
+                elif kind == 'io':
+                    fill = '#1a6b5e'
+                    r = 14
+                    tk_c.create_rectangle(sx-hw+r, sy-hh, sx+hw-r, sy+hh,
+                                          fill=fill, outline=fill, tags='pigart')
+                    tk_c.create_oval(sx-hw, sy-hh, sx-hw+r*2, sy+hh,
                                      fill=fill, outline='#4a9eff',
                                      width=2, tags='pigart')
-                else:
+                    tk_c.create_oval(sx+hw-r*2, sy-hh, sx+hw, sy+hh,
+                                     fill=fill, outline='#4a9eff',
+                                     width=2, tags='pigart')
+                    tk_c.create_line(sx-hw+r, sy-hh, sx+hw-r, sy-hh,
+                                     fill='#4a9eff', width=2, tags='pigart')
+                    tk_c.create_line(sx-hw+r, sy+hh, sx+hw-r, sy+hh,
+                                     fill='#4a9eff', width=2, tags='pigart')
+                else:  # terminator
+                    fill = '#1a4a6b'
                     tk_c.create_oval(sx-hw, sy-hh, sx+hw, sy+hh,
                                      fill=fill, outline='#4a9eff',
                                      width=2, tags='pigart')
@@ -317,11 +334,11 @@ class PigartCanvas:
                                      dash=dash or '',
                                      tags='pigart')
 
-    def attach_tk_canvas(self, tk_canvas):
+    def attach_tk_canvas(self, tk_canvas, width=None, height=None):
         """Attach a tkinter Canvas widget for Phase 2 rendering."""
         self._tk_canvas = tk_canvas
-        self.width  = tk_canvas.winfo_reqwidth()  or self.width
-        self.height = tk_canvas.winfo_reqheight() or self.height
+        if width:  self.width  = width
+        if height: self.height = height
 
 
 # ── FlowCode JSON → PIGART scene graph ───────────────────────────────────────
@@ -384,7 +401,7 @@ def flowcode_to_pigart(canvas_json: dict) -> PigartCanvas:
         udp_word = build_udp_word(t1, t0, off, cs, ds)
 
         addr = pigart.RNODE(pos_word, dims_word, shape_word, udp_word,
-                            label=label)
+                            label=label, canvas_x=x, canvas_y=y, kind=kind)
         addr_map[sym['id']] = addr
 
     for edge in edges:
@@ -446,11 +463,18 @@ def demo_tk():
         text="PIGART Phase 2 — MAP words driving tkinter geometry",
         bg='#0a0f1a', fg='#4a9eff', font=('Monospace',10))
     lbl.pack(pady=4)
-    c = tk.Canvas(root, width=800, height=500,
+    # Auto-size canvas to content
+    import json as _j
+    _syms = canvas_json.get('symbols',[])
+    _max_x = max((s.get('x',200) for s in _syms), default=600) + 120
+    _max_y = max((s.get('y',200) for s in _syms), default=600) + 120
+    cw, ch = max(900, _max_x), max(700, _max_y)
+    c = tk.Canvas(root, width=cw, height=ch,
                   bg='#0d1117', highlightthickness=0)
-    c.pack(padx=8, pady=8)
+    c.pack(padx=8, pady=8, fill='both', expand=True)
+    root.geometry(f"{cw+20}x{ch+60}")
 
-    pigart.attach_tk_canvas(c)
+    pigart.attach_tk_canvas(c, width=cw, height=ch)
     pigart.RENDER()
 
     root.mainloop()
