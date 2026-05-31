@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FlowCode  v0.5.1
+FlowCode  v0.5.2
 ================
 Visual programming IDE for TernOO-5500FP.
 
@@ -80,6 +80,53 @@ if _interp_path:
     with unittest.mock.patch.object(_imod, "__name__", "interp"):
         _ispec.loader.exec_module(_imod)
     _TernOOInterpreter = _imod.TernOOInterpreter
+
+# ── Brain loader (FlowCodeBrain / shadow-GHOST) ───────────────────────────────
+
+def _find_neural():
+    candidates = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), '../5500fp/ternoo_neural.py'),
+        os.path.expanduser('~/dev/SkepticusMaximus/TernOO-5500FP/5500fp/ternoo_neural.py'),
+    ]
+    for p in candidates:
+        if os.path.exists(p): return os.path.abspath(p)
+    return None
+
+def _find_brain_file():
+    candidates = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), '../5500fp/flowcode_brain.json'),
+        os.path.expanduser('~/dev/SkepticusMaximus/TernOO-5500FP/5500fp/flowcode_brain.json'),
+    ]
+    for p in candidates:
+        if os.path.exists(p): return os.path.abspath(p)
+    return None
+
+_neural_path = _find_neural()
+_FlowCodeBrain = None
+_brain_instance = None
+if _neural_path:
+    try:
+        _nspec = spec_from_file_location("neural", _neural_path)
+        _nmod  = module_from_spec(_nspec)
+        with unittest.mock.patch.object(_nmod, "__name__", "neural"):
+            _nspec.loader.exec_module(_nmod)
+        _FlowCodeBrain = _nmod.FlowCodeBrain
+        # Load existing trained brain if available
+        _bf = _find_brain_file()
+        if _bf:
+            import json as _json
+            with open(_bf) as _f:
+                _bdata = _json.load(_f)
+            _brain_instance = _FlowCodeBrain()
+            # Restore weights from saved brain
+            for cd in _bdata.get('connections', []):
+                _brain_instance._set_weight(cd['source'], cd['target'], cd['weight'])
+            print(f"[FlowCode] Brain loaded: {len(_bdata.get('connections',[]))} connections")
+        else:
+            _brain_instance = _FlowCodeBrain()
+            print("[FlowCode] Brain initialised (no saved weights)")
+    except Exception as _e:
+        print(f"[FlowCode] Brain load failed: {_e}")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -472,7 +519,7 @@ class FCCanvas:
 # ── Headless demo ─────────────────────────────────────────────────────────────
 
 def run_headless_demo():
-    print("="*60+"\nFlowCode v0.5.1 — Headless Demo\n"+"="*60)
+    print("="*60+"\nFlowCode v0.5.2 — Headless Demo\n"+"="*60)
     canvas=FCCanvas()
     start=canvas.add_symbol(SYMBOL_IO,200,80,"START")
     check=canvas.add_symbol(SYMBOL_DECISION,200,240,"CHECK")
@@ -521,7 +568,7 @@ def run_gui():
 
     # ── Root ─────────────────────────────────────────────────────────────────
     root = tk.Tk()
-    root.title("FlowCode v0.5.1 — TernOO-5500FP Visual IDE")
+    root.title("FlowCode v0.5.2 — TernOO-5500FP Visual IDE")
     root.configure(bg=C['bg'])
     root.resizable(True,True)
 
@@ -750,12 +797,62 @@ def run_gui():
         FCSymbol._next_id=1
         set_inspect('Canvas cleared'); set_status('Cleared'); redraw()
 
+    def do_learn():
+        """Train the FlowCodeBrain on the current canvas."""
+        if not _FlowCodeBrain or not _brain_instance:
+            set_status("Brain not available — check ternoo_neural.py in 5500fp/")
+            return
+        if not canvas_model.symbols:
+            set_status("Canvas is empty — nothing to learn from")
+            return
+        data = {
+            'symbols': [s.to_dict() for s in canvas_model.symbols.values()],
+            'edges':   [e.to_dict() for e in canvas_model.edges],
+        }
+        transitions = _brain_instance.train_on_canvas(data)
+        # Save updated brain
+        import json as _json
+        bf = _find_brain_file() or os.path.expanduser(
+            '~/dev/SkepticusMaximus/TernOO-5500FP/5500fp/flowcode_brain.json')
+        with open(bf, 'w') as _f:
+            _json.dump(_brain_instance.to_json(), _f, indent=2)
+        set_status(f"Brain learned {len(transitions)} transitions — saved")
+        print(f"[FlowCode] Brain trained: {len(transitions)} transitions from canvas")
+        # Show weight matrix in terminal
+        _brain_instance.show_weights()
+
+    def do_suggest():
+        """Ask the brain what symbol should come next."""
+        if not _brain_instance:
+            set_status("Brain not available")
+            return
+        # Find the last placed or selected symbol
+        sym = canvas_model.symbols.get(state.get('selected_sym'))
+        if not sym and canvas_model.symbols:
+            sym = list(canvas_model.symbols.values())[-1]
+        if not sym:
+            set_status("Place a symbol first")
+            return
+        from ternoo_neural import flowcode_symbol_type as _fst, FLOWCODE_VOCAB_INV as _inv
+        try:
+            tok = _fst(sym.to_dict())
+        except Exception:
+            tok = sym.kind
+        nxt = _brain_instance.predict_next(tok)
+        confidence = _brain_instance._get_weight(
+            _brain_instance._weights and
+            list(_brain_instance._weights.keys())[0] and 0 or 0, 0)
+        set_status(f"Brain suggests: after {tok} → place {nxt.upper()}")
+        print(f"[FlowCode] Brain suggestion: {tok} → {nxt}")
+
     _action_btn("⬇ Word Dump", do_dump,   icon_key='dump')
     _action_btn("▶ Load→EMU",  do_load,   fg='#7aff7a', icon_key='load')
     _action_btn("▶▶ Run",      do_run,    fg='#ffdd57')
     _action_btn("💾 Save",     do_save,   icon_key='save')
     _action_btn("📂 Open",     do_open,   icon_key='open')
     _action_btn("🗑 Clear",    do_clear,  fg='#ff8888', icon_key='clear')
+    _action_btn("🧠 Learn",   do_learn,  fg='#7affcc')
+    _action_btn("💡 Suggest", do_suggest, fg='#ffcc44')
 
     tk.Label(palette_frame,text=f"v0.5.0\n{os.path.basename(_emu_path)}",
              bg=C['palette'],fg=C['dim'],font=('Monospace',7),pady=4

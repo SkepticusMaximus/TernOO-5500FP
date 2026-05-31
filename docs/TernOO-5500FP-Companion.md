@@ -696,3 +696,127 @@ This engine is the substrate GHOST runs on. The next layer is:
 **Demonstrated:** XOR-like ternary logic demo runs correctly.
 Both Gemini brain files convert to TernOO format and execute.
 
+
+---
+
+## Part F — GristMill & GHOST: The Generative Architecture
+
+---
+
+### GristMill — Content-Addressable Computation (31 May 2026, Adelaide)
+
+**Status: Architectural insight — not yet implemented**
+
+#### The Core Claim
+
+A GristMill object is not stored anywhere. It is computed.
+
+The MMID (Minimal Map ID) is a MAP word — a TernOO native coordinate in the
+octree address space. The MMOE (Minimal Map Object Entity) is the minimal
+self-contained unit of meaningful TernOO data that the MMID describes: a
+widget, a handler, a connection, a flowgram fragment. All dependencies are
+encoded in the MMID itself. There is no repository, no download, no version
+resolution. The object materialises from the MMID through computation.
+
+This is not object storage. It is object synthesis.
+
+#### Why This Is Different
+
+Conventional package managers store objects at locations. To use an object
+you find its location, download it, verify it, install it. The object exists
+independently of any mind that knows about it.
+
+GristMill inverts this. The MMID is the complete description of the object.
+Given the MMID, GHOST can synthesise the object — not retrieve it from a
+server, but generate it from the structural knowledge encoded in the MMID's
+MAP word coordinates. The object is latent in GHOST's training, not resident
+on a disk.
+
+The set of possible MMOEs is unbounded, because MAP word coordinate space
+is unbounded. There is no finite catalogue of objects — there is an infinite
+generative space of possible objects, navigated by MMID coordinates.
+
+#### The Distance Property
+
+In the MAP word octree, structurally similar objects are geometrically
+proximate. A button widget and a checkbox widget are close. A button widget
+and a network socket are distant. Dependency resolution is proximity search:
+"find the object nearest to these coordinates that satisfies these
+constraints." On hardware that computes MAP word addresses natively, this
+is not a database query — it is an address calculation.
+
+#### The Subjective Modelling Insight
+
+This makes GristMill a subjective modelling system rather than an objective
+one. Conventional object models assume a pre-defined set of objects in
+pre-defined states on physical devices — they are objective, finite,
+enumerable. GristMill objects materialise from GHOST's trained understanding
+of structural relationships. The MMID is not a pointer to a thing — it is
+a thought about a thing. GHOST thinks the MMOE into existence.
+
+The philosophical implication: the system's knowledge of what objects exist
+is bounded only by what GHOST has learned to understand. As GHOST learns
+more widget structures, more flowgram patterns, more hardware primitives,
+the generative space expands. The library grows without anyone adding to it.
+
+#### Relationship to the Widget Architecture
+
+A GUI widget expressed as a TernOO MMOE:
+- MAP words encode spatial position and containment in the octree
+- UDP words encode object type (widget class as subclass trits)
+- EXEC words encode event handlers (signals as EXEC call-style)
+- DATA words encode properties (label text, colour, dimensions)
+- NEURAL words encode learned appearance variations (GHOST's aesthetic model)
+
+The widget tree hierarchy maps to MAP octree containment. A button inside
+a panel inside a window occupies a natural octree sub-region of the window's
+MAP coordinate. No layout file. No XML. The containment IS the coordinate.
+
+PIGART renders the widget from its MAP and UDP words directly. GHOST generates
+the next widget by predicting the next MMID given the structural context —
+the same forward-pass mechanism already implemented in ternoo_neural.py,
+operating on widget-vocabulary NEURAL words instead of flowgram-vocabulary
+ones.
+
+#### The !learn Macro System
+
+The `!learn_clipbd` and `!learn_temp` commands in the Gemini prototype
+(5500fp_ternoo_v03.py, lines 1349–1466) are the prototype ingestion pipeline.
+They write external data into the MMIO register at 0x6000 as TernOO word
+sequences, which the training loop then uses to adjust projection weights
+directly in CPU memory.
+
+The next layer is `!learn_widget <descriptor>` — ingesting a widget definition
+(from Cambalache, from a FlowCode canvas, from a sensor description) and
+converting it to a MMOE word sequence that GHOST can train on. The `!learn`
+prefix identifies an I/O symbol whose execution triggers training rather
+than runtime behaviour.
+
+#### Implementation Path
+
+1. Define widget UDP subclass table (button, label, panel, window, input,
+   list — each a (T21, T20) pair in the USER-DEF POINTER space)
+2. Write `ternoo_gristmill.py` — MMOE encoder/decoder, MMID computation
+   from structural description, proximity search stub
+3. Extend FlowCodeBrain with widget vocabulary alongside flowgram vocabulary
+4. Add `!learn_widget` I/O symbol type to the interpreter
+5. Train on Cambalache .ui files converted to MMOE sequences
+6. GHOST predicts next widget from structural context
+
+The assembly bridge, PIGART, and FlowCodeBrain are all already in place.
+GristMill is the next skeleton to build.
+
+---
+
+### FlowCode v0.5.2 — Brain Buttons (31 May 2026, Adelaide)
+
+**Changes:**
+- 🧠 Learn button — trains FlowCodeBrain on current canvas, saves weights
+- 💡 Suggest button — predicts next symbol type from selected symbol
+- Brain auto-loads `flowcode_brain.json` on startup if present
+- Brain prints weight matrix to terminal after learning
+
+**Commit:** pending
+
+---
+
