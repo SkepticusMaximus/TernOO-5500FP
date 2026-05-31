@@ -717,30 +717,70 @@ def convert(source_path: str, output_path: str = None) -> dict:
 
 # ── GHOST training feed ───────────────────────────────────────────────────────
 
-def train_brain_on_tgui(tgui_path: str):
-    """
-    Train FlowCodeBrain on a .tgui file.
-    Reuses the existing train_on_flowcode() infrastructure — the .tgui format
-    is compatible because both use 'kind' as the symbol type field.
-    """
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from ternoo_neural import FlowCodeBrain
+def _markov_train(weights: dict, tgui: dict, rate: int = 1):
+    """Open-vocabulary Markov training on a .tgui canvas."""
+    symbols = {s['id']: s for s in tgui.get('symbols', [])}
+    edges   = tgui.get('edges', [])
+    def _bump(sk, dk):
+        row = weights.setdefault(sk, {})
+        row[dk] = row.get(dk, 0) + rate
 
-    brain = FlowCodeBrain()
-    # Load existing brain weights (so GUI training adds to, not replaces, FlowCode learning)
+    # edge-based transitions
+    for e in edges:
+        src = symbols.get(e.get('src')); dst = symbols.get(e.get('dst'))
+        if src and dst:
+            sk = src.get('kind'); dk = dst.get('kind')
+            if sk and dk:
+                _bump(sk, dk)
+    # BFS sequential transitions (order within parent)
+    from collections import deque
+    children: dict = {}
+    for e in edges:
+        children.setdefault(e.get('src'), []).append(e.get('dst'))
+    visited = set(); q = deque(symbols.keys())
+    while q:
+        nid = q.popleft()
+        if nid in visited: continue
+        visited.add(nid)
+        kids = children.get(nid, [])
+        for i in range(len(kids) - 1):
+            sk = symbols.get(kids[i],   {}).get('kind')
+            dk = symbols.get(kids[i+1], {}).get('kind')
+            if sk and dk:
+                _bump(sk, dk)
+        q.extend(kids)
+
+
+def train_brain_on_tgui(tgui_path: str) -> str:
+    """
+    Train the GHOST GUI brain (ghost_gui_brain.json) on a .tgui file.
+    Uses open-vocabulary Markov training — never touches flowcode_brain.json.
+    """
     brain_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                              'flowcode_brain.json')
+                              'ghost_gui_brain.json')
+    # load existing weights
+    weights: dict = {}
     if os.path.exists(brain_path):
         with open(brain_path) as f:
-            brain_data = json.load(f)
-        brain.weights = brain_data.get('weights', {})
+            weights = json.load(f).get('weights', {})
 
     with open(tgui_path) as f:
         tgui = json.load(f)
 
-    brain.train_on_flowcode(tgui)
-    brain.save(brain_path)
-    print(f"Brain updated: {brain_path}")
+    _markov_train(weights, tgui)
+
+    brain_data = {
+        'brain_type': 'ghost_gui',
+        'hemisphere': 'structural',
+        'vocab_size': len(weights),
+        'weights': weights,
+    }
+    with open(brain_path, 'w') as f:
+        json.dump(brain_data, f, indent=2)
+
+    result = f"GHOST GUI brain updated: {len(weights)} types — {brain_path}"
+    print(result)
+    return result
 
 
 # ── Demo ──────────────────────────────────────────────────────────────────────
