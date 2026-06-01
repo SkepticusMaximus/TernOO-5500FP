@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FlowCode  v0.5.3
+FlowCode  v0.6.0
 ================
 Visual programming IDE for TernOO-5500FP.
 
@@ -571,7 +571,7 @@ class FCCanvas:
 # ── Headless demo ─────────────────────────────────────────────────────────────
 
 def run_headless_demo():
-    print("="*60+"\nFlowCode v0.5.3 — Headless Demo\n"+"="*60)
+    print("="*60+"\nFlowCode v0.6.0 — Headless Demo\n"+"="*60)
     canvas=FCCanvas()
     start=canvas.add_symbol(SYMBOL_IO,200,80,"START")
     check=canvas.add_symbol(SYMBOL_DECISION,200,240,"CHECK")
@@ -620,7 +620,7 @@ def run_gui():
 
     # ── Root ─────────────────────────────────────────────────────────────────
     root = tk.Tk()
-    root.title("FlowCode v0.5.3 — TernOO-5500FP Visual IDE")
+    root.title("FlowCode v0.6.0 — TernOO-5500FP Visual IDE")
     root.configure(bg=C['bg'])
     root.resizable(True,True)
 
@@ -858,7 +858,7 @@ def run_gui():
             filetypes=[('FlowCode JSON','*.json'),('All','*.*')])
         if p:
             canvas_model.save(p)
-            root.title(f"FlowCode v0.5.3 — {os.path.basename(p)}")
+            root.title(f"FlowCode v0.6.0 — {os.path.basename(p)}")
             set_status(f"Saved: {os.path.basename(p)}")
     def do_open():
         p=filedialog.askopenfilename(
@@ -866,7 +866,7 @@ def run_gui():
         if p:
             canvas_model.load(p)
             state['selected_sym']=None; state['selected_edge']=None
-            root.title(f"FlowCode v0.5.3 — {os.path.basename(p)}")
+            root.title(f"FlowCode v0.6.0 — {os.path.basename(p)}")
             set_status(f"Loaded: {os.path.basename(p)}"); redraw()
     def do_clear():
         if canvas_model.symbols:
@@ -932,7 +932,7 @@ def run_gui():
     _action_btn("🧠 Learn",   do_learn,  fg='#7affcc')
     _action_btn("💡 Suggest", do_suggest, fg='#ffcc44')
 
-    tk.Label(palette_frame,text=f"v0.5.3\n{os.path.basename(_emu_path)}",
+    tk.Label(palette_frame,text=f"v0.6.0\n{os.path.basename(_emu_path)}",
              bg=C['palette'],fg=C['dim'],font=('Monospace',7),pady=4
              ).pack(side='bottom',fill='x')
 
@@ -1700,7 +1700,7 @@ def run_gui():
                   padx=4, pady=3, cursor='hand2', anchor='w'
                   ).pack(fill='x', padx=4, pady=1)
 
-    tk.Label(gc_pal, text="GHOST Canvas\nv0.1",
+    tk.Label(gc_pal, text="GHOST Canvas\nv0.6.0",
              bg=C['palette'], fg=C['dim'],
              font=('Monospace', 7), pady=4
              ).pack(side='bottom', fill='x')
@@ -1712,6 +1712,10 @@ def run_gui():
         for y in range(0, h, GRID): gc.create_line(0, y, w, y, fill=C['grid'])
 
     def gc_draw_widget(w):
+        # ── Added: 01 Jun 2026, Adelaide
+        # ── Purpose: placeholder — geometry renderer (CC-09) replaces this
+        # ── Each widget will be drawn from TernOO RNODE/RLINE/RPOINT words
+        # ──   derived from GTK Cairo render geometry, not hand-coded primitives
         sel  = (w['id'] == gst['selected'])
         col  = _gc_color.get(w['kind'], C['pal_btn'])
         bor  = C['selected'] if sel else C['pal_border']
@@ -1722,9 +1726,14 @@ def run_gui():
         kind = w['kind']
         txt  = C['text']; dim = C['dim']
 
-        # ── kind-specific widget renderers ────────────────────────────────────
+        # Flat tile — category colour, type label, nothing pretending to be a widget
+        gc.create_rectangle(L, T, R, B, fill=col, outline=bor, width=lw)
+        gc.create_text(x, y - 5, text=kind.replace('gui_', ''),
+                       fill=txt, font=('Monospace', 9, 'bold'))
+        gc.create_text(x, y + 8, text='[ geometry pending ]',
+                       fill=dim, font=('Monospace', 6))
 
-        if kind in ('gui_window', 'gui_applicationwindow', 'gui_offscreenwindow',
+        if False and kind in ('gui_window', 'gui_applicationwindow', 'gui_offscreenwindow',
                     'gui_plug', 'gui_socket', 'gui_shortcutswindow'):
             gc.create_rectangle(L, T, R, B, fill='#0a1828', outline=bor, width=lw)
             gc.create_rectangle(L, T, R, T+14, fill='#0d2040', outline=bor, width=1)
@@ -2010,12 +2019,7 @@ def run_gui():
             gc.create_text(x,T+16, text='Aa Bb Cc', fill=txt, font=('Monospace',10))
             gc.create_text(x,B-12, text='Serif  Sans  Mono', fill=dim, font=('Monospace',6))
 
-        else:
-            # Generic fallback for any type not listed above
-            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
-            gc.create_text(x, y, text=kind.replace('gui_','')[:14],
-                           fill=txt, font=('Monospace',8,'bold'))
-
+        # CC-09: geometry renderer replaces the dead if/else block above
         # ── Selection + edge-src overlay (always on top) ──────────────────────
         if gst['mode'] == 'edge_dst' and gst['edge_src'] == w['id']:
             gc.create_rectangle(L-3,T-3,R+3,B+3,
