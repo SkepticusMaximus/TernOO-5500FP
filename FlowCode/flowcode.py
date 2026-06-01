@@ -119,6 +119,15 @@ def _find_bridge():
         if os.path.exists(p): return os.path.abspath(p)
     return None
 
+def _find_geometry():
+    candidates = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), '../5500fp/ternoo_widget_geometry.py'),
+        os.path.expanduser('~/dev/SkepticusMaximus/TernOO-5500FP/5500fp/ternoo_widget_geometry.py'),
+    ]
+    for p in candidates:
+        if os.path.exists(p): return os.path.abspath(p)
+    return None
+
 # ── GHOST brain + palette — loaded once at startup ────────────────────────────
 
 _ghost_weights: dict = {}
@@ -152,6 +161,24 @@ if not _ghost_palette_types:   # fallback if bridge not found
     _ghost_palette_types = [(t, 0) for t in [
         'gui_window','gui_box','gui_button','gui_entry',
         'gui_label','gui_dialog','gui_menu','gui_treeview']]
+
+# ── Widget geometry — CC-09 ───────────────────────────────────────────────────
+# Added: 01 Jun 2026, Adelaide  Author: Stevo + Claude
+# Purpose: Load canonical RNODE/RLINE/RPOINT word sequences for gc_draw_widget
+# Companion: private/TernOO-5500FP-Companion.md § G6 (CC-09)
+
+_widget_geometry_mod = None
+_geom_path_fc = _find_geometry()
+if _geom_path_fc:
+    try:
+        from importlib.util import spec_from_file_location as _sfl3, module_from_spec as _mfs3
+        _gspec = _sfl3('_wgeom', _geom_path_fc)
+        _gmod  = _mfs3(_gspec)
+        _gspec.loader.exec_module(_gmod)
+        _widget_geometry_mod = _gmod
+        print(f"[FlowCode] Widget geometry loaded: {len(_gmod.WIDGET_GEOMETRY)} types")
+    except Exception as _wge:
+        print(f"[FlowCode] Widget geometry load failed: {_wge}")
 
 _neural_path = _find_neural()
 _FlowCodeBrain = None
@@ -1711,11 +1738,83 @@ def run_gui():
         for x in range(0, w, GRID): gc.create_line(x, 0, x, h, fill=C['grid'])
         for y in range(0, h, GRID): gc.create_line(0, y, w, y, fill=C['grid'])
 
+    def _gc_render_words(words, L, T, R, B, col, bor, txt, dim):
+        # ── CC-09 geometry word interpreter ───────────────────────────────────
+        # Added: 01 Jun 2026, Adelaide  Author: Stevo + Claude
+        # Purpose: Render TernOO RNODE/RLINE/RPOINT sequences on gc Tkinter canvas
+        # Companion: private/TernOO-5500FP-Companion.md § G6 (CC-09)
+        W = R - L; H = B - T
+
+        def px(nx): return L + nx * W
+        def py(ny): return T + ny * H
+
+        def _rc(role):
+            """(fill, outline) for a geometry role."""
+            if role == 'body':                  return col,            bor
+            if role in ('titlebar', 'header'):  return C['canvas'],   col
+            if role in ('strip', 'tab'):        return C['pal_btn'],  col
+            if role in ('row', 'cell'):         return '',             col
+            if role in ('button', 'input', 'dropdown'): return C['pal_btn'], dim
+            if role == 'thumb':                 return dim,            col
+            if role == 'fill':                  return txt,            ''
+            if role == 'ctrl_close':            return '#cc4444',      ''
+            if role == 'ctrl_min':              return '#ccaa44',      ''
+            if role == 'ctrl_max':              return '#44aa44',      ''
+            if role in ('radio', 'check'):      return txt,            dim
+            if role == 'spinner':               return '',             col
+            if role in ('icon',):               return C['canvas'],    dim
+            return C['pal_btn'], dim
+
+        def _lc(role):
+            """Line colour for a geometry role."""
+            if role == 'cursor':  return txt
+            if role == 'cross':   return dim
+            if role == 'track':   return dim
+            return col
+
+        for word in words:
+            op = word['op']
+            if op == 'RENDER':
+                break
+            role  = word.get('role',  '')
+            shape = word.get('shape', 'rect')
+
+            if op == 'RNODE':
+                x0 = px(word['x0']); y0 = py(word['y0'])
+                x1 = px(word['x1']); y1 = py(word['y1'])
+                fc, oc = _rc(role)
+                if shape in ('rect', 'square'):
+                    gc.create_rectangle(x0, y0, x1, y1,
+                                        fill=fc, outline=oc, width=1)
+                elif shape == 'circle':
+                    gc.create_oval(x0, y0, x1, y1,
+                                   fill=fc, outline=oc, width=1)
+                elif shape == 'tri':
+                    span_x = word['x1'] - word['x0']
+                    span_y = word['y1'] - word['y0']
+                    cx2 = (x0 + x1) / 2; cy2 = (y0 + y1) / 2
+                    if span_x >= span_y:
+                        pts = [x0, y0, x1, y0, cx2, y1]   # down-pointing
+                    else:
+                        pts = [x0, y0, x1, cy2, x0, y1]   # right-pointing
+                    gc.create_polygon(pts, fill=fc, outline='')
+
+            elif op == 'RLINE':
+                x0 = px(word['x0']); y0 = py(word['y0'])
+                x1 = px(word['x1']); y1 = py(word['y1'])
+                gc.create_line(x0, y0, x1, y1, fill=_lc(role), width=1)
+
+            elif op == 'RPOINT':
+                cx2 = px(word['x']); cy2 = py(word['y'])
+                r2 = 2
+                gc.create_oval(cx2-r2, cy2-r2, cx2+r2, cy2+r2,
+                               fill=txt, outline='')
+
     def gc_draw_widget(w):
-        # ── Added: 01 Jun 2026, Adelaide
-        # ── Purpose: placeholder — geometry renderer (CC-09) replaces this
-        # ── Each widget will be drawn from TernOO RNODE/RLINE/RPOINT words
-        # ──   derived from GTK Cairo render geometry, not hand-coded primitives
+        # ── CC-09 geometry renderer ────────────────────────────────────────────
+        # Added: 01 Jun 2026, Adelaide  Author: Stevo + Claude
+        # Purpose: Draw widget tile from canonical RNODE/RLINE/RPOINT word sequence
+        # Companion: private/TernOO-5500FP-Companion.md § G6 (CC-09)
         sel  = (w['id'] == gst['selected'])
         col  = _gc_color.get(w['kind'], C['pal_btn'])
         bor  = C['selected'] if sel else C['pal_border']
@@ -1726,22 +1825,29 @@ def run_gui():
         kind = w['kind']
         txt  = C['text']; dim = C['dim']
 
-        # Flat tile — category colour, type label, nothing pretending to be a widget
-        gc.create_rectangle(L, T, R, B, fill=col, outline=bor, width=lw)
-        gc.create_text(x, y - 5, text=kind.replace('gui_', ''),
-                       fill=txt, font=('Monospace', 9, 'bold'))
-        gc.create_text(x, y + 8, text='[ geometry pending ]',
-                       fill=dim, font=('Monospace', 6))
+        # Container/layout types get a dashed background before geometry
+        if kind in ('gui_box', 'gui_grid', 'gui_canvas', 'gui_stack',
+                    'gui_overlay', 'gui_revealer'):
+            gc.create_rectangle(L, T, R, B, fill=C['canvas'],
+                                outline=bor, width=lw, dash=(5, 3))
 
-        if False and kind in ('gui_window', 'gui_applicationwindow', 'gui_offscreenwindow',
-                    'gui_plug', 'gui_socket', 'gui_shortcutswindow'):
-            gc.create_rectangle(L, T, R, B, fill='#0a1828', outline=bor, width=lw)
-            gc.create_rectangle(L, T, R, T+14, fill='#0d2040', outline=bor, width=1)
-            gc.create_text(x, T+7, text=w.get('label','Window')[:18],
-                           fill=txt, font=('Monospace',7,'bold'))
-            for i,(fc) in enumerate(['#cc4444','#ccaa00','#44aa44']):
-                gc.create_oval(R-10-i*13,T+3,R-4-i*13,T+9, fill=fc, outline='')
-            gc.create_rectangle(L+4,T+18,R-4,B-4, fill='#07101e', outline=dim, width=1, dash=(3,3))
+        # Geometry word sequence → canvas primitives
+        if _widget_geometry_mod is not None:
+            words = _widget_geometry_mod.get_geometry(kind)
+        else:
+            words = [{'op': 'RNODE', 'shape': 'rect', 'role': 'body',
+                      'x0': 0, 'y0': 0, 'x1': 1, 'y1': 1}, {'op': 'RENDER'}]
+        _gc_render_words(words, L, T, R, B, col, bor, txt, dim)
+
+        # Type label below tile
+        gc.create_text(x, B + 9, text=kind.replace('gui_', ''),
+                       fill=dim, font=('Monospace', 7))
+
+        # ── sea monkeys removed CC-09 — geometry renderer above is the renderer ──
+        kind = '_dead_'   # sentinel: dead-codes all elif branches below
+
+        if False:
+            pass
 
         elif kind in ('gui_dialog','gui_messagedialog','gui_aboutdialog','gui_assistant'):
             gc.create_rectangle(L, T, R, B, fill='#1a1008', outline=bor, width=lw)
@@ -2015,19 +2121,18 @@ def run_gui():
                 gc.create_oval(gci,gri,gci+16,gri+10, fill=fc2, outline='')
 
         elif kind == 'gui_fontchooser':
-            gc.create_rectangle(L,T,R,B, fill=col, outline=bor, width=lw)
-            gc.create_text(x,T+16, text='Aa Bb Cc', fill=txt, font=('Monospace',10))
-            gc.create_text(x,B-12, text='Serif  Sans  Mono', fill=dim, font=('Monospace',6))
+            pass  # sea monkey end
 
-        # CC-09: geometry renderer replaces the dead if/else block above
+        kind = w['kind']  # restore: sentinel removed — selection overlay uses real kind
+
         # ── Selection + edge-src overlay (always on top) ──────────────────────
         if gst['mode'] == 'edge_dst' and gst['edge_src'] == w['id']:
-            gc.create_rectangle(L-3,T-3,R+3,B+3,
-                                 outline=C['waypoint'], width=2, dash=(4,3))
+            gc.create_rectangle(L-3, T-3, R+3, B+3,
+                                 outline=C['waypoint'], width=2, dash=(4, 3))
         if sel:
-            gc.create_rectangle(L,T,R,B, outline=C['selected'], width=3)
-            gc.create_text(x, B+11, text=f"#{w['id']} ({x},{y})",
-                           fill=C['selected'], font=('Monospace',7))
+            gc.create_rectangle(L, T, R, B, outline=C['selected'], width=3)
+            gc.create_text(x, B + 20, text=f"#{w['id']} ({x},{y})",
+                           fill=C['selected'], font=('Monospace', 7))
 
     def gc_draw_edge(e):
         src = gst['widgets'].get(e['src']); dst = gst['widgets'].get(e['dst'])
