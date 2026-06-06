@@ -4,7 +4,7 @@
 Independent Developer, Adelaide, South Australia
 https://github.com/SkepticusMaximus
 
-*Draft v0.3 — May 2026*
+*Draft v0.4 — June 2026*
 *Companion implementation: https://github.com/SkepticusMaximus/TernOO-5500FP*
 
 ---
@@ -26,15 +26,26 @@ We describe the word grammar, the Double Null mechanism for defining
 user-extensible meta-constructs without reserved words or additional primary
 types, PIGART (Primitive Graphics And Rendering Tool) renderer opcodes in which
 geometric primitives emerge directly from MAP words, and GristMill, a
-content-addressable component repository that treats MAP word octree coordinates
-as native storage addresses. The result is an architecture in which the
-distinction between code and data, between object and pointer, and between
-diagram and program dissolves at the word level — not as a software abstraction
-but as a structural property of the machine.
+generative object synthesis engine in which objects are reconstructed by
+traversal through a tetrahedral content mesh rather than retrieved from storage.
 
-A Python emulator implementing the full architecture is available as open source.
-The architecture targets the 5500FP processor described in La Rosa (2026) and is
-designed as a candidate ISA extension for that platform.
+In v0.4 we formalise the dual coordinate system for MAP words: the OTree
+(octree, stable absolute addresses) and the TTree (tetrahedral tree, content
+identity navigation), distinguished by the mode_hint trit T18. We confirm the
+mathematical foundation of the TMesh traversal mechanism as a Steiner quasigroup
+over Z/3⁶Z — the unique ternary analogue of binary XOR satisfying the
+three-way mutual recovery property — and establish the vocabulary closure
+condition for the Meccano set: closed sub-quasigroups must have size 3^k, with
+the minimal useful vocabulary being the 27-element set of multiples of 27.
+
+The result is an architecture in which the distinction between code and data,
+between object and pointer, between diagram and program, and between address
+and content dissolves at the word level — not as a software abstraction but as
+a structural property of the machine.
+
+A Python emulator and prototype implementing the full architecture is available
+as open source. The architecture targets the 5500FP processor described in
+La Rosa (2026) and is designed as a candidate ISA extension for that platform.
 
 ---
 
@@ -1036,10 +1047,44 @@ On-plane payload convention (alphabetical axis order, T17 downward):
 - T20=0 (XZ-plane): T17–T9=X, T8–T0=Z
 - T19=0 (XY-plane): T17–T9=X, T8–T0=Y
 
-**MAP words as content addresses.** The octree structure of MAP words is not
-only for visual geometry — it also provides the substrate for content-addressable
-storage. Data can be located by hashing it to MAP word coordinates and
-navigating the octree via bubble search (Section 9.4).
+**MAP words as content addresses.** The MAP word format serves two distinct
+coordinate systems — OTree and TTree — distinguished by the mode_hint trit T18.
+These are described in Section 3.3.1 below.
+
+#### 3.3.1 OTree and TTree — Dual MAP Coordinate Systems
+
+TernOO-5500FP uses two complementary spatial structures, both encoded as MAP
+words and distinguished by the mode_hint trit T18:
+
+| System | T18 | Qualifier pattern   | Geometric model     | Used for                        |
+|--------|-----|---------------------|---------------------|---------------------------------|
+| OTree  |  0  | ABSOLUTE_3D (±1,±1,±1) | Cubic octree     | Stable object addresses (MMOE)  |
+| TTree  | +1  | ON_PLANE (0,+1,+1)  | Tetrahedral lattice | Content identity / MMID         |
+
+**OTree (Octree).** The OTree is the stable, absolute coordinate space for
+object representation. Every object has one canonical OTree address — its
+MMOE (Minimal Map Object Entity) — derived by folding the ternary_op
+accumulator over all of the object's word tribbles. The OTree is content-
+addressable: identical word sequences produce identical MMOE coordinates.
+The OTree is the storage and rendering layer.
+
+**TTree (Tetrahedral Tree).** The TTree is the content identity and navigation
+layer. An object's MMID (Minimal Map ID) is a TTree coordinate derived from
+the structural tribbles of its leaf UDP word. Objects with similar structural
+roles are geometrically close in TTree space. The TTree is the navigation layer.
+
+Both systems use the existing MAP word format without modification. The T18
+mode_hint trit acts as a namespace discriminator: T18=0 selects OTree
+semantics, T18=+1 selects TTree semantics. All existing MAP word decoders
+remain valid — they simply inspect T18 to determine which coordinate system
+applies.
+
+**The two-sided lattice.** The OTree and TTree are best understood as two
+faces of the same underlying structure — analogous to a beekeeper's foundation
+sheet, where each cell base is shared between the two sides. An object has
+both an MMID (TTree face — where it is found by navigation) and an MMOE
+(OTree face — where it is canonically stored). GristMill holds both and
+provides translation between them.
 
 ### 3.4 DATA Words (T23=−1, T22=+1)
 
@@ -1558,69 +1603,189 @@ physical address. Kademlia DHT [Maymounkov and Mazières 2002] uses XOR-based
 distance metrics for P2P routing. TernOO-5500FP extends these concepts via
 the MAP word octree structure (Section 9.4).
 
-### 9.4 Content-Addressable Storage via MAP Words
+### 9.4 TMesh: Tetrahedral Content Identity via Steiner Quasigroup
 
-The octree structure of MAP words provides a natural substrate for
-content-addressable storage. Rather than storing data at arbitrary linear
-addresses, data is hashed to MAP word coordinates and located by navigating
-the octree. Each bubble search step cuts the remaining search space by two
-thirds (ternary halving vs binary halving), yielding O(log₃N) lookup
-complexity.
+The TTree coordinate system (Section 3.3.1) provides geometric addresses for
+content navigation. The mechanism by which those addresses are traversed to
+reconstruct objects is the **TMesh** — a tetrahedral mesh where each triangle
+encodes three content chunks (tribbles) in a mutually recoverable relationship.
 
-A distinctive structural element of this approach is the tri-mutual dependency
-triangle. Three content chunks A, B, C can be arranged so that each chunk's
-address (tritmask) is derived from hashing the other two:
+#### 9.4.1 The Mutual Recovery Operation
+
+The fundamental operation of the TMesh is the **Steiner quasigroup** over
+balanced ternary tribbles (Z/3⁶Z, mod 729):
 
 ```
-MaskA = f(Hash(B) ⊕ Hash(C))
-MaskB = f(Hash(A) ⊕ Hash(C))
-MaskC = f(Hash(A) ⊕ Hash(B))
+A ⊕ B = −(A + B) mod 729
 ```
 
-This creates a laterally self-validating structure. Unlike Merkle trees where
-dependency is strictly hierarchical (child → parent), the tri-mutual dependency
-is mutual — each chunk validates its neighbours. If any chunk changes, the
-triangle de-coheres and the inconsistency is detectable from any vertex. This
-property makes the structure self-healing in a distributed context: any node
-holding any two vertices of the triangle can verify the third.
+For any triple (A, B, C) satisfying C = −(A+B) mod 729:
 
-Extending triangles to tetrahedra and nesting tetrahedra into a mesh gives a
-directed acyclic graph projected onto 3D space. Traversing the mesh never
-revisits an identical prior state, because each face boundary is a hash
-transition. The result is a non-repeating geometric data fabric with content-
-addressed navigation.
+```
+A ⊕ B = C
+B ⊕ C = A      (any two sides recover the third)
+A ⊕ C = B
+```
 
-The bookmark required to locate data in this space scales approximately as the
-square root of the data volume (O(√N) pointer size), derived from the
-intersection geometry of the tetrahedral faces. A 150 MB application binary
-(LibreOffice Writer) requires an address bookmark of approximately 10 KB rather
-than 150 MB — a compression ratio of approximately 15,000:1 for the pointer.
+This operation was confirmed by formal algebraic analysis (DeepAI GPT OSS
+120B, June 2026) to be the unique ternary analogue of binary XOR satisfying
+the three-way mutual recovery property. Its algebraic properties:
 
-### 9.5 GristMill: Content-Addressable Component Repository
+| Property      | Binary XOR          | Ternary ⊕ (mod 729)              |
+|---------------|---------------------|-----------------------------------|
+| Definition    | (a+b) mod 2         | −(a+b) mod 729                   |
+| Commutative   | Yes                 | Yes                               |
+| Idempotent    | a⊕a = 0            | a⊕a = a (in characteristic 3)    |
+| Self-inverse  | (a⊕b)⊕b = a        | (a⊕b)⊕b = a                      |
+| Associative   | Yes                 | No — not required for recovery    |
+| Class         | Abelian group       | Steiner quasigroup                |
 
-GristMill (Grist Is Stable Mnemonic Implicit Learning Libraries) is a proposed
-component repository and package manager for TernOO-5500FP applications and
-FlowCode libraries. It uses MAP word octree coordinates as native storage
-addresses, enabling the tri-mutual dependency integrity described in Section 9.4.
+Implementation in Python (and directly translatable to 5500FP assembly):
 
-GristMill's key departure from conventional package management (Snap, Flatpak,
-Nix) is the shift from reactive sandboxing to implicit ecological specification.
-In conventional systems, security and dependency stability are achieved by
-enclosure: a container wall enforces isolation. In GristMill, each module
-carries an intrinsic manifest of its necessary and sufficient environmental
-conditions. When a module is published to the repository, the host verifies
-these conditions mathematically. When deployed, the TernOO OS surfaces the
-precise adjunct components needed to satisfy the ecology — the environment
-assembles around the function call, not the other way around.
+```python
+MOD = 3**6  # 729 — one 6-trit tribble
+def ternary_op(a, b): return (-(a + b) % MOD) % MOD
+```
 
-Application composition in GristMill follows an appliance metaphor: components
-snap together like predefined elements in a modular system, each knowing its
-own interface requirements. A text editor assembles from:
+Verified: ternary_op(123, 456) = 150; ternary_op(456, 150) = 123 ✓
+
+#### 9.4.2 TMesh Triangle Structure
+
+Each triangle in the TMesh has three sides, each side carrying one tribble
+value. The three sides satisfy the Steiner quasigroup relation: knowing any
+two sides recovers the third. This is the content of the triangle — not an
+arbitrary coordinate but a genuine algebraic relationship between three content
+chunks.
+
+The **traversal accumulator** advances at each triangle step:
+
+```
+S_new = (S + C) mod 729
+```
+
+where C is the recovered third side. The accumulator is always one tribble.
+It is the fingerprint of the traversal path, not the object content itself.
+The object is the ordered sequence of triangles visited.
+
+A **sentinel value** of C = 0 signals end-of-object. This reserves exactly
+one tribble value (0.14% of the vocabulary) as a termination marker. No
+other intrinsic halt condition exists in the Steiner quasigroup algebra.
+
+#### 9.4.3 DAG Property via Vocabulary Ordering (Meccano Set)
+
+The TMesh traversal is a Directed Acyclic Graph (DAG) — paths move forward
+only, never revisiting a triangle. This property is enforced by **vocabulary
+ordering**: the mesh is populated with a curated, ordered set of machine
+operations (the Meccano set) where each traversal step must advance to a
+higher-indexed chunk.
+
+The vocabulary must be algebraically closed under the Steiner quasigroup
+operation. Closure requires the vocabulary size to be a power of 3. The
+minimal useful closed sub-quasigroup of Z/729Z is the 27-element set of
+multiples of 27:
+
+```
+V₂₇ = {27, 54, 81, ..., 702}   (multiples of 27, size = 3³ = 27)
+```
+
+Verified: ternary_op(27, 54) = −81 mod 729 = 648 = 24×27 ∈ V₂₇ ✓
+
+Larger vocabularies use the 81-element set (multiples of 9) or the full
+729-element set. The choice determines the expressive range of the Meccano
+set — larger vocabularies represent more diverse objects.
+
+The DAG ordering constraint means GristMill's object vocabulary has a natural
+dependency order: operations that define values precede operations that consume
+them. This is not an imposed convention — it is the natural order of machine
+code, falling out of the architecture without overhead.
+
+#### 9.4.4 Relationship to Prior Content-Addressable Work
+
+The tri-mutual dependency structure described in earlier versions of this
+section (MaskA = f(Hash(B) ⊕ Hash(C)) etc.) is now formalised as the Steiner
+quasigroup. The informal XOR-hash notation was a correct intuition; the
+confirmed operation is A ⊕ B = −(A+B) mod 729, which is precisely the
+ternary analogue of binary XOR described by the earlier notation.
+
+The "bubble search" navigation remains correct: at each bifurcation the two
+candidate next chunks are compared against the target pattern, and the path
+that halves the distance to the target is taken. The Steiner quasigroup
+provides the third-side recovery at each triangle; the bubble search provides
+the navigation decision at each fork.
+
+### 9.5 GristMill: Generative Object Synthesis via TMesh Traversal
+
+GristMill (Grist Is Stable Mnemonic Implicit Learning Libraries) is the
+compositional synthesis engine for TernOO-5500FP applications and FlowCode
+libraries. GristMill is not a repository — it is a **generator**. Objects
+are not stored at locations and retrieved; they are reconstructed by traversal
+through the TMesh.
+
+#### 9.5.1 MMID and MMOE
+
+Every TernOO object has two coordinates:
+
+**MMID (Minimal Map ID).** A TTree MAP word (T18=+1) encoding the object's
+structural identity. Derived from the structural tribbles of the object's leaf
+UDP word. The MMID is small — comparable to a postcode — and encodes what
+the object IS structurally, not what content it carries. Objects with similar
+structural roles are geometrically close in TTree space.
+
+**MMOE (Minimal Map Object Entity).** An OTree MAP word (T18=0, ABSOLUTE_3D
+mode) encoding the object's canonical content address. Derived by folding the
+Steiner quasigroup accumulator over all tribbles of the object's complete word
+sequence. The MMOE is content-addressable: identical word sequences always
+produce the same MMOE, and any change to any word changes the MMOE completely.
+
+The MMID and MMOE are the same size (both are single MAP words). The MMID
+is where navigation begins; the MMOE is where it terminates. The object is
+what accumulates along the traversal path between them.
+
+#### 9.5.2 Generative Synthesis
+
+Given an MMID, GristMill synthesises the corresponding object by:
+
+1. Locating the MMID in the TTree vocabulary mesh
+2. Stepping through successive triangles, recovering the third side at each
+   step via the Steiner quasigroup operation
+3. Accumulating the traversal state: S = (S + C) mod 729 at each step
+4. Terminating when the sentinel value C = 0 is recovered
+5. The ordered sequence of recovered C values, decoded as TernOO word
+   tribbles, constitutes the object
+
+The object is not retrieved from storage. It is reconstructed by the path.
+GristMill is the engine that walks the path.
+
+#### 9.5.3 Ecological Specification (unchanged from v0.3)
+
+GristMill's departure from conventional package management — implicit
+ecological specification over reactive sandboxing — remains as described in
+earlier versions. Each module carries an intrinsic manifest of its necessary
+and sufficient environmental conditions, verified at publish time. The
+environment assembles around the function call rather than the other way round.
+
+Application composition follows the appliance metaphor:
 Parent Window → Text Canvas → File Dialog → Markup Parser → (optional) P2P Share
 
-Each component's dependency on the prior is not an ad-hoc linkage resolved at
-install time but an intrinsic property of the component, verified at publish
-time. Dependency hell is replaced by dependency ecology.
+Each component's dependency on the prior is an intrinsic property of the
+component, not an ad-hoc linkage resolved at install time.
+
+#### 9.5.4 P2P Network Integration
+
+The TMesh/OTree dual coordinate system maps directly onto a three-layer P2P
+network stack:
+
+1. **TMesh layer (discovery).** Pure relative geometry, no central authority.
+   Nodes navigate the mesh to find objects by structural proximity.
+2. **Anchor layer (handshake).** A small set of content-defined OTree
+   coordinates that both nodes independently locate via TMesh navigation.
+   Shared anchors establish a shared OTree frame without prior coordination.
+3. **OTree layer (stable storage).** GristMill objects, versioned libraries,
+   and P2P network descriptors at canonical content-derived addresses.
+
+CGP (Constituent Governance Protocol) governance attaches to the anchor layer,
+providing democratic validation of shared network anchors via the three-token
+triarchy (CitiCoin/AgentCoin/PoliCoin).
 
 ### 9.6 Open Questions
 
@@ -1636,6 +1801,12 @@ chains are implemented via the CODE-SEG reference, where a subclass's method
 handler calls the parent's handler for unhandled messages. Chain depth is
 limited only by the call stack, not by word structure.
 
+Multiple inheritance is expected to fall out geometrically from TTree proximity
+rather than requiring explicit declaration. Objects satisfying the structural
+constraints of two types simultaneously live near both in TTree space — the
+inheritance relationship is a geometric fact, not a declared convention. This
+hypothesis has not yet been formally verified by prototype.
+
 **Exception and trap handling.** A TernOO-level convention for trap handler
 EXEC words — recognisable by a reserved qualifier pattern — would provide
 language-level exception semantics above the 5500FP's hardware interrupt layer.
@@ -1646,6 +1817,28 @@ binary cleanly: the 5500FP's 2-bit trit encoding maps 24 trits to 48 bits,
 fitting in a 64-bit host word with 16 bits spare (the TernOO-64 shadow
 execution model). Standard protocols transport TernOO word streams as opaque
 binary payloads.
+
+**Traversal product convergence.** The mathematical relationship between the
+ordered sequence of Steiner quasigroup values recovered during TMesh traversal
+and the content of the original object has not yet been formally characterised.
+The accumulator state (S = Σ Cᵢ mod 729) identifies the path uniquely for
+path lengths < 729. Whether the full ordered sequence of recovered values
+constitutes a sufficient reconstruction of the original object content — and
+under what conditions — is an open question requiring further algebraic analysis.
+
+**MMID second dimension.** The current MMID encoding is effectively
+one-dimensional: both UDP subclass trits land in tribble A (ta), leaving
+tribble B (tb) = 0 for objects with zero OFFSET. A second structural dimension
+— proposed as the EXEC word's tribble B, encoding calling convention — would
+give MMID a two-dimensional structure where Y encodes structural role and Z
+encodes interaction style. Pending implementation.
+
+**Boot ROM layout.** The class hierarchy type descriptors for the Boot ROM
+can now be specified: the OTree/TTree coordinate decision is resolved, the
+primal object word sequence is confirmed (MAP ORIGIN + UDP(0,0) + EXEC basic),
+and MMOE addresses are derivable by ternary_op fold over word tribbles. The
+Boot ROM layout itself — segment register initial values, type descriptor
+ordering, method table structure — is unspecified in v0.3.
 
 ---
 
