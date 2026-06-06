@@ -947,7 +947,7 @@ def run_gui():
         except Exception:
             tok = sym.kind
         nxt, conf = _brain_instance.predict_next(tok)
-        set_status(f"Brain suggests: after {tok} → {nxt.upper()} ({conf})")
+        set_status(f"Brain suggests: after {tok} → {nxt.upper() if nxt else '(none)'} ({conf})")
         print(f"[FlowCode] Brain suggestion: {tok} → {nxt} ({conf})")
 
     _action_btn("⬇ Word Dump", do_dump,   icon_key='dump')
@@ -1563,7 +1563,7 @@ def run_gui():
     # GHOST Canvas tab
     # ═══════════════════════════════════════════════════════════════════════════
 
-    GW, GH = 140, 52   # widget block size on ghost canvas
+    GW, GH = 160, 72   # widget block size on ghost canvas
 
     # Category colour by Y-range bracket
     def _ghost_cat_color(y_lo):

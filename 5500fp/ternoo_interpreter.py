@@ -641,15 +641,14 @@ class TernOOInterpreter:
 
     def _io_prompt_write(self, node, indent):
         self._emit(f"{indent}  {GREEN}[prompt-write] '{node.label}'{RESET}")
-        value = self.eval_stack.pop() if self.eval_stack else None
-        # If the stack held a raw ternary trit (-1/0/+1), show a human message
-        # rather than the raw integer.  A preceding numeric value (e.g. the age
-        # entered by the user) is displayed as-is.
-        _TRIT_MSG = {-1: 'Access denied', 0: 'Adult Supervision Required', 1: 'Access granted'}
-        if isinstance(value, int) and value in _TRIT_MSG:
-            msg = _TRIT_MSG[value]
-        else:
-            msg = str(value) if value is not None else f"[{node.label}]"
+        _ = self.eval_stack.pop() if self.eval_stack else None          # discard trit
+        value = self.eval_stack.pop() if self.eval_stack else '?'       # get age
+        # Trit-to-message mapping preserved for future reference (e.g. a dedicated
+        # trit-display output node that intentionally shows the comparison result):
+        # _TRIT_MSG = {-1: 'Access denied', 0: 'Adult Supervision Required', 1: 'Access granted'}
+        # if isinstance(value, int) and value in _TRIT_MSG:
+        #     msg = _TRIT_MSG[value]
+        msg = str(value) if value is not None else f"[{node.label}]"
         try:
             import tkinter as tk
             from tkinter import messagebox
@@ -727,8 +726,9 @@ class TernOOInterpreter:
                 else:
                     trit = +1 if val > ref else (0 if val == ref else -1)
                 self._emit(f"{indent}  {GREEN}[compare] {val} vs {ref} → trit={trit:+d}{RESET}")
-            if self.eval_stack: self.eval_stack.pop()
-            return trit
+            if self.eval_stack: self.eval_stack.pop()   # pop age
+            self.eval_stack.append(val)                 # push age back underneath
+            return trit                                 # caller pushes trit on top
 
         # Arithmetic
         if 'ADD' in words or 'PLUS' in words or 'INCREMENT' in words:
