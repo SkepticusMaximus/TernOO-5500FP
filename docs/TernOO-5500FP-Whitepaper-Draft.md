@@ -1,6 +1,6 @@
 # TernOO: A Self-Describing Object Architecture for Balanced Ternary
 
-**Stevo (SkepticusMaximus)**
+**Steven Cathery (SkepticusMaximus)**
 Independent Developer, Adelaide, South Australia
 https://github.com/SkepticusMaximus
 
