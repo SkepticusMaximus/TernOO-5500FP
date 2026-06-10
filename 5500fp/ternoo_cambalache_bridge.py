@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# KNOWN-BROKEN against Rev4 gristmill (10 Jun 2026 — CAI decision).
+# Bridge imports `instance_hash` and uses MMID(type, instance=...) — both
+# removed in the 09 Jun Rev4 primitives port. Rework follows as next task.
+# Do not run until specced.
 """
 TernOO Cambalache Bridge
 ========================
