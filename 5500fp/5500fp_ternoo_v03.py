@@ -10,7 +10,7 @@ Implements the 2+4+18 expanded word format:
 9 primary types (3² = 81 qualifier combos each):
   −− (−1,−1) = EXEC    −0 (−1, 0) = MAP     −+ (−1,+1) = DATA
   0− ( 0,−1) = NEURAL   00 ( 0, 0) = I/O      0+ ( 0,+1) = CRYPTO (reserved)
-  +− (+1,−1) = OPEN_A   +0 (+1, 0) = OPEN_B   ++ (+1,+1) = POOL
+  +− (+1,−1) = OPCODE   +0 (+1, 0) = OPEN_B   ++ (+1,+1) = POOL
 
 Backward compatibility: all existing EXEC/MAP/DATA words are valid under
 the new format — their T23 values (−1, 0, +1) map to the first trit of
@@ -120,6 +120,9 @@ PRIMARY_OPEN_A = _primary_val(+1,-1)  # +−
 PRIMARY_OPEN_B = _primary_val(+1, 0)  # +0
 PRIMARY_POOL   = _primary_val(+1,+1)  # ++  (dynamic allocation)
 
+PRIMARY_OPCODE = PRIMARY_OPEN_A   # (+1, −1) — OPEN_A retired in favour of OPCODE.
+                                  # See §3 of the whitepaper (mid-Aug pass).
+
 PRIMARY_NAMES = {
     PRIMARY_EXEC:   'EXEC',
     PRIMARY_MAP:    'MAP',
@@ -127,10 +130,21 @@ PRIMARY_NAMES = {
     PRIMARY_NEURAL: 'NEURAL',
     PRIMARY_IO:     'I/O',
     PRIMARY_CRYPTO: 'CRYPTO',
-    PRIMARY_OPEN_A: 'OPEN_A',
+    PRIMARY_OPEN_A: 'OPCODE',   # was 'OPEN_A' — PRIMARY_OPEN_A alias retained
     PRIMARY_OPEN_B: 'OPEN_B',
     PRIMARY_POOL:   'POOL',
 }
+
+# ── OPCODE family constants ────────────────────────────────────────────
+# Encoded as 2-trit balanced values (T21,T20 in qualifier). 4 reserved
+# slots are deliberately left unnamed — naming without a design is how
+# UDP drifted, the exact pathology this proposal corrects.
+OPF_ISA_CORE  = _primary_val(-1, -1)   # (−, −)
+OPF_ISA_STACK = _primary_val(-1,  0)   # (−, 0)
+OPF_WORD_OP   = _primary_val(-1, +1)   # (−, +)
+OPF_PIGART    = _primary_val( 0, -1)   # (0, −)
+OPF_MECCANO   = _primary_val( 0,  0)   # (0, 0)
+# (0,+1), (+1,-1), (+1,0), (+1,+1) reserved.
 
 def get_primary(word: int) -> int:
     """Extract 2-trit primary field as a comparable integer."""
@@ -545,6 +559,9 @@ def decode_word(w: int) -> dict:
                 'blocking':  qual_trits[1],
                 'channel':   pay}
 
+    elif prim == PRIMARY_OPCODE:
+        return decode_opcode_word(w)
+
     else:
         return {'type':name,'qualifier':qual,'payload':pay}
 
@@ -579,6 +596,11 @@ def describe_word(w: int) -> str:
         return f"NEURAL_STRUCT kind={d['kind']} size={d['size']}"
     elif t == 'I/O':
         return f"I/O dir={d['direction']} buf={d['buffering']} ch={d['channel']}"
+    elif t == 'OPCODE':
+        if d['family_name'] == 'MECCANO':
+            return f"OPCODE/MECCANO ⊕{d['meccano']} arity={d['arity']}"
+        else:
+            return f"OPCODE/{d['family_name']} {d['mnemonic']} arity={d['arity']}"
     return f"{t} qual={d.get('qualifier','?')} pay={d.get('payload','?')}"
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -594,6 +616,184 @@ OP_ADDI=27; OP_SUBI=28; OP_OUT=29; OP_IN=30
 OP_TOBJ=31; OP_TGET=32; OP_TPAYLOAD=33; OP_TCALL=34; OP_TNEW=35
 OP_TBUILD=36; OP_TSEG=37
 OP_RPOINT=38; OP_RLINE=39; OP_RNODE=40; OP_REDGE=-1; OP_RENDER=-2
+
+# ── OPCODE word — mnemonic table ──────────────────────────────────────────────
+# Keys: (family, op_index) where family is one of the OPF_* constants.
+# MECCANO family uses meccano value, not op_index — no entries here for it.
+# OP_REDGE=-1 and OP_RENDER=-2 have unusual negative encoding (v0.3 quirk,
+# kept as-is — cleanup is a separate task per work order).
+
+OPCODE_MNEMONICS: dict = {
+    # ── ISA_CORE: 27 ops — arithmetic, logic, memory, control flow ──────
+    (OPF_ISA_CORE,  0): 'NOP',    (OPF_ISA_CORE,  1): 'HLT',
+    (OPF_ISA_CORE,  2): 'ADD',    (OPF_ISA_CORE,  3): 'SUB',
+    (OPF_ISA_CORE,  4): 'MUL',    (OPF_ISA_CORE,  5): 'DIV',
+    (OPF_ISA_CORE,  6): 'NEG',    (OPF_ISA_CORE,  7): 'MOV',
+    (OPF_ISA_CORE,  8): 'LDI',    (OPF_ISA_CORE,  9): 'LD',
+    (OPF_ISA_CORE, 10): 'ST',     (OPF_ISA_CORE, 11): 'JMP',
+    (OPF_ISA_CORE, 12): 'JEQ',    (OPF_ISA_CORE, 13): 'JNE',
+    (OPF_ISA_CORE, 14): 'JB',     (OPF_ISA_CORE, 19): 'MIN',
+    (OPF_ISA_CORE, 20): 'MAX',    (OPF_ISA_CORE, 21): 'TXOR',
+    (OPF_ISA_CORE, 22): 'EQUAL',  (OPF_ISA_CORE, 23): 'SUM',
+    (OPF_ISA_CORE, 24): 'TTT',    (OPF_ISA_CORE, 25): 'TTZ',
+    (OPF_ISA_CORE, 26): 'TTP',    (OPF_ISA_CORE, 27): 'ADDI',
+    (OPF_ISA_CORE, 28): 'SUBI',   (OPF_ISA_CORE, 29): 'OUT',
+    (OPF_ISA_CORE, 30): 'IN',
+
+    # ── ISA_STACK: 4 ops — stack-band ──────────────────────────────────
+    (OPF_ISA_STACK, 15): 'JSR',   (OPF_ISA_STACK, 16): 'RTI',
+    (OPF_ISA_STACK, 17): 'PUSH',  (OPF_ISA_STACK, 18): 'POP',
+
+    # ── WORD_OP: 7 ops — TernOO object operations ──────────────────────
+    (OPF_WORD_OP, 31): 'TOBJ',    (OPF_WORD_OP, 32): 'TGET',
+    (OPF_WORD_OP, 33): 'TPAYLOAD',(OPF_WORD_OP, 34): 'TCALL',
+    (OPF_WORD_OP, 35): 'TNEW',    (OPF_WORD_OP, 36): 'TBUILD',
+    (OPF_WORD_OP, 37): 'TSEG',
+
+    # ── PIGART: 5 ops — rendering primitives ───────────────────────────
+    (OPF_PIGART, 38): 'RPOINT',   (OPF_PIGART, 39): 'RLINE',
+    (OPF_PIGART, 40): 'RNODE',    (OPF_PIGART, -1): 'REDGE',
+    (OPF_PIGART, -2): 'RENDER',
+
+    # MECCANO family: uses meccano value, not op_index. No entries here.
+}
+
+# ── Reverse lookup: mnemonic string → (family, op_index) ─────────────────────
+OPCODE_MNEMONICS_REVERSE: dict = {v: k for k, v in OPCODE_MNEMONICS.items()}
+
+# ── OPF family names ──────────────────────────────────────────────────────────
+_OPF_NAMES = {
+    OPF_ISA_CORE:  'ISA_CORE',
+    OPF_ISA_STACK: 'ISA_STACK',
+    OPF_WORD_OP:   'WORD_OP',
+    OPF_PIGART:    'PIGART',
+    OPF_MECCANO:   'MECCANO',
+}
+
+
+def build_opcode_word(family: int, arity: int,
+                      op_index: int = 0, immediate: int = 0,
+                      meccano: int = None) -> int:
+    """Build an OPCODE primary word.
+
+    Layout:
+      [T23..T22] primary = PRIMARY_OPCODE (+1, −1)
+      [T21..T20] family  (2 trits, balanced −4..+4 → 9 family slots)
+      [T19..T18] arity   (2 trits, balanced −4..+4 → 0..8 via value+4)
+      [T17..T0]  payload (18 trits):
+        MECCANO family (family == OPF_MECCANO):
+          - T5..T0  = Meccano value as low tribble (0..728, multiple of 27)
+          - T11..T6 = 0
+          - T17..T12 = spare/extension (default 0)
+        Other families:
+          - T17..T12 = op_index within family (6 trits, ±364)
+          - T11..T6  = immediate tribble (family-defined, default 0)
+          - T5..T0   = immediate tribble (family-defined, default 0)
+
+    Args:
+        family: one of OPF_* constants.
+        arity: 0..8 (encoded internally as arity − 4 into the 2-trit field).
+        op_index: signed integer in ±364 (family-internal opcode index).
+        immediate: signed integer fitting two tribbles (interpretation family-defined).
+        meccano: 0..728, multiple of 27, or 0 sentinel.
+                 Mutually exclusive with op_index/immediate; implies family=OPF_MECCANO.
+
+    Raises:
+        ValueError on out-of-range arity, family, op_index, immediate, or meccano value.
+    """
+    if arity < 0 or arity > 8:
+        raise ValueError(f"arity must be 0..8, got {arity}")
+    arity_enc = arity - 4   # encode as balanced value: -4..+4
+
+    # Validate family fits in 2 trits (balanced -4..+4)
+    fam_trits = to_trits(family, 2)
+    if from_trits(fam_trits) != family:
+        raise ValueError(f"family value {family} does not fit in 2 trits")
+
+    if meccano is not None:
+        # MECCANO path — op_index/immediate ignored.
+        # Normalise to the balanced-ternary representative of Z/729Z.
+        # 729 (the group identity element) → 0; values > 364 fold negative.
+        # This is required because the 6-trit field stores balanced values (±364 max).
+        meccano = meccano % 729           # 729 → 0; reduces any positive input
+        if meccano > 364:
+            meccano -= 729                # e.g. 702 → -27, 378 → -351
+        if meccano != 0 and meccano % 27 != 0:
+            raise ValueError(f"meccano must be 0 or a multiple of 27 (balanced), got {meccano}")
+        # Build qualifier: [T21..T20] = family, [T19..T18] = arity_enc
+        qual = set_field(0, 2, 2, family)    # T21..T20 within qual 4-trit block
+        qual = set_field(qual, 0, 2, arity_enc)  # T19..T18
+        # Payload: low tribble (T5..T0) = meccano value (balanced); rest = 0
+        pay = set_field(0, 0, 6, meccano)
+    else:
+        # Non-MECCANO path
+        if op_index < -364 or op_index > 364:
+            raise ValueError(f"op_index must be ±364, got {op_index}")
+        # Build qualifier
+        qual = set_field(0, 2, 2, family)
+        qual = set_field(qual, 0, 2, arity_enc)
+        # Payload: T17..T12 = op_index, T11..T0 = immediate (split across two tribbles)
+        pay = set_field(0, 12, 6, op_index)
+        pay = set_field(pay, 0, 12, immediate)
+
+    # Assemble full word: primary at T23..T22, qualifier at T21..T18, payload at T17..T0
+    w = _make_word(PRIMARY_OPCODE, qual, pay)
+    return w
+
+
+def decode_opcode_word(word: int) -> dict:
+    """Decode an OPCODE primary word. Inverse of build_opcode_word.
+
+    Returns:
+        {
+          'type': 'OPCODE',
+          'family': int,           # OPF_* constant
+          'family_name': str,      # 'ISA_CORE' | 'ISA_STACK' | 'WORD_OP' | 'PIGART' | 'MECCANO' | 'RESERVED'
+          'arity': int,            # 0..8
+          'op_index': int,         # ±364, or None for MECCANO family
+          'mnemonic': str,         # from OPCODE_MNEMONICS, or '?' for unknown
+          'immediate': int,        # signed, two tribbles wide
+          'meccano': int,          # 0..728 for MECCANO family, None otherwise
+        }
+
+    Raises:
+        ValueError if word's primary is not PRIMARY_OPCODE.
+    """
+    prim = get_primary(word)
+    if prim != PRIMARY_OPCODE:
+        raise ValueError(f"Not an OPCODE word (primary={prim})")
+
+    qual      = get_qualifier(word)    # 4-trit field T21..T18
+    family    = get_field(qual, 2, 2)  # T21..T20 within qual (positions 2-3)
+    arity_enc = get_field(qual, 0, 2)  # T19..T18 within qual (positions 0-1)
+    arity     = arity_enc + 4          # decode: stored+4
+
+    family_name = _OPF_NAMES.get(family, 'RESERVED')
+
+    pay = get_payload(word)
+
+    if family == OPF_MECCANO:
+        meccano  = get_field(pay, 0, 6)   # low tribble T5..T0
+        op_index = None
+        immediate = 0
+        mnemonic = '?'
+    else:
+        op_index  = get_field(pay, 12, 6)  # T17..T12
+        immediate = get_field(pay, 0, 12)  # T11..T0
+        meccano   = None
+        mnemonic  = OPCODE_MNEMONICS.get((family, op_index), '?')
+
+    return {
+        'type':        'OPCODE',
+        'family':      family,
+        'family_name': family_name,
+        'arity':       arity,
+        'op_index':    op_index,
+        'mnemonic':    mnemonic,
+        'immediate':   immediate,
+        'meccano':     meccano,
+    }
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # SECTION 5 — CPU
@@ -777,6 +977,11 @@ class CPU5500FP:
             if op==OP_TTT and t==-1: self.pc+=imm
             elif op==OP_TTZ and t==0: self.pc+=imm
             elif op==OP_TTP and t==1: self.pc+=imm
+        # ── Legacy v0.1 single-trit T23 tag ops ────────────────────────────
+        # OP_TOBJ and OP_TGET treat T23 as a single-trit tag, pre-dating the
+        # 2-trit primary field. Retained for emulator demo compatibility.
+        # Documented behaviour on OPCODE-primary words pinned by
+        # test_legacy_tag_pinning. Deprecation deferred to post-ASPLOS cleanup.
         elif op==OP_TOBJ:
             rd,rs1,rs2,*_=self._regs_A(instr)
             val=self.read_reg(rs1)
@@ -974,6 +1179,7 @@ def test_primary_types():
         (PRIMARY_NEURAL, 'NEURAL', ( 0,-1)),
         (PRIMARY_IO,     'I/O',    ( 0, 0)),
         (PRIMARY_CRYPTO, 'CRYPTO', ( 0,+1)),
+        (PRIMARY_OPCODE, 'OPCODE', (+1,-1)),
         (PRIMARY_POOL,   'POOL',   (+1,+1)),
     ]
     for pval, name, (t23,t22) in types:
@@ -1106,6 +1312,163 @@ def test_neural_network():
     print(f"  Synapse:  {describe_word(syn)}")
     print(f"  Weight encoding: 2-trit → ±4 range (vs BitNet's {{-1,0,+1}})")
     print("  PASS\n")
+
+def test_legacy_tag_pinning():
+    """
+    Pin the documented v0.1 behaviour of OP_TOBJ and OP_TGET on OPCODE-primary words.
+    These ops use a single-trit T23 tag, pre-dating the 2-trit primary field.
+    Retained for emulator demo compatibility; deprecation deferred to post-ASPLOS cleanup.
+    """
+    print("="*60)
+    print("TEST: Legacy v0.1 single-trit tag pinning (OP_TOBJ, OP_TGET)")
+    print("="*60)
+
+    cpu = CPU5500FP()
+    a   = Asm(cpu)
+
+    # Build an OPCODE word: T23=+1, T22=-1 (PRIMARY_OPCODE = +1,-1)
+    opcode_word = build_opcode_word(OPF_ISA_CORE, arity=2, op_index=OP_ADD)
+    assert get_trit(opcode_word, 23) == +1, "OPCODE word: T23 should be +1"
+    assert get_trit(opcode_word, 22) == -1, "OPCODE word: T22 should be -1"
+
+    # ── OP_TOBJ: set T23 tag on val; T22 must be preserved ───────────────
+    # set_trit(val, 23, tag) touches only T23; T22 stays as it was in val.
+    new_tag = -1
+    result = set_trit(opcode_word, 23, new_tag)
+    assert get_trit(result, 23) == new_tag,  "OP_TOBJ: T23 should be updated"
+    assert get_trit(result, 22) == -1,       "OP_TOBJ: T22 must be preserved (v0.1 behaviour)"
+
+    # ── OP_TGET: reads T23 alone, ignores T22 ────────────────────────────
+    t23_read = get_trit(opcode_word, 23)
+    assert t23_read == +1, f"OP_TGET: should return T23=+1, got {t23_read}"
+    # The 2-trit primary value would be PRIMARY_OPCODE = +1,-1 ≠ +1 alone
+    assert t23_read != get_primary(opcode_word), \
+        "OP_TGET single-trit T23 != 2-trit get_primary() (confirms v0.1 narrowness)"
+
+    print("  OP_TOBJ: T23 updated, T22 preserved — PASS")
+    print("  OP_TGET: returns T23 alone (not 2-trit primary) — PASS")
+    print("  Pre-grammar v0.1 behaviour, retained for emulator demos.")
+    print("  PASS\n")
+
+
+def test_opcode_words():
+    print("="*60)
+    print("TEST: OPCODE primary words — build, decode, describe")
+    print("="*60)
+
+    # ── 1. Round-trip: ISA_CORE ADD arity=2 ───────────────────────────
+    w = build_opcode_word(OPF_ISA_CORE, arity=2, op_index=OP_ADD)
+    d = decode_opcode_word(w)
+    assert d['type']        == 'OPCODE',    f"type mismatch: {d['type']}"
+    assert d['family']      == OPF_ISA_CORE
+    assert d['family_name'] == 'ISA_CORE'
+    assert d['mnemonic']    == 'ADD'
+    assert d['arity']       == 2
+    assert d['op_index']    == OP_ADD
+    assert d['meccano']     is None
+    assert get_primary(w)   == PRIMARY_OPCODE
+    assert get_trit(w, 23)  == +1, "T23 must be +1 for OPCODE"
+    assert get_trit(w, 22)  == -1, "T22 must be -1 for OPCODE"
+    print(f"  ISA_CORE ADD arity=2: {describe_word(w)}")
+    print("  ISA_CORE round-trip: PASS")
+
+    # ── 2. ISA_STACK JSR arity=0 ──────────────────────────────────────
+    w2 = build_opcode_word(OPF_ISA_STACK, arity=0, op_index=OP_JSR)
+    d2 = decode_opcode_word(w2)
+    assert d2['family_name'] == 'ISA_STACK'
+    assert d2['mnemonic']    == 'JSR'
+    assert d2['arity']       == 0
+    assert d2['op_index']    == OP_JSR
+    print(f"  ISA_STACK JSR arity=0: {describe_word(w2)}")
+    print("  ISA_STACK round-trip: PASS")
+
+    # ── 3. PIGART with negative op_index (REDGE=-1, RENDER=-2) ────────
+    for op_sym, op_val in [('REDGE', OP_REDGE), ('RENDER', OP_RENDER)]:
+        wp = build_opcode_word(OPF_PIGART, arity=4, op_index=op_val)
+        dp = decode_opcode_word(wp)
+        assert dp['family_name'] == 'PIGART'
+        assert dp['mnemonic']    == op_sym,  f"{op_sym}: mnemonic mismatch: {dp['mnemonic']}"
+        assert dp['op_index']    == op_val
+        print(f"  PIGART {op_sym} arity=4: {describe_word(wp)}")
+    print("  PIGART (negative op_index) round-trip: PASS")
+
+    # ── 4. MECCANO round-trip: spot-check balanced values ─────────────
+    # Use values that fit directly in 6 balanced trits (max ±364).
+    for mv in [27, 189, 351]:
+        wm = build_opcode_word(OPF_MECCANO, arity=4, meccano=mv)
+        dm = decode_opcode_word(wm)
+        assert dm['family_name'] == 'MECCANO'
+        assert dm['meccano']     == mv,  f"meccano mismatch: {dm['meccano']} != {mv}"
+        assert dm['op_index']    is None
+        assert dm['arity']       == 4
+        # Verify stored at low tribble T5..T0 (payload positions 0-5)
+        pay = get_payload(wm)
+        assert get_field(pay, 0, 6) == mv, "MECCANO: low-tribble payload mismatch"
+        print(f"  MECCANO ⊕{mv}: {describe_word(wm)}")
+    print("  MECCANO round-trip (balanced values): PASS")
+
+    # ── 4b. MECCANO normalisation: 702 is −27 in balanced ternary ────
+    # Values > 364 fold to their balanced form: 702 = 729 − 27 → −27.
+    # This is the correct Z/729Z representative — 702 ≡ −27 (mod 729).
+    wm_702 = build_opcode_word(OPF_MECCANO, arity=4, meccano=702)
+    dm_702 = decode_opcode_word(wm_702)
+    assert dm_702['meccano'] == -27, \
+        f"702 should normalise to -27, got {dm_702['meccano']}"
+    print(f"  MECCANO normalisation 702→-27: {describe_word(wm_702)}")
+    print("  MECCANO normalisation: PASS")
+
+    # ── 5. Arity extremes 0 and 8 ─────────────────────────────────────
+    for arity_val in [0, 8]:
+        wa = build_opcode_word(OPF_ISA_CORE, arity=arity_val, op_index=OP_NOP)
+        da = decode_opcode_word(wa)
+        assert da['arity'] == arity_val, f"arity {arity_val} round-trip failed: got {da['arity']}"
+    print("  Arity extremes (0 and 8) round-trip: PASS")
+
+    # ── 6. decode_word() dispatches to decode_opcode_word ────────────
+    w_nop = build_opcode_word(OPF_ISA_CORE, arity=0, op_index=OP_NOP)
+    dg = decode_word(w_nop)
+    assert dg['type']     == 'OPCODE'
+    assert dg['mnemonic'] == 'NOP'
+    print("  decode_word dispatch: PASS")
+
+    # ── 7. describe_word output format ────────────────────────────────
+    desc_isa = describe_word(build_opcode_word(OPF_ISA_CORE, arity=2, op_index=OP_ADD))
+    assert 'OPCODE/ISA_CORE' in desc_isa and 'ADD' in desc_isa, \
+        f"ISA describe format wrong: '{desc_isa}'"
+    desc_mec = describe_word(build_opcode_word(OPF_MECCANO, arity=4, meccano=54))
+    assert 'OPCODE/MECCANO' in desc_mec and '54' in desc_mec, \
+        f"MECCANO describe format wrong: '{desc_mec}'"
+    print(f"  describe_word ISA:    '{desc_isa}'")
+    print(f"  describe_word MECCANO: '{desc_mec}'")
+    print("  describe_word format: PASS")
+
+    # ── 8. OPCODE primary differs from EXEC/DATA primary ─────────────
+    assert PRIMARY_OPCODE != PRIMARY_EXEC
+    assert PRIMARY_OPCODE != PRIMARY_DATA
+    assert PRIMARY_OPCODE == PRIMARY_OPEN_A, "PRIMARY_OPCODE alias must equal PRIMARY_OPEN_A"
+    print("  PRIMARY_OPCODE identity: PASS")
+
+    # ── 9. PRIMARY_NAMES lookup ───────────────────────────────────────
+    assert PRIMARY_NAMES[PRIMARY_OPCODE] == 'OPCODE', \
+        f"PRIMARY_NAMES[PRIMARY_OPCODE] = '{PRIMARY_NAMES[PRIMARY_OPCODE]}'"
+    print("  PRIMARY_NAMES lookup: PASS")
+
+    print("  PASS\n")
+
+
+def run_tests():
+    """Run all unit tests — called by --test flag."""
+    test_primary_types()
+    test_word_constructors()
+    test_arithmetic()
+    test_renderer()
+    test_neural_network()
+    test_legacy_tag_pinning()
+    test_opcode_words()
+    print("="*60)
+    print("ALL TESTS PASSED")
+    print("="*60)
+
 
 def demo_word_gallery():
     print("="*60)
@@ -1513,4 +1876,7 @@ def run_pure_ternoo_ai_workbench():
             # PERSISTENT HARDWARE MATRIX CHECKPOINT SAVER
 
 if __name__ == '__main__':
-    run_pure_ternoo_ai_workbench()
+    if '--test' in sys.argv:
+        run_tests()
+    else:
+        run_pure_ternoo_ai_workbench()

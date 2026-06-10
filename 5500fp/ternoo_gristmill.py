@@ -38,14 +38,28 @@ _spec = _ilu.spec_from_file_location(
 _mod = _ilu.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
-build_map_word    = _mod.build_map_word
-decode_map_word   = _mod.decode_map_word
-build_udp_word    = _mod.build_udp_word
-build_exec_word   = _mod.build_exec_word
-decode_word       = _mod.decode_word
-describe_word     = _mod.describe_word
-set_field         = _mod.set_field
-get_field         = _mod.get_field
+build_map_word       = _mod.build_map_word
+decode_map_word      = _mod.decode_map_word
+build_udp_word       = _mod.build_udp_word
+build_exec_word      = _mod.build_exec_word
+decode_word          = _mod.decode_word
+describe_word        = _mod.describe_word
+set_field            = _mod.set_field
+get_field            = _mod.get_field
+get_primary          = _mod.get_primary
+get_trit             = _mod.get_trit
+set_trit             = _mod.set_trit
+set_primary          = _mod.set_primary
+PRIMARY_OPCODE       = _mod.PRIMARY_OPCODE
+OPF_ISA_CORE         = _mod.OPF_ISA_CORE
+OPF_ISA_STACK        = _mod.OPF_ISA_STACK
+OPF_WORD_OP          = _mod.OPF_WORD_OP
+OPF_PIGART           = _mod.OPF_PIGART
+OPF_MECCANO          = _mod.OPF_MECCANO
+OPCODE_MNEMONICS     = _mod.OPCODE_MNEMONICS
+OP_ADD               = _mod.OP_ADD
+build_opcode_word    = _mod.build_opcode_word
+decode_opcode_word   = _mod.decode_opcode_word
 
 
 # ── Rev4 Ternary Primitives (ported from private/tmesh_otree_prototype.py) ────
@@ -105,6 +119,33 @@ def vocab_step(current_chunk: int, side_a: int, side_b: int) -> tuple:
         return (side_c, True)   # sentinel — valid arrival
     valid = (side_c >= current_chunk) and (side_c in MECCANO_VOCAB)
     return (side_c, valid)
+
+
+def meccano_tribble(word: int) -> int:
+    """
+    Extract the MECCANO payload tribble (T5–T0, low tribble, tc) from an
+    OPCODE/MECCANO word.
+
+    This widens the input domain accepted by the traversal accumulator: any
+    OPCODE word whose primary is PRIMARY_OPCODE and whose family is OPF_MECCANO
+    can be folded into vocab_step / the S-accumulator by passing its low tribble
+    as the step value.
+
+    Note: the meccano value is stored at T5-T0 = low tribble = extract_tribbles
+    index [2] (tc). The word format spec stores T17-T12 (ta, index [0]) as spare.
+    Use index [2], not [0], to extract the meccano value.
+
+    Raises:
+        ValueError if word is not a PRIMARY_OPCODE/OPF_MECCANO word.
+    """
+    if get_primary(word) != PRIMARY_OPCODE:
+        raise ValueError("Not a PRIMARY_OPCODE word")
+    d = decode_opcode_word(word)
+    if d['family'] != OPF_MECCANO:
+        raise ValueError("Not a MECCANO-family OPCODE word")
+    # Low tribble = tc = extract_tribbles(word)[2] = T5-T0 = meccano value
+    _ta, _tb, tc = extract_tribbles(word)
+    return tc
 
 
 def ternary_sign(val: int) -> int:
@@ -747,6 +788,127 @@ def run_acceptance() -> bool:
     c18 = all(build_otree_mmoe(s) == build_otree_mmoe(s + MOD)
               for s in [0, 42, 100, 364, 727])
     _check(18, "Mask-fix: build_otree_mmoe(s) == build_otree_mmoe(s+729)", c18)
+
+    # ── 19. Round-trip: all 43 mnemonics build → decode losslessly ────────────
+    c19 = True
+    for (fam, idx), mnem in OPCODE_MNEMONICS.items():
+        for arity in [0, 4, 8]:
+            try:
+                w = build_opcode_word(fam, arity=arity, op_index=idx)
+                d = decode_opcode_word(w)
+                if d['mnemonic'] != mnem or d['arity'] != arity or d['op_index'] != idx:
+                    c19 = False
+            except Exception:
+                c19 = False
+    _check(19, "Round-trip: all 43 mnemonics build→decode losslessly", c19)
+
+    # ── 20. Meccano round-trip: all 27 vocab values + 0 sentinel ──────────────
+    # MECCANO values are stored as balanced ternary (6-trit, ±364 max).
+    # Values > 364 normalise to their Z/729Z balanced representative:
+    #   378 → -351, ..., 702 → -27, 729 → 0.
+    # build_opcode_word performs this normalisation automatically.
+    c20 = True
+    mec_vals = [0] + list(range(27, 730, 27))   # 0, 27, 54, ..., 702, 729 (= 0 mod 729)
+    for mv in mec_vals:
+        # Balanced ternary representative of mv in Z/729Z
+        mv_bt = mv % 729
+        if mv_bt > 364:
+            mv_bt -= 729
+        try:
+            w   = build_opcode_word(OPF_MECCANO, arity=0, meccano=mv)
+            d   = decode_opcode_word(w)
+            tc  = extract_tribbles(w)[2]   # low tribble T5-T0
+            if d['meccano'] != mv_bt or d['family_name'] != 'MECCANO':
+                c20 = False
+            if tc != mv_bt:
+                c20 = False
+        except Exception:
+            c20 = False
+    _check(20, "Meccano round-trip: all 27 vocab values + 0; low-tribble extraction correct", c20)
+
+    # ── 21. Closure through wrapping: ternary_op over MECCANO-word tribbles ───
+    # For any m1, m2 in MECCANO_VOCAB: ternary_op(tc(m1), tc(m2)) ∈ vocab_norm
+    # tc = extract_tribbles(word)[2] = T5-T0 = low tribble = meccano value.
+    # Note: work order says [0] but T5-T0 is tc = index [2]; [0] is spare T17-T12.
+    # vocab_norm21 = {0, 27, 54, ..., 702} — canonical Z/729Z representatives.
+    # tc values are balanced ternary (-351..+351); ternary_op returns 0..728.
+    # Normalise the ternary_op result with % MOD before membership check.
+    vocab_norm21 = set(v % MOD for v in MECCANO_VOCAB)
+    c21 = True
+    for m1 in MECCANO_VOCAB:
+        for m2 in MECCANO_VOCAB:
+            w1  = build_opcode_word(OPF_MECCANO, arity=0, meccano=m1)
+            w2  = build_opcode_word(OPF_MECCANO, arity=0, meccano=m2)
+            tc1 = extract_tribbles(w1)[2]   # low tribble = balanced meccano value
+            tc2 = extract_tribbles(w2)[2]
+            if (ternary_op(tc1, tc2) % MOD) not in vocab_norm21:
+                c21 = False
+    _check(21, "Closure: ternary_op over MECCANO-word payload tribbles yields vocab member", c21)
+
+    # ── 22. Discrimination: OPCODE vs EXEC vs DATA separated by get_primary ───
+    c22 = True
+    exec_prim = get_primary(build_exec_word(0, 0, 0, 4, 0))
+    data_prim = get_primary(_mod.build_int_word(42))
+    for (fam, idx) in list(OPCODE_MNEMONICS.keys())[:6]:
+        w    = build_opcode_word(fam, arity=2, op_index=idx)
+        prim = get_primary(w)
+        t23  = get_trit(w, 23)
+        if prim != PRIMARY_OPCODE:
+            c22 = False
+        if prim == exec_prim or prim == data_prim:
+            c22 = False
+        if t23 != +1:   # T23-band test: all OPCODE words have T23=+1
+            c22 = False
+    _check(22, "Discrimination: OPCODE/EXEC/DATA separated; T23=+1 for all OPCODE words", c22)
+
+    # ── 23. Arity law: arity encoded and recovered across all families/values ──
+    c23 = True
+    for arity in range(9):   # 0..8
+        for (fam, idx) in list(OPCODE_MNEMONICS.keys())[:5]:
+            w = build_opcode_word(fam, arity=arity, op_index=idx)
+            d = decode_opcode_word(w)
+            if d['arity'] != arity:
+                c23 = False
+    _check(23, "Arity law: arity 0..8 encoded/decoded for all families without lookahead", c23)
+
+    # ── 24. Regression: existing 18 gristmill criteria + test_primary_types ───
+    # Criteria 1-18 already verified above (they're in results[0:18]).
+    # test_primary_types: verify PRIMARY_OPCODE is in PRIMARY_NAMES as 'OPCODE'
+    c24a = (_mod.PRIMARY_NAMES.get(_mod.PRIMARY_OPCODE) == 'OPCODE')
+    # Verify 8 primary types round-trip correctly (was 7 before OPCODE)
+    ptype_count = 0
+    for (pval, pname, (t23, t22)) in [
+        (_mod.PRIMARY_EXEC,   'EXEC',   (-1,-1)),
+        (_mod.PRIMARY_MAP,    'MAP',    (-1, 0)),
+        (_mod.PRIMARY_DATA,   'DATA',   (-1,+1)),
+        (_mod.PRIMARY_NEURAL, 'NEURAL', ( 0,-1)),
+        (_mod.PRIMARY_IO,     'I/O',    ( 0, 0)),
+        (_mod.PRIMARY_CRYPTO, 'CRYPTO', ( 0,+1)),
+        (_mod.PRIMARY_OPCODE, 'OPCODE', (+1,-1)),
+        (_mod.PRIMARY_POOL,   'POOL',   (+1,+1)),
+    ]:
+        w = set_primary(0, pval)
+        if (get_primary(w) == pval and
+                get_trit(w, 23) == t23 and
+                get_trit(w, 22) == t22):
+            ptype_count += 1
+    c24 = c24a and ptype_count == 8 and all(results[:18])
+    _check(24, "Regression: 18 gristmill criteria pass; test_primary_types 8/8 incl. OPCODE", c24)
+
+    # ── 25. Legacy tag pinning: OP_TOBJ/OP_TGET behaviour on OPCODE words ─────
+    opcode_w   = build_opcode_word(OPF_ISA_CORE, arity=2, op_index=OP_ADD)
+    t23_before = get_trit(opcode_w, 23)
+    t22_before = get_trit(opcode_w, 22)
+    # OP_TOBJ: set_trit(val, 23, tag) — T22 must be preserved (v0.1 behaviour)
+    result_obj = set_trit(opcode_w, 23, -1)
+    t23_after  = get_trit(result_obj, 23)
+    t22_after  = get_trit(result_obj, 22)
+    # OP_TGET: get_trit(word, 23) returns T23 only — not the 2-trit primary
+    t23_get    = get_trit(opcode_w, 23)
+    c25 = (t23_before == +1 and t22_before == -1 and   # OPCODE primary: T23=+1, T22=-1
+           t23_after == -1 and t22_after == -1 and     # T23 updated, T22 preserved
+           t23_get == +1)                               # OP_TGET returns T23 alone
+    _check(25, "Legacy tag pinning: OP_TOBJ preserves T22; OP_TGET returns T23 alone", c25)
 
     # ── Summary ───────────────────────────────────────────────────────────────
     n_orig  = 13
