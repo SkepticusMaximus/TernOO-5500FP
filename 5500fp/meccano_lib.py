@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Meccano Library v0.2 — TernOO OPCODE program substrate + widget primitives
+Meccano Library v0.4 — TernOO OPCODE program substrate + widget primitives
 ===========================================================================
 Named programs composed of OPCODE word sequences.
 Each program carries a dual coordinate:
@@ -45,13 +45,15 @@ Design notes (CWC flags for CAI review):
      Renderer extracts via get_field. No new DATA subtype introduced.
      Helper: _build_size_word(width, height).
 
-  6. DATA word for label (v0.2, CAI flag):
-     Uses build_int_word(label_id). Renderer does decode_word → 'value' →
-     LABEL_TABLE lookup. No conflict with existing SCALAR int semantics.
+  6. DATA-STRING label encoding (v0.4, replaces LABEL_TABLE):
+     Uses build_string_word(STRING_ASCII, packed). Each word packs 3 ASCII
+     chars via base-128: packed = c0 + c1*128 + c2*16384. RNODE arity =
+     2 + ceil(len(text)/3). Renderer decodes via _decode_label_words().
+     LABEL_TABLE removed from both meccano_lib and pigart_ascii_renderer.
 
 Date: 2026-06-11, Adelaide
 Authors: Stevo (SkepticusMaximus) + Claude (Anthropic)
-Companion specs: Meccano-Library-v01-CWC-Spec.md, Meccano-Library-v02-CWC-Spec.md
+Companion specs: Meccano-Library-v01-CWC-Spec.md … Meccano-Library-v04-CWC-Spec.md
 """
 
 from __future__ import annotations
@@ -80,6 +82,8 @@ build_map_word     = _v03.build_map_word
 build_int_word     = _v03.build_int_word
 from_trits         = _v03.from_trits
 to_trits           = _v03.to_trits
+build_string_word  = _v03.build_string_word
+STRING_ASCII       = _v03.STRING_ASCII
 
 # ── Load ternoo_gristmill (valid identifier — standard import) ────────────────
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -290,6 +294,38 @@ def _build_size_word(width: int, height: int) -> int:
     return build_int_word(payload)
 
 
+def _encode_label(text: str) -> List[int]:
+    """Encode a label string as one or more DATA-STRING/ASCII words.
+
+    Packs 3 printable ASCII chars per word using base-128 encoding:
+      packed = c0 + c1*128 + c2*128²
+    where c0, c1, c2 are the character ordinals (0-127).
+    Short chunks are null-padded; the decoder strips trailing nulls.
+
+    Max payload: 3 chars × 7 bits = 21 bits ≤ 18-trit capacity (≈28.5 bits). ✓
+    All printable ASCII (32–126) and printable chars up to 127 are supported.
+
+    Returns one word per 3-char chunk. RNODE arity = 2 + len(_encode_label(text)).
+
+    Encoding uses the existing build_string_word(STRING_ASCII, packed) from v03.
+    The 'length_or_addr' payload field is repurposed as inline character storage —
+    no v03 changes needed.
+
+    CAI flag (v0.4): DATA_STRING constant in v03 has a latent bug (T20=+1) that
+    is inconsistent with build_string_word and decode_word (both use T20=-1).
+    No runtime impact here; flagged for a future cleanup pass.
+    """
+    words = []
+    for i in range(0, max(len(text), 1), 3):
+        chunk = text[i:i+3]
+        c0    = ord(chunk[0]) if len(chunk) > 0 else 0
+        c1    = ord(chunk[1]) if len(chunk) > 1 else 0
+        c2    = ord(chunk[2]) if len(chunk) > 2 else 0
+        packed = c0 + c1 * 128 + c2 * 16384
+        words.append(build_string_word(STRING_ASCII, packed))
+    return words
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 4 — Example programs
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -375,16 +411,14 @@ def _build_examples() -> MeccanoLibrary:
         description='Triangle: point-line interleaved (same triangle, different ordering)',
     ))
 
-    # ── v0.2 widget programs ─────────────────────────────────────────────────
-    # Shared OPCODE words for widget programs
-    op_rnode_2 = build_opcode_word(OPF_PIGART, arity=2, op_index=OP_RNODE)
-    op_rnode_3 = build_opcode_word(OPF_PIGART, arity=3, op_index=OP_RNODE)
+    # ── v0.2 widget programs (v0.4: labels use DATA-STRING encoding) ─────────
+    # RNODE arity = 2 (pos + size) + len(_encode_label(text)); built per-program.
 
     # ── 5. box_rectangle — plain rectangle outline ───────────────────────────
     lib.register(MeccanoProgram(
         'box_rectangle',
         [
-            op_rnode_2,
+            build_opcode_word(OPF_PIGART, arity=2, op_index=OP_RNODE),
             _build_xy_map(4, 3),          # top-left at col 4, row 3
             _build_size_word(24, 8),       # 24 wide × 8 tall
             op_render,
@@ -394,13 +428,14 @@ def _build_examples() -> MeccanoLibrary:
     ))
 
     # ── 6. labeled_box — rectangle with centred label ────────────────────────
+    _lw_hello = _encode_label('Hello')    # 2 words → arity 4
     lib.register(MeccanoProgram(
         'labeled_box',
         [
-            op_rnode_3,
+            build_opcode_word(OPF_PIGART, arity=2+len(_lw_hello), op_index=OP_RNODE),
             _build_xy_map(8, 5),           # top-left at col 8, row 5
             _build_size_word(22, 6),        # 22 wide × 6 tall
-            build_int_word(6),              # label_id=6 → 'Hello'
+            *_lw_hello,
             op_render,
         ],
         category='pigart',
@@ -408,20 +443,21 @@ def _build_examples() -> MeccanoLibrary:
     ))
 
     # ── 7. window_basic — frame + title bar + content area ───────────────────
+    _lw_title = _encode_label('Title')    # 2 words → arity 4 for title bar
     lib.register(MeccanoProgram(
         'window_basic',
         [
-            # Outer frame: 50 wide × 16 tall at (4, 2)
-            op_rnode_2,
+            # Outer frame: 50 wide × 16 tall at (4, 2) — no label
+            build_opcode_word(OPF_PIGART, arity=2, op_index=OP_RNODE),
             _build_xy_map(4, 2),
             _build_size_word(50, 16),
-            # Title bar: 48 wide × 3 tall at (5, 3), labelled 'Title'
-            op_rnode_3,
+            # Title bar: 48 wide × 3 tall at (5, 3) — labelled 'Title'
+            build_opcode_word(OPF_PIGART, arity=2+len(_lw_title), op_index=OP_RNODE),
             _build_xy_map(5, 3),
             _build_size_word(48, 3),
-            build_int_word(1),              # label_id=1 → 'Title'
-            # Content area: 48 wide × 10 tall at (5, 6)
-            op_rnode_2,
+            *_lw_title,
+            # Content area: 48 wide × 10 tall at (5, 6) — no label
+            build_opcode_word(OPF_PIGART, arity=2, op_index=OP_RNODE),
             _build_xy_map(5, 6),
             _build_size_word(48, 10),
             op_render,
@@ -431,13 +467,14 @@ def _build_examples() -> MeccanoLibrary:
     ))
 
     # ── 8. button_simple — small labelled button ─────────────────────────────
+    _lw_ok = _encode_label('OK')          # 1 word → arity 3
     lib.register(MeccanoProgram(
         'button_simple',
         [
-            op_rnode_3,
+            build_opcode_word(OPF_PIGART, arity=2+len(_lw_ok), op_index=OP_RNODE),
             _build_xy_map(24, 15),         # col 24, row 15
             _build_size_word(10, 3),        # 10 wide × 3 tall
-            build_int_word(2),              # label_id=2 → 'OK'
+            *_lw_ok,
             op_render,
         ],
         category='pigart',
@@ -454,15 +491,22 @@ def _build_examples() -> MeccanoLibrary:
     #   Node 2 'Decide' at (3, 7), 12 wide × 3 tall  → rows 7-9
     #   Edge 2 ↓ from (8, 10) to (8, 12)             → arrowhead at row 12
     #   Node 3 'End'    at (3, 13), 12 wide × 3 tall → rows 13-15
+    # v0.4: labels encoded as DATA-STRING words (label_ids removed)
+    _lw_start  = _encode_label('Start')   # 2 words → arity 4
+    _lw_decide = _encode_label('Decide')  # 2 words → arity 4
+    _lw_end    = _encode_label('End')     # 1 word  → arity 3
     lib.register(MeccanoProgram(
         'flowchart_simple',
         [
             # Symbol 1 — Start
-            op_rnode_3, _build_xy_map(3, 1), _build_size_word(12, 3), build_int_word(7),
+            build_opcode_word(OPF_PIGART, arity=2+len(_lw_start),  op_index=OP_RNODE),
+            _build_xy_map(3, 1), _build_size_word(12, 3), *_lw_start,
             # Symbol 2 — Decide
-            op_rnode_3, _build_xy_map(3, 7), _build_size_word(12, 3), build_int_word(9),
+            build_opcode_word(OPF_PIGART, arity=2+len(_lw_decide), op_index=OP_RNODE),
+            _build_xy_map(3, 7), _build_size_word(12, 3), *_lw_decide,
             # Symbol 3 — End
-            op_rnode_3, _build_xy_map(3, 13), _build_size_word(12, 3), build_int_word(8),
+            build_opcode_word(OPF_PIGART, arity=2+len(_lw_end),    op_index=OP_RNODE),
+            _build_xy_map(3, 13), _build_size_word(12, 3), *_lw_end,
             # Edge 1: Start → Decide (downward)
             op_redge_2, _build_xy_map(8, 4), _build_xy_map(8, 6),
             # Edge 2: Decide → End (downward)
@@ -488,6 +532,23 @@ def _build_examples() -> MeccanoLibrary:
     )
     lib.register(composed_window)
 
+    # ── 11. greeting — arbitrary text beyond the old LABEL_TABLE ─────────────
+    # 'Hello, World!' = 13 chars → ceil(13/3)=5 words → RNODE arity 7
+    # Visible payoff of v0.4: any string, no registry lookup needed.
+    _lw_hw = _encode_label('Hello, World!')
+    lib.register(MeccanoProgram(
+        'greeting',
+        [
+            build_opcode_word(OPF_PIGART, arity=2+len(_lw_hw), op_index=OP_RNODE),
+            _build_xy_map(4, 8),           # col 4, row 8
+            _build_size_word(20, 3),        # 20 wide × 3 tall
+            *_lw_hw,
+            op_render,
+        ],
+        category='pigart',
+        description="Arbitrary text box — 'Hello, World!' without LABEL_TABLE",
+    ))
+
     return lib
 
 
@@ -496,7 +557,7 @@ def _build_examples() -> MeccanoLibrary:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def test_meccano_library() -> bool:
-    """v0.3 acceptance tests — 14 criteria (v0.1 1–5, v0.2 6–8, v0.3 9–14).
+    """v0.4 acceptance tests — 18 criteria (v0.1 1–5, v0.2 6–8, v0.3 9–14, v0.4 15–18).
 
     CAI flag (Step 5 determinism resolution, v0.1):
     'name' is a registry key only — it does not appear in mmid.word, otree_word,
@@ -505,13 +566,13 @@ def test_meccano_library() -> bool:
     regardless of name. This is the correct semantics.
     """
     print("=" * 60)
-    print("TEST: Meccano Library v0.3")
+    print("TEST: Meccano Library v0.4")
     print("=" * 60)
 
     lib = _build_examples()
 
-    # ── 1. All ten programs construct without error ────────────────────────────
-    assert len(lib.all()) == 10, f"expected 10 programs, got {len(lib.all())}"
+    # ── 1. All eleven programs construct without error ─────────────────────────
+    assert len(lib.all()) == 11, f"expected 11 programs, got {len(lib.all())}"
     print(f"  1. PASS  {len(lib.all())} programs constructed")
 
     # ── 2. Each program's to_words() stream decodes cleanly ───────────────────
@@ -546,7 +607,7 @@ def test_meccano_library() -> bool:
 
     # ── 5. Category filtering ─────────────────────────────────────────────────
     pigart = lib.by_category('pigart')
-    assert len(pigart) == 10
+    assert len(pigart) == 11
     assert all(p.category == 'pigart' for p in pigart)
     print(f"  5. PASS  by_category('pigart') returns {len(pigart)} programs")
 
@@ -571,12 +632,11 @@ def test_meccano_library() -> bool:
             f"{name}: rendered output contains no rectangle characters: {output!r}"
     print(f"  7. PASS  All 4 widget programs render without error (rectangle chars present)")
 
-    # ── 8. window_basic renders at least one label from LABEL_TABLE ───────────
-    from pigart_ascii_renderer import LABEL_TABLE as _LABEL_TABLE
+    # ── 8. window_basic renders the 'Title' label ─────────────────────────────
     window_output = _render(lib.get('window_basic'))
-    assert any(lbl in window_output for lbl in _LABEL_TABLE.values() if lbl), \
-        "window_basic: no LABEL_TABLE entry found in rendered output"
-    print(f"  8. PASS  window_basic renders at least one label")
+    assert 'Title' in window_output, \
+        "window_basic: 'Title' label missing from rendered output"
+    print(f"  8. PASS  window_basic renders 'Title' label")
 
     # ── 9. flowchart_simple: renders with labels and downward arrowheads ──────
     fc     = lib.get('flowchart_simple')
@@ -589,10 +649,8 @@ def test_meccano_library() -> bool:
     # ── 10. composed_window: renders both component shapes ────────────────────
     cw     = lib.get('composed_window')
     cw_out = _render(cw)
-    assert (
-        'Hello' in cw_out or
-        any(lbl in cw_out for lbl in _LABEL_TABLE.values() if lbl)
-    ), "composed_window: no label found in rendered output"
+    assert 'Hello' in cw_out, \
+        "composed_window: 'Hello' label missing from rendered output"
     assert any(c in cw_out for c in '+-|'), \
         "composed_window: no rectangle characters in rendered output"
     print(f" 10. PASS  composed_window renders both component shapes")
@@ -632,8 +690,52 @@ def test_meccano_library() -> bool:
         "compose: OTree should match when words are identical (associativity)"
     print(f" 14. PASS  compose() word concatenation is associative (OTree follows)")
 
+    # ── 15. greeting renders 'Hello, World!' ─────────────────────────────────
+    g     = lib.get('greeting')
+    g_out = _render(g)
+    assert 'Hello, World!' in g_out, \
+        f"greeting: 'Hello, World!' not in rendered output: {g_out!r}"
+    print(f" 15. PASS  greeting renders 'Hello, World!'")
+
+    # ── 16. arbitrary text — one-off program, never in LABEL_TABLE ───────────
+    _lw_arb = _encode_label('Arbitrary 123')
+    _test_arb = MeccanoProgram(
+        'test_arbitrary',
+        [
+            build_opcode_word(OPF_PIGART, arity=2+len(_lw_arb), op_index=OP_RNODE),
+            _build_xy_map(2, 5), _build_size_word(20, 3), *_lw_arb,
+            build_opcode_word(OPF_PIGART, arity=0, op_index=OP_RENDER),
+        ],
+        category='pigart',
+    )
+    arb_out = _render(_test_arb)
+    assert 'Arbitrary 123' in arb_out, \
+        f"arbitrary text: 'Arbitrary 123' not in rendered output: {arb_out!r}"
+    print(f" 16. PASS  arbitrary text 'Arbitrary 123' renders correctly")
+
+    # ── 17. LABEL_TABLE is gone from pigart_ascii_renderer ───────────────────
+    try:
+        from pigart_ascii_renderer import LABEL_TABLE  # noqa: F401
+        assert False, "LABEL_TABLE should be removed in v0.4"
+    except ImportError:
+        pass
+    print(f" 17. PASS  LABEL_TABLE removed from pigart_ascii_renderer")
+
+    # ── 18. v0.3 widget labels still render correctly with DATA-STRING encoding
+    _expected_labels = {
+        'labeled_box':      'Hello',
+        'window_basic':     'Title',
+        'button_simple':    'OK',
+        'flowchart_simple': 'Start',
+    }
+    for _name, _label in _expected_labels.items():
+        _out = _render(lib.get(_name))
+        assert _label in _out, \
+            f"{_name}: expected label {_label!r} missing from render"
+    print(f" 18. PASS  v0.3 widgets render correct labels via DATA-STRING encoding")
+
     print()
-    print(f"meccano_lib v0.3: {len(lib.all())} programs, all tests pass")
+    print(f"meccano_lib v0.4: {len(lib.all())} programs, all tests pass")
     return True
 
 
@@ -645,7 +747,7 @@ def demo():
     """Print each program with coordinates — for human eyeballing."""
     lib = _build_examples()
     print("=" * 60)
-    print("  Meccano Library v0.3 — Program Registry Demo")
+    print("  Meccano Library v0.4 — Program Registry Demo")
     print("=" * 60)
     for p in lib.all():
         print(f"\n{p.name}  [{p.category}]")

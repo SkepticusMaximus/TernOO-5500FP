@@ -1,28 +1,31 @@
 #!/usr/bin/env python3
-"""PIGART ASCII renderer — Meccano Library v0.2
+"""PIGART ASCII renderer — Meccano Library v0.4
 
 Walks a MeccanoProgram's word stream and produces a text-art canvas.
-v0.2 supports RPOINT, RLINE, RNODE, RENDER.
-REDGE is deferred to v0.3.
+Supports RPOINT, RLINE, RNODE, REDGE, RENDER.
 
-Coordinate convention (v0.2):
+Coordinate convention (v0.2+):
   MAP words are built in ON_PLANE mode (axis_yz=1, axis_xz=1, axis_xy=0).
   decode_map_word returns coords={'X': col, 'Y': row}.
   Canvas units = character columns/rows directly (no scaling).
 
-Size convention (v0.2):
+Size convention (v0.2+):
   DATA/SCALAR int words carry (width, height) packed as two tribbles:
     T11-T6 (tb) = width
     T5-T0  (tc) = height
   Extracted via get_field(w, 6, 6) and get_field(w, 0, 6).
 
-Label convention (v0.2):
-  DATA/SCALAR int word with value = label_id (small integer).
-  Looked up in LABEL_TABLE for the display string.
+Label convention (v0.4):
+  Labels are encoded as one or more DATA-STRING/ASCII words, each packing
+  3 chars in the payload using base-128: packed = c0 + c1*128 + c2*128².
+  RNODE arity = 2 (pos+size) + number-of-string-words; decoded by
+  _decode_label_words(operands[2:]).
+
+  The LABEL_TABLE hack (v0.2–v0.3) has been removed.
 
 Date: 2026-06-11, Adelaide
 Authors: Stevo (SkepticusMaximus) + Claude (Anthropic)
-Companion spec: Meccano-Library-v02-CWC-Spec.md
+Companion specs: Meccano-Library-v02-CWC-Spec.md .. Meccano-Library-v04-CWC-Spec.md
 """
 
 from __future__ import annotations
@@ -47,20 +50,33 @@ PRIMARY_OPCODE     = _v03.PRIMARY_OPCODE
 OPF_PIGART         = _v03.OPF_PIGART
 
 
-# ── Label table for v0.2 (proper text encoding is v0.3) ───────────────────────
-LABEL_TABLE: dict[int, str] = {
-    0: '',
-    1: 'Title',
-    2: 'OK',
-    3: 'Cancel',
-    4: 'File',
-    5: 'Edit',
-    6: 'Hello',
-    # v0.3 additions — flowchart labels
-    7: 'Start',
-    8: 'End',
-    9: 'Decide',
-}
+# ── String decoder (v0.4) ─────────────────────────────────────────────────────
+
+def _decode_label_words(string_operands: List[int]) -> str:
+    """Decode a sequence of DATA-STRING/ASCII words into a Python string.
+
+    Each word was encoded by _encode_label() in meccano_lib:
+      packed = c0 + c1*128 + c2*128²   (base-128, 3 chars per word)
+
+    Collects all character values, strips trailing null bytes,
+    and returns the assembled string.
+
+    Non-STRING words terminate decoding early (defensive, should not occur
+    if the word stream is well-formed).
+    """
+    chars: List[int] = []
+    for w in string_operands:
+        d = decode_word(w)
+        if d.get('type') != 'STRING':
+            break
+        n = int(d['length_or_addr'])
+        chars.append(n % 128)
+        chars.append((n // 128) % 128)
+        chars.append((n // 16384) % 128)
+    # Strip trailing null padding
+    while chars and chars[-1] == 0:
+        chars.pop()
+    return ''.join(chr(c) for c in chars)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -273,12 +289,9 @@ def _dispatch_rnode(canvas: AsciiCanvas, operands: List[int]) -> None:
 
     canvas.draw_rect(x, y, w, h)
 
-    # Label (optional third operand)
+    # Label (operands[2:] are DATA-STRING words, present when arity > 2)
     if len(operands) >= 3 and w > 4 and h > 2:
-        label_word = operands[2]
-        d          = decode_word(label_word)
-        label_id   = int(d.get('value', 0))
-        label_text = LABEL_TABLE.get(label_id, '')
+        label_text = _decode_label_words(operands[2:])
         if label_text:
             # Centre horizontally in the interior; place in first interior row
             interior_width = w - 2
