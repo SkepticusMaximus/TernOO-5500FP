@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Meccano Library v0.1 — TernOO OPCODE program substrate
-========================================================
+Meccano Library v0.2 — TernOO OPCODE program substrate + widget primitives
+===========================================================================
 Named programs composed of OPCODE word sequences.
 Each program carries a dual coordinate:
   - mmid:       structural identity (TTree MAP) — derived from MMOE category
@@ -11,32 +11,47 @@ v0.1 ground-work: demonstrates that two programs with the same word multiset
 but different execution orderings produce distinct OTree addresses while
 sharing the same MMID (same structure, different content path).
 
+v0.2 adds four DOSShell-vintage widget programs and a CLI render path via
+pigart_ascii_renderer. When you run `python3 meccano_lib.py --render window_basic`
+you get a text-art window on stdout — first rendered output from the Meccano substrate.
+
 Design notes (CWC flags for CAI review):
 
-  1. Accumulator order-sensitivity (Step 5 divergence):
-     The spec cited the gristmill commutative fold:
-         S = (S + ternary_op(ta, tb)) % MOD
-     That fold is commutative — any permutation of the same words yields the
-     same S and therefore the same OTree. Acceptance criterion 3 requires
-     triangle_method_a and triangle_method_b to differ in OTree despite being
-     permutations of each other. This implementation uses a position-sensitive
-     fold instead:
-         S = (S + ternary_op(ta, (tb + i*27) % MOD)) % MOD
-     The i*27 term shifts each word's contribution by its position (in units
-     of 27, the MECCANO group step). Flagged here — CAI to confirm or revise.
+  1. Accumulator order-sensitivity (v0.1 flag, resolved):
+     Used position-sensitive fold: S = (S + ternary_op(ta*(i+1), tb)) % MOD.
+     The ta*(i+1) weighting makes each OPCODE word's contribution depend on
+     both its content (ta) and its position, so permutations of the same
+     word multiset produce distinct OTree addresses. CAI confirmed in v0.1.
 
-  2. MMOE_TYPES key format (Step 1 translation):
-     Spec used {'subclass_t1': +1, 'subclass_t0': +1} keys but MMID._compute
-     reads t.get('udp', (0,0)). Entries added with 'udp' keys in gristmill.
+  2. MMOE_TYPES key format (v0.1 flag, resolved):
+     Spec used {'subclass_t1': +1, 'subclass_t0': +1} keys; translated to
+     'udp' tuples in gristmill since MMID._compute reads t.get('udp', (0,0)).
 
-  3. Determinism semantics (Step 5 note):
-     'name' is a registry key only; it does not appear in mmid.word, otree_word,
-     or to_words(). Two MeccanoPrograms with the same category and words are
+  3. Determinism semantics (v0.1 flag, resolved):
+     'name' is a registry key only — does not enter mmid.word, otree_word,
+     or to_words(). Two programs with the same category and words are
      word-identical regardless of name.
+
+  4. MAP word for 2D position (v0.2, CAI flag):
+     Uses ON_PLANE mode (axis_yz=1, axis_xz=1, axis_xy=0).
+     payload = from_trits(to_trits(y, 9) + to_trits(x, 9))
+     decode_map_word returns coords={'X': col, 'Y': row}.
+     Helper: _build_xy_map(x, y).
+
+  5. DATA word for size (v0.2, CAI flag):
+     Uses DATA/SCALAR int with two-tribble packing:
+       T11-T6 (tb) = width, T5-T0 (tc) = height.
+     payload = from_trits(to_trits(h, 6) + to_trits(w, 6) + [0]*6)
+     Renderer extracts via get_field. No new DATA subtype introduced.
+     Helper: _build_size_word(width, height).
+
+  6. DATA word for label (v0.2, CAI flag):
+     Uses build_int_word(label_id). Renderer does decode_word → 'value' →
+     LABEL_TABLE lookup. No conflict with existing SCALAR int semantics.
 
 Date: 2026-06-11, Adelaide
 Authors: Stevo (SkepticusMaximus) + Claude (Anthropic)
-Companion spec: Meccano-Library-v01-CWC-Spec.md
+Companion specs: Meccano-Library-v01-CWC-Spec.md, Meccano-Library-v02-CWC-Spec.md
 """
 
 from __future__ import annotations
@@ -58,9 +73,12 @@ decode_word        = _v03.decode_word
 OPF_PIGART         = _v03.OPF_PIGART
 OP_RPOINT          = _v03.OP_RPOINT
 OP_RLINE           = _v03.OP_RLINE
+OP_RNODE           = _v03.OP_RNODE
 OP_RENDER          = _v03.OP_RENDER
 build_map_word     = _v03.build_map_word
 build_int_word     = _v03.build_int_word
+from_trits         = _v03.from_trits
+to_trits           = _v03.to_trits
 
 # ── Load ternoo_gristmill (valid identifier — standard import) ────────────────
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -177,23 +195,62 @@ class MeccanoLibrary:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 3 — Example programs
+# SECTION 3 — Operand-building helpers (v0.2)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _build_xy_map(x: int, y: int) -> int:
+    """MAP word encoding a 2D ASCII canvas position (x=column, y=row).
+
+    Uses ON_PLANE mode (axis_yz=1, axis_xz=1, axis_xy=0):
+      payload packs x in high 9 trits (T17-T9), y in low 9 trits (T8-T0).
+      decode_map_word returns mode='ON_PLANE', coords={'X': col, 'Y': row}.
+
+    CAI flag (v0.2): ON_PLANE with xy=0 is the only existing mode that
+    exposes both X and Y from a single MAP word. No new convention invented.
+    """
+    payload = from_trits(to_trits(y, 9) + to_trits(x, 9))
+    return build_map_word(1, 1, 0, payload)
+
+
+def _build_size_word(width: int, height: int) -> int:
+    """DATA/SCALAR int word encoding (width, height) for RNODE operands.
+
+    Packs two values into the payload as adjacent tribbles:
+      T11-T6 (tb tribble) = width
+      T5-T0  (tc tribble) = height
+      T17-T12 (ta)        = 0 (unused)
+
+    Renderer extracts via:
+      width  = get_field(w, 6, 6)
+      height = get_field(w, 0, 6)
+
+    Both width and height must fit in 6 balanced trits (max ±364).
+    At 60×20 default canvas they are always within range.
+
+    CAI flag (v0.2): uses existing build_int_word with manual packing.
+    No new DATA subtype introduced.
+    """
+    payload = from_trits(to_trits(height, 6) + to_trits(width, 6) + [0] * 6)
+    return build_int_word(payload)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 4 — Example programs
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _build_examples() -> MeccanoLibrary:
-    """Build the v0.1 demo library: four PIGART example programs.
+    """Build the example library: 4 v0.1 geometry programs + 4 v0.2 widget programs.
 
-    Vertex coordinates — placeholder MAP words (cleanly decodable):
-        v0 = MAP(all-zero axes, payload=0)   — origin
-        v1 = MAP(all-zero axes, payload=100) — +100 along scale axis
-        v2 = MAP(all-zero axes, payload=200) — +200 along scale axis
+    v0.1 programs (geometry substrate demo):
+        v0/v1/v2 are ORIGIN-mode MAP words — cleanly decodable but no x,y.
+        triangle_method_a and _b share the same word multiset in different
+        orders; position-sensitive fold yields distinct OTree addresses.
 
-    Colour/style operands use DATA(SCALAR/int) words.
-    The point of v0.1 is round-trippable word streams, not pixel-perfect geometry.
-
-    triangle_method_a and triangle_method_b contain the same word multiset
-    (3× RPOINT operands, 3× RLINE operands, 1× RENDER, same MAP and DATA words)
-    but in different orders. The position-sensitive fold yields distinct OTrees.
+    v0.2 programs (widget primitives — renderable by pigart_ascii_renderer):
+        Positions use ON_PLANE MAP words built by _build_xy_map(x, y).
+        Sizes use packed DATA words built by _build_size_word(w, h).
+        Labels use build_int_word(label_id), looked up in LABEL_TABLE.
+        Canvas units = character columns/rows (no scaling).
     """
     lib = MeccanoLibrary()
 
@@ -262,30 +319,99 @@ def _build_examples() -> MeccanoLibrary:
         description='Triangle: point-line interleaved (same triangle, different ordering)',
     ))
 
+    # ── v0.2 widget programs ─────────────────────────────────────────────────
+    # Shared OPCODE words for widget programs
+    op_rnode_2 = build_opcode_word(OPF_PIGART, arity=2, op_index=OP_RNODE)
+    op_rnode_3 = build_opcode_word(OPF_PIGART, arity=3, op_index=OP_RNODE)
+
+    # ── 5. box_rectangle — plain rectangle outline ───────────────────────────
+    lib.register(MeccanoProgram(
+        'box_rectangle',
+        [
+            op_rnode_2,
+            _build_xy_map(4, 3),          # top-left at col 4, row 3
+            _build_size_word(24, 8),       # 24 wide × 8 tall
+            op_render,
+        ],
+        category='pigart',
+        description='Plain rectangle outline (simplest widget)',
+    ))
+
+    # ── 6. labeled_box — rectangle with centred label ────────────────────────
+    lib.register(MeccanoProgram(
+        'labeled_box',
+        [
+            op_rnode_3,
+            _build_xy_map(8, 5),           # top-left at col 8, row 5
+            _build_size_word(22, 6),        # 22 wide × 6 tall
+            build_int_word(6),              # label_id=6 → 'Hello'
+            op_render,
+        ],
+        category='pigart',
+        description='Rectangle with centred "Hello" label inside',
+    ))
+
+    # ── 7. window_basic — frame + title bar + content area ───────────────────
+    lib.register(MeccanoProgram(
+        'window_basic',
+        [
+            # Outer frame: 50 wide × 16 tall at (4, 2)
+            op_rnode_2,
+            _build_xy_map(4, 2),
+            _build_size_word(50, 16),
+            # Title bar: 48 wide × 3 tall at (5, 3), labelled 'Title'
+            op_rnode_3,
+            _build_xy_map(5, 3),
+            _build_size_word(48, 3),
+            build_int_word(1),              # label_id=1 → 'Title'
+            # Content area: 48 wide × 10 tall at (5, 6)
+            op_rnode_2,
+            _build_xy_map(5, 6),
+            _build_size_word(48, 10),
+            op_render,
+        ],
+        category='pigart',
+        description='Window: outer frame + labelled title bar + content area',
+    ))
+
+    # ── 8. button_simple — small labelled button ─────────────────────────────
+    lib.register(MeccanoProgram(
+        'button_simple',
+        [
+            op_rnode_3,
+            _build_xy_map(24, 15),         # col 24, row 15
+            _build_size_word(10, 3),        # 10 wide × 3 tall
+            build_int_word(2),              # label_id=2 → 'OK'
+            op_render,
+        ],
+        category='pigart',
+        description='Small button with centred "OK" label',
+    ))
+
     return lib
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 4 — Test entry point
+# SECTION 5 — Test entry point
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def test_meccano_library() -> bool:
-    """v0.1 acceptance tests — 5 criteria.
+    """v0.2 acceptance tests — 8 criteria (v0.1 criteria 1–5, v0.2 criteria 6–8).
 
-    CAI flag (Step 5 determinism resolution):
+    CAI flag (Step 5 determinism resolution, v0.1):
     'name' is a registry key only — it does not appear in mmid.word, otree_word,
     or to_words(). Criterion 4 asserts that two MeccanoPrograms sharing category
     and words are fully word-identical (same mmid, same otree_word, same to_words())
     regardless of name. This is the correct semantics.
     """
     print("=" * 60)
-    print("TEST: Meccano Library v0.1")
+    print("TEST: Meccano Library v0.2")
     print("=" * 60)
 
     lib = _build_examples()
 
-    # ── 1. All four programs construct without error ───────────────────────────
-    assert len(lib.all()) == 4, f"expected 4 programs, got {len(lib.all())}"
+    # ── 1. All eight programs construct without error ──────────────────────────
+    assert len(lib.all()) == 8, f"expected 8 programs, got {len(lib.all())}"
     print(f"  1. PASS  {len(lib.all())} programs constructed")
 
     # ── 2. Each program's to_words() stream decodes cleanly ───────────────────
@@ -320,24 +446,52 @@ def test_meccano_library() -> bool:
 
     # ── 5. Category filtering ─────────────────────────────────────────────────
     pigart = lib.by_category('pigart')
-    assert len(pigart) == 4
+    assert len(pigart) == 8
     assert all(p.category == 'pigart' for p in pigart)
     print(f"  5. PASS  by_category('pigart') returns {len(pigart)} programs")
 
+    # ── 6. All four widget programs are present and construct cleanly ──────────
+    widget_names = ('box_rectangle', 'labeled_box', 'window_basic', 'button_simple')
+    for name in widget_names:
+        assert name in lib.programs, f"missing widget program: {name!r}"
+        p = lib.get(name)
+        # to_words() must be decodable
+        for w in p.to_words():
+            d = decode_word(w)
+            assert 'type' in d, f"{name}: word {w!r} failed decode"
+    print(f"  6. PASS  All 4 widget programs present and decode cleanly")
+
+    # ── 7. Each widget program renders without error and produces rectangle chars
+    from pigart_ascii_renderer import render as _render
+    for name in widget_names:
+        output = _render(lib.get(name))
+        assert isinstance(output, str) and len(output) > 0, \
+            f"{name}: render() returned empty output"
+        assert any(c in output for c in '+-|'), \
+            f"{name}: rendered output contains no rectangle characters: {output!r}"
+    print(f"  7. PASS  All 4 widget programs render without error (rectangle chars present)")
+
+    # ── 8. window_basic renders at least one label from LABEL_TABLE ───────────
+    from pigart_ascii_renderer import LABEL_TABLE as _LABEL_TABLE
+    window_output = _render(lib.get('window_basic'))
+    assert any(lbl in window_output for lbl in _LABEL_TABLE.values() if lbl), \
+        "window_basic: no LABEL_TABLE entry found in rendered output"
+    print(f"  8. PASS  window_basic renders at least one label")
+
     print()
-    print(f"meccano_lib v0.1: {len(lib.all())} programs, all tests pass")
+    print(f"meccano_lib v0.2: {len(lib.all())} programs, all tests pass")
     return True
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 5 — Demo entry point
+# SECTION 6 — Demo entry point
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def demo():
     """Print each program with coordinates — for human eyeballing."""
     lib = _build_examples()
     print("=" * 60)
-    print("  Meccano Library v0.1 — Program Registry Demo")
+    print("  Meccano Library v0.2 — Program Registry Demo")
     print("=" * 60)
     for p in lib.all():
         print(f"\n{p.name}  [{p.category}]")
@@ -362,4 +516,18 @@ def demo():
 if __name__ == '__main__':
     if '--test' in sys.argv:
         sys.exit(0 if test_meccano_library() else 1)
+    if '--render' in sys.argv:
+        _idx = sys.argv.index('--render')
+        if _idx + 1 >= len(sys.argv):
+            print("usage: meccano_lib.py --render <program_name>", file=sys.stderr)
+            sys.exit(2)
+        from pigart_ascii_renderer import render as _render
+        _lib  = _build_examples()
+        _name = sys.argv[_idx + 1]
+        if _name not in _lib.programs:
+            print(f"unknown program: {_name!r}", file=sys.stderr)
+            print(f"available: {', '.join(sorted(_lib.programs))}", file=sys.stderr)
+            sys.exit(2)
+        print(_render(_lib.get(_name)))
+        sys.exit(0)
     demo()
