@@ -865,7 +865,7 @@ def _build_examples() -> MeccanoLibrary:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def test_meccano_library() -> bool:
-    """v0.5 acceptance tests — 27 criteria (v0.1 1–5, v0.2 6–8, v0.3 9–14, v0.4 15–18, v0.5 19–27).
+    """v0.6 acceptance tests — 31 criteria (v0.1 1–5, v0.2 6–8, v0.3 9–14, v0.4 15–18, v0.5 19–27, v0.6 28–31).
 
     CAI flag (Step 5 determinism resolution, v0.1):
     'name' is a registry key only — it does not appear in mmid.word, otree_word,
@@ -882,7 +882,7 @@ def test_meccano_library() -> bool:
     Flagged here per spec instructions; factoring v0.1 programs to ON_PLANE is v0.6+.
     """
     print("=" * 60)
-    print("TEST: Meccano Library v0.5")
+    print("TEST: Meccano Library v0.6")
     print("=" * 60)
 
     lib = _build_examples()
@@ -1139,8 +1139,61 @@ def test_meccano_library() -> bool:
     assert 'Help'   in btn_out, "button_row: 'Help' label missing from rendered output"
     print(f" 27. PASS  button_row renders all three button labels (OK / Cancel / Help)")
 
+    # ── v0.6 tests: tkinter renderer ─────────────────────────────────────────
+
+    # ── 28. pigart_tkinter_renderer imports successfully ──────────────────────
+    try:
+        from pigart_tkinter_renderer import render_gui as _render_gui, \
+                                            _build_canvas
+        import tkinter as _tk
+    except ImportError as e:
+        raise ImportError(
+            f"pigart_tkinter_renderer not importable ({e}). "
+            f"Install python3-tk or check the module is present."
+        )
+    print(f" 28. PASS  pigart_tkinter_renderer imports successfully")
+
+    # ── 29. _build_canvas on box_rectangle creates at least one shape ─────────
+    _root29, _canvas29 = _build_canvas(lib.get('box_rectangle'), scale=12, padding=20)
+    _shapes29 = _canvas29.find_all()
+    assert len(_shapes29) > 0, \
+        f"box_rectangle: _build_canvas produced no shapes (got {len(_shapes29)})"
+    _root29.destroy()
+    print(f" 29. PASS  _build_canvas(box_rectangle) creates {len(_shapes29)} shape(s)")
+
+    # ── 30. _build_canvas on dialog_basic produces rectangles + text labels ───
+    _root30, _canvas30 = _build_canvas(lib.get('dialog_basic'), scale=12, padding=20)
+    _shapes30 = _canvas30.find_all()
+    assert len(_shapes30) >= 6, \
+        f"dialog_basic: expected ≥6 shapes (frame + message + 3 buttons + labels), got {len(_shapes30)}"
+    _types30 = {_canvas30.type(sid) for sid in _shapes30}
+    assert 'rectangle' in _types30, \
+        f"dialog_basic: no rectangle shapes (types found: {_types30})"
+    assert 'text' in _types30, \
+        f"dialog_basic: no text shapes (types found: {_types30})"
+    _root30.destroy()
+    print(f" 30. PASS  _build_canvas(dialog_basic): {len(_shapes30)} shapes "
+          f"including rectangles and text")
+
+    # ── 31. Same word stream → both ASCII and GUI outputs (architectural test) ─
+    # Both renderers walk the same MeccanoProgram.to_words() stream.
+    # ASCII renderer produces text containing 'Hello, World!'.
+    # tkinter renderer produces at least one canvas shape.
+    # Neither renderer adds information not in the word stream.
+    _prog31   = lib.get('greeting')
+    _ascii31  = _render(_prog31)
+    _root31, _canvas31 = _build_canvas(_prog31, scale=12, padding=20)
+    _gui_shapes31 = len(_canvas31.find_all())
+    _root31.destroy()
+    assert 'Hello, World!' in _ascii31, \
+        "greeting: 'Hello, World!' not in ASCII output"
+    assert _gui_shapes31 > 0, \
+        f"greeting: tkinter renderer produced no shapes (got {_gui_shapes31})"
+    print(f" 31. PASS  Same word stream → ASCII ('Hello, World!' present) "
+          f"and GUI ({_gui_shapes31} shape(s)) — architectural test")
+
     print()
-    print(f"meccano_lib v0.5: {len(lib.all())} programs, all tests pass")
+    print(f"meccano_lib v0.6: {len(lib.all())} programs, all tests pass")
     return True
 
 
@@ -1152,7 +1205,7 @@ def demo():
     """Print each program with coordinates — for human eyeballing."""
     lib = _build_examples()
     print("=" * 60)
-    print("  Meccano Library v0.5 — Program Registry Demo")
+    print("  Meccano Library v0.6 — Program Registry Demo")
     print("=" * 60)
     for p in lib.all():
         print(f"\n{p.name}  [{p.category}]")
@@ -1190,5 +1243,19 @@ if __name__ == '__main__':
             print(f"available: {', '.join(sorted(_lib.programs))}", file=sys.stderr)
             sys.exit(2)
         print(_render(_lib.get(_name)))
+        sys.exit(0)
+    if '--render-gui' in sys.argv:
+        _idx = sys.argv.index('--render-gui')
+        if _idx + 1 >= len(sys.argv):
+            print("usage: meccano_lib.py --render-gui <program_name>", file=sys.stderr)
+            sys.exit(2)
+        from pigart_tkinter_renderer import render_gui as _render_gui
+        _lib  = _build_examples()
+        _name = sys.argv[_idx + 1]
+        if _name not in _lib.programs:
+            print(f"unknown program: {_name!r}", file=sys.stderr)
+            print(f"available: {', '.join(sorted(_lib.programs))}", file=sys.stderr)
+            sys.exit(2)
+        _render_gui(_lib.get(_name))
         sys.exit(0)
     demo()
