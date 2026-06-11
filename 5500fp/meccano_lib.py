@@ -74,6 +74,7 @@ OPF_PIGART         = _v03.OPF_PIGART
 OP_RPOINT          = _v03.OP_RPOINT
 OP_RLINE           = _v03.OP_RLINE
 OP_RNODE           = _v03.OP_RNODE
+OP_REDGE           = _v03.OP_REDGE
 OP_RENDER          = _v03.OP_RENDER
 build_map_word     = _v03.build_map_word
 build_int_word     = _v03.build_int_word
@@ -159,6 +160,61 @@ class MeccanoProgram:
         regardless of name.
         """
         return [self.mmid.word, self.otree_word] + self.words
+
+    def compose(self, *others: 'MeccanoProgram',
+                name: str = None,
+                description: str = '') -> 'MeccanoProgram':
+        """Compose this program with one or more others into a single program.
+
+        The composed program's word stream is the concatenation of the component
+        programs' body streams (excluding TTree/OTree headers). The composed
+        program's MMID and OTree are computed afresh from the combined stream.
+
+        Category must match across all components — cross-category composition
+        is deferred to v0.4+.
+
+        RENDER opcodes from component programs are preserved in the combined
+        stream. In ASCII mode RENDER is a no-op so multiple RENDERs are harmless.
+        v0.4 may introduce RENDER stripping.
+
+        Architectural property: compose is NOT commutative on OTree
+        (different orderings produce different content addresses via the
+        position-weighted fold), but word concatenation IS associative:
+          (A.compose(B)).compose(C).words == A.compose(B.compose(C)).words
+        and therefore their OTree addresses are also equal.
+
+        Args:
+            *others:     programs to append after self, in order
+            name:        name for the composed program
+                         (default: 'self.name+other0.name+...')
+            description: human-readable purpose (default: blank)
+
+        Returns:
+            New MeccanoProgram with category = self.category.
+
+        Raises:
+            ValueError: if any program in others has a different category.
+        """
+        for o in others:
+            if o.category != self.category:
+                raise ValueError(
+                    f"compose category mismatch: "
+                    f"{self.category!r} (self) vs {o.category!r} ({o.name!r})"
+                )
+
+        combined_words = list(self.words)
+        for o in others:
+            combined_words.extend(o.words)
+
+        if name is None:
+            name = '+'.join([self.name] + [o.name for o in others])
+
+        return MeccanoProgram(
+            name=name,
+            opcode_words=combined_words,
+            category=self.category,
+            description=description,
+        )
 
     def __repr__(self) -> str:
         return (f"MeccanoProgram({self.name!r}, "
@@ -388,6 +444,50 @@ def _build_examples() -> MeccanoLibrary:
         description='Small button with centred "OK" label',
     ))
 
+    # ── v0.3 programs ────────────────────────────────────────────────────────
+    op_redge_2 = build_opcode_word(OPF_PIGART, arity=2, op_index=OP_REDGE)
+
+    # ── 9. flowchart_simple — three nodes + two downward edges ───────────────
+    # Layout (60×20 canvas):
+    #   Node 1 'Start'  at (3, 1), 12 wide × 3 tall  → rows 1-3
+    #   Edge 1 ↓ from (8, 4) to (8, 6)              → arrowhead at row 6
+    #   Node 2 'Decide' at (3, 7), 12 wide × 3 tall  → rows 7-9
+    #   Edge 2 ↓ from (8, 10) to (8, 12)             → arrowhead at row 12
+    #   Node 3 'End'    at (3, 13), 12 wide × 3 tall → rows 13-15
+    lib.register(MeccanoProgram(
+        'flowchart_simple',
+        [
+            # Symbol 1 — Start
+            op_rnode_3, _build_xy_map(3, 1), _build_size_word(12, 3), build_int_word(7),
+            # Symbol 2 — Decide
+            op_rnode_3, _build_xy_map(3, 7), _build_size_word(12, 3), build_int_word(9),
+            # Symbol 3 — End
+            op_rnode_3, _build_xy_map(3, 13), _build_size_word(12, 3), build_int_word(8),
+            # Edge 1: Start → Decide (downward)
+            op_redge_2, _build_xy_map(8, 4), _build_xy_map(8, 6),
+            # Edge 2: Decide → End (downward)
+            op_redge_2, _build_xy_map(8, 10), _build_xy_map(8, 12),
+            # Render
+            op_render,
+        ],
+        category='pigart',
+        description='Three-node flowchart: Start → Decide → End with downward arrows',
+    ))
+
+    # ── 10. composed_window — labeled_box + box_rectangle via compose() ───────
+    # Demonstrates: two independent programs combined into one MeccanoProgram.
+    # The composed stream contains both programs' RENDER opcodes; in ASCII mode
+    # RENDER is a no-op so both are harmless (v0.4 may strip redundant RENDERs).
+    composed_window = lib.get('labeled_box').compose(
+        lib.get('box_rectangle'),
+        name='composed_window',
+        description=(
+            'Window built by composing labeled_box (label+inner box) '
+            '+ box_rectangle (outer frame) via MeccanoProgram.compose()'
+        ),
+    )
+    lib.register(composed_window)
+
     return lib
 
 
@@ -396,7 +496,7 @@ def _build_examples() -> MeccanoLibrary:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def test_meccano_library() -> bool:
-    """v0.2 acceptance tests — 8 criteria (v0.1 criteria 1–5, v0.2 criteria 6–8).
+    """v0.3 acceptance tests — 14 criteria (v0.1 1–5, v0.2 6–8, v0.3 9–14).
 
     CAI flag (Step 5 determinism resolution, v0.1):
     'name' is a registry key only — it does not appear in mmid.word, otree_word,
@@ -405,13 +505,13 @@ def test_meccano_library() -> bool:
     regardless of name. This is the correct semantics.
     """
     print("=" * 60)
-    print("TEST: Meccano Library v0.2")
+    print("TEST: Meccano Library v0.3")
     print("=" * 60)
 
     lib = _build_examples()
 
-    # ── 1. All eight programs construct without error ──────────────────────────
-    assert len(lib.all()) == 8, f"expected 8 programs, got {len(lib.all())}"
+    # ── 1. All ten programs construct without error ────────────────────────────
+    assert len(lib.all()) == 10, f"expected 10 programs, got {len(lib.all())}"
     print(f"  1. PASS  {len(lib.all())} programs constructed")
 
     # ── 2. Each program's to_words() stream decodes cleanly ───────────────────
@@ -446,7 +546,7 @@ def test_meccano_library() -> bool:
 
     # ── 5. Category filtering ─────────────────────────────────────────────────
     pigart = lib.by_category('pigart')
-    assert len(pigart) == 8
+    assert len(pigart) == 10
     assert all(p.category == 'pigart' for p in pigart)
     print(f"  5. PASS  by_category('pigart') returns {len(pigart)} programs")
 
@@ -478,8 +578,62 @@ def test_meccano_library() -> bool:
         "window_basic: no LABEL_TABLE entry found in rendered output"
     print(f"  8. PASS  window_basic renders at least one label")
 
+    # ── 9. flowchart_simple: renders with labels and downward arrowheads ──────
+    fc     = lib.get('flowchart_simple')
+    fc_out = _render(fc)
+    assert 'Start'  in fc_out, "flowchart_simple: 'Start' label missing from render"
+    assert 'End'    in fc_out, "flowchart_simple: 'End' label missing from render"
+    assert 'v'      in fc_out, "flowchart_simple: no downward arrowhead 'v' in render"
+    print(f"  9. PASS  flowchart_simple renders with labels and arrows")
+
+    # ── 10. composed_window: renders both component shapes ────────────────────
+    cw     = lib.get('composed_window')
+    cw_out = _render(cw)
+    assert (
+        'Hello' in cw_out or
+        any(lbl in cw_out for lbl in _LABEL_TABLE.values() if lbl)
+    ), "composed_window: no label found in rendered output"
+    assert any(c in cw_out for c in '+-|'), \
+        "composed_window: no rectangle characters in rendered output"
+    print(f" 10. PASS  composed_window renders both component shapes")
+
+    # ── 11. compose() is deterministic ───────────────────────────────────────
+    _a = lib.get('box_rectangle')
+    _b = lib.get('labeled_box')
+    c1 = _a.compose(_b, name='c1')
+    c2 = _a.compose(_b, name='c2')
+    assert c1.words     == c2.words,     "compose: word stream not deterministic"
+    assert c1.otree_word == c2.otree_word, "compose: OTree not deterministic"
+    print(f" 11. PASS  compose() is deterministic (name excluded)")
+
+    # ── 12. compose() is non-commutative (architectural payoff) ───────────────
+    ab = _a.compose(_b, name='ab')
+    ba = _b.compose(_a, name='ba')
+    assert ab.words     != ba.words,     "compose: words should differ when order differs"
+    assert ab.otree_word != ba.otree_word, "compose: OTree should differ when order differs"
+    print(f" 12. PASS  compose() is non-commutative on words and OTree")
+
+    # ── 13. compose() rejects category mismatch ───────────────────────────────
+    _dummy = MeccanoProgram('dummy', _a.words[:1], category='word_op')
+    try:
+        _a.compose(_dummy)
+        assert False, "compose should raise ValueError on category mismatch"
+    except ValueError:
+        pass
+    print(f" 13. PASS  compose() raises ValueError on category mismatch")
+
+    # ── 14. compose() word concatenation is associative ───────────────────────
+    _c      = lib.get('button_simple')
+    abc_ltr = (_a.compose(_b)).compose(_c, name='abc_ltr')
+    abc_rtr = _a.compose(_b.compose(_c), name='abc_rtr')
+    assert abc_ltr.words     == abc_rtr.words, \
+        "compose: word concatenation should be associative"
+    assert abc_ltr.otree_word == abc_rtr.otree_word, \
+        "compose: OTree should match when words are identical (associativity)"
+    print(f" 14. PASS  compose() word concatenation is associative (OTree follows)")
+
     print()
-    print(f"meccano_lib v0.2: {len(lib.all())} programs, all tests pass")
+    print(f"meccano_lib v0.3: {len(lib.all())} programs, all tests pass")
     return True
 
 
@@ -491,7 +645,7 @@ def demo():
     """Print each program with coordinates — for human eyeballing."""
     lib = _build_examples()
     print("=" * 60)
-    print("  Meccano Library v0.2 — Program Registry Demo")
+    print("  Meccano Library v0.3 — Program Registry Demo")
     print("=" * 60)
     for p in lib.all():
         print(f"\n{p.name}  [{p.category}]")

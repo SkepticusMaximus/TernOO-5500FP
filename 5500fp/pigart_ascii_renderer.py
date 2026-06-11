@@ -56,6 +56,10 @@ LABEL_TABLE: dict[int, str] = {
     4: 'File',
     5: 'Edit',
     6: 'Hello',
+    # v0.3 additions — flowchart labels
+    7: 'Start',
+    8: 'End',
+    9: 'Decide',
 }
 
 
@@ -191,7 +195,7 @@ def render(program, width: int = 60, height: int = 20) -> str:
         elif mnemonic == 'RNODE':
             _dispatch_rnode(canvas, operands)
         elif mnemonic == 'REDGE':
-            raise NotImplementedError("REDGE deferred to v0.3")
+            _dispatch_redge(canvas, operands)
         elif mnemonic == 'RENDER':
             pass  # no double-buffering in v0.2 — canvas updates are immediate
         else:
@@ -282,6 +286,55 @@ def _dispatch_rnode(canvas: AsciiCanvas, operands: List[int]) -> None:
             lx             = x + 1 + pad
             ly             = y + 1
             canvas.draw_label(lx, ly, label_text, interior_width)
+
+
+def _dispatch_redge(canvas: AsciiCanvas, operands: List[int]) -> None:
+    """REDGE: MAP(start) + MAP(end) [+ DATA(style, deferred to v0.4)].
+
+    Draws a directed arrow from start to end.
+
+    Cardinal direction rules:
+      Rightward  (y1==y2, x2>x1): '-' line, '>' arrowhead at end
+      Leftward   (y1==y2, x2<x1): '-' line, '<' arrowhead at end
+      Downward   (x1==x2, y2>y1): '|' line, 'v' arrowhead at end
+      Upward     (x1==x2, y2<y1): '|' line, '^' arrowhead at end
+      Diagonal:  Bresenham line, '*' arrowhead at end
+
+    Style operand (operands[2] if present) is accepted but ignored — v0.4+.
+
+    CAI flag (v0.3): all flowchart_simple edges are cardinal (vertical),
+    so the diagonal branch is not exercised by the example programs.
+    """
+    if len(operands) < 2:
+        return
+
+    x1, y1 = _extract_xy(operands[0])
+    x2, y2 = _extract_xy(operands[1])
+    # operands[2] = style (optional, deferred to v0.4)
+
+    if y1 == y2 and x2 > x1:          # rightward
+        for x in range(x1, x2):
+            canvas.set(x, y1, '-')
+        canvas.set(x2, y2, '>')
+
+    elif y1 == y2 and x2 < x1:        # leftward
+        for x in range(x2 + 1, x1 + 1):
+            canvas.set(x, y1, '-')
+        canvas.set(x2, y2, '<')
+
+    elif x1 == x2 and y2 > y1:        # downward
+        for y in range(y1, y2):
+            canvas.set(x1, y, '|')
+        canvas.set(x2, y2, 'v')
+
+    elif x1 == x2 and y2 < y1:        # upward
+        for y in range(y2 + 1, y1 + 1):
+            canvas.set(x1, y, '|')
+        canvas.set(x2, y2, '^')
+
+    else:                              # diagonal — Bresenham, '*' at tip
+        canvas.draw_line(x1, y1, x2, y2)
+        canvas.set(x2, y2, '*')
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
