@@ -291,6 +291,22 @@ MMOE_TYPES = {
         'udp': (+1, -1), 'successors': ['widget_button', 'widget_label'],
         'description': 'Text input field'
     },
+    # Meccano program types (v0.1)
+    # Note: role-trit slots collide with widget/flowcode types — known FT-5 issue,
+    # accepted per Meccano-Library-v01-CWC-Spec §Step 1, deferred post-ASPLOS.
+    # Spec used subclass_t1/subclass_t0 keys; translated to 'udp' to match MMID._compute.
+    'meccano_program_pigart': {
+        'udp': (+1, +1), 'successors': [],
+        'description': 'PIGART rendering program (RPOINT/RLINE/RNODE/RENDER)',
+    },
+    'meccano_program_word_op': {
+        'udp': (+1,  0), 'successors': [],
+        'description': 'WORD_OP object-operation program (TOBJ/TGET/TPAYLOAD etc.)',
+    },
+    'meccano_program_compose': {
+        'udp': (+1, -1), 'successors': [],
+        'description': 'Compositional program (mixed or MECCANO-family)',
+    },
 }
 
 
