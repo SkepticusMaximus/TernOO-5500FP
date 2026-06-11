@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Meccano Library v0.4 — TernOO OPCODE program substrate + widget primitives
+Meccano Library v0.5 — TernOO OPCODE program substrate + widget primitives
 ===========================================================================
 Named programs composed of OPCODE word sequences.
 Each program carries a dual coordinate:
@@ -51,9 +51,15 @@ Design notes (CWC flags for CAI review):
      2 + ceil(len(text)/3). Renderer decodes via _decode_label_words().
      LABEL_TABLE removed from both meccano_lib and pigart_ascii_renderer.
 
+  7. Coordinate-relative composition (v0.5):
+     bounds() walks the OPCODE stream to report (min_x, min_y, max_x, max_y).
+     translate(dx, dy) returns a new program with all ON_PLANE MAP words shifted.
+     compose_below(other, gap) and compose_right_of(other, gap) use translate +
+     compose to place components without coordinate overlap.
+
 Date: 2026-06-11, Adelaide
 Authors: Stevo (SkepticusMaximus) + Claude (Anthropic)
-Companion specs: Meccano-Library-v01-CWC-Spec.md … Meccano-Library-v04-CWC-Spec.md
+Companion specs: Meccano-Library-v01-CWC-Spec.md … Meccano-Library-v05-CWC-Spec.md
 """
 
 from __future__ import annotations
@@ -84,6 +90,10 @@ from_trits         = _v03.from_trits
 to_trits           = _v03.to_trits
 build_string_word  = _v03.build_string_word
 STRING_ASCII       = _v03.STRING_ASCII
+decode_map_word    = _v03.decode_map_word
+get_primary        = _v03.get_primary
+get_field          = _v03.get_field
+PRIMARY_OPCODE     = _v03.PRIMARY_OPCODE
 
 # ── Load ternoo_gristmill (valid identifier — standard import) ────────────────
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -220,6 +230,175 @@ class MeccanoProgram:
             description=description,
         )
 
+    def bounds(self) -> tuple[int, int, int, int]:
+        """Compute the program's bounding box by walking its PIGART OPCODE stream.
+
+        Returns (min_x, min_y, max_x, max_y) — inclusive bounds covering every
+        cell any opcode would draw.
+
+        Per-opcode contribution:
+          RPOINT pos=(x,y)                → single point (x,y,x,y)
+          RLINE  from=(x1,y1) to=(x2,y2) → span of both endpoints
+          RNODE  pos=(x,y) size=(w,h)     → (x, y, x+w-1, y+h-1)
+          REDGE  from=(x1,y1) to=(x2,y2) → span of both endpoints (like RLINE)
+          RENDER                          → no contribution
+
+        MAP words that are not in ON_PLANE mode (e.g. ORIGIN-mode v0.1 geometry
+        programs) decode to (0, 0) via _extract_map_xy. These programs will
+        report bounds of (0, 0, 0, 0) — correct for translate purposes, and
+        flagged in test 19 with an inline ON_PLANE program for the RLINE case.
+
+        Non-PIGART OPCODE words are skipped (no canvas bounds).
+
+        Raises:
+            ValueError: if the program contains no PIGART opcodes that
+                        contribute to bounds (e.g. empty or RENDER-only).
+        """
+        min_x = min_y = float('inf')
+        max_x = max_y = float('-inf')
+
+        i = 0
+        while i < len(self.words):
+            w = self.words[i]
+            if get_primary(w) != PRIMARY_OPCODE:
+                # Non-OPCODE word encountered outside an operand span.
+                # Defensive skip — should not occur in a well-formed stream.
+                i += 1
+                continue
+
+            decoded  = decode_opcode_word(w)
+            arity    = decoded['arity']
+            operands = self.words[i + 1 : i + 1 + arity]
+
+            if decoded['family'] == OPF_PIGART:
+                mnemonic = decoded['mnemonic']
+
+                if mnemonic == 'RPOINT' and len(operands) >= 1:
+                    x, y  = _extract_map_xy(operands[0])
+                    min_x = min(min_x, x); max_x = max(max_x, x)
+                    min_y = min(min_y, y); max_y = max(max_y, y)
+
+                elif mnemonic in ('RLINE', 'REDGE') and len(operands) >= 2:
+                    x1, y1 = _extract_map_xy(operands[0])
+                    x2, y2 = _extract_map_xy(operands[1])
+                    min_x  = min(min_x, x1, x2); max_x = max(max_x, x1, x2)
+                    min_y  = min(min_y, y1, y2); max_y = max(max_y, y1, y2)
+
+                elif mnemonic == 'RNODE' and len(operands) >= 2:
+                    x, y  = _extract_map_xy(operands[0])
+                    sz    = operands[1]
+                    sz_w  = int(get_field(sz, 6, 6))   # T11-T6 = width
+                    sz_h  = int(get_field(sz, 0, 6))   # T5-T0  = height
+                    min_x = min(min_x, x);              max_x = max(max_x, x + sz_w - 1)
+                    min_y = min(min_y, y);              max_y = max(max_y, y + sz_h - 1)
+
+                # RENDER: no contribution to bounds
+
+            i += 1 + arity
+
+        if min_x == float('inf'):
+            raise ValueError(
+                f"program {self.name!r} has no positioned PIGART opcodes "
+                f"(program may be empty or contain only RENDER)"
+            )
+        return (int(min_x), int(min_y), int(max_x), int(max_y))
+
+    def translate(self, dx: int, dy: int) -> 'MeccanoProgram':
+        """Return a new MeccanoProgram with all ON_PLANE MAP positions shifted by (dx, dy).
+
+        Walks self.words; for each word whose type is MAP and whose coords dict
+        contains 'X' and 'Y' (i.e. an ON_PLANE word built by _build_xy_map),
+        rebuilds the word with (x+dx, y+dy). All other words pass through
+        unchanged.
+
+        MAP words in other modes (ORIGIN-mode v0.1 geometry words, ABSOLUTE_3D,
+        etc.) are passed through unchanged — only ON_PLANE XY words are shifted.
+
+        The returned program has the same category and description, and a derived
+        name: f'{self.name}@({dx:+},{dy:+})'.
+
+        Properties (verified in tests 20-23):
+          translate(0, 0) is identity (word stream byte-identical to original)
+          translate(dx, dy).translate(-dx, -dy) == original
+          translate(a, b).translate(c, d) == translate(a+c, b+d)
+          translate shifts bounds by exactly (dx, dy)
+        """
+        new_words = []
+        for w in self.words:
+            d = decode_word(w)
+            if d.get('type') == 'MAP':
+                dm     = decode_map_word(w)
+                coords = dm.get('coords', {})
+                if 'X' in coords:
+                    x, y = int(coords['X']), int(coords['Y'])
+                    new_words.append(_build_xy_map(x + dx, y + dy))
+                else:
+                    new_words.append(w)  # non-XY MAP word — pass through
+            else:
+                new_words.append(w)
+
+        return MeccanoProgram(
+            name=f'{self.name}@({dx:+},{dy:+})',
+            opcode_words=new_words,
+            category=self.category,
+            description=self.description,
+        )
+
+    def compose_below(self, other: 'MeccanoProgram', gap: int = 1,
+                      name: str = None,
+                      description: str = '') -> 'MeccanoProgram':
+        """Compose other below self, with gap blank rows between them.
+
+        Computes the vertical translation that places other.bounds() directly
+        below self.bounds() (separated by gap rows), translates other, then
+        concatenates via compose().
+
+        Formula: dy = self.max_y + gap + 1 - other.min_y
+        Horizontal: dx = 0 (other keeps its original horizontal position).
+
+        Gap semantics:
+          gap=1 (default): one blank row between borders
+          gap=0: borders flush against each other
+          gap<0: intentional overlap by abs(gap) rows
+
+        Default name: f'{self.name}_below_{other.name}'
+
+        Raises:
+            ValueError: if category mismatch (inherited from compose())
+        """
+        _, _, _, my_max_y       = self.bounds()
+        _, other_min_y, _, _    = other.bounds()
+        dy      = my_max_y + gap + 1 - other_min_y
+        shifted = other.translate(0, dy)
+        if name is None:
+            name = f'{self.name}_below_{other.name}'
+        return self.compose(shifted, name=name, description=description)
+
+    def compose_right_of(self, other: 'MeccanoProgram', gap: int = 1,
+                         name: str = None,
+                         description: str = '') -> 'MeccanoProgram':
+        """Compose other to the right of self, with gap blank columns between them.
+
+        Computes the horizontal translation that places other.bounds() directly
+        to the right of self.bounds() (separated by gap columns), translates
+        other, then concatenates via compose().
+
+        Formula: dx = self.max_x + gap + 1 - other.min_x
+        Vertical: dy = 0 (other keeps its original vertical position).
+
+        Default name: f'{self.name}_rightof_{other.name}'
+
+        Raises:
+            ValueError: if category mismatch (inherited from compose())
+        """
+        _, _, my_max_x, _       = self.bounds()
+        other_min_x, _, _, _    = other.bounds()
+        dx      = my_max_x + gap + 1 - other_min_x
+        shifted = other.translate(dx, 0)
+        if name is None:
+            name = f'{self.name}_rightof_{other.name}'
+        return self.compose(shifted, name=name, description=description)
+
     def __repr__(self) -> str:
         return (f"MeccanoProgram({self.name!r}, "
                 f"category={self.category!r}, "
@@ -324,6 +503,26 @@ def _encode_label(text: str) -> List[int]:
         packed = c0 + c1 * 128 + c2 * 16384
         words.append(build_string_word(STRING_ASCII, packed))
     return words
+
+
+def _extract_map_xy(map_word: int) -> tuple[int, int]:
+    """Extract (x, y) from an ON_PLANE MAP word built by _build_xy_map().
+
+    Uses decode_map_word and returns coords['X'], coords['Y'].
+    For MAP words not in ON_PLANE mode (e.g. ORIGIN-mode v0.1 geometry words),
+    returns (0, 0) — those words have no discrete XY canvas position.
+
+    This helper is used by both bounds() and translate() so the decode logic
+    is not duplicated across the two methods.
+
+    CAI flag (v0.5): the renderer module has an identical _extract_xy helper.
+    They are kept separate to avoid a cross-module dependency (meccano_lib
+    importing from pigart_ascii_renderer). Both share the same semantics.
+    Factoring into a shared utility is a v0.6 candidate.
+    """
+    d      = decode_map_word(map_word)
+    coords = d.get('coords', {})
+    return int(coords.get('X', 0)), int(coords.get('Y', 0))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -549,6 +748,115 @@ def _build_examples() -> MeccanoLibrary:
         description="Arbitrary text box — 'Hello, World!' without LABEL_TABLE",
     ))
 
+    # ── v0.5 programs (coordinate-relative composition) ─────────────────────
+    # Underscore-prefix naming (_btn_*, _dialog_*) = private/intermediate helper.
+    # These are NOT registered in the library; only the composed results are.
+
+    # ── 12. composed_window_v05 — title bar above content area, no overlap ────
+    # labeled_box  bounds = (8, 5, 29, 10)  (col 8-29, row 5-10)
+    # box_rectangle bounds = (4, 3, 27, 10)
+    # compose_below(gap=0): dy = 10 + 0 + 1 - 3 = 8 → box_rectangle → row 11-18
+    # No border overlap. Fixes the known overlap in v0.3's composed_window.
+    _cw_v05 = lib.get('labeled_box').compose_below(
+        lib.get('box_rectangle'), gap=0,
+        name='composed_window_v05',
+        description='Title bar (labeled_box) above content area (box_rectangle) via '
+                    'compose_below(gap=0) — no border overlap (fixes v0.3 composed_window)',
+    )
+    lib.register(_cw_v05)
+
+    # ── 13. button_row — three buttons composed left-to-right ─────────────────
+    # Each button is an inline MeccanoProgram (not registered, underscore prefix).
+    # Sizes: OK=6×3, Cancel=10×3, Help=8×3. All start at origin (0,0).
+    # After compose_right_of(gap=2): ok x=0-5, cancel x=8-17, help x=20-27.
+    _lw_ok_btn  = _encode_label('OK')      # 1 word  → RNODE arity 3
+    _lw_cancel  = _encode_label('Cancel')  # 2 words → RNODE arity 4
+    _lw_help    = _encode_label('Help')    # 2 words → RNODE arity 4
+
+    _btn_ok = MeccanoProgram(
+        '_btn_ok',
+        [
+            build_opcode_word(OPF_PIGART, arity=2+len(_lw_ok_btn), op_index=OP_RNODE),
+            _build_xy_map(0, 0), _build_size_word(6, 3), *_lw_ok_btn,
+            op_render,
+        ],
+        category='pigart',
+        description='[private helper] OK button at origin',
+    )
+    _btn_cancel = MeccanoProgram(
+        '_btn_cancel',
+        [
+            build_opcode_word(OPF_PIGART, arity=2+len(_lw_cancel), op_index=OP_RNODE),
+            _build_xy_map(0, 0), _build_size_word(10, 3), *_lw_cancel,
+            op_render,
+        ],
+        category='pigart',
+        description='[private helper] Cancel button at origin',
+    )
+    _btn_help = MeccanoProgram(
+        '_btn_help',
+        [
+            build_opcode_word(OPF_PIGART, arity=2+len(_lw_help), op_index=OP_RNODE),
+            _build_xy_map(0, 0), _build_size_word(8, 3), *_lw_help,
+            op_render,
+        ],
+        category='pigart',
+        description='[private helper] Help button at origin',
+    )
+    _btn_row = _btn_ok.compose_right_of(
+        _btn_cancel, gap=2,
+    ).compose_right_of(
+        _btn_help, gap=2,
+        name='button_row',
+        description='OK / Cancel / Help buttons composed left to right with gap=2',
+    )
+    lib.register(_btn_row)
+
+    # ── 14. dialog_basic — message + button row + outer frame ─────────────────
+    # Layout plan:
+    #   _dialog_msg  'Are you sure?' RNODE at (0,0) size 18×3  → bounds (0,0,17,2)
+    #   _content = _dialog_msg.compose_below(button_row, gap=1)
+    #              button_row bounds (0,0,27,2) → shifted dy=2+1+1-0=4 → rows 4-6
+    #              content bounds: (0,0,27,6)
+    #   _content_inner = _content.translate(1,1) → bounds (1,1,28,7)
+    #   frame: 30×9 at (0,0) → bounds (0,0,29,8) — wraps inner content with 1-cell margin
+    #   _dialog = _frame.compose(_content_inner)
+    # CAI spec note: framing is viable here because we compute content bounds first.
+    _lw_sure = _encode_label('Are you sure?')  # 13 chars → 5 words → arity 7
+    _dialog_msg = MeccanoProgram(
+        '_dialog_msg',
+        [
+            build_opcode_word(OPF_PIGART, arity=2+len(_lw_sure), op_index=OP_RNODE),
+            _build_xy_map(0, 0), _build_size_word(18, 3), *_lw_sure,
+            op_render,
+        ],
+        category='pigart',
+        description='[private helper] Are you sure? message node at origin',
+    )
+    _content = _dialog_msg.compose_below(lib.get('button_row'), gap=1)
+    # Translate content inward by 1 cell for frame margin
+    _content_inner = _content.translate(1, 1)
+    # Build frame to wrap the inner content (bounds: _content_inner)
+    _cb  = _content_inner.bounds()     # (1, 1, 28, 7)
+    _fw  = _cb[2] + 2                   # max_x + 1 (right margin) + 1 (0-indexed) = 30
+    _fh  = _cb[3] + 2                   # max_y + 1 (bottom margin) + 1 (0-indexed) = 9
+    _frame = MeccanoProgram(
+        '_dialog_frame',
+        [
+            build_opcode_word(OPF_PIGART, arity=2, op_index=OP_RNODE),
+            _build_xy_map(0, 0), _build_size_word(_fw, _fh),
+            op_render,
+        ],
+        category='pigart',
+        description=f'[private helper] Dialog outer frame {_fw}×{_fh}',
+    )
+    _dialog = _frame.compose(
+        _content_inner,
+        name='dialog_basic',
+        description='Dialog: "Are you sure?" message + button row framed by a border rectangle',
+    )
+    lib.register(_dialog)
+
     return lib
 
 
@@ -557,22 +865,30 @@ def _build_examples() -> MeccanoLibrary:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def test_meccano_library() -> bool:
-    """v0.4 acceptance tests — 18 criteria (v0.1 1–5, v0.2 6–8, v0.3 9–14, v0.4 15–18).
+    """v0.5 acceptance tests — 27 criteria (v0.1 1–5, v0.2 6–8, v0.3 9–14, v0.4 15–18, v0.5 19–27).
 
     CAI flag (Step 5 determinism resolution, v0.1):
     'name' is a registry key only — it does not appear in mmid.word, otree_word,
     or to_words(). Criterion 4 asserts that two MeccanoPrograms sharing category
     and words are fully word-identical (same mmid, same otree_word, same to_words())
     regardless of name. This is the correct semantics.
+
+    CAI flag (test 19, v0.5):
+    The spec's test 19 uses lib.get('line_horizontal').bounds() and asserts
+    b_line[0] != b_line[2] (should span horizontally). BUT line_horizontal uses
+    ORIGIN-mode MAP words (v0.1 geometry program), and _extract_map_xy returns
+    (0,0) for those. An ORIGIN-mode RLINE gives bounds (0,0,0,0) — the assertion
+    would fail. Resolution: use an inline ON_PLANE RLINE program for that test.
+    Flagged here per spec instructions; factoring v0.1 programs to ON_PLANE is v0.6+.
     """
     print("=" * 60)
-    print("TEST: Meccano Library v0.4")
+    print("TEST: Meccano Library v0.5")
     print("=" * 60)
 
     lib = _build_examples()
 
-    # ── 1. All eleven programs construct without error ─────────────────────────
-    assert len(lib.all()) == 11, f"expected 11 programs, got {len(lib.all())}"
+    # ── 1. All fourteen programs construct without error ──────────────────────
+    assert len(lib.all()) == 14, f"expected 14 programs, got {len(lib.all())}"
     print(f"  1. PASS  {len(lib.all())} programs constructed")
 
     # ── 2. Each program's to_words() stream decodes cleanly ───────────────────
@@ -607,7 +923,7 @@ def test_meccano_library() -> bool:
 
     # ── 5. Category filtering ─────────────────────────────────────────────────
     pigart = lib.by_category('pigart')
-    assert len(pigart) == 11
+    assert len(pigart) == 14
     assert all(p.category == 'pigart' for p in pigart)
     print(f"  5. PASS  by_category('pigart') returns {len(pigart)} programs")
 
@@ -734,8 +1050,97 @@ def test_meccano_library() -> bool:
             f"{_name}: expected label {_label!r} missing from render"
     print(f" 18. PASS  v0.3 widgets render correct labels via DATA-STRING encoding")
 
+    # ── v0.5 tests: coordinate-relative composition ───────────────────────────
+
+    # ── 19. bounds() returns correct values for each PIGART opcode type ───────
+    # RPOINT test: use point_red (ON_PLANE MAP word).
+    b_point = lib.get('point_red').bounds()
+    assert b_point[0] == b_point[2], "RPOINT bounds: min_x should equal max_x"
+    assert b_point[1] == b_point[3], "RPOINT bounds: min_y should equal max_y"
+
+    # RLINE test: must use an inline ON_PLANE program (see CAI flag in docstring —
+    # line_horizontal uses ORIGIN-mode MAP words and gives (0,0,0,0) for both endpoints).
+    _rline_test = MeccanoProgram(
+        '_rline_bounds_test',
+        [
+            build_opcode_word(OPF_PIGART, arity=3, op_index=OP_RLINE),
+            _build_xy_map(2, 5), _build_xy_map(10, 5),
+            build_int_word(0),   # style placeholder
+        ],
+        category='pigart',
+    )
+    b_line = _rline_test.bounds()
+    assert b_line[0] != b_line[2], "RLINE bounds: min_x should differ from max_x (horizontal span)"
+    assert b_line[0] == 2 and b_line[2] == 10, f"RLINE bounds: expected x span 2-10, got {b_line}"
+
+    # RNODE test: box_rectangle should span in both dimensions.
+    b_box = lib.get('box_rectangle').bounds()
+    assert b_box[2] > b_box[0] and b_box[3] > b_box[1], \
+        "RNODE bounds: should span both dimensions (rectangle)"
+    print(f" 19. PASS  bounds() correct for RPOINT, RLINE (ON_PLANE), RNODE")
+
+    # ── 20. translate(0, 0) is identity ───────────────────────────────────────
+    orig    = lib.get('labeled_box')
+    shifted = orig.translate(0, 0)
+    assert shifted.words == orig.words, "translate(0,0) should leave word stream unchanged"
+    print(f" 20. PASS  translate(0,0) is identity")
+
+    # ── 21. translate is invertible ───────────────────────────────────────────
+    fwd  = orig.translate(5, 3)
+    back = fwd.translate(-5, -3)
+    assert back.words == orig.words, "translate is invertible: translate(dx,dy).translate(-dx,-dy) == original"
+    print(f" 21. PASS  translate is invertible")
+
+    # ── 22. translate is composable (additive) ────────────────────────────────
+    t1     = orig.translate(2, 4)
+    t2     = t1.translate(3, 1)
+    direct = orig.translate(5, 5)
+    assert t2.words == direct.words, "translate(a,b).translate(c,d) should equal translate(a+c,b+d)"
+    print(f" 22. PASS  translate is composable (additive)")
+
+    # ── 23. translate shifts bounding box by exactly (dx, dy) ─────────────────
+    old_b = orig.bounds()
+    new_b = orig.translate(10, 20).bounds()
+    assert new_b[0] == old_b[0] + 10, f"translate: min_x should shift by 10, got {new_b[0] - old_b[0]}"
+    assert new_b[1] == old_b[1] + 20, f"translate: min_y should shift by 20, got {new_b[1] - old_b[1]}"
+    assert new_b[2] == old_b[2] + 10, f"translate: max_x should shift by 10"
+    assert new_b[3] == old_b[3] + 20, f"translate: max_y should shift by 20"
+    print(f" 23. PASS  translate shifts bounding box by exact (dx, dy)")
+
+    # ── 24. compose_below: stacked result extends further down than self ───────
+    _a_lb = lib.get('labeled_box')
+    _b_br = lib.get('box_rectangle')
+    stacked  = _a_lb.compose_below(_b_br, gap=1)
+    stacked_b = stacked.bounds()
+    a_b       = _a_lb.bounds()
+    assert stacked_b[3] > a_b[3], \
+        f"compose_below: stacked max_y ({stacked_b[3]}) should exceed labeled_box max_y ({a_b[3]})"
+    print(f" 24. PASS  compose_below: stacked extends further down (max_y {stacked_b[3]} > {a_b[3]})")
+
+    # ── 25. compose_right_of: rightcat extends further right than self ─────────
+    rightcat   = _a_lb.compose_right_of(_b_br, gap=1)
+    rightcat_b = rightcat.bounds()
+    assert rightcat_b[2] > a_b[2], \
+        f"compose_right_of: rightcat max_x ({rightcat_b[2]}) should exceed labeled_box max_x ({a_b[2]})"
+    print(f" 25. PASS  compose_right_of: extends further right (max_x {rightcat_b[2]} > {a_b[2]})")
+
+    # ── 26. composed_window_v05 renders with Hello label ──────────────────────
+    cw5_out = _render(lib.get('composed_window_v05'))
+    assert 'Hello' in cw5_out, \
+        f"composed_window_v05: 'Hello' label missing from rendered output"
+    assert any(c in cw5_out for c in '+-|'), \
+        f"composed_window_v05: no rectangle characters in rendered output"
+    print(f" 26. PASS  composed_window_v05 renders with 'Hello' label")
+
+    # ── 27. button_row renders all three button labels ─────────────────────────
+    btn_out = _render(lib.get('button_row'))
+    assert 'OK'     in btn_out, "button_row: 'OK' label missing from rendered output"
+    assert 'Cancel' in btn_out, "button_row: 'Cancel' label missing from rendered output"
+    assert 'Help'   in btn_out, "button_row: 'Help' label missing from rendered output"
+    print(f" 27. PASS  button_row renders all three button labels (OK / Cancel / Help)")
+
     print()
-    print(f"meccano_lib v0.4: {len(lib.all())} programs, all tests pass")
+    print(f"meccano_lib v0.5: {len(lib.all())} programs, all tests pass")
     return True
 
 
@@ -747,7 +1152,7 @@ def demo():
     """Print each program with coordinates — for human eyeballing."""
     lib = _build_examples()
     print("=" * 60)
-    print("  Meccano Library v0.4 — Program Registry Demo")
+    print("  Meccano Library v0.5 — Program Registry Demo")
     print("=" * 60)
     for p in lib.all():
         print(f"\n{p.name}  [{p.category}]")
