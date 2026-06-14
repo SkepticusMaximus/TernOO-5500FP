@@ -87,7 +87,7 @@ def _decode_size(size_word: int) -> tuple[int, int]:
 def _decode_label_words(string_operands: List[int]) -> str:
     """Decode a sequence of DATA-STRING/ASCII words into a Python string.
 
-    Each word was encoded by _encode_label() in meccano_lib:
+    Each word was encoded by _encode_label() in widget_lib (formerly meccano_lib):
       packed = c0 + c1*128 + c2*128²   (base-128, 3 chars per word)
 
     Non-STRING words terminate decoding early (defensive).
@@ -334,5 +334,5 @@ def render_gui(program,
 
 if __name__ == '__main__':
     import sys
-    print("pigart_tkinter_renderer: import OK, use meccano_lib.py --render-gui <program>")
+    print("pigart_tkinter_renderer: import OK, use widget_lib.py --render-gui <program>")
     sys.exit(0)

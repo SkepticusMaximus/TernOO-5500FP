@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""
-Meccano Library v0.5 — TernOO OPCODE program substrate + widget primitives
-===========================================================================
-Named programs composed of OPCODE word sequences.
-Each program carries a dual coordinate:
+"""widget_lib.py — TernOO Widget Library (formerly meccano_lib.py).
+
+Registry of named widget programs composed from PIGART OPCODE word streams.
+Each program is a MeccanoProgram instance with dual TMesh/OTree coordinates:
   - mmid:       structural identity (TTree MAP) — derived from MMOE category
-  - otree_word: content address (OTree MAP)     — position-sensitive fold over words
+  - otree_word: content address (OTree MAP)     — Fingerprint Fold over words
 
-v0.1 ground-work: demonstrates that two programs with the same word multiset
-but different execution orderings produce distinct OTree addresses while
-sharing the same MMID (same structure, different content path).
+Renamed from meccano_lib.py on 2026-06-15 (per CF5 audit finding 1.7) to
+disambiguate from the Meccano vocabulary (§10.1.3 — the closed 27-element
+compositional set) and the OPF_MECCANO OPCODE family. The MeccanoProgram
+class name stays because the class is generic over any TernOO word-stream
+program, not widget-specific.
 
-v0.2 adds four DOSShell-vintage widget programs and a CLI render path via
-pigart_ascii_renderer. When you run `python3 meccano_lib.py --render window_basic`
-you get a text-art window on stdout — first rendered output from the Meccano substrate.
+Current capability: v0.6 (six versions of additive work culminating in
+PIGART tkinter renderer + GUI widget demos). This file (previously meccano_lib.py)
+is chore-only at this commit — rename + audit-flagged docstring fix in
+_compute_otree, no functional changes.
 
 Design notes (CWC flags for CAI review):
 
@@ -22,6 +24,7 @@ Design notes (CWC flags for CAI review):
      The ta*(i+1) weighting makes each OPCODE word's contribution depend on
      both its content (ta) and its position, so permutations of the same
      word multiset produce distinct OTree addresses. CAI confirmed in v0.1.
+     Named the "Fingerprint Fold" per CF5 audit 1.3.
 
   2. MMOE_TYPES key format (v0.1 flag, resolved):
      Spec used {'subclass_t1': +1, 'subclass_t0': +1} keys; translated to
@@ -49,7 +52,7 @@ Design notes (CWC flags for CAI review):
      Uses build_string_word(STRING_ASCII, packed). Each word packs 3 ASCII
      chars via base-128: packed = c0 + c1*128 + c2*16384. RNODE arity =
      2 + ceil(len(text)/3). Renderer decodes via _decode_label_words().
-     LABEL_TABLE removed from both meccano_lib and pigart_ascii_renderer.
+     LABEL_TABLE removed from both widget_lib and pigart_ascii_renderer.
 
   7. Coordinate-relative composition (v0.5):
      bounds() walks the OPCODE stream to report (min_x, min_y, max_x, max_y).
@@ -57,9 +60,14 @@ Design notes (CWC flags for CAI review):
      compose_below(other, gap) and compose_right_of(other, gap) use translate +
      compose to place components without coordinate overlap.
 
-Date: 2026-06-11, Adelaide
+  8. tkinter renderer (v0.6):
+     pigart_tkinter_renderer.py walks the same word stream as the ASCII renderer
+     and produces GUI shapes on a tkinter Canvas. Same five PIGART opcodes,
+     scale=12px per Meccano unit. --render-gui CLI flag added to this module.
+
+Date: 2026-06-11 (v0.1–v0.6), 2026-06-15 (rename chore)
 Authors: Stevo (SkepticusMaximus) + Claude (Anthropic)
-Companion specs: Meccano-Library-v01-CWC-Spec.md … Meccano-Library-v05-CWC-Spec.md
+Companion specs: Meccano-Library-v01-CWC-Spec.md … Meccano-Library-v06-CWC-Spec.md
 """
 
 from __future__ import annotations
@@ -139,23 +147,35 @@ class MeccanoProgram:
         self.otree_word  = self._compute_otree()
 
     def _compute_otree(self) -> int:
-        """Position-sensitive accumulator fold over the full word sequence.
+        """Fingerprint Fold — position-sensitive accumulator over the word stream.
 
-        For each word at position i (0-indexed):
-            ta, tb, _ = extract_tribbles(w)
+        For each word in self.words at 1-indexed position i:
+            ta, tb, _ = extract_tribbles(word)
             S = (S + ternary_op(ta * (i+1), tb)) % MOD
+        otree_word = build_otree_mmoe(S)
 
-        Multiplying ta by (i+1) makes each word's contribution depend on both its
-        content (ta) and its position. The total accumulator is:
-            S = −Σ(ta_i*(i+1) + tb_i) mod 729
+        The order-sensitivity of the fold comes from the position weight
+        (i+1) applied to ta — without it, ternary_op's underlying addition
+        would commute and permutations of the same word set would collide.
 
-        Words with ta=0 (MAP/DATA operands) contribute nothing regardless of position.
-        Words with non-zero ta (OPCODE words) contribute position-weighted values.
-        Permuting OPCODE words changes Σ(ta_i*(i+1)) and therefore changes S.
+        Note: operand words (MAP/DATA) generally have non-zero tb values
+        (e.g. _build_xy_map packs y into payload trits 6-11), so they DO
+        contribute to the fold via the tb term, position-independently.
+        The order-sensitivity lives in the opcodes' ta values, not in
+        operand suppression.
 
-        Why not ternary_op(ta, tb + i*27)?  That expands to −(ta+tb+i*27), and
-        summed over all words Σ(i*27) = 27*n*(n-1)/2 — a constant for any
-        permutation of n words, so order-invariant. The ta*(i+1) form is not.
+        Why not ternary_op(ta, tb + i*27)? That expands to -(ta+tb+i*27),
+        and summed over all words Σ(i*27) = 27*n*(n-1)/2 — a constant for
+        any permutation of n words, so order-invariant. The ta*(i+1) form
+        is not.
+
+        Mathematical note: this is the "Fingerprint Fold" (per CF5 audit
+        1.3). It is quasigroup-based, not quasigroup-pure — the position
+        weight ta*(i+1) uses multiplication, which lies outside the
+        Steiner quasigroup's operation set. The Placement Fold used by
+        GristMill is quasigroup-pure but order-invariant at the
+        final-value level; widget_lib needs final-value order-sensitivity,
+        so the multiplicative weight is the deliberate departure.
         """
         S = 0
         for i, w in enumerate(self.words):
@@ -1193,7 +1213,7 @@ def test_meccano_library() -> bool:
           f"and GUI ({_gui_shapes31} shape(s)) — architectural test")
 
     print()
-    print(f"meccano_lib v0.6: {len(lib.all())} programs, all tests pass")
+    print(f"widget_lib v0.6: {len(lib.all())} programs, all tests pass")
     return True
 
 
@@ -1233,7 +1253,7 @@ if __name__ == '__main__':
     if '--render' in sys.argv:
         _idx = sys.argv.index('--render')
         if _idx + 1 >= len(sys.argv):
-            print("usage: meccano_lib.py --render <program_name>", file=sys.stderr)
+            print("usage: widget_lib.py --render <program_name>", file=sys.stderr)
             sys.exit(2)
         from pigart_ascii_renderer import render as _render
         _lib  = _build_examples()
@@ -1247,7 +1267,7 @@ if __name__ == '__main__':
     if '--render-gui' in sys.argv:
         _idx = sys.argv.index('--render-gui')
         if _idx + 1 >= len(sys.argv):
-            print("usage: meccano_lib.py --render-gui <program_name>", file=sys.stderr)
+            print("usage: widget_lib.py --render-gui <program_name>", file=sys.stderr)
             sys.exit(2)
         from pigart_tkinter_renderer import render_gui as _render_gui
         _lib  = _build_examples()

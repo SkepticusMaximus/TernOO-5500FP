@@ -55,7 +55,7 @@ OPF_PIGART         = _v03.OPF_PIGART
 def _decode_label_words(string_operands: List[int]) -> str:
     """Decode a sequence of DATA-STRING/ASCII words into a Python string.
 
-    Each word was encoded by _encode_label() in meccano_lib:
+    Each word was encoded by _encode_label() in widget_lib (formerly meccano_lib):
       packed = c0 + c1*128 + c2*128²   (base-128, 3 chars per word)
 
     Collects all character values, strips trailing null bytes,
@@ -357,7 +357,7 @@ def _dispatch_redge(canvas: AsciiCanvas, operands: List[int]) -> None:
 if __name__ == '__main__':
     if '--self-test' in sys.argv:
         # Minimal smoke test: build a one-rectangle program inline and render it.
-        # Does not import meccano_lib to keep the renderer self-contained.
+        # Does not import widget_lib to keep the renderer self-contained.
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from ternoo_gristmill import MMID, MOD, ternary_op, extract_tribbles, build_otree_mmoe
 
@@ -375,7 +375,7 @@ if __name__ == '__main__':
         def _bsz(w, h):
             return build_int_word(from_trits(to_trits(h, 6) + to_trits(w, 6) + [0]*6))
 
-        # Inline stub program (avoids circular import with meccano_lib)
+        # Inline stub program (avoids circular import with widget_lib)
         class _Stub:
             def __init__(self):
                 op_rnode = build_opcode_word(OPF_PIGART, arity=2, op_index=OP_RNODE)

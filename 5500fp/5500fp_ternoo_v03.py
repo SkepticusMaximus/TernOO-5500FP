@@ -1493,7 +1493,6 @@ def demo_word_gallery():
         print(f"           {describe_word(w)}")
         print()
 
-import numpy as np
 import random
 
 # ═══════════════════════════════════════════════════════════════
@@ -1515,6 +1514,7 @@ class RealTernooNeuralEngine:
         """Physically populates system RAM with structural v0.3 NEURAL and I/O weights."""
         import json
         import os
+        import numpy as np
 
         if os.path.exists("ternoo_hardware_matrix.json"):
             print(" [Hardware] Restoring pre-trained 18-trit matrix layouts from storage checkpoint...")
@@ -1557,6 +1557,7 @@ class RealTernooNeuralEngine:
     # ═══════════════════════════════════════════════════════════════
     def execute_hardware_inference(self, input_vector_addr, vector_length):
         """Processes an input vector using pure hardware payload stepping logic."""
+        import numpy as np
         accumulators = np.zeros(self.hidden_size, dtype=int)
 
         for i in range(vector_length):
@@ -1581,6 +1582,7 @@ class RealTernooNeuralEngine:
     # ═══════════════════════════════════════════════════════════════
     def execute_hardware_decode(self, hidden_states):
         """Projects latent vectors using native 18-trit payload masks."""
+        import numpy as np
         output_logits = np.zeros(self.vocab_size, dtype=int)
 
         for i in range(self.hidden_size):
@@ -1829,6 +1831,7 @@ def run_pure_ternoo_ai_workbench():
                         print(" [Hardware Bus] Stream empty. Memory address lane 0x6000 returned a neutral null state.\n")
 
                 elif sensor_cmd == "!learn_temp":
+                    import numpy as np
                     print(" [Hardware Bus] Querying Core Thermal Monitoring Line...")
                     simulated_temp_raw = int(np.clip(random.randint(35, 75), 0, 193710244))
                     print(f" [Hardware Bus] Internal Thermal Register updated: {simulated_temp_raw} C\n")
