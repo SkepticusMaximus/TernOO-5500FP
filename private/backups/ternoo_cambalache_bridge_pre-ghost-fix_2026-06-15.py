@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-# PARTIALLY REPAIRED 15 Jun 2026 (Bundle 4 / option ii):
-#   instance_hash removed from import — GHOST palette load now succeeds.
-# STILL BROKEN: canvas_to_mmid_sequence / canvas_to_mmoe_tree use
-#   MMID(type, instance=...) — instance= kwarg removed in Rev4.
-#   Full cambalache bridge rework deferred (post-ASPLOS). Do not call
-#   those functions until specced.
+# KNOWN-BROKEN against Rev4 gristmill (10 Jun 2026 — CAI decision).
+# Bridge imports `instance_hash` and uses MMID(type, instance=...) — both
+# removed in the 09 Jun Rev4 primitives port. Rework follows as next task.
+# Do not run until specced.
 """
 TernOO Cambalache Bridge
 ========================
@@ -47,7 +45,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # ── GristMill imports ─────────────────────────────────────────────────────────
 
-from ternoo_gristmill import MMID, MMOE, GristMill, MMOE_TYPES
+from ternoo_gristmill import MMID, MMOE, GristMill, MMOE_TYPES, instance_hash
 
 
 # ── Widget type → MMOE type registry ─────────────────────────────────────────
