@@ -203,9 +203,13 @@ def ghost_to_meccano(widgets: dict, edges: list,
 
     Returns:
         MeccanoProgram with RNODEs, visual REDGEs, containment REDGEs, RENDER.
+        The program carries a ._ghost_word_map attribute:
+            {widget_id: (start, end)} — half-open indices into program.words
+        Used by update_meccano_for_widget for incremental field-commit updates.
     """
     words: list = []
     sym_centres: dict = {}  # id → (cx, cy) in Meccano units
+    word_map: dict = {}    # widget_id → (start, end) half-open in words list
 
     for wid, w in widgets.items():
         ww = w.get('w', 160)
@@ -214,11 +218,13 @@ def ghost_to_meccano(widgets: dict, edges: list,
         tl_y = (w['y'] - wh // 2) // FC_GRID_TO_MECCANO
         mw   = max(1, ww // FC_GRID_TO_MECCANO)
         mh   = max(1, wh // FC_GRID_TO_MECCANO)
+        _start = len(words)
         words.extend(
             build_rnode_shape_labeled((tl_x, tl_y), (mw, mh),
                                       SHAPE_RECTANGLE,
                                       w.get('label', w.get('kind', '')))
         )
+        word_map[wid] = (_start, len(words))
         sym_centres[wid] = (tl_x + mw // 2, tl_y + mh)  # south midpoint
 
     # Visual connection edges
@@ -242,7 +248,7 @@ def ghost_to_meccano(widgets: dict, edges: list,
 
     words.append(build_opcode_word(OPF_PIGART, arity=0, op_index=OP_RENDER))
 
-    return MeccanoProgram(
+    prog = MeccanoProgram(
         name=name,
         opcode_words=words,
         category=category,
@@ -253,6 +259,78 @@ def ghost_to_meccano(widgets: dict, edges: list,
             f'containment edge(s)'
         ),
     )
+    # Attach word-index map for incremental updates (update_meccano_for_widget)
+    prog._ghost_word_map = word_map
+    return prog
+
+
+def update_meccano_for_widget(program: 'MeccanoProgram',
+                              widget_id: int,
+                              widget: dict) -> 'MeccanoProgram':
+    """Re-emit the words for a single widget within an existing program.
+
+    Called once per field-commit (label/x/y/w/h changes), not per keystroke.
+    Locates the widget's RNODE span in program.words via _ghost_word_map,
+    replaces those indices with newly-emitted words, returns the updated
+    program with recomputed mmid and otree.
+
+    Properties that change edge structure (parent_id) require a full rebuild
+    via ghost_to_meccano — callers are responsible for that case.
+
+    Args:
+        program:   MeccanoProgram previously returned by ghost_to_meccano,
+                   carrying a ._ghost_word_map attribute.
+        widget_id: The id of the widget whose words should be updated.
+        widget:    The updated widget dict (with new x/y/w/h/label).
+
+    Returns:
+        A new MeccanoProgram with updated words and recomputed mmid/otree.
+        If the program lacks _ghost_word_map or widget_id is not in it,
+        the original program is returned unchanged.
+    """
+    word_map = getattr(program, '_ghost_word_map', None)
+    if word_map is None or widget_id not in word_map:
+        return program
+
+    start, end = word_map[widget_id]
+
+    ww = widget.get('w', 160)
+    wh = widget.get('h', 72)
+    tl_x = (widget['x'] - ww // 2) // FC_GRID_TO_MECCANO
+    tl_y = (widget['y'] - wh // 2) // FC_GRID_TO_MECCANO
+    mw   = max(1, ww // FC_GRID_TO_MECCANO)
+    mh   = max(1, wh // FC_GRID_TO_MECCANO)
+    new_rnode_words = build_rnode_shape_labeled(
+        (tl_x, tl_y), (mw, mh), SHAPE_RECTANGLE,
+        widget.get('label', widget.get('kind', ''))
+    )
+
+    # Splice new words into the body
+    old_len = end - start
+    new_len = len(new_rnode_words)
+    new_body = program.words[:start] + new_rnode_words + program.words[end:]
+
+    # Rebuild the program from the updated body
+    new_prog = MeccanoProgram(
+        name=program.name,
+        opcode_words=new_body,
+        category=program.category,
+        description=program.description,
+    )
+
+    # Rebuild the word map: adjust all spans after the replaced span
+    delta = new_len - old_len
+    new_word_map = {}
+    for wid, (s, e) in word_map.items():
+        if wid == widget_id:
+            new_word_map[wid] = (start, start + new_len)
+        elif s >= end:
+            new_word_map[wid] = (s + delta, e + delta)
+        else:
+            new_word_map[wid] = (s, e)
+    new_prog._ghost_word_map = new_word_map
+
+    return new_prog
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -1601,9 +1601,51 @@ def run_gui():
     }
     _GC_MIN_SIZE = 20   # minimum width and height in px (D3)
 
+    # Per-kind default layout mode (Bundle 7 Stage 4)
+    _GC_LAYOUT_DEFAULTS: dict = {
+        'gui_window': 'absolute', 'gui_dialog': 'absolute',
+        'gui_box': 'vbox',        'gui_grid': 'grid',
+        'gui_frame': 'absolute',  'gui_notebook': 'stacked', 'gui_stack': 'stacked',
+        'gui_paned': 'hbox',
+        'gui_expander': 'absolute', 'gui_revealer': 'absolute',
+        'gui_overlay': 'absolute',  'gui_scrolled': 'absolute',
+        'gui_flowbox': 'vbox',      'gui_listbox': 'vbox',
+        'gui_headerbar': 'hbox',    'gui_actionbar': 'hbox',
+        'gui_menubar': 'hbox',      'gui_toolbar': 'hbox', 'gui_statusbar': 'hbox',
+    }
+    _GC_PROP_W = 280   # property panel width in pixels
+
+    # ── Load flowcode_bridge for incremental word-stream updates ──────────────
+    _fb_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            '../5500fp/flowcode_bridge.py')
+    if os.path.exists(_fb_path):
+        import importlib.util as _fbu2
+        _fb_spec2 = _fbu2.spec_from_file_location('flowcode_bridge', _fb_path)
+        _fb_mod2  = _fbu2.module_from_spec(_fb_spec2)
+        _fb_spec2.loader.exec_module(_fb_mod2)
+        _ghost_to_meccano      = _fb_mod2.ghost_to_meccano
+        _update_meccano_widget = _fb_mod2.update_meccano_for_widget
+    else:
+        _ghost_to_meccano      = None
+        _update_meccano_widget = None
+
+    # ── Load property registry ────────────────────────────────────────────────
+    _fp_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            '../5500fp/flowcode_properties.py')
+    if os.path.exists(_fp_path):
+        import importlib.util as _fpu
+        _fp_spec = _fpu.spec_from_file_location('flowcode_properties', _fp_path)
+        _fp_mod  = _fpu.module_from_spec(_fp_spec)
+        _fp_spec.loader.exec_module(_fp_mod)
+        _fp_properties_for       = _fp_mod.properties_for
+        _fp_common_for_kinds     = _fp_mod.common_properties_for_kinds
+    else:
+        def _fp_properties_for(kind): return []
+        def _fp_common_for_kinds(kinds): return []
+
     # ── GHOST canvas state ────────────────────────────────────────────────────
     gst = {
-        'widgets':       {},    # id → {id, kind, x, y, label, w, h, parent_id}
+        'widgets':       {},    # id → {id, kind, x, y, label, w, h, parent_id, layout_mode, properties}
         'edges':         [],    # [{src, dst}, …]
         'selected':      None,  # int id of primary selected widget
         'multi_sel':     set(), # all selected ids (includes selected)
@@ -1617,11 +1659,25 @@ def run_gui():
         'resize_handle': None,  # 'NW'|'N'|… or None
         'resize_origin': None,  # (wx, wy, ww, wh) at resize-start for undo
         'drop_target':   None,  # id of highlighted container drop target
+        # Stage 4 — layout
+        'child_order':   {},    # parent_id → [child_ids] in insertion order
+        'drag_insert_parent': None,  # parent id being reordered within
+        'drag_insert_idx':    None,  # target insertion index for reorder
+        # Stage 5 — property panel
+        'prop_committed': {},   # widget_id → {prop_name: committed_value}
+        'gc_program':    None,  # current MeccanoProgram (updated at each commit)
     }
 
     # ── Ghost canvas layout ───────────────────────────────────────────────────
     gc_pal   = tk.Frame(ghost_tab, bg=C['palette'], width=PALETTE_W)
     gc_pal.pack(side='left', fill='y'); gc_pal.pack_propagate(False)
+
+    # Right-side property panel (packed before gc_right so it claims the right boundary)
+    _gc_prop_visible = [True]
+    gc_prop_outer = tk.Frame(ghost_tab, bg=C['palette'], width=_GC_PROP_W)
+    gc_prop_outer.pack(side='right', fill='y')
+    gc_prop_outer.pack_propagate(False)
+
     gc_right = tk.Frame(ghost_tab, bg=C['bg'])
     gc_right.pack(side='left', fill='both', expand=True)
     gc       = tk.Canvas(gc_right, bg=C['canvas'], highlightthickness=0)
@@ -1631,6 +1687,51 @@ def run_gui():
                         bg=C['status'], fg=C['pal_border'],
                         font=('Monospace', 9), anchor='w', padx=8)
     gc_bar.pack(side='bottom', fill='x', ipady=3)
+
+    # ── Property panel interior ───────────────────────────────────────────────
+    _gc_prop_chev = tk.Button(gc_prop_outer, text='›',
+                               bg=C['palette'], fg=C['dim'],
+                               font=('Monospace', 10, 'bold'),
+                               relief='flat', bd=0, cursor='hand2', width=2)
+    _gc_prop_chev.pack(side='left', fill='y', pady=2)
+
+    _gc_prop_body = tk.Frame(gc_prop_outer, bg=C['palette'])
+    _gc_prop_body.pack(side='left', fill='both', expand=True)
+
+    tk.Label(_gc_prop_body, text='PROPERTIES',
+             bg=C['palette'], fg=C['pal_border'],
+             font=('Monospace', 8, 'bold'), pady=4).pack(fill='x')
+
+    _gc_prop_cvs = tk.Canvas(_gc_prop_body, bg=C['palette'], highlightthickness=0)
+    _gc_prop_sb  = tk.Scrollbar(_gc_prop_body, orient='vertical',
+                                 command=_gc_prop_cvs.yview)
+    _gc_prop_sb.pack(side='right', fill='y')
+    _gc_prop_cvs.pack(side='left', fill='both', expand=True)
+    _gc_prop_cvs.configure(yscrollcommand=_gc_prop_sb.set)
+
+    _gc_prop_inner = tk.Frame(_gc_prop_cvs, bg=C['palette'])
+    _gc_prop_inner_id = _gc_prop_cvs.create_window(
+        (0, 0), window=_gc_prop_inner, anchor='nw')
+
+    def _gc_prop_on_frame_configure(event):
+        _gc_prop_cvs.configure(scrollregion=_gc_prop_cvs.bbox('all'))
+    _gc_prop_inner.bind('<Configure>', _gc_prop_on_frame_configure)
+
+    def _gc_prop_on_canvas_configure(event):
+        _gc_prop_cvs.itemconfig(_gc_prop_inner_id, width=event.width)
+    _gc_prop_cvs.bind('<Configure>', _gc_prop_on_canvas_configure)
+
+    def _gc_prop_toggle():
+        _gc_prop_visible[0] = not _gc_prop_visible[0]
+        if _gc_prop_visible[0]:
+            _gc_prop_body.pack(side='left', fill='both', expand=True)
+            _gc_prop_chev.config(text='›')
+            gc_prop_outer.config(width=_GC_PROP_W)
+        else:
+            _gc_prop_body.pack_forget()
+            _gc_prop_chev.config(text='‹')
+            gc_prop_outer.config(width=16)
+    _gc_prop_chev.config(command=_gc_prop_toggle)
 
     def gc_set_status(m): gc_bar.config(text=m)
 
@@ -1673,9 +1774,11 @@ def run_gui():
             'x': snap(sw['x'] + GW + 30), 'y': sw['y'],
             'label': best.replace('gui_', ''),
             'w': _dw, 'h': _dh, 'parent_id': None,
+            'layout_mode': _GC_LAYOUT_DEFAULTS.get(best, 'absolute'),
+            'properties': [],
         }
         gst['edges'].append({'src': sel, 'dst': nid})
-        gst['selected'] = nid
+        gst['selected'] = nid; gst['multi_sel'] = {nid}
         gc_set_status(f"GHOST suggests: {kind} → {best}  ({pct}%)")
         gc_redraw()
 
@@ -1699,7 +1802,9 @@ def run_gui():
                   'gtk_class': '', 'x': w['x'], 'y': w['y'], 'depth': 0,
                   'w': w.get('w', GW), 'h': w.get('h', GH),
                   'parent_id': w.get('parent_id'),
-                  'properties': [], 'signals': []}
+                  'layout_mode': w.get('layout_mode',
+                                       _GC_LAYOUT_DEFAULTS.get(w['kind'], 'absolute')),
+                  'properties': list(w.get('properties', [])), 'signals': []}
                  for w in gst['widgets'].values()]
         edges = [{'src': e['src'], 'dst': e['dst'],
                   'privilege': 0, 'call_style': 0, 'return_type': 1,
@@ -1732,25 +1837,37 @@ def run_gui():
                 tgui = json.load(_of)
             gst['widgets'].clear(); gst['edges'].clear()
             gst['selected'] = None; gst['next_id'] = 0
+            gst['child_order'].clear(); gst['prop_committed'].clear()
             for sym in tgui.get('symbols', []):
                 wid  = sym['id']
                 kind = sym.get('kind', 'gui_button')
                 _dw, _dh = _GC_DEFAULT_SIZE.get(kind, (GW, GH))
                 gst['widgets'][wid] = {
-                    'id':        wid,
-                    'kind':      kind,
-                    'label':     sym.get('label', ''),
-                    'x':         sym.get('x', 0),
-                    'y':         sym.get('y', 0),
-                    'w':         sym.get('w', _dw),
-                    'h':         sym.get('h', _dh),
-                    'parent_id': sym.get('parent_id'),
+                    'id':          wid,
+                    'kind':        kind,
+                    'label':       sym.get('label', ''),
+                    'x':           sym.get('x', 0),
+                    'y':           sym.get('y', 0),
+                    'w':           sym.get('w', _dw),
+                    'h':           sym.get('h', _dh),
+                    'parent_id':   sym.get('parent_id'),
+                    'layout_mode': sym.get('layout_mode',
+                                          _GC_LAYOUT_DEFAULTS.get(kind, 'absolute')),
+                    'properties':  list(sym.get('properties', [])),
                 }
                 gst['next_id'] = max(gst['next_id'], wid + 1)
+            # Rebuild child_order from parent_id links (preserve file order)
+            for wid, w in gst['widgets'].items():
+                pid = w.get('parent_id')
+                if pid is not None:
+                    gst['child_order'].setdefault(pid, [])
+                    if wid not in gst['child_order'][pid]:
+                        gst['child_order'][pid].append(wid)
             for e in tgui.get('edges', []):
                 gst['edges'].append({'src': e['src'], 'dst': e['dst']})
             gc_set_mode('select')
             gc_set_status(f"Opened: {os.path.basename(path)}")
+            gc_layout_all()
             gc_redraw()
         except Exception as _oe:
             gc_set_status(f"Open failed: {_oe}")
@@ -1777,11 +1894,24 @@ def run_gui():
             if gst['selected'] == w['id']:
                 gst['selected'] = None
             gst['multi_sel'].discard(w['id'])
+            # Clean up child_order
+            pid_d = w.get('parent_id')
+            if pid_d is not None and pid_d in gst['child_order']:
+                try: gst['child_order'][pid_d].remove(w['id'])
+                except ValueError: pass
+                gc_apply_layout(pid_d)
         elif k == 'place':
             w = act['widget'].copy()
             opposite_stack.append({'kind': 'delete', 'widget': w})
             gst['widgets'][w['id']] = w
             gst['next_id'] = max(gst['next_id'], w['id'] + 1)
+            # Restore child_order and re-run layout
+            pid_p = w.get('parent_id')
+            if pid_p is not None:
+                order = gst['child_order'].setdefault(pid_p, [])
+                if w['id'] not in order:
+                    order.append(w['id'])
+                gc_apply_layout(pid_p)
         elif k == 'move':
             wid = act['id']
             if wid in gst['widgets']:
@@ -1815,16 +1945,138 @@ def run_gui():
                 gst['next_id'] = max(gst['next_id'], w['id'] + 1)
                 restored.append(w)
             opposite_stack.append({'kind': 'delete_multi', 'widgets': restored})
+        elif k == 'property_change':
+            wid  = act['widget_id']
+            pname = act['property']
+            old_v = act['old_value']
+            new_v = act['new_value']
+            if wid in gst['widgets']:
+                w = gst['widgets'][wid]
+                # Capture current value for the inverse action
+                cur = _gc_get_prop_value(w, pname)
+                opposite_stack.append({'kind': 'property_change', 'widget_id': wid,
+                                       'property': pname,
+                                       'old_value': cur, 'new_value': old_v})
+                _gc_set_prop_value(w, pname, old_v)
+                # Also update committed state
+                gst['prop_committed'].setdefault(wid, {})[pname] = old_v
+                # Trigger layout if layout_mode changed
+                if pname == 'layout_mode':
+                    gc_apply_layout(wid)
+                elif pname in ('w', 'h', 'x', 'y'):
+                    pid = w.get('parent_id')
+                    if pid is not None:
+                        gc_apply_layout(pid)
+        elif k == 'reorder':
+            pid = act['parent_id']
+            order = gst['child_order'].get(pid, [])
+            opposite_stack.append({'kind': 'reorder', 'parent_id': pid,
+                                   'order': list(order)})
+            gst['child_order'][pid] = list(act['order'])
+            gc_apply_layout(pid)
 
     def gc_undo():
         if not _gc_undo_stack: gc_set_status("Nothing to undo"); return
         _gc_apply_action(_gc_undo_stack.pop(), _gc_redo_stack)
+        gc_rebuild_prop_panel()
         gc_redraw()
 
     def gc_redo():
         if not _gc_redo_stack: gc_set_status("Nothing to redo"); return
         _gc_apply_action(_gc_redo_stack.pop(), _gc_undo_stack)
+        gc_rebuild_prop_panel()
         gc_redraw()
+
+    # ── Property helpers (read/write from widget dict or properties list) ─────
+    def _gc_get_prop_value(w, name):
+        """Get property value from widget dict (common) or properties list."""
+        if name in ('x', 'y', 'w', 'h', 'label', 'layout_mode'):
+            return w.get(name)
+        for p in w.get('properties', []):
+            if p['name'] == name:
+                return p['value']
+        return None
+
+    def _gc_set_prop_value(w, name, value):
+        """Set property value in widget dict (common) or properties list."""
+        if name in ('x', 'y', 'w', 'h', 'label', 'layout_mode'):
+            w[name] = value
+        else:
+            for p in w.get('properties', []):
+                if p['name'] == name:
+                    p['value'] = value
+                    return
+            w.setdefault('properties', []).append({'name': name, 'value': value})
+
+    # ── Layout algorithm (Stage 4) ────────────────────────────────────────────
+    def gc_children_of(parent_id):
+        """Return ordered list of direct child widget dicts for parent_id."""
+        order = gst['child_order'].get(parent_id, [])
+        # Include any children not yet in order (e.g. loaded without order)
+        extra = [wid for wid, w in gst['widgets'].items()
+                 if w.get('parent_id') == parent_id and wid not in order]
+        full_order = order + extra
+        return [gst['widgets'][wid] for wid in full_order if wid in gst['widgets']]
+
+    def gc_apply_layout(container_id):
+        """Apply the container's layout_mode to position its direct children.
+
+        Modifies children's x, y, w, h in-place (relative to parent centre).
+        No undo entries pushed — the triggering action owns the undo snapshot.
+        """
+        ct = gst['widgets'].get(container_id)
+        if ct is None: return
+        mode = ct.get('layout_mode', _GC_LAYOUT_DEFAULTS.get(ct['kind'], 'absolute'))
+        if mode == 'absolute': return  # no-op
+
+        children = gc_children_of(container_id)
+        N = len(children)
+        if N == 0: return
+
+        W = ct.get('w', GW)
+        H = ct.get('h', GH)
+        PAD = 4
+
+        if mode == 'hbox':
+            child_w = max(_GC_MIN_SIZE, (W - 2*PAD - PAD*(N-1)) // N)
+            child_h = max(_GC_MIN_SIZE, H - 2*PAD)
+            for i, ch in enumerate(children):
+                ch['x'] = int(-W/2 + PAD + i*(child_w + PAD) + child_w/2)
+                ch['y'] = 0
+                ch['w'] = child_w; ch['h'] = child_h
+
+        elif mode == 'vbox':
+            child_w = max(_GC_MIN_SIZE, W - 2*PAD)
+            child_h = max(_GC_MIN_SIZE, (H - 2*PAD - PAD*(N-1)) // N)
+            for i, ch in enumerate(children):
+                ch['x'] = 0
+                ch['y'] = int(-H/2 + PAD + i*(child_h + PAD) + child_h/2)
+                ch['w'] = child_w; ch['h'] = child_h
+
+        elif mode == 'grid':
+            cols = max(1, math.ceil(math.sqrt(N)))
+            rows = max(1, math.ceil(N / cols))
+            cell_w = max(_GC_MIN_SIZE, (W - PAD*(cols+1)) // cols)
+            cell_h = max(_GC_MIN_SIZE, (H - PAD*(rows+1)) // rows)
+            for idx, ch in enumerate(children):
+                r, c = divmod(idx, cols)
+                ch['x'] = int(-W/2 + PAD*(c+1) + c*cell_w + cell_w/2)
+                ch['y'] = int(-H/2 + PAD*(r+1) + r*cell_h + cell_h/2)
+                ch['w'] = cell_w; ch['h'] = cell_h
+
+        elif mode == 'stacked':
+            # First child covers content area; others hidden (not drawn)
+            if children:
+                ch = children[0]
+                ch['x'] = 0; ch['y'] = 0
+                ch['w'] = max(_GC_MIN_SIZE, W - 2*PAD)
+                ch['h'] = max(_GC_MIN_SIZE, H - 2*PAD)
+
+    def gc_layout_all():
+        """Apply layout to every container widget on the canvas."""
+        for wid, w in gst['widgets'].items():
+            if w['kind'] in CONTAINER_KINDS:
+                gc_apply_layout(wid)
 
     for _lbl, _cmd, _fg in [
         ('⬡ Connect', gc_do_connect, '#7aff7a'),
@@ -2400,7 +2652,49 @@ def run_gui():
     def gc_redraw():
         gc.delete('all'); gc_draw_grid()
         for e in gst['edges']:      gc_draw_edge(e)
-        for w in gst['widgets'].values(): gc_draw_widget(w)
+
+        # Determine which widget ids to skip (non-first children in stacked containers)
+        _stacked_hidden = set()
+        for wid, w in gst['widgets'].items():
+            if (w['kind'] in CONTAINER_KINDS and
+                    w.get('layout_mode', 'absolute') == 'stacked'):
+                children = gc_children_of(wid)
+                for ch in children[1:]:   # skip first; hide the rest
+                    _stacked_hidden.add(ch['id'])
+
+        for w in gst['widgets'].values():
+            if w['id'] not in _stacked_hidden:
+                gc_draw_widget(w)
+
+        # Draw drag insertion-point line for hbox/vbox reorder
+        insert_pid = gst.get('drag_insert_parent')
+        insert_idx = gst.get('drag_insert_idx')
+        if insert_pid is not None and insert_idx is not None:
+            parent_w = gst['widgets'].get(insert_pid)
+            if parent_w:
+                mode = parent_w.get('layout_mode', 'absolute')
+                siblings = gc_children_of(insert_pid)
+                pax, pay = gc_abs_pos(parent_w)
+                pw = parent_w.get('w', GW); ph = parent_w.get('h', GH)
+                if mode == 'hbox' and siblings:
+                    # Vertical line at left edge of slot insert_idx
+                    if insert_idx < len(siblings):
+                        ref = gc_abs_pos(siblings[insert_idx])
+                        lx = ref[0] - siblings[insert_idx].get('w', GW)//2 - 2
+                    else:
+                        ref = gc_abs_pos(siblings[-1])
+                        lx = ref[0] + siblings[-1].get('w', GW)//2 + 2
+                    gc.create_line(lx, pay - ph//2, lx, pay + ph//2,
+                                   fill=C['selected'], width=2, dash=(4, 2))
+                elif mode == 'vbox' and siblings:
+                    if insert_idx < len(siblings):
+                        ref = gc_abs_pos(siblings[insert_idx])
+                        ly = ref[1] - siblings[insert_idx].get('h', GH)//2 - 2
+                    else:
+                        ref = gc_abs_pos(siblings[-1])
+                        ly = ref[1] + siblings[-1].get('h', GH)//2 + 2
+                    gc.create_line(pax - pw//2, ly, pax + pw//2, ly,
+                                   fill=C['selected'], width=2, dash=(4, 2))
 
     def gc_widget_at(x, y):
         """Return topmost widget whose absolute bounds contain (x, y)."""
@@ -2410,6 +2704,209 @@ def run_gui():
             if abs(ax - x) <= ww // 2 and abs(ay - y) <= wh // 2:
                 return w
         return None
+
+    # ── Property panel (Stage 5) ──────────────────────────────────────────────
+
+    def gc_commit_property(widget_ids, prop_name, new_value):
+        """Commit a property edit: update widget dict, push undo, update word stream.
+
+        widget_ids: list of widget ids to update (multi-select)
+        prop_name:  property name (e.g. 'label', 'w', 'layout_mode')
+        new_value:  new value (type matches property kind)
+        """
+        for wid in widget_ids:
+            w = gst['widgets'].get(wid)
+            if w is None: continue
+            old_v = gst['prop_committed'].get(wid, {}).get(prop_name,
+                        _gc_get_prop_value(w, prop_name))
+            if old_v == new_value: continue   # no change
+
+            # Commit to widget dict
+            _gc_set_prop_value(w, prop_name, new_value)
+
+            # Push undo entry
+            _gc_push_undo({'kind': 'property_change', 'widget_id': wid,
+                           'property': prop_name,
+                           'old_value': old_v, 'new_value': new_value})
+
+            # Update committed-state tracking
+            gst['prop_committed'].setdefault(wid, {})[prop_name] = new_value
+
+            # Update word stream (deferred bridge update)
+            if _update_meccano_widget is not None and gst['gc_program'] is not None:
+                gst['gc_program'] = _update_meccano_widget(
+                    gst['gc_program'], wid, w)
+
+            # Trigger layout re-run if relevant
+            if prop_name == 'layout_mode':
+                gc_apply_layout(wid)
+            elif prop_name in ('w', 'h'):
+                if w['kind'] in CONTAINER_KINDS:
+                    gc_apply_layout(wid)
+                pid = w.get('parent_id')
+                if pid is not None:
+                    gc_apply_layout(pid)
+            elif prop_name in ('x', 'y'):
+                pid = w.get('parent_id')
+                if pid is not None:
+                    gc_apply_layout(pid)
+
+        gc_redraw()
+
+    def gc_rebuild_prop_panel():
+        """Rebuild the right-side property panel for the current selection."""
+        # Clear existing contents
+        for child in _gc_prop_inner.winfo_children():
+            child.destroy()
+
+        sel  = gst['selected']
+        multi = gst['multi_sel']
+
+        if sel is None or not multi:
+            tk.Label(_gc_prop_inner, text="No selection",
+                     bg=C['palette'], fg=C['dim'],
+                     font=('Monospace', 8), pady=20).pack(fill='x')
+            return
+
+        # Determine which widgets are selected and get properties
+        sel_widgets = [gst['widgets'][wid] for wid in multi
+                       if wid in gst['widgets']]
+        if not sel_widgets: return
+
+        kinds = [w['kind'] for w in sel_widgets]
+        if len(set(kinds)) == 1:
+            props = _fp_properties_for(kinds[0])
+        else:
+            props = _fp_common_for_kinds(kinds)
+
+        if not props:
+            tk.Label(_gc_prop_inner, text="No editable properties",
+                     bg=C['palette'], fg=C['dim'],
+                     font=('Monospace', 8), pady=10).pack(fill='x')
+            return
+
+        widget_ids = list(multi)
+        is_multi   = len(widget_ids) > 1
+        primary_w  = gst['widgets'].get(sel) or sel_widgets[0]
+
+        # Group properties by section
+        sections: dict = {}
+        for p in props:
+            sec = p.get('section', 'General')
+            sections.setdefault(sec, []).append(p)
+
+        for sec_name, sec_props in sections.items():
+            # Section header
+            tk.Label(_gc_prop_inner, text=sec_name,
+                     bg=C['pal_btn'], fg=C['pal_border'],
+                     font=('Monospace', 7, 'bold'),
+                     anchor='w', padx=6, pady=2).pack(fill='x', pady=(4, 0))
+
+            for p in sec_props:
+                pname = p['name']
+                pkind = p['kind']
+
+                # Get current value (primary widget; detect mixed for multi)
+                cur_val = _gc_get_prop_value(primary_w, pname)
+                is_mixed = False
+                if is_multi:
+                    vals = [_gc_get_prop_value(gst['widgets'][wid], pname)
+                            for wid in widget_ids if wid in gst['widgets']]
+                    if len(set(v if not isinstance(v, list) else str(v)
+                               for v in vals)) > 1:
+                        is_mixed = True
+
+                row = tk.Frame(_gc_prop_inner, bg=C['palette'])
+                row.pack(fill='x', padx=4, pady=1)
+                tk.Label(row, text=pname, bg=C['palette'], fg=C['dim'],
+                         font=('Monospace', 7), width=12, anchor='w').pack(side='left')
+
+                if pkind == 'string':
+                    var = tk.StringVar(value='' if is_mixed else (cur_val or ''))
+                    entry = tk.Entry(row, textvariable=var,
+                                     bg=C['canvas'], fg=C['text'],
+                                     font=('Monospace', 8), relief='flat',
+                                     insertbackground=C['text'])
+                    if is_mixed:
+                        entry.config(foreground=C['dim'])
+                        entry.insert(0, '(multiple values)')
+                    entry.pack(side='left', fill='x', expand=True)
+
+                    # Live update on keystroke (visual feedback)
+                    def _on_string_change(event, _pname=pname, _var=var, _wids=widget_ids):
+                        v = _var.get()
+                        for wid in _wids:
+                            w = gst['widgets'].get(wid)
+                            if w: _gc_set_prop_value(w, _pname, v)
+                        gc_redraw()
+
+                    # Commit on Enter or FocusOut
+                    def _on_string_commit(event, _pname=pname, _var=var, _wids=widget_ids):
+                        gc_commit_property(_wids, _pname, _var.get())
+
+                    entry.bind('<KeyRelease>', _on_string_change)
+                    entry.bind('<Return>',     _on_string_commit)
+                    entry.bind('<FocusOut>',   _on_string_commit)
+
+                elif pkind == 'int':
+                    _min = p.get('min', -9999)
+                    _max = p.get('max',  9999)
+                    var = tk.StringVar(value='' if is_mixed else str(cur_val or 0))
+                    spin = tk.Spinbox(row, textvariable=var,
+                                      from_=_min, to=_max, increment=1, width=7,
+                                      bg=C['canvas'], fg=C['text'],
+                                      font=('Monospace', 8), relief='flat',
+                                      insertbackground=C['text'],
+                                      buttonbackground=C['pal_btn'])
+                    if is_mixed:
+                        spin.delete(0, 'end')
+                        spin.insert(0, '(multiple)')
+                    spin.pack(side='left')
+
+                    def _on_int_commit(event=None, _pname=pname, _var=var, _wids=widget_ids,
+                                       _min=_min, _max=_max):
+                        try:
+                            v = int(_var.get())
+                            v = max(_min, min(_max, v))
+                        except (ValueError, TypeError):
+                            return
+                        gc_commit_property(_wids, _pname, v)
+
+                    spin.bind('<Return>',   _on_int_commit)
+                    spin.bind('<FocusOut>', _on_int_commit)
+                    spin.config(command=lambda _f=_on_int_commit: root.after(10, _f))
+
+                elif pkind == 'choice':
+                    options = p.get('options', [])
+                    var = tk.StringVar(value=cur_val if cur_val in options else
+                                       (options[0] if options else ''))
+                    om = tk.OptionMenu(row, var, *options)
+                    om.config(bg=C['pal_btn'], fg=C['text'],
+                               font=('Monospace', 8), relief='flat',
+                               activebackground=C['selected'], width=10)
+                    om['menu'].config(bg=C['pal_btn'], fg=C['text'],
+                                       font=('Monospace', 8))
+                    om.pack(side='left')
+
+                    def _on_choice(*args, _pname=pname, _var=var, _wids=widget_ids):
+                        gc_commit_property(_wids, _pname, _var.get())
+                    var.trace_add('write', _on_choice)
+
+                elif pkind == 'bool':
+                    var = tk.BooleanVar(value=False if is_mixed else bool(cur_val))
+                    cb = tk.Checkbutton(row, variable=var,
+                                        bg=C['palette'], fg=C['text'],
+                                        activebackground=C['palette'],
+                                        selectcolor=C['canvas'],
+                                        relief='flat')
+                    cb.pack(side='left')
+
+                    def _on_bool(_pname=pname, _var=var, _wids=widget_ids):
+                        gc_commit_property(_wids, _pname, _var.get())
+                    var.trace_add('write', lambda *a, _f=_on_bool: _f())
+
+        # Scroll to top after rebuild
+        _gc_prop_cvs.yview_moveto(0)
 
     # ── Events ────────────────────────────────────────────────────────────────
     def gc_on_click(event):
@@ -2422,26 +2919,47 @@ def run_gui():
             sx, sy = snap(x), snap(y)
             kind = gst['place_kind']
             _dw, _dh = _GC_DEFAULT_SIZE.get(kind, (GW, GH))
+            # Check if dropped inside a container
+            drop_ct = gc_container_at(sx, sy, nid)
+            new_pid = None
+            if drop_ct is not None:
+                ctx, cty = gc_abs_pos(drop_ct)
+                sx = sx - ctx; sy = sy - cty
+                new_pid = drop_ct['id']
             new_w = {'id': nid, 'kind': kind, 'x': sx, 'y': sy,
                      'label': kind.replace('gui_', ''),
-                     'w': _dw, 'h': _dh, 'parent_id': None}
+                     'w': _dw, 'h': _dh, 'parent_id': new_pid,
+                     'layout_mode': _GC_LAYOUT_DEFAULTS.get(kind, 'absolute'),
+                     'properties': []}
             gst['widgets'][nid] = new_w
+            if new_pid is not None:
+                gst['child_order'].setdefault(new_pid, []).append(nid)
+                gc_apply_layout(new_pid)
             _gc_push_undo({'kind': 'delete', 'widget': new_w.copy()})
             gst['selected'] = nid; gst['multi_sel'] = {nid}
             gc_set_status(f"Placed {kind} — click to place another, Esc to stop")
+            gc_rebuild_prop_panel()
             gc_redraw(); return
 
         if mode == 'delete':
             hit = gc_widget_at(x, y)
             if hit:
                 wc = hit.copy()
-                gst['widgets'].pop(hit['id'])
+                hid = hit['id']
+                old_pid = hit.get('parent_id')
+                gst['widgets'].pop(hid)
                 gst['edges'] = [e for e in gst['edges']
-                                 if e['src'] != hit['id'] and e['dst'] != hit['id']]
-                if gst['selected'] == hit['id']:
+                                 if e['src'] != hid and e['dst'] != hid]
+                if gst['selected'] == hid:
                     gst['selected'] = None; gst['multi_sel'].clear()
+                gst['multi_sel'].discard(hid)
+                # Remove from parent's child_order and re-run layout
+                if old_pid is not None and old_pid in gst['child_order']:
+                    try: gst['child_order'][old_pid].remove(hid)
+                    except ValueError: pass
+                    gc_apply_layout(old_pid)
                 _gc_push_undo({'kind': 'place', 'widget': wc})
-                gc_set_status(f"Deleted {hit['kind']} #{hit['id']}")
+                gc_set_status(f"Deleted {hit['kind']} #{hid}")
             gc_redraw(); return
 
         if mode == 'edge_src':
@@ -2499,6 +3017,7 @@ def run_gui():
                 gst['selected'] = None; gst['multi_sel'].clear()
             gst['dragging'] = False
         gst['drop_target'] = None
+        gc_rebuild_prop_panel()
         gc_redraw()
 
     def gc_on_motion(event):
@@ -2527,6 +3046,9 @@ def run_gui():
                     nh = max(_GC_MIN_SIZE, (y - (oy - oh // 2)))
                     ny = (oy - oh // 2) + nh // 2
                 w['x'] = nx; w['y'] = ny; w['w'] = nw; w['h'] = nh
+                # Re-run layout if this is a container (trigger #3)
+                if w['kind'] in CONTAINER_KINDS:
+                    gc_apply_layout(w['id'])
             gc_redraw(); return
 
         # ── Move drag ──────────────────────────────────────────────────────────
@@ -2534,17 +3056,43 @@ def run_gui():
             primary = gst['widgets'].get(gst['selected'])
             if primary:
                 ax, ay = gc_abs_pos(primary)
-                dx, dy = gst['drag_offset']
-                new_ax = snap(x - dx); new_ay = snap(y - dy)
+                dx_off, dy_off = gst['drag_offset']
+                new_ax = snap(x - dx_off); new_ay = snap(y - dy_off)
                 ddx = new_ax - ax; ddy = new_ay - ay
                 for wid in gst['multi_sel']:
                     w = gst['widgets'].get(wid)
                     if w: w['x'] += ddx; w['y'] += ddy
 
             # Drop-target detection for the primary dragged widget
-            if gst['selected'] in gst['widgets']:
-                ct = gc_container_at(x, y, gst['selected'])
+            sel = gst['selected']
+            if sel in gst['widgets']:
+                ct = gc_container_at(x, y, sel)
                 gst['drop_target'] = ct['id'] if ct else None
+
+                # Detect drag-within-layout-container for hbox/vbox reorder
+                prim_w = gst['widgets'].get(sel)
+                pid = prim_w.get('parent_id') if prim_w else None
+                parent_w = gst['widgets'].get(pid) if pid is not None else None
+                parent_mode = (parent_w.get('layout_mode', 'absolute')
+                               if parent_w else 'absolute')
+                if parent_mode in ('hbox', 'vbox') and len(gst['multi_sel']) == 1:
+                    # Compute insertion index based on cursor vs sibling centres
+                    siblings = gc_children_of(pid)
+                    pax, pay = gc_abs_pos(parent_w)
+                    if parent_mode == 'hbox':
+                        centres = [gc_abs_pos(s)[0] for s in siblings]
+                        idx = sum(1 for cx2 in centres if cx2 < x)
+                    else:
+                        centres = [gc_abs_pos(s)[1] for s in siblings]
+                        idx = sum(1 for cy2 in centres if cy2 < y)
+                    # Clamp to exclude the dragged widget's own position
+                    cur_idx = next((i for i, s in enumerate(siblings)
+                                    if s['id'] == sel), None)
+                    gst['drag_insert_parent'] = pid
+                    gst['drag_insert_idx']    = idx
+                else:
+                    gst['drag_insert_parent'] = None
+                    gst['drag_insert_idx']    = None
 
             gc_redraw()
 
@@ -2565,19 +3113,46 @@ def run_gui():
 
         # ── Finalize move / reparent ───────────────────────────────────────────
         elif gst['dragging'] and sel is not None:
-            # Reparent if dropped onto a container
-            if gst['drop_target'] is not None and sel in gst['widgets']:
+            # Drag-reorder within hbox/vbox parent
+            insert_pid = gst.get('drag_insert_parent')
+            insert_idx = gst.get('drag_insert_idx')
+            if (insert_pid is not None and insert_idx is not None
+                    and sel in gst['widgets']
+                    and gst['widgets'][sel].get('parent_id') == insert_pid):
+                old_order = list(gst['child_order'].get(insert_pid, []))
+                # Build new order with sel removed then inserted at idx
+                new_order = [wid for wid in old_order if wid != sel]
+                new_order.insert(min(insert_idx, len(new_order)), sel)
+                if new_order != old_order:
+                    _gc_push_undo({'kind': 'reorder', 'parent_id': insert_pid,
+                                   'order': old_order})
+                    gst['child_order'][insert_pid] = new_order
+                    gc_apply_layout(insert_pid)
+                    gc_set_status(f"Reordered children of #{insert_pid}")
+                gst['drag_insert_parent'] = None
+                gst['drag_insert_idx']    = None
+
+            # Reparent if dropped onto a different container
+            elif gst['drop_target'] is not None and sel in gst['widgets']:
                 w      = gst['widgets'][sel]
                 ct     = gst['widgets'].get(gst['drop_target'])
-                if ct:
+                if ct and ct['id'] != w.get('parent_id'):
                     old_pid = w.get('parent_id')
                     old_x, old_y = w['x'], w['y']
+                    # Remove from old parent's child_order
+                    if old_pid is not None and old_pid in gst['child_order']:
+                        try: gst['child_order'][old_pid].remove(sel)
+                        except ValueError: pass
                     # Rebase coordinates to be relative to container
                     ctx, cty = gc_abs_pos(ct)
                     ax, ay   = gc_abs_pos(w)
                     w['parent_id'] = ct['id']
                     w['x'] = ax - ctx
                     w['y'] = ay - cty
+                    gst['child_order'].setdefault(ct['id'], []).append(sel)
+                    # Run layout for old and new parent
+                    if old_pid is not None: gc_apply_layout(old_pid)
+                    gc_apply_layout(ct['id'])
                     _gc_push_undo({'kind': 'reparent', 'id': sel,
                                    'parent_id': old_pid, 'x': old_x, 'y': old_y})
                     gc_set_status(f"Nested {w['kind']} inside {ct['kind']}")
@@ -2589,9 +3164,11 @@ def run_gui():
                     if w and (w['x'], w['y']) != (ox, oy):
                         _gc_push_undo({'kind': 'move', 'id': wid, 'x': ox, 'y': oy})
 
-        gst['dragging']    = False
-        gst['drop_target'] = None
-        gst['drag_origin'] = None
+        gst['dragging']          = False
+        gst['drop_target']       = None
+        gst['drag_origin']       = None
+        gst['drag_insert_parent'] = None
+        gst['drag_insert_idx']   = None
         gc_redraw()
 
     def gc_on_key(event):
@@ -2616,23 +3193,40 @@ def run_gui():
             multi = gst['multi_sel']
             if multi:
                 removed = []
+                affected_parents = set()
                 for wid in list(multi):
                     if wid in gst['widgets']:
-                        removed.append(gst['widgets'].pop(wid).copy())
+                        w_del = gst['widgets'].pop(wid)
+                        removed.append(w_del.copy())
                         gst['edges'] = [e for e in gst['edges']
                                         if e['src'] != wid and e['dst'] != wid]
+                        pid_del = w_del.get('parent_id')
+                        if pid_del is not None:
+                            if pid_del in gst['child_order']:
+                                try: gst['child_order'][pid_del].remove(wid)
+                                except ValueError: pass
+                            affected_parents.add(pid_del)
                 if removed:
                     _gc_push_undo({'kind': 'delete_multi', 'widgets': removed})
                     gc_set_status(f"Deleted {len(removed)} widget(s)")
+                for apid in affected_parents:
+                    gc_apply_layout(apid)
                 gst['selected'] = None; gst['multi_sel'].clear()
+                gc_rebuild_prop_panel()
                 gc_redraw()
             elif sel is not None and sel in gst['widgets']:
                 wc = gst['widgets'].pop(sel).copy()
                 gst['edges'] = [e for e in gst['edges']
                                  if e['src'] != sel and e['dst'] != sel]
+                old_pid_k = wc.get('parent_id')
+                if old_pid_k is not None and old_pid_k in gst['child_order']:
+                    try: gst['child_order'][old_pid_k].remove(sel)
+                    except ValueError: pass
+                    gc_apply_layout(old_pid_k)
                 _gc_push_undo({'kind': 'place', 'widget': wc})
                 gst['selected'] = None; gst['multi_sel'].clear()
                 gc_set_status(f"Deleted {wc['kind']} #{wc['id']}")
+                gc_rebuild_prop_panel()
                 gc_redraw()
 
     gc.bind('<Button-1>',      gc_on_click)
