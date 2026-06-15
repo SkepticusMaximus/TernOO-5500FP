@@ -1622,21 +1622,51 @@ def run_gui():
     _gc_pal_inner = tk.Frame(gc_pal, bg=C['palette'])
     _gc_pal_inner.pack(fill='x')
 
-    _gc_grp_cur = [None]
+    # ── Collapsible section builder ───────────────────────────────────────────
+    # _gc_pal_inner uses grid so that grid_remove() + grid() can re-show a
+    # collapsed section in its original position (pack_forget/pack would
+    # re-insert at the end, scrambling section order on re-expand).
     _gc_grp_names = {
         5: 'CONTAINERS', 4: 'CONTROLS', 3: 'INPUTS',
         2: 'DISPLAY', 1: 'DIALOGS', 0: 'MENUS',
     }
+    _gc_sections: dict = {}   # grp_key → {'open': [bool], 'frame': Frame, 'btn': Button}
+    _gc_pal_inner.columnconfigure(0, weight=1)
+    _gc_row = [0]
+
+    def _gc_make_toggle(hdr_ref, sec_frame, open_state, name):
+        def _toggle():
+            open_state[0] = not open_state[0]
+            if open_state[0]:
+                sec_frame.grid()        # restores remembered row/column
+                hdr_ref[0].config(text=f'▾ {name}')
+            else:
+                sec_frame.grid_remove() # hides but remembers position
+                hdr_ref[0].config(text=f'▸ {name}')
+        return _toggle
+
     for wtype, y_lo in _ghost_palette_types:
         grp_key = y_lo // 100
-        if grp_key != _gc_grp_cur[0]:
-            _gc_grp_cur[0] = grp_key
-            tk.Label(_gc_pal_inner, text=_gc_grp_names.get(grp_key, ''),
-                     bg=C['palette'], fg=C['dim'],
-                     font=('Monospace', 7), pady=1).pack(fill='x', padx=4)
+        if grp_key not in _gc_sections:
+            name       = _gc_grp_names.get(grp_key, f'GROUP_{grp_key}')
+            open_state = [True]
+            sec_frame  = tk.Frame(_gc_pal_inner, bg=C['palette'])
+            hdr_ref    = [None]
+            toggle_fn  = _gc_make_toggle(hdr_ref, sec_frame, open_state, name)
+            hdr_btn    = tk.Button(_gc_pal_inner, text=f'▾ {name}',
+                                   bg=C['palette'], fg=C['dim'],
+                                   font=('Monospace', 7, 'bold'), relief='flat', bd=0,
+                                   pady=2, padx=4, anchor='w', cursor='hand2',
+                                   command=toggle_fn)
+            hdr_btn.grid(row=_gc_row[0], column=0, sticky='ew', padx=2, pady=(4, 0))
+            _gc_row[0] += 1
+            hdr_ref[0] = hdr_btn
+            sec_frame.grid(row=_gc_row[0], column=0, sticky='ew')
+            _gc_row[0] += 1
+            _gc_sections[grp_key] = {'open': open_state, 'frame': sec_frame, 'btn': hdr_btn}
         col   = _gc_color.get(wtype, C['pal_btn'])
         short = wtype.replace('gui_', '')
-        tk.Button(_gc_pal_inner, text=short,
+        tk.Button(_gc_sections[grp_key]['frame'], text=short,
                   bg=col, fg=C['text'],
                   font=('Monospace', 8), relief='flat', bd=0,
                   padx=4, pady=2, cursor='hand2', anchor='w',
