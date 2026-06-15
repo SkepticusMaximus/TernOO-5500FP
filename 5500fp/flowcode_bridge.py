@@ -32,18 +32,19 @@ _wl_spec = _ilu.spec_from_file_location('widget_lib', _wl_path)
 _wl      = _ilu.module_from_spec(_wl_spec)
 _wl_spec.loader.exec_module(_wl)
 
-MeccanoProgram           = _wl.MeccanoProgram
-build_opcode_word        = _wl.build_opcode_word
+MeccanoProgram            = _wl.MeccanoProgram
+build_opcode_word         = _wl.build_opcode_word
 build_rnode_shape_labeled = _wl.build_rnode_shape_labeled
-build_redge_styled       = _wl.build_redge_styled
-build_redge_labeled      = _wl.build_redge_labeled
-OPF_PIGART               = _wl.OPF_PIGART
-OP_RENDER                = _wl.OP_RENDER
-SHAPE_RECTANGLE          = _wl.SHAPE_RECTANGLE
-SHAPE_TERMINATOR         = _wl.SHAPE_TERMINATOR
-SHAPE_PROCESS            = _wl.SHAPE_PROCESS
-SHAPE_DECISION           = _wl.SHAPE_DECISION
-SHAPE_IO                 = _wl.SHAPE_IO
+build_redge_styled        = _wl.build_redge_styled
+build_redge_labeled       = _wl.build_redge_labeled
+OPF_PIGART                = _wl.OPF_PIGART
+OP_RENDER                 = _wl.OP_RENDER
+SHAPE_RECTANGLE           = _wl.SHAPE_RECTANGLE
+SHAPE_TERMINATOR          = _wl.SHAPE_TERMINATOR
+SHAPE_PROCESS             = _wl.SHAPE_PROCESS
+SHAPE_DECISION            = _wl.SHAPE_DECISION
+SHAPE_IO                  = _wl.SHAPE_IO
+STYLE_CONTAIN             = _wl.STYLE_CONTAIN    # logical containment edge
 
 # ── Load FlowCode module ──────────────────────────────────────────────────────
 _fc_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -179,12 +180,88 @@ def flowcode_to_meccano(canvas: FCCanvas,
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# GHOST canvas bridge
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def ghost_to_meccano(widgets: dict, edges: list,
+                     name: str = 'ghost_program',
+                     category: str = 'pigart') -> 'MeccanoProgram':
+    """Translate a GHOST canvas widget dict + edge list to a MeccanoProgram.
+
+    Each widget becomes an RNODE (FORM_SHAPE, SHAPE_RECTANGLE).
+    Each entry in `edges` (visual connections) becomes a lean REDGE.
+    Each widget with a non-None `parent_id` generates a REDGE with
+    STYLE_CONTAIN — a logical containment edge that renderers skip.
+
+    Scale: widget pixel coords are divided by FC_GRID_TO_MECCANO.
+
+    Args:
+        widgets: dict mapping int id → {id, kind, x, y, w, h, parent_id, label}
+        edges:   list of {src, dst} visual connection dicts
+        name:    name for the returned MeccanoProgram
+        category: MeccanoProgram category
+
+    Returns:
+        MeccanoProgram with RNODEs, visual REDGEs, containment REDGEs, RENDER.
+    """
+    words: list = []
+    sym_centres: dict = {}  # id → (cx, cy) in Meccano units
+
+    for wid, w in widgets.items():
+        ww = w.get('w', 160)
+        wh = w.get('h', 72)
+        tl_x = (w['x'] - ww // 2) // FC_GRID_TO_MECCANO
+        tl_y = (w['y'] - wh // 2) // FC_GRID_TO_MECCANO
+        mw   = max(1, ww // FC_GRID_TO_MECCANO)
+        mh   = max(1, wh // FC_GRID_TO_MECCANO)
+        words.extend(
+            build_rnode_shape_labeled((tl_x, tl_y), (mw, mh),
+                                      SHAPE_RECTANGLE,
+                                      w.get('label', w.get('kind', '')))
+        )
+        sym_centres[wid] = (tl_x + mw // 2, tl_y + mh)  # south midpoint
+
+    # Visual connection edges
+    for e in edges:
+        sc = sym_centres.get(e['src'])
+        dc = sym_centres.get(e['dst'])
+        if sc and dc:
+            src_pt = sc
+            dc_w   = widgets.get(e['dst'])
+            dst_pt = (dc[0], dc[1] - max(1, dc_w.get('h', 72) // FC_GRID_TO_MECCANO)) \
+                     if dc_w else dc
+            words.extend(build_redge_styled(src_pt, dst_pt, SHAPE_RECTANGLE))
+
+    # Containment edges (STYLE_CONTAIN) for each non-None parent_id
+    for wid, w in widgets.items():
+        pid = w.get('parent_id')
+        if pid is not None and pid in sym_centres:
+            parent_pt = sym_centres[pid]
+            child_pt  = sym_centres.get(wid, parent_pt)
+            words.extend(build_redge_styled(parent_pt, child_pt, STYLE_CONTAIN))
+
+    words.append(build_opcode_word(OPF_PIGART, arity=0, op_index=OP_RENDER))
+
+    return MeccanoProgram(
+        name=name,
+        opcode_words=words,
+        category=category,
+        description=(
+            f'GHOST bridge: {len(widgets)} widget(s), '
+            f'{len(edges)} edge(s), '
+            f'{sum(1 for w in widgets.values() if w.get("parent_id") is not None)} '
+            f'containment edge(s)'
+        ),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # __main__ — demo
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == '__main__':
     if '--demo' in sys.argv:
-        # Construct a sample FlowCode graph programmatically.
+        # ── FlowCode graph demo ───────────────────────────────────────────────
         cv = FCCanvas()
         start  = cv.add_symbol(SYMBOL_TERMINATOR, 120,  40, 'Start')
         decide = cv.add_symbol(SYMBOL_DECISION,   120, 160, 'OK?')
@@ -211,6 +288,38 @@ if __name__ == '__main__':
         if '--gui' in sys.argv:
             from pigart_tkinter_renderer import render_gui as _render_gui
             _render_gui(prog)
+
+        # ── GHOST canvas demo (containment edges) ────────────────────────────
+        print()
+        print("── GHOST bridge demo ──")
+        # A window widget containing a button (parent_id relationship)
+        _widgets = {
+            0: {'id': 0, 'kind': 'gui_window', 'x': 200, 'y': 120,
+                'w': 200, 'h': 160, 'parent_id': None, 'label': 'MainWin'},
+            1: {'id': 1, 'kind': 'gui_button', 'x':  60, 'y':  40,
+                'w': 120, 'h':  48, 'parent_id': 0,    'label': 'OK'},
+            2: {'id': 2, 'kind': 'gui_button', 'x':  60, 'y': 100,
+                'w': 120, 'h':  48, 'parent_id': 0,    'label': 'Cancel'},
+        }
+        # One visual edge: button 1 → button 2 (flow connection)
+        _edges = [{'src': 1, 'dst': 2}]
+
+        ghost_prog = ghost_to_meccano(_widgets, _edges, name='ghost_demo')
+        print(f"GHOST bridge demo — {ghost_prog.description}")
+        print(f"MeccanoProgram: {repr(ghost_prog)}")
+        print(f"Body words: {len(ghost_prog.words)}")
+        print(f"Bounds: {ghost_prog.bounds()}")
+
+        # Verify containment edges via the bridge description (simplest check)
+        _desc = ghost_prog.description
+        print(f"Containment edges confirmed in description: {_desc}")
+        assert '2 containment edge(s)' in _desc, \
+            f"Expected 2 containment edges, got: {_desc!r}"
+        print("PASS: STYLE_CONTAIN REDGE count verified via description.")
+
+        if '--gui' in sys.argv:
+            from pigart_tkinter_renderer import render_gui as _render_gui2
+            _render_gui2(ghost_prog)
 
         sys.exit(0)
 

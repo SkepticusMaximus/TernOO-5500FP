@@ -554,6 +554,16 @@ SHAPE_DATA        = 9   # Data store cylinder (v0.8)
 SHAPE_LABELED_BOX = 10  # v0.2 labeled box (explicit for retrofitting)
 SHAPE_WINDOW      = 11  # v0.2 window with title bar (explicit for retrofitting)
 SHAPE_BUTTON      = 12  # v0.2 button (explicit for retrofitting)
+# IDs 13-26 reserved for future visual shapes.
+# IDs 27-99 open for community extension.
+
+# ── Logical edge style constants (100+) ──────────────────────────────────────
+# These are used as the style_id argument to build_redge_styled() to encode
+# semantic relationships rather than visual arrows.  Renderers that encounter
+# these style IDs skip visible rendering.
+STYLE_CONTAIN = 100   # REDGE "child of" — containment edge (no visible render)
+# 101-126 reserved for future logical relation kinds
+# (DATA_FLOW=101, EVENT_BIND=102, REFERENCE=103 — to be assigned as needed)
 
 # Form discriminants — stored in the OPCODE word's `immediate` field (T11..T0).
 # All existing v0.1-v0.6 programs have immediate=0 → lean form.  Backward-compatible.

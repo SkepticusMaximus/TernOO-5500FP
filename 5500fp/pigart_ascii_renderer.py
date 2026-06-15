@@ -67,6 +67,7 @@ SHAPE_PROCESS        = _wl.SHAPE_PROCESS
 SHAPE_DECISION       = _wl.SHAPE_DECISION
 SHAPE_IO             = _wl.SHAPE_IO
 SHAPE_CONNECTOR      = _wl.SHAPE_CONNECTOR
+STYLE_CONTAIN        = _wl.STYLE_CONTAIN
 
 
 # ── String decoder (v0.4) ─────────────────────────────────────────────────────
@@ -382,14 +383,23 @@ def _dispatch_redge(canvas: AsciiCanvas, operands: List[int],
 
     Form dispatch:
       FORM_LEAN (0):      2 operands — classic directed arrow (v0.1-v0.6)
-      FORM_SHAPE (1):     3 operands — src, dst, style; style ignored, arrow drawn
+      FORM_SHAPE (1):     3 operands — src, dst, style; style checked for STYLE_CONTAIN
       FORM_SHAPE_UDP (2): 3+N operands — src, dst, style, label words;
                           arrow drawn + label text at edge midpoint
+
+    Logical edges (style >= 100, e.g. STYLE_CONTAIN) are silently skipped —
+    they encode semantic relationships, not visible arrows.
 
     Arrow: cardinal-direction dispatch with '-'/'+'/Bresenham lines.
     """
     if len(operands) < 2:
         return
+
+    # Skip logical / containment edges (STYLE_CONTAIN=100 and higher)
+    if form in (FORM_SHAPE, FORM_SHAPE_UDP) and len(operands) >= 3:
+        style_id = int(get_field(operands[2], 0, 18))
+        if style_id >= STYLE_CONTAIN:
+            return  # logical edge — no visible rendering
 
     x1, y1 = _extract_xy(operands[0])
     x2, y2 = _extract_xy(operands[1])

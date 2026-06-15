@@ -1576,17 +1576,47 @@ def run_gui():
 
     _gc_color = {t: _ghost_cat_color(y) for t, y in _ghost_palette_types}
 
+    # ── GHOST canvas constants ────────────────────────────────────────────────
+    # Widget kinds that can contain children (D5)
+    CONTAINER_KINDS = frozenset({
+        'gui_window', 'gui_dialog', 'gui_box', 'gui_grid', 'gui_frame',
+        'gui_notebook', 'gui_paned', 'gui_scrolled', 'gui_stack',
+        'gui_expander', 'gui_revealer', 'gui_overlay', 'gui_flowbox',
+        'gui_listbox', 'gui_headerbar', 'gui_actionbar', 'gui_menubar',
+        'gui_toolbar', 'gui_statusbar',
+    })
+
+    # Default (w, h) per kind; fallback to (GW, GH)
+    _GC_DEFAULT_SIZE = {
+        'gui_window':    (200, 160), 'gui_dialog':    (200, 160),
+        'gui_box':       (200, 120), 'gui_grid':      (200, 120),
+        'gui_frame':     (200, 120), 'gui_notebook':  (200, 120),
+        'gui_paned':     (240, 120), 'gui_scrolled':  (200, 120),
+        'gui_stack':     (200, 120), 'gui_expander':  (200,  80),
+        'gui_revealer':  (200, 100), 'gui_overlay':   (200, 120),
+        'gui_flowbox':   (240, 120), 'gui_listbox':   (200, 120),
+        'gui_headerbar': (240,  50), 'gui_actionbar': (240,  50),
+        'gui_menubar':   (240,  25), 'gui_toolbar':   (240,  40),
+        'gui_statusbar': (240,  25),
+    }
+    _GC_MIN_SIZE = 20   # minimum width and height in px (D3)
+
     # ── GHOST canvas state ────────────────────────────────────────────────────
     gst = {
-        'widgets':    {},    # id → {id, kind, x, y, label}
-        'edges':      [],    # [{src, dst}, …]
-        'selected':   None,
-        'mode':       'select',   # select | place | edge_src | edge_dst | delete
-        'place_kind': None,
-        'edge_src':   None,
-        'next_id':    0,
-        'dragging':   False,
-        'drag_offset':(0, 0),
+        'widgets':       {},    # id → {id, kind, x, y, label, w, h, parent_id}
+        'edges':         [],    # [{src, dst}, …]
+        'selected':      None,  # int id of primary selected widget
+        'multi_sel':     set(), # all selected ids (includes selected)
+        'mode':          'select',
+        'place_kind':    None,
+        'edge_src':      None,
+        'next_id':       0,
+        'dragging':      False,
+        'drag_offset':   (0, 0),
+        'drag_origin':   None,  # (x, y) at drag-start for undo
+        'resize_handle': None,  # 'NW'|'N'|… or None
+        'resize_origin': None,  # (wx, wy, ww, wh) at resize-start for undo
+        'drop_target':   None,  # id of highlighted container drop target
     }
 
     # ── Ghost canvas layout ───────────────────────────────────────────────────
@@ -1637,10 +1667,12 @@ def run_gui():
         # Auto-place suggested widget to the right of selected
         sw  = gst['widgets'][sel]
         nid = gst['next_id']; gst['next_id'] += 1
+        _dw, _dh = _GC_DEFAULT_SIZE.get(best, (GW, GH))
         gst['widgets'][nid] = {
             'id': nid, 'kind': best,
             'x': snap(sw['x'] + GW + 30), 'y': sw['y'],
             'label': best.replace('gui_', ''),
+            'w': _dw, 'h': _dh, 'parent_id': None,
         }
         gst['edges'].append({'src': sel, 'dst': nid})
         gst['selected'] = nid
@@ -1665,6 +1697,8 @@ def run_gui():
         if not path: return
         syms  = [{'id': w['id'], 'kind': w['kind'], 'label': w['label'],
                   'gtk_class': '', 'x': w['x'], 'y': w['y'], 'depth': 0,
+                  'w': w.get('w', GW), 'h': w.get('h', GH),
+                  'parent_id': w.get('parent_id'),
                   'properties': [], 'signals': []}
                  for w in gst['widgets'].values()]
         edges = [{'src': e['src'], 'dst': e['dst'],
@@ -1699,13 +1733,18 @@ def run_gui():
             gst['widgets'].clear(); gst['edges'].clear()
             gst['selected'] = None; gst['next_id'] = 0
             for sym in tgui.get('symbols', []):
-                wid = sym['id']
+                wid  = sym['id']
+                kind = sym.get('kind', 'gui_button')
+                _dw, _dh = _GC_DEFAULT_SIZE.get(kind, (GW, GH))
                 gst['widgets'][wid] = {
-                    'id':    wid,
-                    'kind':  sym.get('kind', 'gui_button'),
-                    'label': sym.get('label', ''),
-                    'x':     sym.get('x', 0),
-                    'y':     sym.get('y', 0),
+                    'id':        wid,
+                    'kind':      kind,
+                    'label':     sym.get('label', ''),
+                    'x':         sym.get('x', 0),
+                    'y':         sym.get('y', 0),
+                    'w':         sym.get('w', _dw),
+                    'h':         sym.get('h', _dh),
+                    'parent_id': sym.get('parent_id'),
                 }
                 gst['next_id'] = max(gst['next_id'], wid + 1)
             for e in tgui.get('edges', []):
@@ -1715,6 +1754,77 @@ def run_gui():
             gc_redraw()
         except Exception as _oe:
             gc_set_status(f"Open failed: {_oe}")
+
+    # ── Undo / redo (D10) ────────────────────────────────────────────────────
+    _gc_undo_stack = []   # list of inverse action dicts, newest last
+    _gc_redo_stack = []   # redo stack
+    _GC_UNDO_LIMIT = 100
+
+    def _gc_push_undo(action):
+        _gc_undo_stack.append(action)
+        if len(_gc_undo_stack) > _GC_UNDO_LIMIT:
+            _gc_undo_stack.pop(0)
+        _gc_redo_stack.clear()
+
+    def _gc_apply_action(act, opposite_stack):
+        k = act['kind']
+        if k == 'delete':
+            w = act['widget'].copy()
+            opposite_stack.append({'kind': 'place', 'widget': w})
+            gst['widgets'].pop(w['id'], None)
+            gst['edges'] = [e for e in gst['edges']
+                            if e['src'] != w['id'] and e['dst'] != w['id']]
+            if gst['selected'] == w['id']:
+                gst['selected'] = None
+            gst['multi_sel'].discard(w['id'])
+        elif k == 'place':
+            w = act['widget'].copy()
+            opposite_stack.append({'kind': 'delete', 'widget': w})
+            gst['widgets'][w['id']] = w
+            gst['next_id'] = max(gst['next_id'], w['id'] + 1)
+        elif k == 'move':
+            wid = act['id']
+            if wid in gst['widgets']:
+                w = gst['widgets'][wid]
+                opposite_stack.append({'kind': 'move', 'id': wid,
+                                       'x': w['x'], 'y': w['y']})
+                w['x'] = act['x']; w['y'] = act['y']
+        elif k == 'resize':
+            wid = act['id']
+            if wid in gst['widgets']:
+                w = gst['widgets'][wid]
+                opposite_stack.append({'kind': 'resize', 'id': wid,
+                                       'x': w['x'], 'y': w['y'],
+                                       'w': w['w'], 'h': w['h']})
+                w['x'] = act['x']; w['y'] = act['y']
+                w['w'] = act['w']; w['h'] = act['h']
+        elif k == 'reparent':
+            wid = act['id']
+            if wid in gst['widgets']:
+                w = gst['widgets'][wid]
+                opposite_stack.append({'kind': 'reparent', 'id': wid,
+                                       'parent_id': w['parent_id'],
+                                       'x': w['x'], 'y': w['y']})
+                w['parent_id'] = act['parent_id']
+                w['x'] = act['x']; w['y'] = act['y']
+        elif k == 'delete_multi':
+            restored = []
+            for wc in act['widgets']:
+                w = wc.copy()
+                gst['widgets'][w['id']] = w
+                gst['next_id'] = max(gst['next_id'], w['id'] + 1)
+                restored.append(w)
+            opposite_stack.append({'kind': 'delete_multi', 'widgets': restored})
+
+    def gc_undo():
+        if not _gc_undo_stack: gc_set_status("Nothing to undo"); return
+        _gc_apply_action(_gc_undo_stack.pop(), _gc_redo_stack)
+        gc_redraw()
+
+    def gc_redo():
+        if not _gc_redo_stack: gc_set_status("Nothing to redo"); return
+        _gc_apply_action(_gc_redo_stack.pop(), _gc_undo_stack)
+        gc_redraw()
 
     for _lbl, _cmd, _fg in [
         ('⬡ Connect', gc_do_connect, '#7aff7a'),
@@ -1870,17 +1980,81 @@ def run_gui():
                 gc.create_oval(cx2-r2, cy2-r2, cx2+r2, cy2+r2,
                                fill=txt, outline='')
 
+    def gc_abs_pos(w):
+        """Return absolute (x, y) of widget w, walking up the parent chain."""
+        x, y = w['x'], w['y']
+        pid = w.get('parent_id')
+        visited = set()
+        while pid is not None:
+            if pid in visited: break
+            visited.add(pid)
+            p = gst['widgets'].get(pid)
+            if p is None: break
+            px, py = gc_abs_pos(p)
+            x += px; y += py
+            break  # relative to direct parent only; parent already computes its own chain
+        return x, y
+
+    def gc_handle_positions(w):
+        """Return {name: (cx,cy)} for the 8 resize handles of widget w."""
+        ax, ay = gc_abs_pos(w)
+        ww, wh = w.get('w', GW), w.get('h', GH)
+        L, R = ax - ww // 2, ax + ww // 2
+        T, B = ay - wh // 2, ay + wh // 2
+        mx, my = (L + R) // 2, (T + B) // 2
+        return {
+            'NW': (L, T), 'N': (mx, T), 'NE': (R, T),
+            'W':  (L, my),               'E':  (R, my),
+            'SW': (L, B), 'S': (mx, B), 'SE': (R, B),
+        }
+
+    def gc_handle_at(x, y):
+        """Return (widget, handle_name) if (x,y) hits a handle on the selected widget."""
+        sel = gst['selected']
+        if sel is None or sel not in gst['widgets']: return None, None
+        if len(gst['multi_sel']) > 1: return None, None  # handles only for single selection
+        w = gst['widgets'][sel]
+        hs = 5  # hit radius (6×6 handle, ±5 px)
+        for name, (hx, hy) in gc_handle_positions(w).items():
+            if abs(x - hx) <= hs and abs(y - hy) <= hs:
+                return w, name
+        return None, None
+
+    def gc_is_descendant(wid, ancestor_id):
+        """Return True if wid is ancestor_id or a descendant of it."""
+        cur = wid
+        visited = set()
+        while cur is not None:
+            if cur == ancestor_id: return True
+            if cur in visited: break
+            visited.add(cur)
+            p = gst['widgets'].get(cur)
+            if p is None: break
+            cur = p.get('parent_id')
+        return False
+
+    def gc_container_at(x, y, exclude_id):
+        """Return topmost CONTAINER_KIND widget at (x,y), excluding exclude_id subtree."""
+        for w in reversed(list(gst['widgets'].values())):
+            if w['id'] == exclude_id: continue
+            if gc_is_descendant(w['id'], exclude_id): continue
+            if w['kind'] not in CONTAINER_KINDS: continue
+            ax, ay = gc_abs_pos(w)
+            ww, wh = w.get('w', GW), w.get('h', GH)
+            if (ax - ww // 2 <= x <= ax + ww // 2 and
+                    ay - wh // 2 <= y <= ay + wh // 2):
+                return w
+        return None
+
     def gc_draw_widget(w):
         # ── CC-09 geometry renderer ────────────────────────────────────────────
-        # Added: 01 Jun 2026, Adelaide  Author: Stevo + Claude
-        # Purpose: Draw widget tile from canonical RNODE/RLINE/RPOINT word sequence
-        # Companion: private/TernOO-5500FP-Companion.md § G6 (CC-09)
         sel  = (w['id'] == gst['selected'])
         col  = _gc_color.get(w['kind'], C['pal_btn'])
         bor  = C['selected'] if sel else C['pal_border']
         lw   = 3 if sel else 1
-        x, y = w['x'], w['y']
-        hw, hh = GW // 2, GH // 2
+        x, y = gc_abs_pos(w)
+        ww, wh = w.get('w', GW), w.get('h', GH)
+        hw, hh = ww // 2, wh // 2
         L, R, T, B = x - hw, x + hw, y - hh, y + hh
         kind = w['kind']
         txt  = C['text']; dim = C['dim']
@@ -1902,6 +2076,18 @@ def run_gui():
         # Type label below tile
         gc.create_text(x, B + 9, text=kind.replace('gui_', ''),
                        fill=dim, font=('Monospace', 7))
+
+        # Drop-target highlight (thick dashed border when this widget is the drop target)
+        if gst.get('drop_target') == w['id']:
+            gc.create_rectangle(L - 3, T - 3, R + 3, B + 3,
+                                outline=C['selected'], width=3, fill='', dash=(4, 2))
+
+        # Resize handles — 8 small squares, only for single-selected widget (D3)
+        if sel and len(gst['multi_sel']) <= 1:
+            _hs = 3  # half of 6×6 px square
+            for hx, hy in gc_handle_positions(w).values():
+                gc.create_rectangle(hx - _hs, hy - _hs, hx + _hs, hy + _hs,
+                                    fill=C['selected'], outline=C['canvas'], width=1)
 
         # ── sea monkeys removed CC-09 — geometry renderer above is the renderer ──
         kind = '_dead_'   # sentinel: dead-codes all elif branches below
@@ -2197,10 +2383,11 @@ def run_gui():
     def gc_draw_edge(e):
         src = gst['widgets'].get(e['src']); dst = gst['widgets'].get(e['dst'])
         if not src or not dst: return
-        x1, y1 = src['x'], src['y'] + GH // 2
-        x2, y2 = dst['x'], dst['y'] - GH // 2
+        sx, sy = gc_abs_pos(src); dx, dy = gc_abs_pos(dst)
+        x1, y1 = sx, sy + src.get('h', GH) // 2
+        x2, y2 = dx, dy - dst.get('h', GH) // 2
         # If same row, draw a horizontal arc
-        if abs(y1 - dst['y']) < GH:
+        if abs(y1 - dy) < GH:
             mx = (x1 + x2) // 2; my = y1 + 30
             gc.create_line(x1, y1, mx, my, x2, y2,
                            fill=C['edge'], width=2,
@@ -2216,9 +2403,11 @@ def run_gui():
         for w in gst['widgets'].values(): gc_draw_widget(w)
 
     def gc_widget_at(x, y):
-        hw, hh = GW // 2, GH // 2
+        """Return topmost widget whose absolute bounds contain (x, y)."""
         for w in reversed(list(gst['widgets'].values())):
-            if abs(w['x'] - x) <= hw and abs(w['y'] - y) <= hh:
+            ax, ay = gc_abs_pos(w)
+            ww, wh = w.get('w', GW), w.get('h', GH)
+            if abs(ax - x) <= ww // 2 and abs(ay - y) <= wh // 2:
                 return w
         return None
 
@@ -2226,25 +2415,32 @@ def run_gui():
     def gc_on_click(event):
         x, y = event.x, event.y
         mode = gst['mode']
+        shift = bool(event.state & 0x0001)   # Shift key
 
         if mode == 'place':
             nid = gst['next_id']; gst['next_id'] += 1
             sx, sy = snap(x), snap(y)
             kind = gst['place_kind']
-            gst['widgets'][nid] = {'id': nid, 'kind': kind,
-                                    'x': sx, 'y': sy,
-                                    'label': kind.replace('gui_', '')}
-            gst['selected'] = nid
+            _dw, _dh = _GC_DEFAULT_SIZE.get(kind, (GW, GH))
+            new_w = {'id': nid, 'kind': kind, 'x': sx, 'y': sy,
+                     'label': kind.replace('gui_', ''),
+                     'w': _dw, 'h': _dh, 'parent_id': None}
+            gst['widgets'][nid] = new_w
+            _gc_push_undo({'kind': 'delete', 'widget': new_w.copy()})
+            gst['selected'] = nid; gst['multi_sel'] = {nid}
             gc_set_status(f"Placed {kind} — click to place another, Esc to stop")
             gc_redraw(); return
 
         if mode == 'delete':
             hit = gc_widget_at(x, y)
             if hit:
+                wc = hit.copy()
                 gst['widgets'].pop(hit['id'])
                 gst['edges'] = [e for e in gst['edges']
                                  if e['src'] != hit['id'] and e['dst'] != hit['id']]
-                if gst['selected'] == hit['id']: gst['selected'] = None
+                if gst['selected'] == hit['id']:
+                    gst['selected'] = None; gst['multi_sel'].clear()
+                _gc_push_undo({'kind': 'place', 'widget': wc})
                 gc_set_status(f"Deleted {hit['kind']} #{hit['id']}")
             gc_redraw(); return
 
@@ -2266,39 +2462,177 @@ def run_gui():
                 gc_set_status("Can't connect to self")
             gc_redraw(); return
 
-        # Select / drag
+        # ── Select / resize / drag ─────────────────────────────────────────────
+        # 1. Handle hit takes priority over widget body (D4)
+        hw, hname = gc_handle_at(x, y)
+        if hw is not None:
+            ax, ay = gc_abs_pos(hw)
+            ww, wh = hw.get('w', GW), hw.get('h', GH)
+            gst['resize_handle'] = hname
+            gst['resize_origin'] = (ax, ay, ww, wh)
+            gst['dragging'] = False
+            gc_redraw(); return
+
+        # 2. Widget body hit
         hit = gc_widget_at(x, y)
         if hit:
-            gst['selected'] = hit['id']; gst['dragging'] = True
-            gst['drag_offset'] = (x - hit['x'], y - hit['y'])
+            if shift:
+                # Shift+click: toggle in multi-selection
+                if hit['id'] in gst['multi_sel']:
+                    gst['multi_sel'].discard(hit['id'])
+                    if gst['selected'] == hit['id']:
+                        gst['selected'] = next(iter(gst['multi_sel']), None)
+                else:
+                    gst['multi_sel'].add(hit['id'])
+                    gst['selected'] = hit['id']
+            else:
+                gst['selected'] = hit['id']; gst['multi_sel'] = {hit['id']}
+
+            ax, ay = gc_abs_pos(hit)
+            gst['dragging']   = True
+            gst['drag_offset']= (x - ax, y - ay)
+            gst['drag_origin']= {wid: (gst['widgets'][wid]['x'], gst['widgets'][wid]['y'])
+                                 for wid in gst['multi_sel'] if wid in gst['widgets']}
             gc_set_status(f"Selected  {hit['kind']}  #{hit['id']}")
         else:
-            gst['selected'] = None; gst['dragging'] = False
+            if not shift:
+                gst['selected'] = None; gst['multi_sel'].clear()
+            gst['dragging'] = False
+        gst['drop_target'] = None
         gc_redraw()
 
     def gc_on_motion(event):
-        if gst['dragging'] and gst['selected'] is not None:
+        x, y = event.x, event.y
+
+        # ── Resize drag ────────────────────────────────────────────────────────
+        if gst['resize_handle'] is not None and gst['selected'] is not None:
             w = gst['widgets'].get(gst['selected'])
             if w:
+                ox, oy, ow, oh = gst['resize_origin']
+                h = gst['resize_handle']
+                # Each handle constrains different edges
+                nx, ny, nw, nh = ox, oy, ow, oh
+                if 'W' in h:
+                    delta = x - (ox - ow // 2)
+                    nw = max(_GC_MIN_SIZE, ow - delta)
+                    nx = ox + (ow - nw) // 2
+                if 'E' in h:
+                    nw = max(_GC_MIN_SIZE, (x - (ox - ow // 2)))
+                    nx = (ox - ow // 2) + nw // 2
+                if 'N' in h:
+                    delta = y - (oy - oh // 2)
+                    nh = max(_GC_MIN_SIZE, oh - delta)
+                    ny = oy + (oh - nh) // 2
+                if 'S' in h:
+                    nh = max(_GC_MIN_SIZE, (y - (oy - oh // 2)))
+                    ny = (oy - oh // 2) + nh // 2
+                w['x'] = nx; w['y'] = ny; w['w'] = nw; w['h'] = nh
+            gc_redraw(); return
+
+        # ── Move drag ──────────────────────────────────────────────────────────
+        if gst['dragging'] and gst['selected'] is not None:
+            primary = gst['widgets'].get(gst['selected'])
+            if primary:
+                ax, ay = gc_abs_pos(primary)
                 dx, dy = gst['drag_offset']
-                w['x'] = snap(event.x - dx); w['y'] = snap(event.y - dy)
+                new_ax = snap(x - dx); new_ay = snap(y - dy)
+                ddx = new_ax - ax; ddy = new_ay - ay
+                for wid in gst['multi_sel']:
+                    w = gst['widgets'].get(wid)
+                    if w: w['x'] += ddx; w['y'] += ddy
+
+            # Drop-target detection for the primary dragged widget
+            if gst['selected'] in gst['widgets']:
+                ct = gc_container_at(x, y, gst['selected'])
+                gst['drop_target'] = ct['id'] if ct else None
+
             gc_redraw()
 
     def gc_on_release(event):
-        gst['dragging'] = False
+        sel = gst['selected']
+
+        # ── Finalize resize ────────────────────────────────────────────────────
+        if gst['resize_handle'] is not None and sel in (gst['widgets'] or {}):
+            w = gst['widgets'].get(sel)
+            ro = gst['resize_origin']
+            if w and ro:
+                ox, oy, ow, oh = ro
+                # Only push undo if something actually changed
+                if (w['x'], w['y'], w['w'], w['h']) != (ox, oy, ow, oh):
+                    _gc_push_undo({'kind': 'resize', 'id': sel,
+                                   'x': ox, 'y': oy, 'w': ow, 'h': oh})
+            gst['resize_handle'] = None; gst['resize_origin'] = None
+
+        # ── Finalize move / reparent ───────────────────────────────────────────
+        elif gst['dragging'] and sel is not None:
+            # Reparent if dropped onto a container
+            if gst['drop_target'] is not None and sel in gst['widgets']:
+                w      = gst['widgets'][sel]
+                ct     = gst['widgets'].get(gst['drop_target'])
+                if ct:
+                    old_pid = w.get('parent_id')
+                    old_x, old_y = w['x'], w['y']
+                    # Rebase coordinates to be relative to container
+                    ctx, cty = gc_abs_pos(ct)
+                    ax, ay   = gc_abs_pos(w)
+                    w['parent_id'] = ct['id']
+                    w['x'] = ax - ctx
+                    w['y'] = ay - cty
+                    _gc_push_undo({'kind': 'reparent', 'id': sel,
+                                   'parent_id': old_pid, 'x': old_x, 'y': old_y})
+                    gc_set_status(f"Nested {w['kind']} inside {ct['kind']}")
+            else:
+                # Push move undo for each moved widget
+                origin = gst.get('drag_origin') or {}
+                for wid, (ox, oy) in origin.items():
+                    w = gst['widgets'].get(wid)
+                    if w and (w['x'], w['y']) != (ox, oy):
+                        _gc_push_undo({'kind': 'move', 'id': wid, 'x': ox, 'y': oy})
+
+        gst['dragging']    = False
+        gst['drop_target'] = None
+        gst['drag_origin'] = None
+        gc_redraw()
 
     def gc_on_key(event):
         k = event.keysym.lower()
-        if k == 'escape':        gc_set_mode('select')
-        elif k == 'e':           gc_set_mode('edge_src')
+        ctrl = bool(event.state & 0x0004)
+
+        if k == 'escape':
+            gc_set_mode('select')
+        elif k == 'e' and not ctrl:
+            gc_set_mode('edge_src')
+
+        elif k == 'z' and ctrl:
+            if event.state & 0x0001:   # Ctrl+Shift+Z → redo
+                gc_redo()
+            else:
+                gc_undo()
+        elif k == 'y' and ctrl:
+            gc_redo()
+
         elif k == 'delete':
             sel = gst['selected']
-            if sel is not None and sel in gst['widgets']:
-                w = gst['widgets'].pop(sel)
+            multi = gst['multi_sel']
+            if multi:
+                removed = []
+                for wid in list(multi):
+                    if wid in gst['widgets']:
+                        removed.append(gst['widgets'].pop(wid).copy())
+                        gst['edges'] = [e for e in gst['edges']
+                                        if e['src'] != wid and e['dst'] != wid]
+                if removed:
+                    _gc_push_undo({'kind': 'delete_multi', 'widgets': removed})
+                    gc_set_status(f"Deleted {len(removed)} widget(s)")
+                gst['selected'] = None; gst['multi_sel'].clear()
+                gc_redraw()
+            elif sel is not None and sel in gst['widgets']:
+                wc = gst['widgets'].pop(sel).copy()
                 gst['edges'] = [e for e in gst['edges']
                                  if e['src'] != sel and e['dst'] != sel]
-                gst['selected'] = None
-                gc_set_status(f"Deleted {w['kind']} #{w['id']}")
+                _gc_push_undo({'kind': 'place', 'widget': wc})
+                gst['selected'] = None; gst['multi_sel'].clear()
+                gc_set_status(f"Deleted {wc['kind']} #{wc['id']}")
                 gc_redraw()
 
     gc.bind('<Button-1>',      gc_on_click)

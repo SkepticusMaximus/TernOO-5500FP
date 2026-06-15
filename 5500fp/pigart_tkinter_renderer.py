@@ -70,6 +70,7 @@ SHAPE_PROCESS        = _wl.SHAPE_PROCESS
 SHAPE_DECISION       = _wl.SHAPE_DECISION
 SHAPE_IO             = _wl.SHAPE_IO
 SHAPE_CONNECTOR      = _wl.SHAPE_CONNECTOR
+STYLE_CONTAIN        = _wl.STYLE_CONTAIN
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -233,6 +234,10 @@ def _dispatch_redge(canvas: tk.Canvas, operands: List[int],
     """
     if len(operands) < 2:
         return
+    # Skip logical edges (STYLE_CONTAIN=100 and higher) — no visible rendering
+    if form in (FORM_SHAPE, FORM_SHAPE_UDP) and len(operands) >= 3:
+        if int(get_field(operands[2], 0, 18)) >= STYLE_CONTAIN:
+            return
     x1, y1 = _decode_xy(operands[0])
     x2, y2 = _decode_xy(operands[1])
     px1 = x1 * scale + padding
