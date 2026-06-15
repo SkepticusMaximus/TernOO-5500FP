@@ -1619,62 +1619,6 @@ def run_gui():
              font=('Monospace', 9, 'bold')).pack(fill='x')
     tk.Frame(gc_pal, bg=C['dim'], height=1).pack(fill='x', padx=6, pady=2)
 
-    _gc_pal_inner = tk.Frame(gc_pal, bg=C['palette'])
-    _gc_pal_inner.pack(fill='x')
-
-    # ── Collapsible section builder ───────────────────────────────────────────
-    # _gc_pal_inner uses grid so that grid_remove() + grid() can re-show a
-    # collapsed section in its original position (pack_forget/pack would
-    # re-insert at the end, scrambling section order on re-expand).
-    _gc_grp_names = {
-        5: 'CONTAINERS', 4: 'CONTROLS', 3: 'INPUTS',
-        2: 'DISPLAY', 1: 'DIALOGS', 0: 'MENUS',
-    }
-    _gc_sections: dict = {}   # grp_key → {'open': [bool], 'frame': Frame, 'btn': Button}
-    _gc_pal_inner.columnconfigure(0, weight=1)
-    _gc_row = [0]
-
-    def _gc_make_toggle(hdr_ref, sec_frame, open_state, name):
-        def _toggle():
-            open_state[0] = not open_state[0]
-            if open_state[0]:
-                sec_frame.grid()        # restores remembered row/column
-                hdr_ref[0].config(text=f'▾ {name}')
-            else:
-                sec_frame.grid_remove() # hides but remembers position
-                hdr_ref[0].config(text=f'▸ {name}')
-        return _toggle
-
-    for wtype, y_lo in _ghost_palette_types:
-        grp_key = y_lo // 100
-        if grp_key not in _gc_sections:
-            name       = _gc_grp_names.get(grp_key, f'GROUP_{grp_key}')
-            open_state = [True]
-            sec_frame  = tk.Frame(_gc_pal_inner, bg=C['palette'])
-            hdr_ref    = [None]
-            toggle_fn  = _gc_make_toggle(hdr_ref, sec_frame, open_state, name)
-            hdr_btn    = tk.Button(_gc_pal_inner, text=f'▾ {name}',
-                                   bg=C['palette'], fg=C['dim'],
-                                   font=('Monospace', 7, 'bold'), relief='flat', bd=0,
-                                   pady=2, padx=4, anchor='w', cursor='hand2',
-                                   command=toggle_fn)
-            hdr_btn.grid(row=_gc_row[0], column=0, sticky='ew', padx=2, pady=(4, 0))
-            _gc_row[0] += 1
-            hdr_ref[0] = hdr_btn
-            sec_frame.grid(row=_gc_row[0], column=0, sticky='ew')
-            _gc_row[0] += 1
-            _gc_sections[grp_key] = {'open': open_state, 'frame': sec_frame, 'btn': hdr_btn}
-        col   = _gc_color.get(wtype, C['pal_btn'])
-        short = wtype.replace('gui_', '')
-        tk.Button(_gc_sections[grp_key]['frame'], text=short,
-                  bg=col, fg=C['text'],
-                  font=('Monospace', 8), relief='flat', bd=0,
-                  padx=4, pady=2, cursor='hand2', anchor='w',
-                  command=lambda k=wtype: gc_set_mode('place', k)
-                  ).pack(fill='x', padx=4, pady=1)
-
-    tk.Frame(gc_pal, bg=C['dim'], height=1).pack(fill='x', padx=6, pady=4)
-
     # ── Action buttons ────────────────────────────────────────────────────────
     def gc_do_connect(): gc_set_mode('edge_src')
     def gc_do_delete():  gc_set_mode('delete')
@@ -1744,17 +1688,103 @@ def run_gui():
             json.dump(tgui, _sf, indent=2)
         gc_set_status(f"Saved: {os.path.basename(path)}")
 
+    def gc_do_open():
+        path = filedialog.askopenfilename(
+            parent=root, title='Open GHOST design (.tgui)',
+            filetypes=[('TernOO GUI training', '*.tgui'), ('All files', '*.*')])
+        if not path: return
+        try:
+            with open(path) as _of:
+                tgui = json.load(_of)
+            gst['widgets'].clear(); gst['edges'].clear()
+            gst['selected'] = None; gst['next_id'] = 0
+            for sym in tgui.get('symbols', []):
+                wid = sym['id']
+                gst['widgets'][wid] = {
+                    'id':    wid,
+                    'kind':  sym.get('kind', 'gui_button'),
+                    'label': sym.get('label', ''),
+                    'x':     sym.get('x', 0),
+                    'y':     sym.get('y', 0),
+                }
+                gst['next_id'] = max(gst['next_id'], wid + 1)
+            for e in tgui.get('edges', []):
+                gst['edges'].append({'src': e['src'], 'dst': e['dst']})
+            gc_set_mode('select')
+            gc_set_status(f"Opened: {os.path.basename(path)}")
+            gc_redraw()
+        except Exception as _oe:
+            gc_set_status(f"Open failed: {_oe}")
+
     for _lbl, _cmd, _fg in [
         ('⬡ Connect', gc_do_connect, '#7aff7a'),
         ('✕ Delete',  gc_do_delete,  '#ff8888'),
         ('💡 Suggest', gc_do_suggest, '#ffcc44'),
         ('🗑 Clear',  gc_do_clear,   '#ff8888'),
         ('💾 Save',   gc_do_save,    '#7ab4ff'),
+        ('📂 Open',   gc_do_open,    '#ffcc88'),
     ]:
         tk.Button(gc_pal, text=_lbl, command=_cmd,
                   bg=C['pal_btn'], fg=_fg,
                   font=('Monospace', 8), relief='flat', bd=0,
                   padx=4, pady=3, cursor='hand2', anchor='w'
+                  ).pack(fill='x', padx=4, pady=1)
+
+    tk.Frame(gc_pal, bg=C['dim'], height=1).pack(fill='x', padx=6, pady=4)
+
+    # ── Widget palette sections ───────────────────────────────────────────────
+    _gc_pal_inner = tk.Frame(gc_pal, bg=C['palette'])
+    _gc_pal_inner.pack(fill='x')
+
+    # ── Collapsible section builder ───────────────────────────────────────────
+    # _gc_pal_inner uses grid so that grid_remove() + grid() can re-show a
+    # collapsed section in its original position (pack_forget/pack would
+    # re-insert at the end, scrambling section order on re-expand).
+    _gc_grp_names = {
+        5: 'CONTAINERS', 4: 'CONTROLS', 3: 'INPUTS',
+        2: 'DISPLAY', 1: 'DIALOGS', 0: 'MENUS',
+    }
+    _gc_sections: dict = {}   # grp_key → {'open': [bool], 'frame': Frame, 'btn': Button}
+    _gc_pal_inner.columnconfigure(0, weight=1)
+    _gc_row = [0]
+
+    def _gc_make_toggle(hdr_ref, sec_frame, open_state, name):
+        def _toggle():
+            open_state[0] = not open_state[0]
+            if open_state[0]:
+                sec_frame.grid()        # restores remembered row/column
+                hdr_ref[0].config(text=f'▾ {name}')
+            else:
+                sec_frame.grid_remove() # hides but remembers position
+                hdr_ref[0].config(text=f'▸ {name}')
+        return _toggle
+
+    for wtype, y_lo in _ghost_palette_types:
+        grp_key = y_lo // 100
+        if grp_key not in _gc_sections:
+            name       = _gc_grp_names.get(grp_key, f'GROUP_{grp_key}')
+            open_state = [True]
+            sec_frame  = tk.Frame(_gc_pal_inner, bg=C['palette'])
+            hdr_ref    = [None]
+            toggle_fn  = _gc_make_toggle(hdr_ref, sec_frame, open_state, name)
+            hdr_btn    = tk.Button(_gc_pal_inner, text=f'▾ {name}',
+                                   bg=C['palette'], fg=C['dim'],
+                                   font=('Monospace', 7, 'bold'), relief='flat', bd=0,
+                                   pady=2, padx=4, anchor='w', cursor='hand2',
+                                   command=toggle_fn)
+            hdr_btn.grid(row=_gc_row[0], column=0, sticky='ew', padx=2, pady=(4, 0))
+            _gc_row[0] += 1
+            hdr_ref[0] = hdr_btn
+            sec_frame.grid(row=_gc_row[0], column=0, sticky='ew')
+            _gc_row[0] += 1
+            _gc_sections[grp_key] = {'open': open_state, 'frame': sec_frame, 'btn': hdr_btn}
+        col   = _gc_color.get(wtype, C['pal_btn'])
+        short = wtype.replace('gui_', '')
+        tk.Button(_gc_sections[grp_key]['frame'], text=short,
+                  bg=col, fg=C['text'],
+                  font=('Monospace', 8), relief='flat', bd=0,
+                  padx=4, pady=2, cursor='hand2', anchor='w',
+                  command=lambda k=wtype: gc_set_mode('place', k)
                   ).pack(fill='x', padx=4, pady=1)
 
     tk.Label(gc_pal, text="GHOST Canvas\nv0.6.0",
@@ -2303,6 +2333,11 @@ def run_gui():
                     'Save canvas before closing?')
             if ans is None: return
             if ans: do_save()
+        if gst['widgets']:
+            ans = messagebox.askyesnocancel('Quit FlowCode',
+                    'Save GHOST canvas before closing?')
+            if ans is None: return
+            if ans: gc_do_save()
         root.destroy()
     root.protocol('WM_DELETE_WINDOW', on_close)
     set_mode('select')
