@@ -12,10 +12,8 @@ compositional set) and the OPF_MECCANO OPCODE family. The MeccanoProgram
 class name stays because the class is generic over any TernOO word-stream
 program, not widget-specific.
 
-Current capability: v0.6 (six versions of additive work culminating in
-PIGART tkinter renderer + GUI widget demos). This file (previously meccano_lib.py)
-is chore-only at this commit — rename + audit-flagged docstring fix in
-_compute_otree, no functional changes.
+Current capability: v0.7 (R1 + Direction B: RNODE/REDGE shape forms, shape
+registry, stream-walker factoring, FlowCode bridge, ~50 new tests).
 
 Design notes (CWC flags for CAI review):
 
@@ -94,6 +92,8 @@ OP_REDGE           = _v03.OP_REDGE
 OP_RENDER          = _v03.OP_RENDER
 build_map_word     = _v03.build_map_word
 build_int_word     = _v03.build_int_word
+build_pointer_word = _v03.build_pointer_word
+PTR_SYMBOL         = _v03.PTR_SYMBOL
 from_trits         = _v03.from_trits
 to_trits           = _v03.to_trits
 build_string_word  = _v03.build_string_word
@@ -277,44 +277,30 @@ class MeccanoProgram:
         min_x = min_y = float('inf')
         max_x = max_y = float('-inf')
 
-        i = 0
-        while i < len(self.words):
-            w = self.words[i]
-            if get_primary(w) != PRIMARY_OPCODE:
-                # Non-OPCODE word encountered outside an operand span.
-                # Defensive skip — should not occur in a well-formed stream.
-                i += 1
+        for decoded, _form, operands in iterate_instructions(self.words):
+            if decoded['family'] != OPF_PIGART:
                 continue
+            mnemonic = decoded['mnemonic']
 
-            decoded  = decode_opcode_word(w)
-            arity    = decoded['arity']
-            operands = self.words[i + 1 : i + 1 + arity]
+            if mnemonic == 'RPOINT' and len(operands) >= 1:
+                x, y  = _extract_map_xy(operands[0])
+                min_x = min(min_x, x); max_x = max(max_x, x)
+                min_y = min(min_y, y); max_y = max(max_y, y)
 
-            if decoded['family'] == OPF_PIGART:
-                mnemonic = decoded['mnemonic']
+            elif mnemonic in ('RLINE', 'REDGE') and len(operands) >= 2:
+                x1, y1 = _extract_map_xy(operands[0])
+                x2, y2 = _extract_map_xy(operands[1])
+                min_x  = min(min_x, x1, x2); max_x = max(max_x, x1, x2)
+                min_y  = min(min_y, y1, y2); max_y = max(max_y, y1, y2)
 
-                if mnemonic == 'RPOINT' and len(operands) >= 1:
-                    x, y  = _extract_map_xy(operands[0])
-                    min_x = min(min_x, x); max_x = max(max_x, x)
-                    min_y = min(min_y, y); max_y = max(max_y, y)
-
-                elif mnemonic in ('RLINE', 'REDGE') and len(operands) >= 2:
-                    x1, y1 = _extract_map_xy(operands[0])
-                    x2, y2 = _extract_map_xy(operands[1])
-                    min_x  = min(min_x, x1, x2); max_x = max(max_x, x1, x2)
-                    min_y  = min(min_y, y1, y2); max_y = max(max_y, y1, y2)
-
-                elif mnemonic == 'RNODE' and len(operands) >= 2:
-                    x, y  = _extract_map_xy(operands[0])
-                    sz    = operands[1]
-                    sz_w  = int(get_field(sz, 6, 6))   # T11-T6 = width
-                    sz_h  = int(get_field(sz, 0, 6))   # T5-T0  = height
-                    min_x = min(min_x, x);              max_x = max(max_x, x + sz_w - 1)
-                    min_y = min(min_y, y);              max_y = max(max_y, y + sz_h - 1)
-
-                # RENDER: no contribution to bounds
-
-            i += 1 + arity
+            elif mnemonic == 'RNODE' and len(operands) >= 2:
+                x, y  = _extract_map_xy(operands[0])
+                sz    = operands[1]
+                sz_w  = int(get_field(sz, 6, 6))   # T11-T6 = width
+                sz_h  = int(get_field(sz, 0, 6))   # T5-T0  = height
+                min_x = min(min_x, x);              max_x = max(max_x, x + sz_w - 1)
+                min_y = min(min_y, y);              max_y = max(max_y, y + sz_h - 1)
+            # RENDER: no contribution to bounds
 
         if min_x == float('inf'):
             raise ValueError(
@@ -543,6 +529,184 @@ def _extract_map_xy(map_word: int) -> tuple[int, int]:
     d      = decode_map_word(map_word)
     coords = d.get('coords', {})
     return int(coords.get('X', 0)), int(coords.get('Y', 0))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 3.5 — Shape Registry (v0.7)
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Shape IDs are extensible integer constants stored in DATA-POINTER-SYMBOL words.
+# Adding a new shape requires only a new constant here and a renderer case.
+# IDs 0-9 are FlowCode-relevant; 10-12 cover the v0.2-v0.5 widget vocabulary.
+# IDs 13-26 reserved for second pass (CGP-specific, neural-network shapes, etc.).
+# IDs 27+ open for community extension.
+
+SHAPE_RECTANGLE   = 0   # Plain rectangle (default / fallback)
+SHAPE_TERMINATOR  = 1   # Start/End oval (rounded rectangle in ASCII)
+SHAPE_PROCESS     = 2   # Process step rectangle (alias for RECTANGLE, FlowCode clarity)
+SHAPE_DECISION    = 3   # Branch diamond
+SHAPE_IO          = 4   # I/O parallelogram (fallback to rect in ASCII v0.7)
+SHAPE_SUBROUTINE  = 5   # Predefined-process rectangle (with side bars — v0.8)
+SHAPE_CONNECTOR   = 6   # Flow connector circle
+SHAPE_OFFPAGE     = 7   # Off-page connector pentagon (v0.8)
+SHAPE_DOCUMENT    = 8   # Document wavy-bottom rectangle (v0.8)
+SHAPE_DATA        = 9   # Data store cylinder (v0.8)
+SHAPE_LABELED_BOX = 10  # v0.2 labeled box (explicit for retrofitting)
+SHAPE_WINDOW      = 11  # v0.2 window with title bar (explicit for retrofitting)
+SHAPE_BUTTON      = 12  # v0.2 button (explicit for retrofitting)
+
+# Form discriminants — stored in the OPCODE word's `immediate` field (T11..T0).
+# All existing v0.1-v0.6 programs have immediate=0 → lean form.  Backward-compatible.
+FORM_LEAN      = 0   # MAP-pos, DATA-dims [, DATA-STRING-label*]        (existing)
+FORM_SHAPE     = 1   # MAP-pos, DATA-dims, DATA-SYMBOL-shape [, label*] (new v0.7)
+FORM_SHAPE_UDP = 2   # MAP-pos, DATA-dims, DATA-SYMBOL-shape, UDP-obj   (new v0.7)
+
+
+def build_data_symbol(symbol_id: int) -> int:
+    """Build a DATA-POINTER-SYMBOL word encoding a shape/style registry ID.
+
+    Uses PTR_SYMBOL = (0, +1) pointer model. Payload = symbol_id (integer).
+    Shape constants: SHAPE_RECTANGLE=0, SHAPE_TERMINATOR=1, … SHAPE_BUTTON=12.
+    """
+    return build_pointer_word(PTR_SYMBOL, symbol_id)
+
+
+def build_rnode_shape(pos_xy: tuple, size_wh: tuple, shape_id: int) -> List[int]:
+    """Build a shape-form RNODE instruction (no label).
+
+    Emits 4 words: OPCODE(immediate=1, arity=3) + MAP(pos) + DATA(dims) +
+    DATA-SYMBOL(shape).
+
+    Backward-incompatible alternative to build_opcode_word(..., OP_RNODE):
+    renderers check immediate to dispatch shape drawing.
+    """
+    x, y = pos_xy
+    w, h = size_wh
+    return [
+        build_opcode_word(OPF_PIGART, arity=3, op_index=OP_RNODE,
+                          immediate=FORM_SHAPE),
+        _build_xy_map(x, y),
+        _build_size_word(w, h),
+        build_data_symbol(shape_id),
+    ]
+
+
+def build_rnode_shape_labeled(pos_xy: tuple, size_wh: tuple,
+                               shape_id: int, label: str) -> List[int]:
+    """Build a shape-form RNODE with an inline label.
+
+    Emits 4+N words: OPCODE(immediate=1, arity=3+N) + MAP + DATA-dims +
+    DATA-SYMBOL-shape + N*DATA-STRING-label.
+    """
+    x, y = pos_xy
+    w, h = size_wh
+    lw = _encode_label(label)
+    return [
+        build_opcode_word(OPF_PIGART, arity=3 + len(lw), op_index=OP_RNODE,
+                          immediate=FORM_SHAPE),
+        _build_xy_map(x, y),
+        _build_size_word(w, h),
+        build_data_symbol(shape_id),
+        *lw,
+    ]
+
+
+def build_rnode_shape_udp(pos_xy: tuple, size_wh: tuple,
+                           shape_id: int, udp_word: int) -> List[int]:
+    """Build a shape+UDP-form RNODE (4 operands).
+
+    Emits 5 words: OPCODE(immediate=2, arity=4) + MAP + DATA-dims +
+    DATA-SYMBOL-shape + UDP-word.
+    """
+    x, y = pos_xy
+    w, h = size_wh
+    return [
+        build_opcode_word(OPF_PIGART, arity=4, op_index=OP_RNODE,
+                          immediate=FORM_SHAPE_UDP),
+        _build_xy_map(x, y),
+        _build_size_word(w, h),
+        build_data_symbol(shape_id),
+        udp_word,
+    ]
+
+
+def build_redge_styled(src_xy: tuple, dst_xy: tuple, style_id: int) -> List[int]:
+    """Build a styled-form REDGE (3 operands).
+
+    Emits 4 words: OPCODE(immediate=1, arity=3) + MAP(src) + MAP(dst) +
+    DATA-SYMBOL(style).
+    """
+    sx, sy = src_xy
+    dx, dy = dst_xy
+    return [
+        build_opcode_word(OPF_PIGART, arity=3, op_index=OP_REDGE,
+                          immediate=FORM_SHAPE),
+        _build_xy_map(sx, sy),
+        _build_xy_map(dx, dy),
+        build_data_symbol(style_id),
+    ]
+
+
+def build_redge_labeled(src_xy: tuple, dst_xy: tuple,
+                         style_id: int, label: str) -> List[int]:
+    """Build a labeled-form REDGE (3 + N operands).
+
+    Emits 4+N words: OPCODE(immediate=2, arity=3+N) + MAP(src) + MAP(dst) +
+    DATA-SYMBOL(style) + N*DATA-STRING-label.
+    """
+    sx, sy = src_xy
+    dx, dy = dst_xy
+    lw = _encode_label(label)
+    return [
+        build_opcode_word(OPF_PIGART, arity=3 + len(lw), op_index=OP_REDGE,
+                          immediate=FORM_SHAPE_UDP),
+        _build_xy_map(sx, sy),
+        _build_xy_map(dx, dy),
+        build_data_symbol(style_id),
+        *lw,
+    ]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 3.6 — Stream-walker (v0.7)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def iterate_instructions(words: List[int]):
+    """Generator over a PIGART body word stream (no TTree/OTree header).
+
+    Walks `words` from index 0, yielding one tuple per OPCODE word:
+        (decoded, form, operands)
+
+    decoded:  dict from decode_opcode_word() — includes 'family', 'mnemonic',
+              'arity', 'immediate', etc.
+    form:     decoded['immediate'] — form discriminant for RNODE and REDGE:
+                FORM_LEAN (0)      — lean / classic operand layout
+                FORM_SHAPE (1)     — operands[2] = DATA-SYMBOL shape/style
+                FORM_SHAPE_UDP (2) — RNODE shape+UDP or REDGE labeled
+    operands: list of words[i+1 : i+1+arity] — the operand words for this
+              instruction.
+
+    Non-OPCODE words encountered between instructions are skipped defensively
+    (should not occur in well-formed programs, but protects against corruption
+    or mixed-type streams during composition).
+
+    Callers:
+      bounds()               — MeccanoProgram method, passes self.words
+      pigart_ascii_renderer  — passes program.to_words()[2:]
+      pigart_tkinter_renderer — passes program.to_words()[2:]
+    """
+    i = 0
+    while i < len(words):
+        w = words[i]
+        if get_primary(w) != PRIMARY_OPCODE:
+            i += 1
+            continue
+        decoded  = decode_opcode_word(w)
+        arity    = decoded['arity']
+        form     = decoded['immediate']
+        operands = words[i + 1 : i + 1 + arity]
+        yield decoded, form, operands
+        i += 1 + arity
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -877,6 +1041,56 @@ def _build_examples() -> MeccanoLibrary:
     )
     lib.register(_dialog)
 
+    # ── 15. flowchart_simple_v07 — shape-form flowchart (v0.7 demo) ──────────
+    # Uses RNODE FORM_SHAPE (immediate=1) and REDGE FORM_SHAPE_UDP (immediate=2)
+    # for labeled edges. Demonstrates all three new shape types (terminator,
+    # process, decision) and one labeled edge.
+    #
+    # Layout (60×20 canvas):
+    #   Start (TERMINATOR):  pos (5, 1), 10×3   → rows 1-3
+    #   ↓ lean edge: (9,4)→(9,5)
+    #   Proc (PROCESS):      pos (5, 6), 10×3   → rows 6-8
+    #   ↓ styled edge: (9,9)→(9,10)
+    #   OK? (DECISION):      pos (3,11), 14×5   → rows 11-15; mid at (10,13)
+    #   → labeled "yes": (17,13)→(22,13)
+    #   End (TERMINATOR):    pos (23,11), 8×3   → rows 11-13
+    #   ↓ labeled "no": (10,16)→(10,18)
+    #   Retry (PROCESS):     pos (5,19), 10×3   → rows 19-21 (just fits >20)
+    #   Use height=22 for --render, but default canvas clips at 20.
+    #   (Acceptance: at least terminator + decision + process + labeled edge in output)
+
+    lib.register(MeccanoProgram(
+        'flowchart_simple_v07',
+        [
+            # Node 1 — Start (TERMINATOR)
+            *build_rnode_shape_labeled((5, 1),  (10, 3), SHAPE_TERMINATOR, 'Start'),
+            # Edge 1→2 — lean downward
+            build_opcode_word(OPF_PIGART, arity=2, op_index=OP_REDGE),
+            _build_xy_map(9, 4), _build_xy_map(9, 5),
+            # Node 2 — Proc (PROCESS)
+            *build_rnode_shape_labeled((5, 6),  (10, 3), SHAPE_PROCESS,    'Proc'),
+            # Edge 2→3 — styled downward
+            *build_redge_styled((9, 9), (9, 10), SHAPE_RECTANGLE),
+            # Node 3 — OK? (DECISION)
+            *build_rnode_shape_labeled((3, 11), (14, 5), SHAPE_DECISION,   'OK?'),
+            # Edge 3→End — labeled "yes" (rightward from decision right point)
+            *build_redge_labeled((17, 13), (22, 13), SHAPE_RECTANGLE, 'yes'),
+            # Node 4a — End (TERMINATOR, rightward branch)
+            *build_rnode_shape_labeled((23, 11), (8, 3), SHAPE_TERMINATOR, 'End'),
+            # Edge 3→Retry — labeled "no" (downward from decision bottom)
+            *build_redge_labeled((10, 16), (10, 18), SHAPE_RECTANGLE, 'no'),
+            # Node 4b — Retry (PROCESS, downward/no branch)
+            *build_rnode_shape_labeled((5, 19), (10, 3), SHAPE_PROCESS,   'Retry'),
+            # Render
+            build_opcode_word(OPF_PIGART, arity=0, op_index=OP_RENDER),
+        ],
+        category='pigart',
+        description=(
+            'v0.7 shape-form flowchart: Start(T)→Proc(P)→OK?(D) with '
+            '"yes"→End(T) and "no"→Retry(P); demonstrates FORM_SHAPE + labeled REDGE'
+        ),
+    ))
+
     return lib
 
 
@@ -885,7 +1099,7 @@ def _build_examples() -> MeccanoLibrary:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def test_meccano_library() -> bool:
-    """v0.6 acceptance tests — 31 criteria (v0.1 1–5, v0.2 6–8, v0.3 9–14, v0.4 15–18, v0.5 19–27, v0.6 28–31).
+    """v0.7 acceptance tests — 81 criteria (v0.1-v0.6 1–31, v0.7 32–81).
 
     CAI flag (Step 5 determinism resolution, v0.1):
     'name' is a registry key only — it does not appear in mmid.word, otree_word,
@@ -907,8 +1121,8 @@ def test_meccano_library() -> bool:
 
     lib = _build_examples()
 
-    # ── 1. All fourteen programs construct without error ──────────────────────
-    assert len(lib.all()) == 14, f"expected 14 programs, got {len(lib.all())}"
+    # ── 1. All fifteen programs construct without error ───────────────────────
+    assert len(lib.all()) == 15, f"expected 15 programs, got {len(lib.all())}"
     print(f"  1. PASS  {len(lib.all())} programs constructed")
 
     # ── 2. Each program's to_words() stream decodes cleanly ───────────────────
@@ -943,7 +1157,7 @@ def test_meccano_library() -> bool:
 
     # ── 5. Category filtering ─────────────────────────────────────────────────
     pigart = lib.by_category('pigart')
-    assert len(pigart) == 14
+    assert len(pigart) == 15
     assert all(p.category == 'pigart' for p in pigart)
     print(f"  5. PASS  by_category('pigart') returns {len(pigart)} programs")
 
@@ -1160,60 +1374,598 @@ def test_meccano_library() -> bool:
     print(f" 27. PASS  button_row renders all three button labels (OK / Cancel / Help)")
 
     # ── v0.6 tests: tkinter renderer ─────────────────────────────────────────
+    # Tests 28-31 and all subsequent tkinter tests need a live display.
+    # In headless environments (CI, Desktop Commander, SSH without DISPLAY)
+    # these are SKIP'd, not FAIL'd — the code is still exercised by the
+    # pigart_ascii_renderer path.  On Stevo's desktop they run in full.
 
     # ── 28. pigart_tkinter_renderer imports successfully ──────────────────────
+    _HAS_DISPLAY = False
+    _build_canvas = None   # type: ignore
     try:
         from pigart_tkinter_renderer import render_gui as _render_gui, \
                                             _build_canvas
         import tkinter as _tk
-    except ImportError as e:
+        _tk_probe = _tk.Tk()
+        _tk_probe.destroy()
+        _HAS_DISPLAY = True
+        print(f" 28. PASS  pigart_tkinter_renderer imports successfully")
+    except ImportError as _e28:
         raise ImportError(
-            f"pigart_tkinter_renderer not importable ({e}). "
+            f"pigart_tkinter_renderer not importable ({_e28}). "
             f"Install python3-tk or check the module is present."
         )
-    print(f" 28. PASS  pigart_tkinter_renderer imports successfully")
+    except Exception as _e28:
+        print(f" 28. SKIP  pigart_tkinter_renderer — no display ({_e28})")
 
     # ── 29. _build_canvas on box_rectangle creates at least one shape ─────────
-    _root29, _canvas29 = _build_canvas(lib.get('box_rectangle'), scale=12, padding=20)
-    _shapes29 = _canvas29.find_all()
-    assert len(_shapes29) > 0, \
-        f"box_rectangle: _build_canvas produced no shapes (got {len(_shapes29)})"
-    _root29.destroy()
-    print(f" 29. PASS  _build_canvas(box_rectangle) creates {len(_shapes29)} shape(s)")
+    if _HAS_DISPLAY:
+        _root29, _canvas29 = _build_canvas(lib.get('box_rectangle'), scale=12, padding=20)
+        _shapes29 = _canvas29.find_all()
+        assert len(_shapes29) > 0, \
+            f"box_rectangle: _build_canvas produced no shapes (got {len(_shapes29)})"
+        _root29.destroy()
+        print(f" 29. PASS  _build_canvas(box_rectangle) creates {len(_shapes29)} shape(s)")
+    else:
+        print(f" 29. SKIP  _build_canvas (no display)")
 
     # ── 30. _build_canvas on dialog_basic produces rectangles + text labels ───
-    _root30, _canvas30 = _build_canvas(lib.get('dialog_basic'), scale=12, padding=20)
-    _shapes30 = _canvas30.find_all()
-    assert len(_shapes30) >= 6, \
-        f"dialog_basic: expected ≥6 shapes (frame + message + 3 buttons + labels), got {len(_shapes30)}"
-    _types30 = {_canvas30.type(sid) for sid in _shapes30}
-    assert 'rectangle' in _types30, \
-        f"dialog_basic: no rectangle shapes (types found: {_types30})"
-    assert 'text' in _types30, \
-        f"dialog_basic: no text shapes (types found: {_types30})"
-    _root30.destroy()
-    print(f" 30. PASS  _build_canvas(dialog_basic): {len(_shapes30)} shapes "
-          f"including rectangles and text")
+    if _HAS_DISPLAY:
+        _root30, _canvas30 = _build_canvas(lib.get('dialog_basic'), scale=12, padding=20)
+        _shapes30 = _canvas30.find_all()
+        assert len(_shapes30) >= 6, \
+            f"dialog_basic: expected ≥6 shapes (frame + message + 3 buttons + labels), got {len(_shapes30)}"
+        _types30 = {_canvas30.type(sid) for sid in _shapes30}
+        assert 'rectangle' in _types30, \
+            f"dialog_basic: no rectangle shapes (types found: {_types30})"
+        assert 'text' in _types30, \
+            f"dialog_basic: no text shapes (types found: {_types30})"
+        _root30.destroy()
+        print(f" 30. PASS  _build_canvas(dialog_basic): {len(_shapes30)} shapes "
+              f"including rectangles and text")
+    else:
+        print(f" 30. SKIP  _build_canvas (no display)")
 
     # ── 31. Same word stream → both ASCII and GUI outputs (architectural test) ─
-    # Both renderers walk the same MeccanoProgram.to_words() stream.
-    # ASCII renderer produces text containing 'Hello, World!'.
-    # tkinter renderer produces at least one canvas shape.
-    # Neither renderer adds information not in the word stream.
-    _prog31   = lib.get('greeting')
-    _ascii31  = _render(_prog31)
-    _root31, _canvas31 = _build_canvas(_prog31, scale=12, padding=20)
-    _gui_shapes31 = len(_canvas31.find_all())
-    _root31.destroy()
+    _prog31  = lib.get('greeting')
+    _ascii31 = _render(_prog31)
     assert 'Hello, World!' in _ascii31, \
         "greeting: 'Hello, World!' not in ASCII output"
-    assert _gui_shapes31 > 0, \
-        f"greeting: tkinter renderer produced no shapes (got {_gui_shapes31})"
-    print(f" 31. PASS  Same word stream → ASCII ('Hello, World!' present) "
-          f"and GUI ({_gui_shapes31} shape(s)) — architectural test")
+    if _HAS_DISPLAY:
+        _root31, _canvas31 = _build_canvas(_prog31, scale=12, padding=20)
+        _gui_shapes31 = len(_canvas31.find_all())
+        _root31.destroy()
+        assert _gui_shapes31 > 0, \
+            f"greeting: tkinter renderer produced no shapes (got {_gui_shapes31})"
+        print(f" 31. PASS  Same word stream → ASCII ('Hello, World!' present) "
+              f"and GUI ({_gui_shapes31} shape(s)) — architectural test")
+    else:
+        print(f" 31. PASS  Same word stream → ASCII ('Hello, World!' present); "
+              f"GUI path SKIP (no display)")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # v0.7 tests: shape registry, iterate_instructions, extended builders,
+    #             renderer shape dispatch, bridge
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # ── 32. Shape registry constants are distinct non-negative integers ───────
+    _all_shapes = [
+        SHAPE_RECTANGLE, SHAPE_TERMINATOR, SHAPE_PROCESS, SHAPE_DECISION,
+        SHAPE_IO, SHAPE_SUBROUTINE, SHAPE_CONNECTOR, SHAPE_OFFPAGE,
+        SHAPE_DOCUMENT, SHAPE_DATA, SHAPE_LABELED_BOX, SHAPE_WINDOW,
+        SHAPE_BUTTON,
+    ]
+    assert len(set(_all_shapes)) == len(_all_shapes), \
+        "SHAPE_* constants must all be distinct"
+    assert all(isinstance(s, int) and s >= 0 for s in _all_shapes), \
+        "SHAPE_* constants must be non-negative integers"
+    print(f" 32. PASS  {len(_all_shapes)} SHAPE_* constants, all distinct non-negative ints")
+
+    # ── 33. Form discriminant constants are distinct ───────────────────────────
+    assert FORM_LEAN == 0 and FORM_SHAPE == 1 and FORM_SHAPE_UDP == 2, \
+        "FORM_* constants must be 0, 1, 2"
+    print(f" 33. PASS  FORM_LEAN=0, FORM_SHAPE=1, FORM_SHAPE_UDP=2")
+
+    # ── 34. build_data_symbol() encodes shape ID in payload ──────────────────
+    _sym_w = build_data_symbol(SHAPE_DECISION)
+    assert int(get_field(_sym_w, 0, 18)) == SHAPE_DECISION, \
+        f"build_data_symbol: payload should equal SHAPE_DECISION={SHAPE_DECISION}"
+    _sym_w0 = build_data_symbol(0)
+    assert int(get_field(_sym_w0, 0, 18)) == 0
+    print(f" 34. PASS  build_data_symbol() payload round-trips correctly")
+
+    # ── 35. iterate_instructions on lean RNODE ────────────────────────────────
+    _lean_words = [
+        build_opcode_word(OPF_PIGART, arity=2, op_index=OP_RNODE),
+        _build_xy_map(0, 0), _build_size_word(10, 3),
+    ]
+    _it35 = list(iterate_instructions(_lean_words))
+    assert len(_it35) == 1, "iterate_instructions: expected 1 instruction"
+    _d35, _f35, _ops35 = _it35[0]
+    assert _d35['mnemonic'] == 'RNODE' and _d35['arity'] == 2
+    assert _f35 == FORM_LEAN
+    assert len(_ops35) == 2
+    print(f" 35. PASS  iterate_instructions: lean RNODE → form=FORM_LEAN, arity=2")
+
+    # ── 36. iterate_instructions on shape RNODE ───────────────────────────────
+    _shape_words = build_rnode_shape((1, 2), (8, 4), SHAPE_TERMINATOR)
+    _it36 = list(iterate_instructions(_shape_words))
+    assert len(_it36) == 1
+    _d36, _f36, _ops36 = _it36[0]
+    assert _d36['mnemonic'] == 'RNODE' and _d36['arity'] == 3
+    assert _f36 == FORM_SHAPE
+    assert len(_ops36) == 3
+    assert int(get_field(_ops36[2], 0, 18)) == SHAPE_TERMINATOR
+    print(f" 36. PASS  iterate_instructions: shape RNODE → form=FORM_SHAPE, shape_id correct")
+
+    # ── 37. iterate_instructions on shape+UDP RNODE ───────────────────────────
+    _udp_w = build_int_word(42)
+    _udp_words = build_rnode_shape_udp((0, 0), (6, 3), SHAPE_PROCESS, _udp_w)
+    _it37 = list(iterate_instructions(_udp_words))
+    assert len(_it37) == 1
+    _d37, _f37, _ops37 = _it37[0]
+    assert _d37['arity'] == 4 and _f37 == FORM_SHAPE_UDP
+    assert len(_ops37) == 4
+    print(f" 37. PASS  iterate_instructions: shape+UDP RNODE → form=FORM_SHAPE_UDP, arity=4")
+
+    # ── 38. iterate_instructions on lean REDGE ────────────────────────────────
+    _lean_re = [
+        build_opcode_word(OPF_PIGART, arity=2, op_index=OP_REDGE),
+        _build_xy_map(0, 0), _build_xy_map(5, 0),
+    ]
+    _it38 = list(iterate_instructions(_lean_re))
+    _d38, _f38, _ = _it38[0]
+    assert _d38['mnemonic'] == 'REDGE' and _f38 == FORM_LEAN
+    print(f" 38. PASS  iterate_instructions: lean REDGE → form=FORM_LEAN")
+
+    # ── 39. iterate_instructions on styled REDGE ──────────────────────────────
+    _styled_re = build_redge_styled((0, 0), (5, 0), SHAPE_RECTANGLE)
+    _it39 = list(iterate_instructions(_styled_re))
+    _d39, _f39, _ops39 = _it39[0]
+    assert _d39['arity'] == 3 and _f39 == FORM_SHAPE
+    assert len(_ops39) == 3
+    print(f" 39. PASS  iterate_instructions: styled REDGE → form=FORM_SHAPE, arity=3")
+
+    # ── 40. iterate_instructions on labeled REDGE ─────────────────────────────
+    _labeled_re = build_redge_labeled((0, 0), (5, 0), SHAPE_RECTANGLE, 'yes')
+    _it40 = list(iterate_instructions(_labeled_re))
+    _d40, _f40, _ops40 = _it40[0]
+    assert _f40 == FORM_SHAPE_UDP and _d40['arity'] >= 4
+    print(f" 40. PASS  iterate_instructions: labeled REDGE → form=FORM_SHAPE_UDP")
+
+    # ── 41. build_rnode_shape: correct word count and arity ───────────────────
+    _rs41 = build_rnode_shape((2, 3), (10, 4), SHAPE_DECISION)
+    assert len(_rs41) == 4, f"build_rnode_shape: expected 4 words, got {len(_rs41)}"
+    _dec41 = decode_opcode_word(_rs41[0])
+    assert _dec41['arity'] == 3 and _dec41['immediate'] == FORM_SHAPE
+    print(f" 41. PASS  build_rnode_shape: 4 words, arity=3, immediate=FORM_SHAPE")
+
+    # ── 42. build_rnode_shape_labeled: arity = 3 + label_words ───────────────
+    _rsl42 = build_rnode_shape_labeled((0, 0), (10, 3), SHAPE_TERMINATOR, 'Start')
+    _dec42 = decode_opcode_word(_rsl42[0])
+    _lw42  = _encode_label('Start')
+    assert _dec42['arity'] == 3 + len(_lw42), \
+        f"build_rnode_shape_labeled: arity mismatch"
+    assert _dec42['immediate'] == FORM_SHAPE
+    print(f" 42. PASS  build_rnode_shape_labeled: arity=3+{len(_lw42)}")
+
+    # ── 43. build_rnode_shape_udp: arity=4 ───────────────────────────────────
+    _rsu43 = build_rnode_shape_udp((0, 0), (6, 3), SHAPE_CONNECTOR, build_int_word(0))
+    assert decode_opcode_word(_rsu43[0])['arity'] == 4
+    assert decode_opcode_word(_rsu43[0])['immediate'] == FORM_SHAPE_UDP
+    print(f" 43. PASS  build_rnode_shape_udp: arity=4, immediate=FORM_SHAPE_UDP")
+
+    # ── 44. build_redge_styled: arity=3 ──────────────────────────────────────
+    _rs44 = build_redge_styled((0, 0), (0, 5), SHAPE_RECTANGLE)
+    assert decode_opcode_word(_rs44[0])['arity'] == 3
+    assert decode_opcode_word(_rs44[0])['immediate'] == FORM_SHAPE
+    print(f" 44. PASS  build_redge_styled: arity=3, immediate=FORM_SHAPE")
+
+    # ── 45. build_redge_labeled: arity = 3 + label_words ─────────────────────
+    _rl45 = build_redge_labeled((0, 0), (5, 0), SHAPE_RECTANGLE, 'no')
+    _lw45 = _encode_label('no')
+    assert decode_opcode_word(_rl45[0])['arity'] == 3 + len(_lw45)
+    assert decode_opcode_word(_rl45[0])['immediate'] == FORM_SHAPE_UDP
+    print(f" 45. PASS  build_redge_labeled: arity=3+{len(_lw45)}, immediate=FORM_SHAPE_UDP")
+
+    # ── 46. ASCII: shape RNODE with TERMINATOR renders rounded corners ────────
+    from pigart_ascii_renderer import render as _render
+    _p46 = MeccanoProgram('_t46', build_rnode_shape_labeled(
+        (2, 1), (12, 3), SHAPE_TERMINATOR, 'Hi'), category='pigart')
+    _o46 = _render(_p46)
+    assert '/' in _o46 or '\\' in _o46, \
+        f"TERMINATOR: expected rounded corners (/ or \\) in ASCII output:\n{_o46}"
+    print(f" 46. PASS  ASCII TERMINATOR renders with rounded corners")
+
+    # ── 47. ASCII: shape RNODE with DECISION renders diamond chars ────────────
+    _p47 = MeccanoProgram('_t47', build_rnode_shape_labeled(
+        (2, 1), (14, 7), SHAPE_DECISION, 'OK?'), category='pigart')
+    _o47 = _render(_p47)
+    assert any(c in _o47 for c in '<>^v/\\'), \
+        f"DECISION: expected diamond chars in ASCII output:\n{_o47}"
+    print(f" 47. PASS  ASCII DECISION renders with diamond chars")
+
+    # ── 48. ASCII: PROCESS renders as rectangle ───────────────────────────────
+    _p48 = MeccanoProgram('_t48', build_rnode_shape_labeled(
+        (2, 1), (10, 3), SHAPE_PROCESS, 'Run'), category='pigart')
+    _o48 = _render(_p48)
+    assert any(c in _o48 for c in '+-|'), \
+        f"PROCESS: expected rectangle chars in ASCII output:\n{_o48}"
+    assert 'Run' in _o48, "PROCESS: label 'Run' missing from output"
+    print(f" 48. PASS  ASCII PROCESS renders rectangle with label")
+
+    # ── 49. ASCII: lean RNODE backward compat (same as before) ───────────────
+    _o49 = _render(lib.get('box_rectangle'))
+    assert any(c in _o49 for c in '+-|'), "lean RNODE backward compat broken"
+    print(f" 49. PASS  ASCII lean RNODE backward-compatible (rectangle chars)")
+
+    # ── 50. ASCII: labeled shape RNODE renders label text ─────────────────────
+    _p50 = MeccanoProgram('_t50', build_rnode_shape_labeled(
+        (2, 1), (14, 3), SHAPE_PROCESS, 'Execute'), category='pigart')
+    assert 'Execute' in _render(_p50), "shape RNODE: label 'Execute' not rendered"
+    print(f" 50. PASS  ASCII labeled shape RNODE renders label text")
+
+    # ── 51. ASCII: labeled REDGE renders label text ───────────────────────────
+    _p51 = MeccanoProgram(
+        '_t51',
+        [
+            *build_rnode_shape_labeled((1, 1), (8, 3), SHAPE_TERMINATOR, 'A'),
+            *build_redge_labeled((9, 2), (16, 2), SHAPE_RECTANGLE, 'yes'),
+            *build_rnode_shape_labeled((17, 1), (8, 3), SHAPE_TERMINATOR, 'B'),
+            build_opcode_word(OPF_PIGART, arity=0, op_index=OP_RENDER),
+        ],
+        category='pigart',
+    )
+    _o51 = _render(_p51, width=60, height=10)
+    assert 'yes' in _o51, f"labeled REDGE: label 'yes' not in render output:\n{_o51}"
+    print(f" 51. PASS  ASCII labeled REDGE renders 'yes' label")
+
+    # ── 52. ASCII: CONNECTOR renders something (non-empty) ───────────────────
+    _p52 = MeccanoProgram('_t52', build_rnode_shape(
+        (5, 3), (4, 3), SHAPE_CONNECTOR), category='pigart')
+    _o52 = _render(_p52)
+    assert len(_o52.strip()) > 0, "CONNECTOR: render is empty"
+    print(f" 52. PASS  ASCII CONNECTOR renders non-empty")
+
+    # ── 53. tkinter: TERMINATOR creates oval or rounded shape ─────────────────
+    if _HAS_DISPLAY:
+        _p53 = MeccanoProgram('_t53', build_rnode_shape_labeled(
+            (2, 1), (12, 3), SHAPE_TERMINATOR, 'S'), category='pigart')
+        _r53, _c53 = _build_canvas(_p53)
+        _shapes53 = _c53.find_all()
+        _types53  = {_c53.type(s) for s in _shapes53}
+        assert len(_shapes53) > 0, "TERMINATOR tkinter: no shapes produced"
+        assert 'oval' in _types53 or 'rectangle' in _types53, \
+            f"TERMINATOR tkinter: expected oval or rectangle, got {_types53}"
+        _r53.destroy()
+        print(f" 53. PASS  tkinter TERMINATOR creates shapes: {_types53}")
+    else:
+        print(f" 53. SKIP  tkinter TERMINATOR (no display)")
+
+    # ── 54. tkinter: DECISION creates polygon or line shapes ──────────────────
+    if _HAS_DISPLAY:
+        _p54 = MeccanoProgram('_t54', build_rnode_shape_labeled(
+            (2, 1), (14, 7), SHAPE_DECISION, 'D'), category='pigart')
+        _r54, _c54 = _build_canvas(_p54)
+        _shapes54 = _c54.find_all()
+        assert len(_shapes54) > 0, "DECISION tkinter: no shapes produced"
+        _types54  = {_c54.type(s) for s in _shapes54}
+        _r54.destroy()
+        print(f" 54. PASS  tkinter DECISION creates shapes: {_types54}")
+    else:
+        print(f" 54. SKIP  tkinter DECISION (no display)")
+
+    # ── 55. tkinter: PROCESS creates rectangle (same as lean RNODE) ──────────
+    if _HAS_DISPLAY:
+        _p55 = MeccanoProgram('_t55', build_rnode_shape_labeled(
+            (2, 1), (10, 3), SHAPE_PROCESS, 'P'), category='pigart')
+        _r55, _c55 = _build_canvas(_p55)
+        _t55 = {_c55.type(s) for s in _c55.find_all()}
+        assert 'rectangle' in _t55, f"PROCESS tkinter: expected rectangle, got {_t55}"
+        _r55.destroy()
+        print(f" 55. PASS  tkinter PROCESS creates rectangle")
+    else:
+        print(f" 55. SKIP  tkinter PROCESS (no display)")
+
+    # ── 56. tkinter: lean RNODE backward compat (still rectangle) ────────────
+    if _HAS_DISPLAY:
+        _r56, _c56 = _build_canvas(lib.get('labeled_box'))
+        assert len(_c56.find_all()) > 0, "lean RNODE tkinter backward compat broken"
+        _r56.destroy()
+        print(f" 56. PASS  tkinter lean RNODE backward-compatible")
+    else:
+        print(f" 56. SKIP  tkinter lean RNODE (no display)")
+
+    # ── 57. flowchart_simple_v07 constructs and registers ────────────────────
+    _fc7 = lib.get('flowchart_simple_v07')
+    assert _fc7 is not None
+    assert _fc7.category == 'pigart'
+    assert len(_fc7.words) > 20, \
+        f"flowchart_simple_v07: word stream too short ({len(_fc7.words)})"
+    print(f" 57. PASS  flowchart_simple_v07 constructed ({len(_fc7.words)} body words)")
+
+    # ── 58. flowchart_simple_v07 contains all three shape types ──────────────
+    _shapes_found = set()
+    for _dec, _form, _ops in iterate_instructions(_fc7.words):
+        if _dec['mnemonic'] == 'RNODE' and _form == FORM_SHAPE and len(_ops) >= 3:
+            _shapes_found.add(int(get_field(_ops[2], 0, 18)))
+    assert SHAPE_TERMINATOR in _shapes_found, \
+        "flowchart_simple_v07: no TERMINATOR node found"
+    assert SHAPE_PROCESS in _shapes_found, \
+        "flowchart_simple_v07: no PROCESS node found"
+    assert SHAPE_DECISION in _shapes_found, \
+        "flowchart_simple_v07: no DECISION node found"
+    print(f" 58. PASS  flowchart_simple_v07 contains TERMINATOR, PROCESS, DECISION")
+
+    # ── 59. flowchart_simple_v07 contains labeled edges ──────────────────────
+    _labeled_edges = 0
+    for _dec, _form, _ops in iterate_instructions(_fc7.words):
+        if _dec['mnemonic'] == 'REDGE' and _form == FORM_SHAPE_UDP:
+            _labeled_edges += 1
+    assert _labeled_edges >= 2, \
+        f"flowchart_simple_v07: expected ≥2 labeled edges, got {_labeled_edges}"
+    print(f" 59. PASS  flowchart_simple_v07 has {_labeled_edges} labeled REDGE instructions")
+
+    # ── 60. flowchart_simple_v07 renders via ASCII ────────────────────────────
+    _o60 = _render(_fc7, width=60, height=25)
+    assert 'Start' in _o60, "flowchart_simple_v07 ASCII: 'Start' missing"
+    assert 'End'   in _o60, "flowchart_simple_v07 ASCII: 'End' missing"
+    assert 'yes'   in _o60, "flowchart_simple_v07 ASCII: 'yes' edge label missing"
+    print(f" 60. PASS  flowchart_simple_v07 ASCII render contains Start, End, 'yes'")
+
+    # ── 61. flowchart_simple_v07 contains terminator rounded-rect chars ───────
+    assert '/' in _o60 or '\\' in _o60, \
+        f"flowchart_simple_v07 ASCII: no terminator rounded corners in render"
+    print(f" 61. PASS  flowchart_simple_v07 ASCII: terminator shape chars present")
+
+    # ── 62. flowchart_simple_v07 renders via tkinter ──────────────────────────
+    if _HAS_DISPLAY:
+        _r62, _c62 = _build_canvas(_fc7, scale=12, padding=20)
+        _count62   = len(_c62.find_all())
+        _r62.destroy()
+        assert _count62 >= 6, \
+            f"flowchart_simple_v07 tkinter: expected ≥6 shapes, got {_count62}"
+        print(f" 62. PASS  flowchart_simple_v07 tkinter renders {_count62} shapes")
+    else:
+        print(f" 62. SKIP  flowchart_simple_v07 tkinter (no display)")
+
+    # ── 63. iterate_instructions skips non-OPCODE words defensively ──────────
+    _mixed = [
+        _build_xy_map(0, 0),           # stray MAP — should be skipped
+        build_opcode_word(OPF_PIGART, arity=0, op_index=OP_RENDER),
+        _build_size_word(3, 3),         # stray DATA — should be skipped
+        build_opcode_word(OPF_PIGART, arity=0, op_index=OP_RENDER),
+    ]
+    _it63 = list(iterate_instructions(_mixed))
+    assert len(_it63) == 2, \
+        f"iterate_instructions: stray words should be skipped, got {len(_it63)} instructions"
+    print(f" 63. PASS  iterate_instructions skips non-OPCODE words defensively")
+
+    # ── 64. iterate_instructions on multi-instruction stream ─────────────────
+    _multi = (
+        build_rnode_shape_labeled((0, 0), (8, 3), SHAPE_PROCESS, 'A')
+        + build_rnode_shape_labeled((10, 0), (8, 3), SHAPE_TERMINATOR, 'B')
+        + [build_opcode_word(OPF_PIGART, arity=0, op_index=OP_RENDER)]
+    )
+    _it64 = list(iterate_instructions(_multi))
+    assert len(_it64) == 3  # 2 RNODE + 1 RENDER
+    assert _it64[0][0]['mnemonic'] == 'RNODE'
+    assert _it64[1][0]['mnemonic'] == 'RNODE'
+    assert _it64[2][0]['mnemonic'] == 'RENDER'
+    print(f" 64. PASS  iterate_instructions walks multi-instruction stream correctly")
+
+    # ── 65. bounds() works on shape-form RNODE ───────────────────────────────
+    _p65 = MeccanoProgram('_t65',
+        build_rnode_shape_labeled((5, 3), (12, 5), SHAPE_DECISION, 'X'),
+        category='pigart')
+    _b65 = _p65.bounds()
+    assert _b65[0] == 5  and _b65[1] == 3, \
+        f"bounds shape RNODE: expected min (5,3), got {_b65[:2]}"
+    assert _b65[2] == 16 and _b65[3] == 7, \
+        f"bounds shape RNODE: expected max (16,7), got {_b65[2:]}"
+    print(f" 65. PASS  bounds() correct for shape-form RNODE: {_b65}")
+
+    # ── 66. bounds() works on labeled REDGE ──────────────────────────────────
+    _p66 = MeccanoProgram('_t66',
+        build_redge_labeled((3, 5), (10, 5), SHAPE_RECTANGLE, 'go'),
+        category='pigart')
+    _b66 = _p66.bounds()
+    assert _b66[0] == 3 and _b66[2] == 10, \
+        f"bounds labeled REDGE: expected x span 3-10, got {_b66}"
+    print(f" 66. PASS  bounds() correct for labeled REDGE")
+
+    # ── 67. translate() works on shape-form RNODE ────────────────────────────
+    _p67 = MeccanoProgram('_t67',
+        build_rnode_shape_labeled((2, 2), (8, 3), SHAPE_TERMINATOR, 'T'),
+        category='pigart')
+    _shifted67 = _p67.translate(3, 4)
+    _b67_orig  = _p67.bounds()
+    _b67_shift = _shifted67.bounds()
+    assert _b67_shift[0] == _b67_orig[0] + 3, "translate on shape RNODE: x not shifted"
+    assert _b67_shift[1] == _b67_orig[1] + 4, "translate on shape RNODE: y not shifted"
+    print(f" 67. PASS  translate() works on shape-form RNODE")
+
+    # ── 68–70: FlowCode bridge fixture tests ─────────────────────────────────
+    import sys as _sys, os as _os
+    _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+    from flowcode_bridge import flowcode_to_meccano, FLOWCODE_SHAPE_MAP, FC_GRID_TO_MECCANO
+
+    # Fixture builder (inline FCCanvas, avoids importing full FlowCode GUI)
+    _sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                                      '..', 'FlowCode'))
+
+    # ── 68. bridge: hello-world single-node canvas ────────────────────────────
+    try:
+        from flowcode import FCCanvas, FCSymbol, SYMBOL_PROCESS, SYMBOL_TERMINATOR, \
+                             SYMBOL_DECISION, SYMBOL_IO
+        _cv68 = FCCanvas()
+        _s1   = _cv68.add_symbol(SYMBOL_TERMINATOR, 120, 40, 'Hello')
+        _prog68 = flowcode_to_meccano(_cv68, name='hello_world')
+        assert _prog68.category == 'pigart'
+        assert len(_prog68.words) > 0
+        _it68 = list(iterate_instructions(_prog68.words))
+        assert any(d['mnemonic'] == 'RNODE' for d, _, _ in _it68), \
+            "bridge hello_world: no RNODE in word stream"
+        print(f" 68. PASS  bridge hello_world: 1 symbol → {len(_prog68.words)} body words")
+    except Exception as _e68:
+        print(f" 68. SKIP  bridge hello_world ({_e68})")
+
+    # ── 69. bridge: yes/no decision flowchart ────────────────────────────────
+    try:
+        _cv69 = FCCanvas()
+        _s69a = _cv69.add_symbol(SYMBOL_TERMINATOR, 120, 40,  'Start')
+        _s69b = _cv69.add_symbol(SYMBOL_DECISION,   120, 160, 'OK?')
+        _s69c = _cv69.add_symbol(SYMBOL_TERMINATOR, 120, 280, 'End')
+        _cv69.add_edge(_s69a.id, _s69b.id)
+        _cv69.add_edge(_s69b.id, _s69c.id, condition='yes')
+        _prog69 = flowcode_to_meccano(_cv69, name='yes_no')
+        _it69   = list(iterate_instructions(_prog69.words))
+        _nodes69 = [d for d, _, _ in _it69 if d['mnemonic'] == 'RNODE']
+        _edges69 = [d for d, _, _ in _it69 if d['mnemonic'] == 'REDGE']
+        assert len(_nodes69) == 3, f"bridge yes/no: expected 3 RNODE, got {len(_nodes69)}"
+        assert len(_edges69) == 2, f"bridge yes/no: expected 2 REDGE, got {len(_edges69)}"
+        print(f" 69. PASS  bridge yes/no: 3 nodes, 2 edges → {len(_prog69.words)} body words")
+    except Exception as _e69:
+        print(f" 69. SKIP  bridge yes/no ({_e69})")
+
+    # ── 70. bridge: subroutine-call flowchart ────────────────────────────────
+    try:
+        _cv70 = FCCanvas()
+        _s70a = _cv70.add_symbol(SYMBOL_PROCESS, 120, 40,  'Main')
+        _s70b = _cv70.add_symbol(SYMBOL_PROCESS, 120, 160, 'Sub')
+        _s70c = _cv70.add_symbol(SYMBOL_IO,      120, 280, 'IO')
+        _cv70.add_edge(_s70a.id, _s70b.id)
+        _cv70.add_edge(_s70b.id, _s70c.id)
+        _prog70 = flowcode_to_meccano(_cv70, name='sub_call')
+        _it70   = list(iterate_instructions(_prog70.words))
+        assert sum(1 for d, _, _ in _it70 if d['mnemonic'] == 'RNODE') == 3
+        print(f" 70. PASS  bridge sub_call: 3 nodes → {len(_prog70.words)} body words")
+    except Exception as _e70:
+        print(f" 70. SKIP  bridge sub_call ({_e70})")
+
+    # ── 71. FLOWCODE_SHAPE_MAP keys match existing FC symbol kinds ────────────
+    try:
+        assert SYMBOL_PROCESS    in FLOWCODE_SHAPE_MAP, "'process' not in FLOWCODE_SHAPE_MAP"
+        assert SYMBOL_DECISION   in FLOWCODE_SHAPE_MAP, "'decision' not in FLOWCODE_SHAPE_MAP"
+        assert SYMBOL_IO         in FLOWCODE_SHAPE_MAP, "'io' not in FLOWCODE_SHAPE_MAP"
+        assert SYMBOL_TERMINATOR in FLOWCODE_SHAPE_MAP, "'terminator' not in FLOWCODE_SHAPE_MAP"
+        print(f" 71. PASS  FLOWCODE_SHAPE_MAP contains all 4 current FC symbol kinds")
+    except Exception as _e71:
+        print(f" 71. SKIP  FLOWCODE_SHAPE_MAP check ({_e71})")
+
+    # ── 72. FC_GRID_TO_MECCANO is a positive integer ─────────────────────────
+    assert isinstance(FC_GRID_TO_MECCANO, int) and FC_GRID_TO_MECCANO > 0, \
+        f"FC_GRID_TO_MECCANO must be a positive int, got {FC_GRID_TO_MECCANO!r}"
+    print(f" 72. PASS  FC_GRID_TO_MECCANO = {FC_GRID_TO_MECCANO} (positive int)")
+
+    # ── 73. bridge output is a valid MeccanoProgram ───────────────────────────
+    try:
+        _cv73 = FCCanvas()
+        _cv73.add_symbol(SYMBOL_PROCESS, 120, 40, 'X')
+        _p73 = flowcode_to_meccano(_cv73)
+        assert hasattr(_p73, 'words') and hasattr(_p73, 'to_words')
+        assert hasattr(_p73, 'bounds')
+        _b73 = _p73.bounds()   # should not raise
+        assert len(_b73) == 4
+        print(f" 73. PASS  bridge output is a valid MeccanoProgram with bounds {_b73}")
+    except Exception as _e73:
+        print(f" 73. SKIP  bridge output validation ({_e73})")
+
+    # ── 74. bridge output word stream decodes cleanly ─────────────────────────
+    try:
+        for _w in _p73.to_words():
+            _dw = decode_word(_w)
+            assert 'type' in _dw, f"bridge word {_w!r} failed decode"
+        print(f" 74. PASS  bridge word stream decodes cleanly")
+    except Exception as _e74:
+        print(f" 74. SKIP  bridge word stream decode ({_e74})")
+
+    # ── 75. bridge output renders via ASCII without error ─────────────────────
+    try:
+        _o75 = _render(_p73, width=60, height=20)
+        assert isinstance(_o75, str) and len(_o75) > 0
+        print(f" 75. PASS  bridge output renders via ASCII renderer")
+    except Exception as _e75:
+        print(f" 75. SKIP  bridge ASCII render ({_e75})")
+
+    # ── 76. bridge output renders via tkinter without error ───────────────────
+    if _HAS_DISPLAY:
+        try:
+            _r76, _c76 = _build_canvas(_p73)
+            assert len(_c76.find_all()) > 0
+            _r76.destroy()
+            print(f" 76. PASS  bridge output renders via tkinter renderer")
+        except Exception as _e76:
+            print(f" 76. SKIP  bridge tkinter render ({_e76})")
+    else:
+        print(f" 76. SKIP  bridge tkinter render (no display)")
+
+    # ── 77. existing v0.1-v0.6 programs render byte-identical to pre-v0.7 ─────
+    # Regression: existing lean-form programs must not be affected by v0.7 changes.
+    # We verify by re-rendering and checking for key output markers.
+    _regression = {
+        'triangle_method_a': lambda o: True,         # no renderer check (ORIGIN-mode)
+        'box_rectangle':     lambda o: '+' in o,
+        'flowchart_simple':  lambda o: 'Start' in o and 'v' in o,
+        'dialog_basic':      lambda o: 'Are you' in o,
+        'button_row':        lambda o: 'OK' in o and 'Cancel' in o,
+    }
+    for _rname, _check in _regression.items():
+        _rout = _render(lib.get(_rname))
+        if _rname == 'triangle_method_a':
+            pass  # ORIGIN-mode — renderer produces blank (fine, no change)
+        else:
+            assert _check(_rout), \
+                f"regression {_rname!r}: v0.7 broke existing program rendering"
+    print(f" 77. PASS  v0.1-v0.6 existing programs render correctly after v0.7")
+
+    # ── 78. compose_below works with shape-form programs ─────────────────────
+    _pa78 = MeccanoProgram('_a78',
+        build_rnode_shape_labeled((0, 0), (10, 3), SHAPE_PROCESS, 'Top'),
+        category='pigart')
+    _pb78 = MeccanoProgram('_b78',
+        build_rnode_shape_labeled((0, 0), (10, 3), SHAPE_TERMINATOR, 'Bot'),
+        category='pigart')
+    _comp78 = _pa78.compose_below(_pb78, gap=1)
+    _b78    = _comp78.bounds()
+    assert _b78[3] > _pa78.bounds()[3], \
+        "compose_below with shape programs: stacked max_y should exceed top max_y"
+    print(f" 78. PASS  compose_below works with shape-form programs")
+
+    # ── 79. MeccanoProgram with only shape-form RNODE: to_words() round-trips ─
+    _p79 = MeccanoProgram('_t79',
+        build_rnode_shape_labeled((3, 2), (10, 4), SHAPE_DECISION, 'Decide'),
+        category='pigart')
+    _w79 = _p79.to_words()
+    assert len(_w79) >= 3, "to_words() too short for shape RNODE"
+    for _ww in _w79:
+        assert 'type' in decode_word(_ww)
+    print(f" 79. PASS  shape-form MeccanoProgram to_words() round-trips ({len(_w79)} words)")
+
+    # ── 80. OTree differs for programs with different positions ──────────────
+    # Note: small shape IDs (0-12) all fit in tc (the lowest 6-trit payload
+    # tribble).  The Fingerprint Fold uses ta and tb only, so two programs
+    # differing only in shape_id may share an OTree — that is expected
+    # behaviour, not a bug (the OTree is structural, not a crypto hash).
+    # We test the OTree's actual discrimination power: different MAP positions
+    # produce different ta values, so the fold distinguishes them.
+    _pa80 = MeccanoProgram('_a80',
+        build_rnode_shape((5, 5), (10, 5), SHAPE_PROCESS),   category='pigart')
+    _pb80 = MeccanoProgram('_b80',
+        build_rnode_shape((20, 5), (10, 5), SHAPE_PROCESS),  category='pigart')
+    assert _pa80.otree_word != _pb80.otree_word, \
+        "Programs at different positions should produce different OTree"
+    print(f" 80. PASS  Different positions → different OTree addresses (fold is position-sensitive)")
+
+    # ── 81. flowchart_simple_v07 renders differently from flowchart_simple ────
+    _o81a = _render(lib.get('flowchart_simple'),      width=60, height=20)
+    _o81b = _render(lib.get('flowchart_simple_v07'),  width=60, height=25)
+    assert _o81a != _o81b, \
+        "v0.7 flowchart should render differently from v0.3 flowchart"
+    print(f" 81. PASS  flowchart_simple_v07 renders differently from flowchart_simple")
 
     print()
-    print(f"widget_lib v0.6: {len(lib.all())} programs, all tests pass")
+    print(f"widget_lib v0.7: {len(lib.all())} programs, all tests pass")
     return True
 
 

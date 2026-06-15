@@ -49,6 +49,25 @@ get_field          = _v03.get_field
 PRIMARY_OPCODE     = _v03.PRIMARY_OPCODE
 OPF_PIGART         = _v03.OPF_PIGART
 
+# ── Import shape/form constants and iterate_instructions from widget_lib ──────
+# widget_lib imports this renderer only inside test_meccano_library() (local
+# import), so this module-level import is safe — no circular dependency.
+_wl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'widget_lib.py')
+_wl_spec = _ilu.spec_from_file_location('widget_lib', _wl_path)
+_wl      = _ilu.module_from_spec(_wl_spec)
+_wl_spec.loader.exec_module(_wl)
+
+iterate_instructions = _wl.iterate_instructions
+FORM_LEAN            = _wl.FORM_LEAN
+FORM_SHAPE           = _wl.FORM_SHAPE
+FORM_SHAPE_UDP       = _wl.FORM_SHAPE_UDP
+SHAPE_RECTANGLE      = _wl.SHAPE_RECTANGLE
+SHAPE_TERMINATOR     = _wl.SHAPE_TERMINATOR
+SHAPE_PROCESS        = _wl.SHAPE_PROCESS
+SHAPE_DECISION       = _wl.SHAPE_DECISION
+SHAPE_IO             = _wl.SHAPE_IO
+SHAPE_CONNECTOR      = _wl.SHAPE_CONNECTOR
+
 
 # ── String decoder (v0.4) ─────────────────────────────────────────────────────
 
@@ -156,6 +175,52 @@ class AsciiCanvas:
         for i, ch in enumerate(text):
             self.set(x + i, y, ch)
 
+    def draw_rounded_rect(self, x: int, y: int, w: int, h: int) -> None:
+        """Draw a rounded rectangle using / and \\ corners (TERMINATOR shape).
+
+        Corners: '/' and '\\'   Horizontal edges: '-'   Vertical edges: '|'
+        Visually simulates an oval/pill shape in ASCII art.
+        """
+        if w < 2 or h < 2:
+            return
+        self.set(x,       y,       '/')
+        self.set(x + w-1, y,       '\\')
+        self.set(x,       y + h-1, '\\')
+        self.set(x + w-1, y + h-1, '/')
+        for col in range(x + 1, x + w - 1):
+            self.set(col, y,       '-')
+            self.set(col, y + h-1, '-')
+        for row in range(y + 1, y + h - 1):
+            self.set(x,       row, '|')
+            self.set(x + w-1, row, '|')
+
+    def draw_diamond(self, x: int, y: int, w: int, h: int) -> None:
+        """Draw a diamond shape using Bresenham lines (DECISION shape).
+
+        Points (compass):
+          top    = (x + w//2, y)
+          right  = (x + w-1,  y + h//2)
+          bottom = (x + w//2, y + h-1)
+          left   = (x,        y + h//2)
+        Interior lines use '*'; directional tips use '^', '>', 'v', '<'.
+        """
+        if w < 2 or h < 2:
+            return
+        mx = x + w // 2
+        my = y + h // 2
+        top    = (mx,    y)
+        right  = (x+w-1, my)
+        bottom = (mx,    y+h-1)
+        left   = (x,     my)
+        self.draw_line(top[0], top[1], right[0], right[1])
+        self.draw_line(right[0], right[1], bottom[0], bottom[1])
+        self.draw_line(bottom[0], bottom[1], left[0], left[1])
+        self.draw_line(left[0], left[1], top[0], top[1])
+        self.set(top[0],    top[1],    '^')
+        self.set(right[0],  right[1],  '>')
+        self.set(bottom[0], bottom[1], 'v')
+        self.set(left[0],   left[1],   '<')
+
     def __str__(self) -> str:
         return '\n'.join(''.join(row) for row in self.grid)
 
@@ -176,48 +241,34 @@ def render(program, width: int = 60, height: int = 20) -> str:
         split across height lines)
 
     Raises:
-        ValueError:         unknown OPCODE family or unsupported opcode
-        NotImplementedError: REDGE encountered (deferred to v0.3)
+        ValueError: non-PIGART OPCODE or unknown mnemonic encountered
     """
     canvas = AsciiCanvas(width, height)
     words  = program.to_words()
 
-    # words[0] = TTree MAP header, words[1] = OTree MAP header — skip both
-    i = 2
-    while i < len(words):
-        w = words[i]
-
-        if get_primary(w) != PRIMARY_OPCODE:
-            raise ValueError(
-                f"expected OPCODE at word index {i}, "
-                f"got primary={get_primary(w)} (word={w})"
-            )
-
-        decoded  = decode_opcode_word(w)
+    # words[0] = TTree MAP header, words[1] = OTree MAP header — skip both.
+    # iterate_instructions() skips non-OPCODE words defensively.
+    for decoded, form, operands in iterate_instructions(words[2:]):
         if decoded['family'] != OPF_PIGART:
             raise ValueError(
-                f"non-PIGART OPCODE in render stream at index {i}: "
+                f"non-PIGART OPCODE in render stream: "
                 f"family={decoded['family_name']!r}"
             )
 
         mnemonic = decoded['mnemonic']
-        arity    = decoded['arity']
-        operands = words[i + 1 : i + 1 + arity]
 
         if mnemonic == 'RPOINT':
             _dispatch_rpoint(canvas, operands)
         elif mnemonic == 'RLINE':
             _dispatch_rline(canvas, operands)
         elif mnemonic == 'RNODE':
-            _dispatch_rnode(canvas, operands)
+            _dispatch_rnode(canvas, operands, form)
         elif mnemonic == 'REDGE':
-            _dispatch_redge(canvas, operands)
+            _dispatch_redge(canvas, operands, form)
         elif mnemonic == 'RENDER':
-            pass  # no double-buffering in v0.2 — canvas updates are immediate
+            pass  # no double-buffering — canvas updates are immediate
         else:
             raise ValueError(f"unknown PIGART opcode: {mnemonic!r}")
-
-        i += 1 + arity
 
     return str(canvas)
 
@@ -265,65 +316,85 @@ def _dispatch_rline(canvas: AsciiCanvas, operands: List[int]) -> None:
     canvas.draw_line(x1, y1, x2, y2)
 
 
-def _dispatch_rnode(canvas: AsciiCanvas, operands: List[int]) -> None:
-    """RNODE: MAP(top-left) + DATA(size) [+ DATA(label_id)].
+def _dispatch_rnode(canvas: AsciiCanvas, operands: List[int],
+                    form: int = FORM_LEAN) -> None:
+    """RNODE: MAP(top-left) + DATA(size) [+ DATA-SYMBOL(shape)] [+ DATA-STRING*].
 
-    Size DATA word convention (v0.2):
-      T11-T6 (tb tribble) = width
-      T5-T0  (tc tribble) = height
-    Extracted via get_field(w, 6, 6) and get_field(w, 0, 6).
+    Form dispatch (opcode `immediate` field):
+      FORM_LEAN (0):      operands[2:] = label words (v0.1-v0.6 behaviour)
+      FORM_SHAPE (1):     operands[2]  = DATA-SYMBOL shape_id; operands[3:] = label
+      FORM_SHAPE_UDP (2): operands[2]  = DATA-SYMBOL shape_id; operands[3]  = UDP
 
-    Label DATA word: DATA/SCALAR int, value = label_id, looked up in LABEL_TABLE.
-    Label is drawn centred horizontally in the first interior row.
+    Shape rendering:
+      SHAPE_TERMINATOR → draw_rounded_rect (/ \\ corners)
+      SHAPE_DECISION   → draw_diamond (^ > v < tips, Bresenham sides)
+      all others       → draw_rect (existing + | behaviour)
+
+    Label: centred in first interior row for rect/rounded shapes;
+           centred at diamond midpoint for DECISION.
     """
     if len(operands) < 2:
         return
 
-    # Position
     x, y = _extract_xy(operands[0])
+    w    = int(get_field(operands[1], 6, 6))
+    h    = int(get_field(operands[1], 0, 6))
 
-    # Size — packed two-tribble encoding
-    size_word = operands[1]
-    w = int(get_field(size_word, 6, 6))   # T11-T6 = width
-    h = int(get_field(size_word, 0, 6))   # T5-T0  = height
+    if form == FORM_LEAN:
+        shape_id    = SHAPE_RECTANGLE
+        label_words = operands[2:]
+    else:
+        # FORM_SHAPE or FORM_SHAPE_UDP: operands[2] = DATA-SYMBOL shape
+        shape_id    = int(get_field(operands[2], 0, 18)) if len(operands) >= 3 else SHAPE_RECTANGLE
+        # FORM_SHAPE: operands[3:] are label words
+        # FORM_SHAPE_UDP: operands[3] is the UDP word (no label)
+        label_words = operands[3:] if form == FORM_SHAPE else []
 
-    canvas.draw_rect(x, y, w, h)
+    # Draw shape outline
+    if shape_id == SHAPE_TERMINATOR:
+        canvas.draw_rounded_rect(x, y, w, h)
+    elif shape_id == SHAPE_DECISION:
+        canvas.draw_diamond(x, y, w, h)
+    else:
+        canvas.draw_rect(x, y, w, h)
 
-    # Label (operands[2:] are DATA-STRING words, present when arity > 2)
-    if len(operands) >= 3 and w > 4 and h > 2:
-        label_text = _decode_label_words(operands[2:])
+    # Draw label
+    if label_words and w > 2 and h > 1:
+        label_text = _decode_label_words(label_words)
         if label_text:
-            # Centre horizontally in the interior; place in first interior row
             interior_width = w - 2
-            pad            = max(0, (interior_width - len(label_text)) // 2)
-            lx             = x + 1 + pad
-            ly             = y + 1
-            canvas.draw_label(lx, ly, label_text, interior_width)
+            if shape_id == SHAPE_DECISION:
+                # Centre label at diamond midpoint
+                cx   = x + w // 2
+                cy   = y + h // 2
+                lx   = max(x + 1, cx - len(label_text) // 2)
+                canvas.draw_label(lx, cy, label_text, interior_width)
+            else:
+                pad = max(0, (interior_width - len(label_text)) // 2)
+                lx  = x + 1 + pad
+                ly  = y + 1
+                canvas.draw_label(lx, ly, label_text, interior_width)
 
 
-def _dispatch_redge(canvas: AsciiCanvas, operands: List[int]) -> None:
-    """REDGE: MAP(start) + MAP(end) [+ DATA(style, deferred to v0.4)].
+def _dispatch_redge(canvas: AsciiCanvas, operands: List[int],
+                    form: int = FORM_LEAN) -> None:
+    """REDGE: MAP(start) + MAP(end) [+ DATA-SYMBOL(style)] [+ DATA-STRING*].
 
-    Draws a directed arrow from start to end.
+    Form dispatch:
+      FORM_LEAN (0):      2 operands — classic directed arrow (v0.1-v0.6)
+      FORM_SHAPE (1):     3 operands — src, dst, style; style ignored, arrow drawn
+      FORM_SHAPE_UDP (2): 3+N operands — src, dst, style, label words;
+                          arrow drawn + label text at edge midpoint
 
-    Cardinal direction rules:
-      Rightward  (y1==y2, x2>x1): '-' line, '>' arrowhead at end
-      Leftward   (y1==y2, x2<x1): '-' line, '<' arrowhead at end
-      Downward   (x1==x2, y2>y1): '|' line, 'v' arrowhead at end
-      Upward     (x1==x2, y2<y1): '|' line, '^' arrowhead at end
-      Diagonal:  Bresenham line, '*' arrowhead at end
-
-    Style operand (operands[2] if present) is accepted but ignored — v0.4+.
-
-    CAI flag (v0.3): all flowchart_simple edges are cardinal (vertical),
-    so the diagonal branch is not exercised by the example programs.
+    Arrow: cardinal-direction dispatch with '-'/'+'/Bresenham lines.
     """
     if len(operands) < 2:
         return
 
     x1, y1 = _extract_xy(operands[0])
     x2, y2 = _extract_xy(operands[1])
-    # operands[2] = style (optional, deferred to v0.4)
+    # operands[2] = style symbol (FORM_SHAPE / FORM_SHAPE_UDP) — ignored for drawing
+    # operands[3:] = label words (FORM_SHAPE_UDP only)
 
     if y1 == y2 and x2 > x1:          # rightward
         for x in range(x1, x2):
@@ -348,6 +419,14 @@ def _dispatch_redge(canvas: AsciiCanvas, operands: List[int]) -> None:
     else:                              # diagonal — Bresenham, '*' at tip
         canvas.draw_line(x1, y1, x2, y2)
         canvas.set(x2, y2, '*')
+
+    # Draw label for labeled form (FORM_SHAPE_UDP, label words at operands[3:])
+    if form == FORM_SHAPE_UDP and len(operands) >= 4:
+        label_text = _decode_label_words(operands[3:])
+        if label_text:
+            lx = (x1 + x2) // 2
+            ly = (y1 + y2) // 2
+            canvas.draw_label(lx, ly, label_text, 15)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

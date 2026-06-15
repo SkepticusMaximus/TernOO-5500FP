@@ -54,6 +54,23 @@ OP_RNODE           = _v03.OP_RNODE
 OP_REDGE           = _v03.OP_REDGE
 OP_RENDER          = _v03.OP_RENDER
 
+# ── Import shape/form constants and iterate_instructions from widget_lib ──────
+_wl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'widget_lib.py')
+_wl_spec = _ilu.spec_from_file_location('widget_lib', _wl_path)
+_wl      = _ilu.module_from_spec(_wl_spec)
+_wl_spec.loader.exec_module(_wl)
+
+iterate_instructions = _wl.iterate_instructions
+FORM_LEAN            = _wl.FORM_LEAN
+FORM_SHAPE           = _wl.FORM_SHAPE
+FORM_SHAPE_UDP       = _wl.FORM_SHAPE_UDP
+SHAPE_RECTANGLE      = _wl.SHAPE_RECTANGLE
+SHAPE_TERMINATOR     = _wl.SHAPE_TERMINATOR
+SHAPE_PROCESS        = _wl.SHAPE_PROCESS
+SHAPE_DECISION       = _wl.SHAPE_DECISION
+SHAPE_IO             = _wl.SHAPE_IO
+SHAPE_CONNECTOR      = _wl.SHAPE_CONNECTOR
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Helpers (duplicated from pigart_ascii_renderer — v0.7 will factor these out)
@@ -145,56 +162,96 @@ def _dispatch_rline(canvas: tk.Canvas, operands: List[int],
 
 
 def _dispatch_rnode(canvas: tk.Canvas, operands: List[int],
-                    scale: int, padding: int) -> None:
-    """RNODE: MAP(top-left) + DATA(size) [+ DATA-STRING words for label].
+                    scale: int, padding: int,
+                    form: int = FORM_LEAN) -> None:
+    """RNODE: MAP(top-left) + DATA(size) [+ DATA-SYMBOL(shape)] [+ DATA-STRING*].
 
-    Draws a rectangle outline (1px black border, transparent fill).
-    If label words are present, centres the label text inside the rectangle.
+    Form dispatch:
+      FORM_LEAN (0):      operands[2:] = label words (v0.1-v0.6 behaviour)
+      FORM_SHAPE (1):     operands[2]  = DATA-SYMBOL shape_id; operands[3:] = label
+      FORM_SHAPE_UDP (2): operands[2]  = DATA-SYMBOL shape_id; operands[3]  = UDP
 
-    Font: Courier 10 — monospace, pairs naturally with ASCII-derived coordinates.
-    If label text clips visually, this is flagged for v0.7 (font metrics vs
-    Meccano coordinate units can diverge; see spec §Flags item 3).
+    Shape rendering:
+      SHAPE_TERMINATOR → create_oval (best approximation; oval uses bounding box)
+      SHAPE_DECISION   → create_polygon (diamond: 4 compass points)
+      all others       → create_rectangle (existing behaviour)
+
+    Label: centred in bounding box for all shapes via create_text.
     """
     if len(operands) < 2:
         return
 
-    x, y   = _decode_xy(operands[0])
-    w, h   = _decode_size(operands[1])
-    label  = _decode_label_words(operands[2:]) if len(operands) > 2 else ''
+    x, y = _decode_xy(operands[0])
+    w, h = _decode_size(operands[1])
 
-    # Convert to pixel corners
+    if form == FORM_LEAN:
+        shape_id    = SHAPE_RECTANGLE
+        label_words = operands[2:]
+    else:
+        shape_id    = int(get_field(operands[2], 0, 18)) if len(operands) >= 3 else SHAPE_RECTANGLE
+        label_words = operands[3:] if form == FORM_SHAPE else []
+
+    label = _decode_label_words(label_words) if label_words else ''
+
+    # Pixel corners of bounding box
     x0 = x * scale + padding
     y0 = y * scale + padding
     x1 = (x + w) * scale + padding
     y1 = (y + h) * scale + padding
+    cx = (x0 + x1) / 2
+    cy = (y0 + y1) / 2
 
-    canvas.create_rectangle(x0, y0, x1, y1,
-                             outline='black', fill='', width=1)
+    if shape_id == SHAPE_TERMINATOR:
+        canvas.create_oval(x0, y0, x1, y1, outline='black', fill='', width=1)
+    elif shape_id == SHAPE_DECISION:
+        # Diamond: top, right, bottom, left
+        mx = (x0 + x1) / 2
+        my = (y0 + y1) / 2
+        canvas.create_polygon(
+            mx, y0,   x1, my,   mx, y1,   x0, my,
+            outline='black', fill='', width=1,
+        )
+    else:
+        canvas.create_rectangle(x0, y0, x1, y1, outline='black', fill='', width=1)
 
     if label:
-        cx = (x0 + x1) / 2
-        cy = (y0 + y1) / 2
-        canvas.create_text(cx, cy, text=label,
-                           font=('Courier', 10), anchor='center')
+        canvas.create_text(cx, cy, text=label, font=('Courier', 10), anchor='center')
 
 
 def _dispatch_redge(canvas: tk.Canvas, operands: List[int],
-                    scale: int, padding: int) -> None:
-    """REDGE: MAP(start) + MAP(end) [+ DATA(style)].
+                    scale: int, padding: int,
+                    form: int = FORM_LEAN) -> None:
+    """REDGE: MAP(start) + MAP(end) [+ DATA-SYMBOL(style)] [+ DATA-STRING*].
 
-    Draws a directed line with an arrowhead at the endpoint.
-    Uses tkinter's built-in arrow='last' for the arrowhead.
+    Form dispatch:
+      FORM_LEAN (0):      2 operands — classic directed arrow (v0.1-v0.6)
+      FORM_SHAPE (1):     3 operands — style ignored, arrow drawn as lean
+      FORM_SHAPE_UDP (2): 3+N operands — arrow + label text at midpoint
+
+    Arrow: tkinter arrow='last' arrowhead.
+    Label (FORM_SHAPE_UDP): create_text at edge midpoint.
     """
     if len(operands) < 2:
         return
     x1, y1 = _decode_xy(operands[0])
     x2, y2 = _decode_xy(operands[1])
+    px1 = x1 * scale + padding
+    py1 = y1 * scale + padding
+    px2 = x2 * scale + padding
+    py2 = y2 * scale + padding
     canvas.create_line(
-        x1 * scale + padding, y1 * scale + padding,
-        x2 * scale + padding, y2 * scale + padding,
+        px1, py1, px2, py2,
         fill='black', width=1, arrow='last',
-        arrowshape=(8, 10, 4),   # (d1, d2, d3) — compact arrowhead
+        arrowshape=(8, 10, 4),
     )
+    # Draw label for FORM_SHAPE_UDP (label words at operands[3:])
+    if form == FORM_SHAPE_UDP and len(operands) >= 4:
+        label = _decode_label_words(operands[3:])
+        if label:
+            canvas.create_text(
+                (px1 + px2) / 2, (py1 + py2) / 2,
+                text=label, font=('Courier', 9), anchor='center',
+            )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -241,44 +298,30 @@ def _build_canvas(program,
                        background='white')
     canvas.pack()
 
-    # Walk word stream — same dispatch logic as pigart_ascii_renderer.render()
+    # Walk word stream via iterate_instructions (shares logic with ASCII renderer)
     words = program.to_words()
-    i = 2   # skip TTree MAP header (words[0]) and OTree MAP header (words[1])
 
-    while i < len(words):
-        w = words[i]
-
-        if get_primary(w) != PRIMARY_OPCODE:
-            raise ValueError(
-                f"expected OPCODE at word index {i}, "
-                f"got primary={get_primary(w)} (word={w})"
-            )
-
-        decoded  = decode_opcode_word(w)
+    for decoded, form, operands in iterate_instructions(words[2:]):
         if decoded['family'] != OPF_PIGART:
             raise ValueError(
-                f"non-PIGART OPCODE in render stream at index {i}: "
+                f"non-PIGART OPCODE in render stream: "
                 f"family={decoded['family_name']!r}"
             )
 
         mnemonic = decoded['mnemonic']
-        arity    = decoded['arity']
-        operands = words[i + 1 : i + 1 + arity]
 
         if mnemonic == 'RPOINT':
             _dispatch_rpoint(canvas, operands, scale, padding)
         elif mnemonic == 'RLINE':
             _dispatch_rline(canvas, operands, scale, padding)
         elif mnemonic == 'RNODE':
-            _dispatch_rnode(canvas, operands, scale, padding)
+            _dispatch_rnode(canvas, operands, scale, padding, form)
         elif mnemonic == 'REDGE':
-            _dispatch_redge(canvas, operands, scale, padding)
+            _dispatch_redge(canvas, operands, scale, padding, form)
         elif mnemonic == 'RENDER':
             canvas.update_idletasks()
         else:
             raise ValueError(f"unknown PIGART opcode: {mnemonic!r}")
-
-        i += 1 + arity
 
     return root, canvas
 
