@@ -39,6 +39,7 @@ build_rnode_shape_layout          = _wl.build_rnode_shape_layout
 build_rnode_shape_labeled_layout  = _wl.build_rnode_shape_labeled_layout
 build_redge_styled                = _wl.build_redge_styled
 build_redge_labeled               = _wl.build_redge_labeled
+build_redge                       = _wl.build_redge        # Phase 6C: lean default flow edge
 OPF_PIGART                        = _wl.OPF_PIGART
 OP_RENDER                         = _wl.OP_RENDER
 SHAPE_RECTANGLE                   = _wl.SHAPE_RECTANGLE
@@ -47,6 +48,9 @@ SHAPE_PROCESS                     = _wl.SHAPE_PROCESS
 SHAPE_DECISION                    = _wl.SHAPE_DECISION
 SHAPE_IO                          = _wl.SHAPE_IO
 STYLE_CONTAIN                     = _wl.STYLE_CONTAIN    # logical containment edge
+build_redge_handler               = _wl.build_redge_handler  # Phase 6D: handler bindings
+# Phase 6C: flow_* namespace kind → SHAPE_* mapping
+FLOW_SHAPE_MAP                    = _wl.FLOW_SHAPE_MAP
 # Phase 6B: LAYOUT_* constants for container widget RNODEs
 LAYOUT_ABSOLUTE = _wl.LAYOUT_ABSOLUTE
 LAYOUT_HBOX     = _wl.LAYOUT_HBOX
@@ -199,6 +203,91 @@ def flowcode_to_meccano(canvas: FCCanvas,
             f'{len(canvas.edges)} edge(s)'
         ),
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase 6C — FlowCode gst-dict bridge
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def flow_symbols_to_meccano(flow_symbols: dict, flow_edges: list,
+                             name: str = 'flow_program',
+                             category: str = 'pigart') -> 'MeccanoProgram':
+    """Translate gst['flow_symbols'] + gst['flow_edges'] to a MeccanoProgram.
+
+    Phase 6C canonical bridge.  Unlike flowcode_to_meccano (which takes
+    FCCanvas objects), this function takes the gst-dict representation used
+    by the FlowCode tab after migration.
+
+    flow_symbols schema (per symbol):
+        {id: {'id': int, 'kind': str, 'x': int, 'y': int,
+              'w': int, 'h': int, 'label': str, 'properties': list}}
+
+    flow_edges schema (per edge):
+        {'src': int, 'dst': int, 'waypoints': list, 'condition': str}
+
+    Encoding:
+      - Each flow symbol → RNODE via FLOW_SHAPE_MAP[kind] (FORM_SHAPE with label).
+      - Each flow edge → build_redge (lean FORM_LEAN, arity=2, no style symbol).
+        D2: flow edges are the default REDGE form — no STYLE_CONTAIN, no STYLE_HANDLER.
+        Edge 'condition' is metadata for display only; not encoded in the REDGE word.
+      - Scale: pixel coords divided by FC_GRID_TO_MECCANO (same as GHOST bridge).
+      - Produces a ._flow_word_map attribute: {symbol_id: (start, end)}.
+
+    Args:
+        flow_symbols: dict mapping int id → flow symbol dict.
+        flow_edges:   list of flow edge dicts {src, dst, waypoints, condition}.
+        name:         MeccanoProgram name.
+        category:     MeccanoProgram category.
+
+    Returns:
+        MeccanoProgram with RNODE per symbol, REDGE per edge, RENDER opcode.
+    """
+    sym_w_m = _SYMBOL_W // FC_GRID_TO_MECCANO   # 12 Meccano units
+    sym_h_m = _SYMBOL_H // FC_GRID_TO_MECCANO   # 6  Meccano units
+
+    words: list = []
+    sym_boxes: dict = {}   # id → (tl_x, tl_y, mw, mh)
+    word_map:  dict = {}   # id → (start, end) half-open
+
+    for sid, sym in flow_symbols.items():
+        ww  = sym.get('w', _SYMBOL_W)
+        wh  = sym.get('h', _SYMBOL_H)
+        mw  = max(1, ww // FC_GRID_TO_MECCANO)
+        mh  = max(1, wh // FC_GRID_TO_MECCANO)
+        tl_x = (sym['x'] - ww // 2) // FC_GRID_TO_MECCANO
+        tl_y = (sym['y'] - wh // 2) // FC_GRID_TO_MECCANO
+        shape_id = FLOW_SHAPE_MAP.get(sym.get('kind', ''), SHAPE_RECTANGLE)
+        label    = sym.get('label', '')
+        _start   = len(words)
+        words.extend(
+            build_rnode_shape_labeled((tl_x, tl_y), (mw, mh), shape_id, label)
+        )
+        word_map[sid]  = (_start, len(words))
+        sym_boxes[sid] = (tl_x, tl_y, mw, mh)
+
+    for edge in flow_edges:
+        src_id = edge.get('src'); dst_id = edge.get('dst')
+        if src_id not in sym_boxes or dst_id not in sym_boxes:
+            continue
+        sx, sy, sw, sh = sym_boxes[src_id]
+        dx, dy, dw, dh = sym_boxes[dst_id]
+        src_pt = (sx + sw // 2, sy + sh)   # south midpoint of source
+        dst_pt = (dx + dw // 2, dy)         # north midpoint of destination
+        words.extend(build_redge(src_pt, dst_pt))
+
+    words.append(build_opcode_word(OPF_PIGART, arity=0, op_index=OP_RENDER))
+
+    prog = MeccanoProgram(
+        name=name,
+        opcode_words=words,
+        category=category,
+        description=(
+            f'Flow bridge: {len(flow_symbols)} symbol(s), '
+            f'{len(flow_edges)} edge(s)'
+        ),
+    )
+    prog._flow_word_map = word_map
+    return prog
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -374,6 +463,52 @@ def update_meccano_for_widget(program: 'MeccanoProgram',
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Phase 6D — Handler binding word emission
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def build_handler_bindings(widgets: dict, flow_symbols: dict) -> list:
+    """Build REDGE handler-binding words for all signal bindings in widgets.
+
+    Walks fc_state['widgets'], collecting each widget's 'bindings' dict
+    (signal_name → {'dst_x', 'dst_y', 'symbolic'}).  For each binding
+    that has a valid dst position and maps to a live flow_terminator with
+    is_entry=True, emits one build_redge_handler() word sequence.
+
+    Returns a flat list of words suitable for appending to the combined
+    stream in _guic_sync_stream().
+
+    Phase 6D: editor-side only.  No runtime firing here — Stage 7+.
+    """
+    _GC_SCALE = 10   # pixel → Meccano coordinate scale (matches ghost_to_meccano)
+    words = []
+    # Build a quick lookup: (dst_x, dst_y) → True for valid entry terminators
+    _entry_positions = set()
+    for sym in flow_symbols.values():
+        if sym.get('kind') != 'flow_terminator':
+            continue
+        for p in sym.get('properties', []):
+            if p.get('name') == 'is_entry' and p.get('value'):
+                _entry_positions.add((sym.get('x', 0), sym.get('y', 0)))
+                break
+
+    for wid, w in widgets.items():
+        bindings = w.get('bindings') or {}
+        wx = w.get('x', 0)
+        wy = w.get('y', 0)
+        for sig_name, binfo in bindings.items():
+            if not binfo:
+                continue
+            dx = binfo.get('dst_x', 0)
+            dy = binfo.get('dst_y', 0)
+            symbolic = binfo.get('symbolic', '')
+            # Scale positions to Meccano units
+            src_mc = (wx // _GC_SCALE, wy // _GC_SCALE)
+            dst_mc = (dx // _GC_SCALE, dy // _GC_SCALE)
+            words.extend(build_redge_handler(src_mc, dst_mc, sig_name, symbolic))
+    return words
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # __main__ — demo
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -439,6 +574,36 @@ if __name__ == '__main__':
         if '--gui' in sys.argv:
             from pigart_tkinter_renderer import render_gui as _render_gui2
             _render_gui2(ghost_prog)
+
+        # ── Phase 6C: flow_symbols_to_meccano demo ───────────────────────────
+        print()
+        print("── Phase 6C flow_symbols_to_meccano demo ──")
+        _fsyms = {
+            0: {'id': 0, 'kind': 'flow_terminator', 'x': 120, 'y':  40,
+                'w': 120, 'h': 60, 'label': 'Start', 'properties': [
+                    {'name': 'is_entry', 'value': True}]},
+            1: {'id': 1, 'kind': 'flow_decision',   'x': 120, 'y': 160,
+                'w': 120, 'h': 60, 'label': 'OK?',   'properties': [
+                    {'name': 'condition', 'value': 'x > 0'}]},
+            2: {'id': 2, 'kind': 'flow_process',    'x': 280, 'y': 280,
+                'w': 120, 'h': 60, 'label': 'Retry', 'properties': []},
+            3: {'id': 3, 'kind': 'flow_terminator', 'x': 120, 'y': 400,
+                'w': 120, 'h': 60, 'label': 'End',   'properties': []},
+        }
+        _fedges = [
+            {'src': 0, 'dst': 1, 'waypoints': [], 'condition': ''},
+            {'src': 1, 'dst': 3, 'waypoints': [], 'condition': 'yes'},
+            {'src': 1, 'dst': 2, 'waypoints': [], 'condition': 'no'},
+            {'src': 2, 'dst': 1, 'waypoints': [], 'condition': ''},
+        ]
+        flow_prog = flow_symbols_to_meccano(_fsyms, _fedges, name='flow_dict_demo')
+        print(f"flow_symbols_to_meccano — {flow_prog.description}")
+        print(f"MeccanoProgram: {repr(flow_prog)}")
+        print(f"Body words: {len(flow_prog.words)}")
+        print(f"_flow_word_map entries: {len(flow_prog._flow_word_map)}")
+        assert len(flow_prog._flow_word_map) == 4, \
+            f"Expected 4 word_map entries, got {len(flow_prog._flow_word_map)}"
+        print("PASS: flow_symbols_to_meccano produces correct word map.")
 
         sys.exit(0)
 

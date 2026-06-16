@@ -562,7 +562,7 @@ SHAPE_BUTTON      = 12  # v0.2 button (explicit for retrofitting)
 # semantic relationships rather than visual arrows.  Renderers that encounter
 # these style IDs skip visible rendering.
 STYLE_CONTAIN = 100   # REDGE "child of" — containment edge (no visible render)
-STYLE_HANDLER = 101   # reserved for Phase 6C — do NOT use yet
+STYLE_HANDLER = 101   # REDGE signal→handler binding — activates Phase 6D
 # 102-126 reserved for future logical relation kinds
 
 # Layout-mode symbols (200+) — DATA-POINTER-SYMBOL payloads on container RNODEs.
@@ -573,6 +573,19 @@ LAYOUT_HBOX     = 201   # horizontal box layout
 LAYOUT_VBOX     = 202   # vertical box layout
 LAYOUT_GRID     = 203   # grid layout
 LAYOUT_STACKED  = 204   # stacked / z-order layout
+
+# ── Flow kind → shape mapping (Phase 6C) ─────────────────────────────────────
+# Maps flow_* kind strings (FlowCode tab namespace) to SHAPE_* IDs.
+# Each entry: build_rnode_shape_labeled(pos, size, FLOW_SHAPE_MAP[kind], label).
+# Adding a new flow kind = one entry here; bridge and renderers need no change.
+FLOW_SHAPE_MAP: dict = {
+    'flow_terminator': SHAPE_TERMINATOR,   # 1 — Start/End oval
+    'flow_process':    SHAPE_PROCESS,      # 2 — Process rectangle
+    'flow_decision':   SHAPE_DECISION,     # 3 — Branch diamond
+    'flow_io':         SHAPE_IO,           # 4 — I/O parallelogram
+    'flow_subroutine': SHAPE_SUBROUTINE,   # 5 — Predefined-process rectangle
+    'flow_connector':  SHAPE_CONNECTOR,    # 6 — Flow connector circle
+}
 
 # Form discriminants — stored in the OPCODE word's `immediate` field (T11..T0).
 # All existing v0.1-v0.6 programs have immediate=0 → lean form.  Backward-compatible.
@@ -588,6 +601,7 @@ FORM_HAS_LAYOUT     = 4   # bitmask: trailing DATA-SYMBOL(LAYOUT_*) present    (
 FORM_LEAN_LAYOUT    = 4   # FORM_LEAN | FORM_HAS_LAYOUT  — lean + layout
 FORM_SHAPE_LAYOUT   = 5   # FORM_SHAPE | FORM_HAS_LAYOUT — shape + layout
 FORM_SHAPE_UDP_LAYOUT = 6 # FORM_SHAPE_UDP | FORM_HAS_LAYOUT — shape+UDP+layout
+FORM_HANDLER        = -1  # REDGE handler form: 5 operands, T20=−1 (Phase 6D)
 
 
 def build_data_symbol(symbol_id: int) -> int:
@@ -846,6 +860,72 @@ def build_redge_labeled(src_xy: tuple, dst_xy: tuple,
     ]
 
 
+def build_redge(src_xy: tuple, dst_xy: tuple) -> List[int]:
+    """Build a lean-form REDGE (2 operands) — the default flow-edge encoding.
+
+    Emits 3 words: OPCODE(immediate=FORM_LEAN, arity=2) + MAP(src) + MAP(dst).
+    No style-symbol operand: T20=0, no STYLE_CONTAIN, no STYLE_HANDLER.
+    Used for Phase 6C flow edges (D2): connectivity only, no logical qualifier.
+    """
+    sx, sy = src_xy
+    dx, dy = dst_xy
+    return [
+        build_opcode_word(OPF_PIGART, arity=2, op_index=OP_REDGE,
+                          immediate=FORM_LEAN),
+        _build_xy_map(sx, sy),
+        _build_xy_map(dx, dy),
+    ]
+
+
+def build_redge_handler(src_xy: tuple, dst_xy: tuple,
+                        signal_name: str,
+                        symbolic_name: str = '') -> List[int]:
+    """Build a REDGE handler-binding segment (Phase 6D).
+
+    Always emits exactly 6 words: OPCODE (FORM_HANDLER, arity=5) + MAP(src) +
+    MAP(dst) + DATA-POINTER-SYMBOL(STYLE_HANDLER) + DATA-STRING(signal_name,
+    first 3 chars) + DATA-STRING(symbolic_name, first 3 chars).
+
+    String operands are truncated to 3 chars (1 word) to satisfy the arity≤8
+    architecture constraint.  Full names live in the editor's widget dict.
+    Stage 7+ will extend to multi-word encoding with a matching decoder.
+
+    Operand layout (D4):
+      operands[0] = MAP — canvas position of the widget emitting the signal
+      operands[1] = MAP — canvas position of the flow_terminator handling it
+      operands[2] = DATA-POINTER-SYMBOL — STYLE_HANDLER (101)
+      operands[3] = DATA-STRING         — signal name (e.g. 'clicked')
+      operands[4] = DATA-STRING         — symbolic flow entry name (label at
+                                          binding time; may be empty string)
+
+    FORM_HANDLER (−1) in the OPCODE immediate field is the T20=−1 sentinel
+    (D3).  Decoders check immediate == FORM_HANDLER to dispatch this form.
+    T21 is ignored for this form (D5); operand count is fixed at 5.
+
+    Renderers that encounter STYLE_HANDLER skip visible rendering (consistent
+    with STYLE_CONTAIN — both are logical qualifiers, not visual edges).
+    """
+    sx, sy = src_xy
+    dx, dy = dst_xy
+    # Encode each string as exactly ONE DATA-STRING word (3 chars, truncated).
+    # Arity is fixed at 5 per spec (D4/D5).  The architecture caps arity at 8
+    # (4-trit field), so variable-length string encoding is not viable here.
+    # Full signal/symbolic names live in the editor's widget dict; the stream
+    # words are the canonical address.  Stage 7+ can extend to multi-word
+    # encoding when a decoder is added.
+    sig_w = _encode_label(signal_name[:3] if signal_name else '')[:1]
+    sym_w = _encode_label(symbolic_name[:3] if symbolic_name else '')[:1]
+    return [
+        build_opcode_word(OPF_PIGART, arity=5, op_index=OP_REDGE,
+                          immediate=FORM_HANDLER),
+        _build_xy_map(sx, sy),
+        _build_xy_map(dx, dy),
+        build_data_symbol(STYLE_HANDLER),
+        sig_w[0],
+        sym_w[0],
+    ]
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 3.6 — Stream-walker (v0.7)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -865,8 +945,13 @@ def iterate_instructions(words: List[int]):
                 FORM_LEAN_LAYOUT (4)    — lean + trailing LAYOUT operand (Phase 6B)
                 FORM_SHAPE_LAYOUT (5)   — shape + trailing LAYOUT operand (Phase 6B)
                 FORM_SHAPE_UDP_LAYOUT (6) — shape+UDP + trailing LAYOUT operand (Phase 6B)
+                FORM_HANDLER (-1)       — REDGE handler binding (Phase 6D, T20=−1):
+                                          src MAP, dst MAP, STYLE_HANDLER symbol,
+                                          signal-name DATA-STRING, symbolic-name
+                                          DATA-STRING (arity ≥ 5 per string lengths)
               Check (form & FORM_HAS_LAYOUT) for layout-operand presence.
               Check (form & ~FORM_HAS_LAYOUT) for the base form (0/1/2).
+              Check (form == FORM_HANDLER) for the handler binding form.
     operands: list of words[i+1 : i+1+arity] — the operand words for this
               instruction.
 
@@ -2423,6 +2508,182 @@ def test_meccano_library() -> bool:
         "build_rnode_shape_labeled_layout: operand[2] must encode SHAPE_WINDOW"
     print(f" 98. PASS  build_rnode_shape_labeled_layout: shape+label+layout all present, "
           f"layout last")
+
+    # ── 99. FLOW_SHAPE_MAP has 6 entries mapping to distinct SHAPE_* IDs ─────────
+    _flow_kinds = ['flow_terminator','flow_process','flow_decision',
+                   'flow_io','flow_subroutine','flow_connector']
+    assert len(FLOW_SHAPE_MAP) == 6, f"FLOW_SHAPE_MAP must have 6 entries, got {len(FLOW_SHAPE_MAP)}"
+    for _fk in _flow_kinds:
+        assert _fk in FLOW_SHAPE_MAP, f"FLOW_SHAPE_MAP missing {_fk!r}"
+    _flow_shape_ids = list(FLOW_SHAPE_MAP.values())
+    assert len(set(_flow_shape_ids)) == 6, "FLOW_SHAPE_MAP values must all be distinct"
+    print(f" 99. PASS  FLOW_SHAPE_MAP: 6 flow_* kinds → 6 distinct SHAPE_* IDs")
+
+    # ── 100. FLOW_SHAPE_MAP values match expected SHAPE_* constants ───────────────
+    assert FLOW_SHAPE_MAP['flow_terminator'] == SHAPE_TERMINATOR, \
+        "flow_terminator must map to SHAPE_TERMINATOR"
+    assert FLOW_SHAPE_MAP['flow_process']    == SHAPE_PROCESS,    \
+        "flow_process must map to SHAPE_PROCESS"
+    assert FLOW_SHAPE_MAP['flow_decision']   == SHAPE_DECISION,   \
+        "flow_decision must map to SHAPE_DECISION"
+    assert FLOW_SHAPE_MAP['flow_io']         == SHAPE_IO,         \
+        "flow_io must map to SHAPE_IO"
+    assert FLOW_SHAPE_MAP['flow_subroutine'] == SHAPE_SUBROUTINE, \
+        "flow_subroutine must map to SHAPE_SUBROUTINE"
+    assert FLOW_SHAPE_MAP['flow_connector']  == SHAPE_CONNECTOR,  \
+        "flow_connector must map to SHAPE_CONNECTOR"
+    print(f"100. PASS  FLOW_SHAPE_MAP values: terminator=1, process=2, decision=3, "
+          f"io=4, subroutine=5, connector=6")
+
+    # ── 101. All 6 flow kinds roundtrip through build_rnode_shape_labeled ─────────
+    _pos101 = (2, 3); _sz101 = (12, 6)
+    for _fk101 in _flow_kinds:
+        _shp101 = FLOW_SHAPE_MAP[_fk101]
+        _ws101  = build_rnode_shape_labeled(_pos101, _sz101, _shp101, _fk101)
+        _instrs101 = list(iterate_instructions(_ws101))
+        assert len(_instrs101) == 1, \
+            f"flow kind {_fk101!r}: expected 1 instruction, got {len(_instrs101)}"
+        _dec101, _form101, _ops101 = _instrs101[0]
+        assert _dec101['mnemonic'] == 'RNODE', \
+            f"flow kind {_fk101!r}: expected RNODE, got {_dec101['mnemonic']}"
+        assert _form101 == FORM_SHAPE, \
+            f"flow kind {_fk101!r}: expected FORM_SHAPE, got {_form101}"
+        _shape_found101 = int(get_field(_ops101[2], 12, 6))
+        assert _shape_found101 == _shp101, \
+            f"flow kind {_fk101!r}: shape {_shape_found101} != expected {_shp101}"
+    print(f"101. PASS  All 6 flow_* kinds roundtrip through build_rnode_shape_labeled "
+          f"(correct shape operand for each)")
+
+    # ── 102. Different flow kinds produce distinct OTree addresses ─────────────────
+    _pos102 = (5, 5); _sz102 = (12, 6)
+    _otrees102 = []
+    for _fk102 in _flow_kinds:
+        _shp102 = FLOW_SHAPE_MAP[_fk102]
+        _p102 = MeccanoProgram(f'flow_{_fk102}',
+            build_rnode_shape_labeled(_pos102, _sz102, _shp102, 'X'),
+            category='pigart')
+        _otrees102.append(_p102.otree_word)
+    assert len(set(_otrees102)) == 6, \
+        f"All 6 flow kind RNODEs must have distinct OTree addresses, got {len(set(_otrees102))} distinct"
+    print(f"102. PASS  All 6 flow_* kind RNODEs have distinct OTree addresses")
+
+    # ── 103. build_redge: lean-form REDGE — 3 words, arity=2, immediate=FORM_LEAN ──
+    _re103 = build_redge((0, 0), (10, 5))
+    assert len(_re103) == 3, f"build_redge: expected 3 words, got {len(_re103)}"
+    _d103 = decode_opcode_word(_re103[0])
+    assert _d103['mnemonic'] == 'REDGE', f"build_redge: expected REDGE opcode"
+    assert _d103['arity'] == 2, f"build_redge: expected arity=2, got {_d103['arity']}"
+    assert _d103['immediate'] == FORM_LEAN, \
+        f"build_redge: expected immediate=FORM_LEAN(0), got {_d103['immediate']}"
+    print(f"103. PASS  build_redge: lean REDGE — 3 words, arity=2, immediate=FORM_LEAN")
+
+    # ── 104. build_redge lean form ≠ build_redge_styled form ─────────────────────
+    _re104_lean   = build_redge((0, 0), (10, 5))
+    _re104_styled = build_redge_styled((0, 0), (10, 5), SHAPE_RECTANGLE)
+    assert _re104_lean[0] != _re104_styled[0], \
+        "build_redge and build_redge_styled must differ in opcode word"
+    assert len(_re104_lean) == 3 and len(_re104_styled) == 4, \
+        "lean REDGE must have 3 words; styled REDGE must have 4 words"
+    print(f"104. PASS  build_redge lean (3 words) distinct from build_redge_styled (4 words)")
+
+    # ── 105. Cross-tab containment encodable in one stream (AC8) ─────────────────
+    # A flow_process containing a gui_button via STYLE_CONTAIN REDGE.
+    # Both appear in the same word list; stream-walking finds both.
+    _pos105_flow = (0, 0); _sz105_flow = (12, 6)
+    _pos105_gui  = (2, 1); _sz105_gui  = (8,  4)
+    _cx105_flow = _pos105_flow[0] + _sz105_flow[0] // 2
+    _cy105_flow = _pos105_flow[1] + _sz105_flow[1]
+    _cx105_gui  = _pos105_gui[0]  + _sz105_gui[0]  // 2
+    _cy105_gui  = _pos105_gui[1]
+    _ws105 = (
+        build_rnode_shape_labeled(_pos105_flow, _sz105_flow,
+                                   FLOW_SHAPE_MAP['flow_process'], 'Step')
+        + build_rnode_shape_labeled(_pos105_gui, _sz105_gui,
+                                     SHAPE_RECTANGLE, 'Btn')
+        + build_redge_styled((_cx105_flow, _cy105_flow),
+                              (_cx105_gui,  _cy105_gui), STYLE_CONTAIN)
+    )
+    _instrs105 = list(iterate_instructions(_ws105))
+    assert len(_instrs105) == 3, \
+        f"Cross-tab stream must have 3 instructions (RNODE+RNODE+REDGE), got {len(_instrs105)}"
+    _mnemonics105 = [d['mnemonic'] for d, f, o in _instrs105]
+    assert _mnemonics105 == ['RNODE', 'RNODE', 'REDGE'], \
+        f"Cross-tab instruction sequence wrong: {_mnemonics105}"
+    # Verify containment REDGE uses STYLE_CONTAIN
+    _contain_shape = int(get_field(_instrs105[2][2][2], 12, 6))  # 3rd operand of REDGE
+    assert _contain_shape == STYLE_CONTAIN, \
+        f"Cross-tab REDGE style must be STYLE_CONTAIN={STYLE_CONTAIN}, got {_contain_shape}"
+    print(f"105. PASS  Cross-tab containment (flow_process containing gui_button) "
+          f"encodable in one stream — 3 instructions (RNODE+RNODE+REDGE)")
+
+    # ── 106. STYLE_HANDLER=101 now active in Phase 6D ────────────────────────────
+    assert STYLE_HANDLER == 101, "STYLE_HANDLER must remain 101"
+    print(f"106. PASS  STYLE_HANDLER=101 active (Phase 6D handler bindings)")
+
+    # ── 107. FORM_HANDLER = -1, distinct from all layout/shape forms ─────────────
+    assert FORM_HANDLER == -1, "FORM_HANDLER must be -1"
+    assert FORM_HANDLER not in (FORM_LEAN, FORM_SHAPE, FORM_SHAPE_UDP,
+                                FORM_LEAN_LAYOUT, FORM_SHAPE_LAYOUT,
+                                FORM_SHAPE_UDP_LAYOUT), \
+        "FORM_HANDLER must not collide with existing FORM_* constants"
+    print(f"107. PASS  FORM_HANDLER=-1, distinct from all existing form constants")
+
+    # ── 108. build_redge_handler() emits OPCODE with FORM_HANDLER immediate ───────
+    _h108 = build_redge_handler((10, 20), (30, 40), 'clicked', 'on_submit')
+    _dec108 = decode_opcode_word(_h108[0])
+    assert _dec108['mnemonic'] == 'REDGE', \
+        f"108: expected REDGE opcode, got {_dec108['mnemonic']}"
+    assert _dec108['immediate'] == FORM_HANDLER, \
+        f"108: expected immediate=FORM_HANDLER({FORM_HANDLER}), got {_dec108['immediate']}"
+    print(f"108. PASS  build_redge_handler() produces REDGE with FORM_HANDLER immediate")
+
+    # ── 109. handler word count: always arity=5, total=6 words (strings truncated to 3 chars)
+    _dec108_arity = _dec108['arity']
+    _h108_total   = len(_h108)
+    assert _dec108_arity == 5, \
+        f"109: arity must be fixed 5, got {_dec108_arity}"
+    assert _h108_total == 6, \
+        f"109: total words must be 6, got {_h108_total}"
+    print(f"109. PASS  build_redge_handler('clicked','on_submit'): "
+          f"arity={_dec108_arity}, total={_h108_total} words (strings truncated to 3 chars)")
+
+    # ── 110. 3rd operand is STYLE_HANDLER data-symbol ────────────────────────────
+    _style_word110 = _h108[3]   # opcode=0, src=1, dst=2, style=3
+    _style_val110  = int(get_field(_style_word110, 12, 6))
+    assert _style_val110 == STYLE_HANDLER, \
+        f"110: 3rd operand style must be STYLE_HANDLER={STYLE_HANDLER}, got {_style_val110}"
+    print(f"110. PASS  3rd operand of handler REDGE = STYLE_HANDLER={STYLE_HANDLER}")
+
+    # ── 111. src and dst MAP round-trips ─────────────────────────────────────────
+    _sx111, _sy111 = _extract_map_xy(_h108[1])
+    _dx111, _dy111 = _extract_map_xy(_h108[2])
+    assert (_sx111, _sy111) == (10, 20), \
+        f"111: src MAP should be (10,20), got ({_sx111},{_sy111})"
+    assert (_dx111, _dy111) == (30, 40), \
+        f"111: dst MAP should be (30,40), got ({_dx111},{_dy111})"
+    print(f"111. PASS  handler REDGE src/dst MAP words round-trip correctly")
+
+    # ── 112. iterate_instructions sees handler REDGE with correct form ────────────
+    _instrs112 = list(iterate_instructions(_h108))
+    assert len(_instrs112) == 1, f"112: expected 1 instruction, got {len(_instrs112)}"
+    _dec112, _form112, _ops112 = _instrs112[0]
+    assert _dec112['mnemonic'] == 'REDGE', f"112: mnemonic should be REDGE"
+    assert _form112 == FORM_HANDLER, \
+        f"112: form should be FORM_HANDLER={FORM_HANDLER}, got {_form112}"
+    print(f"112. PASS  iterate_instructions yields REDGE with form=FORM_HANDLER")
+
+    # ── 113. all inputs always produce arity=5, total=6 words ───────────────────────
+    _h113 = build_redge_handler((1, 2), (3, 4), 'click', 'go')
+    _dec113 = decode_opcode_word(_h113[0])
+    assert _dec113['arity'] == 5 and len(_h113) == 6, \
+        f"113: 'click'/'go' should give arity=5/6 words, got {_dec113['arity']}/{len(_h113)}"
+    _h113e = build_redge_handler((0, 0), (1, 1), 'ok', '')
+    _dec113e = decode_opcode_word(_h113e[0])
+    assert _dec113e['mnemonic'] == 'REDGE'
+    assert _dec113e['immediate'] == FORM_HANDLER
+    assert _dec113e['arity'] == 5 and len(_h113e) == 6, \
+        f"113: 'ok'/'' should give arity=5/6 words, got {_dec113e['arity']}/{len(_h113e)}"
+    print(f"113. PASS  all build_redge_handler inputs give fixed arity=5, 6 words")
 
     print()
     print(f"widget_lib v0.7: {len(lib.all())} programs, all tests pass")

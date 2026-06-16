@@ -52,8 +52,10 @@ class WordStream:
         self._otree_word: Optional[int] = None   # set externally via set_from_program
         self._subscribers: List[Callable] = []
         # Phase 6B: widget metadata and word-index map
-        self._widget_meta: dict = {}   # same object as gst['widgets'] (alias in Phase 6B)
+        self._widget_meta: dict = {}   # same object as fc_state['widgets'] (alias Phase 6B)
         self._word_map: dict = {}      # widget_id → (start, end) half-open word indices
+        # Phase 6C: flow symbol metadata
+        self._flow_meta: dict = {}     # same object as fc_state['flow_symbols'] (alias Phase 6C)
         self._rebuild_indices()
 
     # ── External sync ────────────────────────────────────────────────────────
@@ -167,6 +169,52 @@ class WordStream:
                 cb()
             except Exception:
                 pass  # views must not crash the stream
+
+    # ── Phase 6D: Signal binding helpers ────────────────────────────────────
+
+    def handler_for(self, widget_id: int, signal: str):
+        """Return the handler binding for (widget_id, signal), or None.
+
+        Reads from the widget metadata (_widget_meta, aliased to
+        fc_state['widgets']) rather than walking the raw word stream —
+        the current architecture stores bindings in the widget dict for
+        editor speed.  Stream-walking is the Stage 7+ canonical path.
+
+        Returns dict {'dst_x': int, 'dst_y': int, 'symbolic': str}
+        or None if no binding exists for this (widget_id, signal).
+        """
+        w = self._widget_meta.get(widget_id)
+        if w is None:
+            return None
+        bindings = w.get('bindings') or {}
+        return bindings.get(signal)
+
+    def flow_entries(self):
+        """Yield (sym_id, label, x, y) for every flow_terminator with is_entry=True.
+
+        Results are sorted alphabetically by label.  Reads from
+        _flow_meta (aliased to fc_state['flow_symbols']).
+
+        Phase 6D: used by the signal picker to populate the list of
+        bindable handler targets.
+        """
+        if not self._flow_meta:
+            return
+        entries = []
+        for sid, sym in self._flow_meta.items():
+            if sym.get('kind') != 'flow_terminator':
+                continue
+            # Check is_entry property
+            is_entry = False
+            for p in sym.get('properties', []):
+                if p.get('name') == 'is_entry':
+                    is_entry = bool(p.get('value', False))
+                    break
+            if is_entry:
+                label = sym.get('label', '')
+                entries.append((sid, label, sym.get('x', 0), sym.get('y', 0)))
+        entries.sort(key=lambda t: t[1])
+        yield from entries
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 
