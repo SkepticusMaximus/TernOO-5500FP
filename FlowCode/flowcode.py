@@ -1666,6 +1666,9 @@ def run_gui():
         # Stage 5 — property panel
         'prop_committed': {},   # widget_id → {prop_name: committed_value}
         'gc_program':    None,  # current MeccanoProgram (updated at each commit)
+        # Bundle 10 — lasso multi-select
+        'lasso_start':   None,  # (x, y) canvas start of rubber-band drag
+        'lasso_end':     None,  # (x, y) current end during drag
     }
 
     # ── Ghost canvas layout ───────────────────────────────────────────────────
@@ -2117,6 +2120,11 @@ def run_gui():
         widget.bind('<Enter>', _show)
         widget.bind('<Leave>', _hide)
 
+    # Select / pointer tool — returns to neutral select mode
+    _gc_sel_btn = _gc_action_btn(gc_pal, '☞ Select', lambda: gc_set_mode('select'), '#aaaaff')
+    _gc_tooltip(_gc_sel_btn, 'Select / pointer (Esc)')
+    tk.Frame(gc_pal, bg=C['dim'], height=1).pack(fill='x', padx=6, pady=2)
+
     for _lbl, _cmd, _fg in [
         ('⬡ Connect', gc_do_connect, '#7aff7a'),
         ('✕ Delete',  gc_do_delete,  '#ff8888'),
@@ -2377,6 +2385,20 @@ def run_gui():
         if _label_text:
             gc.create_text(x, y, text=str(_label_text)[:20],
                            fill=txt, font=('Monospace', 8), anchor='center')
+
+        # Kind-specific string properties overlay (title, placeholder, etc.)
+        for _kp in w.get('properties', []):
+            _kpname = _kp.get('name', '')
+            _kpval  = str(_kp.get('value', '') or '')
+            if not _kpval: continue
+            if _kpname == 'title':
+                # Title bar text — top strip of the widget tile
+                gc.create_text(x, T + 7, text=_kpval[:22],
+                               fill=txt, font=('Monospace', 7, 'bold'), anchor='center')
+            elif _kpname == 'placeholder':
+                # Placeholder — dimmed italic centred (only visible when label absent)
+                gc.create_text(x, y, text=_kpval[:20],
+                               fill=dim, font=('Monospace', 7, 'italic'), anchor='center')
 
         # Type label below tile
         gc.create_text(x, B + 9, text=kind.replace('gui_', ''),
@@ -2749,6 +2771,15 @@ def run_gui():
                     gc.create_line(pax - pw//2, ly, pax + pw//2, ly,
                                    fill=C['selected'], width=2, dash=(4, 2))
 
+        # ── Lasso rubber band ─────────────────────────────────────────────────
+        if gst['lasso_start'] is not None and gst['lasso_end'] is not None:
+            lx0 = min(gst['lasso_start'][0], gst['lasso_end'][0])
+            ly0 = min(gst['lasso_start'][1], gst['lasso_end'][1])
+            lx1 = max(gst['lasso_start'][0], gst['lasso_end'][0])
+            ly1 = max(gst['lasso_start'][1], gst['lasso_end'][1])
+            gc.create_rectangle(lx0, ly0, lx1, ly1,
+                                outline=C['selected'], fill='', dash=(4, 2), width=1)
+
     def gc_widget_at(x, y):
         """Return topmost widget whose absolute bounds contain (x, y)."""
         for w in reversed(list(gst['widgets'].values())):
@@ -3069,12 +3100,21 @@ def run_gui():
             if not shift:
                 gst['selected'] = None; gst['multi_sel'].clear()
             gst['dragging'] = False
+            # Start lasso rubber-band drag on empty canvas in select mode
+            if mode == 'select' and not shift:
+                gst['lasso_start'] = (x, y)
+                gst['lasso_end']   = (x, y)
         gst['drop_target'] = None
         gc_rebuild_prop_panel()
         gc_redraw()
 
     def gc_on_motion(event):
         x, y = event.x, event.y
+
+        # ── Lasso drag ─────────────────────────────────────────────────────────
+        if gst['lasso_start'] is not None:
+            gst['lasso_end'] = (x, y)
+            gc_redraw(); return
 
         # ── Resize drag ────────────────────────────────────────────────────────
         if gst['resize_handle'] is not None and gst['selected'] is not None:
@@ -3216,6 +3256,27 @@ def run_gui():
                     w = gst['widgets'].get(wid)
                     if w and (w['x'], w['y']) != (ox, oy):
                         _gc_push_undo({'kind': 'move', 'id': wid, 'x': ox, 'y': oy})
+
+        # ── Finalise lasso ─────────────────────────────────────────────────────
+        if gst['lasso_start'] is not None and gst['lasso_end'] is not None:
+            lx0 = min(gst['lasso_start'][0], gst['lasso_end'][0])
+            ly0 = min(gst['lasso_start'][1], gst['lasso_end'][1])
+            lx1 = max(gst['lasso_start'][0], gst['lasso_end'][0])
+            ly1 = max(gst['lasso_start'][1], gst['lasso_end'][1])
+            if lx1 - lx0 > 5 or ly1 - ly0 > 5:  # not a degenerate click
+                for wid, w in gst['widgets'].items():
+                    ax, ay = gc_abs_pos(w)
+                    ww2, wh2 = w.get('w', GW), w.get('h', GH)
+                    if (ax - ww2//2 < lx1 and ax + ww2//2 > lx0 and
+                            ay - wh2//2 < ly1 and ay + wh2//2 > ly0):
+                        gst['multi_sel'].add(wid)
+                        if gst['selected'] is None:
+                            gst['selected'] = wid
+                if gst['multi_sel']:
+                    gc_set_status(f"Selected {len(gst['multi_sel'])} widget(s)")
+                    gc_rebuild_prop_panel()
+            gst['lasso_start'] = None
+            gst['lasso_end']   = None
 
         gst['dragging']          = False
         gst['drop_target']       = None
