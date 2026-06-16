@@ -1876,12 +1876,26 @@ def run_gui():
     _gc_undo_stack = []   # list of inverse action dicts, newest last
     _gc_redo_stack = []   # redo stack
     _GC_UNDO_LIMIT = 100
+    _gc_undo_btn_ref = [None]   # mutable ref set when UI is built
+    _gc_redo_btn_ref = [None]   # mutable ref set when UI is built
+
+    def gc_update_undo_btns():
+        """Grey-out Undo/Redo buttons when their stacks are empty."""
+        ub = _gc_undo_btn_ref[0]
+        rb = _gc_redo_btn_ref[0]
+        if ub is not None:
+            ub.config(state='normal' if _gc_undo_stack else 'disabled',
+                      fg='#aaffaa' if _gc_undo_stack else C['dim'])
+        if rb is not None:
+            rb.config(state='normal' if _gc_redo_stack else 'disabled',
+                      fg='#aaffcc' if _gc_redo_stack else C['dim'])
 
     def _gc_push_undo(action):
         _gc_undo_stack.append(action)
         if len(_gc_undo_stack) > _GC_UNDO_LIMIT:
             _gc_undo_stack.pop(0)
         _gc_redo_stack.clear()
+        gc_update_undo_btns()
 
     def _gc_apply_action(act, opposite_stack):
         k = act['kind']
@@ -1980,12 +1994,14 @@ def run_gui():
         _gc_apply_action(_gc_undo_stack.pop(), _gc_redo_stack)
         gc_rebuild_prop_panel()
         gc_redraw()
+        gc_update_undo_btns()
 
     def gc_redo():
         if not _gc_redo_stack: gc_set_status("Nothing to redo"); return
         _gc_apply_action(_gc_redo_stack.pop(), _gc_undo_stack)
         gc_rebuild_prop_panel()
         gc_redraw()
+        gc_update_undo_btns()
 
     # ── Property helpers (read/write from widget dict or properties list) ─────
     def _gc_get_prop_value(w, name):
@@ -2078,19 +2094,49 @@ def run_gui():
             if w['kind'] in CONTAINER_KINDS:
                 gc_apply_layout(wid)
 
+    def _gc_action_btn(parent, label, cmd, fg):
+        b = tk.Button(parent, text=label, command=cmd,
+                      bg=C['pal_btn'], fg=fg,
+                      font=('Monospace', 8), relief='flat', bd=0,
+                      padx=4, pady=3, cursor='hand2', anchor='w')
+        b.pack(fill='x', padx=4, pady=1)
+        return b
+
+    def _gc_tooltip(widget, text):
+        """Attach a simple hover tooltip to a tkinter widget."""
+        tip = [None]
+        def _show(e):
+            tip[0] = tk.Toplevel(widget)
+            tip[0].wm_overrideredirect(True)
+            tip[0].wm_geometry(f"+{e.x_root+12}+{e.y_root+16}")
+            tk.Label(tip[0], text=text, bg='#222', fg='#eee',
+                     font=('Monospace', 7), relief='flat',
+                     padx=4, pady=2).pack()
+        def _hide(e):
+            if tip[0]: tip[0].destroy(); tip[0] = None
+        widget.bind('<Enter>', _show)
+        widget.bind('<Leave>', _hide)
+
     for _lbl, _cmd, _fg in [
         ('⬡ Connect', gc_do_connect, '#7aff7a'),
         ('✕ Delete',  gc_do_delete,  '#ff8888'),
         ('💡 Suggest', gc_do_suggest, '#ffcc44'),
         ('🗑 Clear',  gc_do_clear,   '#ff8888'),
+    ]:
+        _gc_action_btn(gc_pal, _lbl, _cmd, _fg)
+
+    # Undo / Redo — above Save/Open; grey out when stack is empty
+    _gc_undo_btn_ref[0] = _gc_action_btn(gc_pal, '↩ Undo', gc_undo, C['dim'])
+    _gc_tooltip(_gc_undo_btn_ref[0], 'Undo (Ctrl+Z)')
+    _gc_redo_btn_ref[0] = _gc_action_btn(gc_pal, '↪ Redo', gc_redo, C['dim'])
+    _gc_tooltip(_gc_redo_btn_ref[0], 'Redo (Ctrl+Y)')
+    gc_update_undo_btns()   # initialise disabled state
+
+    for _lbl, _cmd, _fg in [
         ('💾 Save',   gc_do_save,    '#7ab4ff'),
         ('📂 Open',   gc_do_open,    '#ffcc88'),
     ]:
-        tk.Button(gc_pal, text=_lbl, command=_cmd,
-                  bg=C['pal_btn'], fg=_fg,
-                  font=('Monospace', 8), relief='flat', bd=0,
-                  padx=4, pady=3, cursor='hand2', anchor='w'
-                  ).pack(fill='x', padx=4, pady=1)
+        _gc_action_btn(gc_pal, _lbl, _cmd, _fg)
 
     tk.Frame(gc_pal, bg=C['dim'], height=1).pack(fill='x', padx=6, pady=4)
 
@@ -2324,6 +2370,13 @@ def run_gui():
             words = [{'op': 'RNODE', 'shape': 'rect', 'role': 'body',
                       'x0': 0, 'y0': 0, 'x1': 1, 'y1': 1}, {'op': 'RENDER'}]
         _gc_render_words(words, L, T, R, B, col, bor, txt, dim)
+
+        # Label overlay — render w['label'] on the canvas tile (live-update path)
+        # The geometry renderer draws shapes only; labels must be composited here.
+        _label_text = w.get('label', '')
+        if _label_text:
+            gc.create_text(x, y, text=str(_label_text)[:20],
+                           fill=txt, font=('Monospace', 8), anchor='center')
 
         # Type label below tile
         gc.create_text(x, B + 9, text=kind.replace('gui_', ''),
