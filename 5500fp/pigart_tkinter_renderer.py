@@ -189,7 +189,8 @@ def _dispatch_rnode(canvas: tk.Canvas, operands: List[int],
         shape_id    = SHAPE_RECTANGLE
         label_words = operands[2:]
     else:
-        shape_id    = int(get_field(operands[2], 0, 18)) if len(operands) >= 3 else SHAPE_RECTANGLE
+        # Symbol ID is in the top tribble T17-T12 (ta); read with get_field(w,12,6).
+        shape_id    = int(get_field(operands[2], 12, 6)) if len(operands) >= 3 else SHAPE_RECTANGLE
         label_words = operands[3:] if form == FORM_SHAPE else []
 
     label = _decode_label_words(label_words) if label_words else ''
@@ -236,7 +237,7 @@ def _dispatch_redge(canvas: tk.Canvas, operands: List[int],
         return
     # Skip logical edges (STYLE_CONTAIN=100 and higher) — no visible rendering
     if form in (FORM_SHAPE, FORM_SHAPE_UDP) and len(operands) >= 3:
-        if int(get_field(operands[2], 0, 18)) >= STYLE_CONTAIN:
+        if int(get_field(operands[2], 12, 6)) >= STYLE_CONTAIN:  # symbol ID in top tribble T17-T12
             return
     x1, y1 = _decode_xy(operands[0])
     x2, y2 = _decode_xy(operands[1])

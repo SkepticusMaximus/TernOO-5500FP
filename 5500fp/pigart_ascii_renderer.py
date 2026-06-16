@@ -346,7 +346,8 @@ def _dispatch_rnode(canvas: AsciiCanvas, operands: List[int],
         label_words = operands[2:]
     else:
         # FORM_SHAPE or FORM_SHAPE_UDP: operands[2] = DATA-SYMBOL shape
-        shape_id    = int(get_field(operands[2], 0, 18)) if len(operands) >= 3 else SHAPE_RECTANGLE
+        # Symbol ID is in the top tribble T17-T12 (ta); read with get_field(w,12,6).
+        shape_id    = int(get_field(operands[2], 12, 6)) if len(operands) >= 3 else SHAPE_RECTANGLE
         # FORM_SHAPE: operands[3:] are label words
         # FORM_SHAPE_UDP: operands[3] is the UDP word (no label)
         label_words = operands[3:] if form == FORM_SHAPE else []
@@ -397,7 +398,7 @@ def _dispatch_redge(canvas: AsciiCanvas, operands: List[int],
 
     # Skip logical / containment edges (STYLE_CONTAIN=100 and higher)
     if form in (FORM_SHAPE, FORM_SHAPE_UDP) and len(operands) >= 3:
-        style_id = int(get_field(operands[2], 0, 18))
+        style_id = int(get_field(operands[2], 12, 6))   # symbol ID in top tribble T17-T12
         if style_id >= STYLE_CONTAIN:
             return  # logical edge — no visible rendering
 

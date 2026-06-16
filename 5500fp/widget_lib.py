@@ -575,10 +575,22 @@ FORM_SHAPE_UDP = 2   # MAP-pos, DATA-dims, DATA-SYMBOL-shape, UDP-obj   (new v0.
 def build_data_symbol(symbol_id: int) -> int:
     """Build a DATA-POINTER-SYMBOL word encoding a shape/style registry ID.
 
-    Uses PTR_SYMBOL = (0, +1) pointer model. Payload = symbol_id (integer).
+    Uses PTR_SYMBOL = (0, +1) pointer model.
+    Symbol ID is packed into trits T17–T12 (the top tribble, `ta`), which is
+    the trit range read by the Fingerprint Fold.  This ensures programs that
+    differ only in shape or style symbol produce distinct OTree addresses.
+
     Shape constants: SHAPE_RECTANGLE=0, SHAPE_TERMINATOR=1, … SHAPE_BUTTON=12.
+    Style constants: STYLE_CONTAIN=100, …
+    Decoders read back the ID with: get_field(word, 12, 6)
     """
-    return build_pointer_word(PTR_SYMBOL, symbol_id)
+    # Place symbol_id in T17–T12 (top tribble) so the Fingerprint Fold sees it.
+    # Trit layout of the 18-trit payload (LSB-first in from_trits list):
+    #   indices  0-5  = T5-T0   (tc) = 0
+    #   indices  6-11 = T11-T6  (tb) = 0
+    #   indices 12-17 = T17-T12 (ta) = symbol_id
+    payload = from_trits([0] * 12 + to_trits(symbol_id, 6))
+    return build_pointer_word(PTR_SYMBOL, payload)
 
 
 def build_rnode_shape(pos_xy: tuple, size_wh: tuple, shape_id: int) -> List[int]:
@@ -1476,12 +1488,13 @@ def test_meccano_library() -> bool:
         "FORM_* constants must be 0, 1, 2"
     print(f" 33. PASS  FORM_LEAN=0, FORM_SHAPE=1, FORM_SHAPE_UDP=2")
 
-    # ── 34. build_data_symbol() encodes shape ID in payload ──────────────────
+    # ── 34. build_data_symbol() encodes shape ID in top tribble (T17–T12) ──────
+    # Symbol ID lives in ta (trits T17-T12); read back with get_field(w, 12, 6).
     _sym_w = build_data_symbol(SHAPE_DECISION)
-    assert int(get_field(_sym_w, 0, 18)) == SHAPE_DECISION, \
-        f"build_data_symbol: payload should equal SHAPE_DECISION={SHAPE_DECISION}"
+    assert int(get_field(_sym_w, 12, 6)) == SHAPE_DECISION, \
+        f"build_data_symbol: ta tribble should equal SHAPE_DECISION={SHAPE_DECISION}"
     _sym_w0 = build_data_symbol(0)
-    assert int(get_field(_sym_w0, 0, 18)) == 0
+    assert int(get_field(_sym_w0, 12, 6)) == 0
     print(f" 34. PASS  build_data_symbol() payload round-trips correctly")
 
     # ── 35. iterate_instructions on lean RNODE ────────────────────────────────
@@ -1505,7 +1518,7 @@ def test_meccano_library() -> bool:
     assert _d36['mnemonic'] == 'RNODE' and _d36['arity'] == 3
     assert _f36 == FORM_SHAPE
     assert len(_ops36) == 3
-    assert int(get_field(_ops36[2], 0, 18)) == SHAPE_TERMINATOR
+    assert int(get_field(_ops36[2], 12, 6)) == SHAPE_TERMINATOR  # shape ID in top tribble T17-T12
     print(f" 36. PASS  iterate_instructions: shape RNODE → form=FORM_SHAPE, shape_id correct")
 
     # ── 37. iterate_instructions on shape+UDP RNODE ───────────────────────────
@@ -1698,7 +1711,7 @@ def test_meccano_library() -> bool:
     _shapes_found = set()
     for _dec, _form, _ops in iterate_instructions(_fc7.words):
         if _dec['mnemonic'] == 'RNODE' and _form == FORM_SHAPE and len(_ops) >= 3:
-            _shapes_found.add(int(get_field(_ops[2], 0, 18)))
+            _shapes_found.add(int(get_field(_ops[2], 12, 6)))  # shape ID in top tribble T17-T12
     assert SHAPE_TERMINATOR in _shapes_found, \
         "flowchart_simple_v07: no TERMINATOR node found"
     assert SHAPE_PROCESS in _shapes_found, \
@@ -1952,20 +1965,17 @@ def test_meccano_library() -> bool:
         assert 'type' in decode_word(_ww)
     print(f" 79. PASS  shape-form MeccanoProgram to_words() round-trips ({len(_w79)} words)")
 
-    # ── 80. OTree differs for programs with different positions ──────────────
-    # Note: small shape IDs (0-12) all fit in tc (the lowest 6-trit payload
-    # tribble).  The Fingerprint Fold uses ta and tb only, so two programs
-    # differing only in shape_id may share an OTree — that is expected
-    # behaviour, not a bug (the OTree is structural, not a crypto hash).
-    # We test the OTree's actual discrimination power: different MAP positions
-    # produce different ta values, so the fold distinguishes them.
+    # ── 80. OTree differs for programs differing only in SHAPE_* (Bundle 8 fix) ─
+    # Shape ID now lives in T17–T12 (ta), which the Fingerprint Fold uses.
+    # Two programs identical except for their shape symbol must produce distinct
+    # OTree addresses.  (Same position, same size — only shape_id differs.)
     _pa80 = MeccanoProgram('_a80',
-        build_rnode_shape((5, 5), (10, 5), SHAPE_PROCESS),   category='pigart')
+        build_rnode_shape((5, 5), (10, 5), SHAPE_PROCESS),    category='pigart')
     _pb80 = MeccanoProgram('_b80',
-        build_rnode_shape((20, 5), (10, 5), SHAPE_PROCESS),  category='pigart')
+        build_rnode_shape((5, 5), (10, 5), SHAPE_TERMINATOR), category='pigart')
     assert _pa80.otree_word != _pb80.otree_word, \
-        "Programs at different positions should produce different OTree"
-    print(f" 80. PASS  Different positions → different OTree addresses (fold is position-sensitive)")
+        "Programs differing only in SHAPE_* should produce different OTree"
+    print(f" 80. PASS  Different SHAPE_* IDs → different OTree (fold sees ta tribble)")
 
     # ── 81. flowchart_simple_v07 renders differently from flowchart_simple ────
     _o81a = _render(lib.get('flowchart_simple'),      width=60, height=20)
@@ -1973,6 +1983,27 @@ def test_meccano_library() -> bool:
     assert _o81a != _o81b, \
         "v0.7 flowchart should render differently from v0.3 flowchart"
     print(f" 81. PASS  flowchart_simple_v07 renders differently from flowchart_simple")
+
+    # ── 82. OTree differs for REDGEs with different style symbols (Bundle 8) ──
+    # Style ID (e.g. STYLE_CONTAIN=100 vs SHAPE_RECTANGLE=0 used as a style)
+    # is also packed into ta.  Two REDGEs with different style IDs should yield
+    # different OTree addresses.
+    _p82a = MeccanoProgram('_s82a',
+        build_redge_styled((0, 0), (5, 5), SHAPE_RECTANGLE),   category='pigart')
+    _p82b = MeccanoProgram('_s82b',
+        build_redge_styled((0, 0), (5, 5), STYLE_CONTAIN),     category='pigart')
+    assert _p82a.otree_word != _p82b.otree_word, \
+        "REDGEs differing only in style symbol should produce different OTree"
+    print(f" 82. PASS  Different style IDs (REDGE) → different OTree (ta participates)")
+
+    # ── 83. Same shape + position → identical OTree (determinism preserved) ───
+    _p83a = MeccanoProgram('_d83a',
+        build_rnode_shape((3, 3), (8, 4), SHAPE_DECISION), category='pigart')
+    _p83b = MeccanoProgram('_d83b',
+        build_rnode_shape((3, 3), (8, 4), SHAPE_DECISION), category='pigart')
+    assert _p83a.otree_word == _p83b.otree_word, \
+        "Programs with same shape+position should produce identical OTree"
+    print(f" 83. PASS  Same shape + position → identical OTree (content addressing preserved)")
 
     print()
     print(f"widget_lib v0.7: {len(lib.all())} programs, all tests pass")
