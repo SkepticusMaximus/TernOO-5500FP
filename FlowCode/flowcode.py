@@ -1629,6 +1629,23 @@ def run_gui():
         _ghost_to_meccano      = None
         _update_meccano_widget = None
 
+    # ── Load WordStream + WordStreamEdit (Phase 6A) ───────────────────────────
+    _ws_path  = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             '../5500fp/word_stream.py')
+    _wse_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             '../5500fp/word_stream_edit.py')
+    if os.path.exists(_ws_path) and os.path.exists(_wse_path):
+        import importlib.util as _wsu
+        _ws_spec  = _wsu.spec_from_file_location('word_stream',      _ws_path)
+        _wse_spec = _wsu.spec_from_file_location('word_stream_edit', _wse_path)
+        _ws_mod   = _wsu.module_from_spec(_ws_spec);  _ws_spec.loader.exec_module(_ws_mod)
+        _wse_mod  = _wsu.module_from_spec(_wse_spec); _wse_spec.loader.exec_module(_wse_mod)
+        WordStream     = _ws_mod.WordStream
+        WordStreamEdit = _wse_mod.WordStreamEdit
+    else:
+        WordStream     = None
+        WordStreamEdit = None
+
     # ── Load property registry ────────────────────────────────────────────────
     _fp_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             '../5500fp/flowcode_properties.py')
@@ -1647,6 +1664,7 @@ def run_gui():
     gst = {
         'widgets':       {},    # id → {id, kind, x, y, label, w, h, parent_id, layout_mode, properties}
         'edges':         [],    # [{src, dst}, …]
+        'stream':        WordStream() if WordStream else None,  # Phase 6A: mirrors widgets in lockstep
         'selected':      None,  # int id of primary selected widget
         'multi_sel':     set(), # all selected ids (includes selected)
         'mode':          'select',
@@ -1875,29 +1893,114 @@ def run_gui():
         except Exception as _oe:
             gc_set_status(f"Open failed: {_oe}")
 
-    # ── Undo / redo (D10) ────────────────────────────────────────────────────
-    _gc_undo_stack = []   # list of inverse action dicts, newest last
-    _gc_redo_stack = []   # redo stack
-    _GC_UNDO_LIMIT = 100
-    _gc_undo_btn_ref = [None]   # mutable ref set when UI is built
-    _gc_redo_btn_ref = [None]   # mutable ref set when UI is built
+    # ── Undo / redo (D10 + Phase 6A word-level layer) ────────────────────────
+    _gc_undo_stack      = []   # semantic: list of inverse action dicts, newest last
+    _gc_redo_stack      = []   # semantic redo stack
+    _gc_word_undo_stack = []   # Phase 6A: word-level WordStreamEdit list (Alt+Z)
+    _gc_word_redo_stack = []   # Phase 6A: word-level redo (Alt+Y)
+    _GC_UNDO_LIMIT      = 100
+    _gc_undo_btn_ref    = [None]   # mutable ref set when UI is built
+    _gc_redo_btn_ref    = [None]   # mutable ref set when UI is built
+    _GC_DEV_ASSERT      = True    # Phase 6A: cross-check stream vs bridge on every commit
+
+    def _gc_action_label(action):
+        """Human-readable label for the action the user just performed.
+
+        The undo stack stores the INVERSE of what the user did, so the
+        kind-to-label mapping is inverted here:
+          stack 'delete' → user PLACED  → label "Place <kind>"
+          stack 'place'  → user DELETED → label "Delete <kind>"
+        """
+        k = action.get('kind', 'edit')
+        w  = action.get('widget', {}) or {}
+        wid = action.get('widget_id') or action.get('id')
+        gw  = gst['widgets'].get(wid, {}) if wid else {}
+        kn  = (w.get('kind') or gw.get('kind') or '').replace('gui_', '').replace('_', ' ')
+        label_map = {
+            'delete':          f'Place {kn}'.strip(),
+            'place':           f'Delete {kn}'.strip(),
+            'delete_multi':    f'Delete {len(action.get("widgets", []))} widget(s)',
+            'move':            'Move widget',
+            'resize':          'Resize widget',
+            'reparent':        'Drop into container',
+            'property_change': f'Change {action.get("property", "property")}',
+            'reorder':         'Reorder children',
+        }
+        return label_map.get(k, k.replace('_', ' ').title())
+
+    def _gc_sync_stream(label=''):
+        """Recompute gst['stream'] from current gst['widgets'] + gst['edges'].
+
+        Called inside _gc_push_undo (after every widget-dict mutation) and
+        after gc_undo / gc_redo to keep the stream in lockstep.
+        Phase 6A: stream content is always derived from the bridge.
+        Phase 6B: the stream will be the primary and this helper disappears.
+        """
+        if _ghost_to_meccano is None or gst.get('stream') is None:
+            return
+        prog = _ghost_to_meccano(gst['widgets'], gst['edges'])
+        gst['stream'].set_from_program(prog)
+        if _GC_DEV_ASSERT:
+            # Sanity: a second independent bridge call must produce identical words.
+            prog2 = _ghost_to_meccano(gst['widgets'], gst['edges'])
+            assert prog.otree_word == prog2.otree_word, (
+                f"Phase 6A stream assertion: otree mismatch "
+                f"{prog.otree_word!r} vs {prog2.otree_word!r}")
+            assert list(prog.words) == list(prog2.words), (
+                "Phase 6A stream assertion: word list mismatch")
 
     def gc_update_undo_btns():
-        """Grey-out Undo/Redo buttons when their stacks are empty."""
+        """Grey-out Undo/Redo buttons; update tooltips with next semantic label."""
         ub = _gc_undo_btn_ref[0]
         rb = _gc_redo_btn_ref[0]
         if ub is not None:
-            ub.config(state='normal' if _gc_undo_stack else 'disabled',
-                      fg='#aaffaa' if _gc_undo_stack else C['dim'])
+            if _gc_undo_stack:
+                lbl = _gc_undo_stack[-1].get('semantic_label', 'action')
+                ub.config(state='normal', fg='#aaffaa')
+                _gc_tooltip(ub, f'Undo: {lbl} (Ctrl+Z)')
+            else:
+                ub.config(state='disabled', fg=C['dim'])
+                _gc_tooltip(ub, 'Undo (Ctrl+Z)')
         if rb is not None:
-            rb.config(state='normal' if _gc_redo_stack else 'disabled',
-                      fg='#aaffcc' if _gc_redo_stack else C['dim'])
+            if _gc_redo_stack:
+                lbl = _gc_redo_stack[-1].get('semantic_label', 'action')
+                rb.config(state='normal', fg='#aaffcc')
+                _gc_tooltip(rb, f'Redo: {lbl} (Ctrl+Y)')
+            else:
+                rb.config(state='disabled', fg=C['dim'])
+                _gc_tooltip(rb, 'Redo (Ctrl+Y)')
 
     def _gc_push_undo(action):
+        """Push action dict to semantic stack; mirror as WordStreamEdit on word stack."""
+        # Capture word state BEFORE this edit (stream is one step behind)
+        before_words = list(gst['stream'].words) if gst.get('stream') else []
+
+        # Annotate with semantic label
+        action['semantic_label'] = _gc_action_label(action)
+
+        # Semantic stack (drives Ctrl+Z/Y)
         _gc_undo_stack.append(action)
         if len(_gc_undo_stack) > _GC_UNDO_LIMIT:
             _gc_undo_stack.pop(0)
         _gc_redo_stack.clear()
+
+        # Sync stream to new state; capture after-words
+        _gc_sync_stream(action['semantic_label'])
+        after_words = list(gst['stream'].words) if gst.get('stream') else []
+
+        # Word-level stack (drives Alt+Z/Y)
+        if WordStreamEdit is not None:
+            edit = WordStreamEdit(
+                op='replace', position=0,
+                words_before=before_words,
+                words_after=after_words,
+                semantic_label=action['semantic_label'],
+            )
+            _gc_word_undo_stack.append(edit)
+            if len(_gc_word_undo_stack) > _GC_UNDO_LIMIT:
+                _gc_word_undo_stack.pop(0)
+            _gc_word_redo_stack.clear()
+
         gc_update_undo_btns()
 
     def _gc_apply_action(act, opposite_stack):
@@ -1995,6 +2098,7 @@ def run_gui():
     def gc_undo():
         if not _gc_undo_stack: gc_set_status("Nothing to undo"); return
         _gc_apply_action(_gc_undo_stack.pop(), _gc_redo_stack)
+        _gc_sync_stream()   # Phase 6A: keep stream in lockstep after semantic undo
         gc_rebuild_prop_panel()
         gc_redraw()
         gc_update_undo_btns()
@@ -2002,9 +2106,18 @@ def run_gui():
     def gc_redo():
         if not _gc_redo_stack: gc_set_status("Nothing to redo"); return
         _gc_apply_action(_gc_redo_stack.pop(), _gc_undo_stack)
+        _gc_sync_stream()   # Phase 6A: keep stream in lockstep after semantic redo
         gc_rebuild_prop_panel()
         gc_redraw()
         gc_update_undo_btns()
+
+    def gc_undo_word():
+        """Phase 6A: Alt+Z — word-level undo (delegates to semantic undo 1:1)."""
+        gc_undo()
+
+    def gc_redo_word():
+        """Phase 6A: Alt+Y — word-level redo (delegates to semantic redo 1:1)."""
+        gc_redo()
 
     # ── Property helpers (read/write from widget dict or properties list) ─────
     def _gc_get_prop_value(w, name):
@@ -2134,11 +2247,10 @@ def run_gui():
         _gc_action_btn(gc_pal, _lbl, _cmd, _fg)
 
     # Undo / Redo — above Save/Open; grey out when stack is empty
+    # Tooltips are managed dynamically by gc_update_undo_btns() (Phase 6A).
     _gc_undo_btn_ref[0] = _gc_action_btn(gc_pal, '↩ Undo', gc_undo, C['dim'])
-    _gc_tooltip(_gc_undo_btn_ref[0], 'Undo (Ctrl+Z)')
     _gc_redo_btn_ref[0] = _gc_action_btn(gc_pal, '↪ Redo', gc_redo, C['dim'])
-    _gc_tooltip(_gc_redo_btn_ref[0], 'Redo (Ctrl+Y)')
-    gc_update_undo_btns()   # initialise disabled state
+    gc_update_undo_btns()   # initialise disabled state + tooltips
 
     for _lbl, _cmd, _fg in [
         ('💾 Save',   gc_do_save,    '#7ab4ff'),
@@ -3301,6 +3413,12 @@ def run_gui():
                 gc_undo()
         elif k == 'y' and ctrl:
             gc_redo()
+
+        # Phase 6A: Alt+Z / Alt+Y — word-level undo/redo (delegates to semantic in 6A)
+        elif k == 'z' and (event.state & 0x0008):   # Alt+Z
+            gc_undo_word()
+        elif k == 'y' and (event.state & 0x0008):   # Alt+Y
+            gc_redo_word()
 
         elif k == 'delete':
             sel = gst['selected']

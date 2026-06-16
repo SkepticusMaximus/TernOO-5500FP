@@ -2005,6 +2005,79 @@ def test_meccano_library() -> bool:
         "Programs with same shape+position should produce identical OTree"
     print(f" 83. PASS  Same shape + position → identical OTree (content addressing preserved)")
 
+    # ── 84-87. Phase 6A — WordStream + WordStreamEdit ────────────────────────
+    # Load the new Phase 6A modules via importlib so widget_lib stays dependency-free.
+    import importlib.util as _6a_ilu
+    _6a_dir = os.path.dirname(os.path.abspath(__file__))
+    _ws_path  = os.path.join(_6a_dir, 'word_stream.py')
+    _wse_path = os.path.join(_6a_dir, 'word_stream_edit.py')
+    _ws_available = os.path.exists(_ws_path) and os.path.exists(_wse_path)
+    if _ws_available:
+        _ws_spec  = _6a_ilu.spec_from_file_location('word_stream',      _ws_path)
+        _wse_spec = _6a_ilu.spec_from_file_location('word_stream_edit', _wse_path)
+        _ws_mod   = _6a_ilu.module_from_spec(_ws_spec);  _ws_spec.loader.exec_module(_ws_mod)
+        _wse_mod  = _6a_ilu.module_from_spec(_wse_spec); _wse_spec.loader.exec_module(_wse_mod)
+        WordStream_t     = _ws_mod.WordStream
+        WordStreamEdit_t = _wse_mod.WordStreamEdit
+
+        # 84. WordStream construction and empty-stream invariants
+        _ws84 = WordStream_t()
+        assert _ws84.words == [], "Empty WordStream should have no words"
+        assert _ws84.mmid() is None, "Uninitialised stream mmid should be None"
+        assert _ws84.otree() is None, "Uninitialised stream otree should be None"
+        assert len(_ws84) == 0, "len() should return word count"
+        print(f" 84. PASS  WordStream: empty construction, mmid/otree None, len=0")
+
+        # 85. set_from_program mirrors a MeccanoProgram correctly
+        _p85 = MeccanoProgram('_t85',
+            build_rnode_shape((1, 1), (4, 2), SHAPE_RECTANGLE), category='pigart')
+        _ws85 = WordStream_t()
+        _ws85.set_from_program(_p85)
+        assert _ws85.words == _p85.words, "set_from_program should copy body words"
+        assert _ws85.mmid()  == _p85.mmid.word, "stream.mmid() should equal prog.mmid.word"
+        assert _ws85.otree() == _p85.otree_word, "stream.otree() should equal prog.otree_word"
+        print(f" 85. PASS  WordStream.set_from_program mirrors MeccanoProgram words + identity")
+
+        # 86. subscribe() callback fires on set_from_program and apply()
+        _notified86 = [0]
+        _ws86 = WordStream_t()
+        _ws86.subscribe(lambda: _notified86.__setitem__(0, _notified86[0] + 1))
+        _ws86.set_from_program(_p85)
+        assert _notified86[0] == 1, "subscribe callback should fire on set_from_program"
+        _edit86 = WordStreamEdit_t(op='replace', position=0,
+                                   words_before=list(_ws86.words),
+                                   words_after=[42, 43],
+                                   semantic_label='Test edit')
+        _ws86.apply(_edit86)
+        assert _notified86[0] == 2, "subscribe callback should fire on apply()"
+        assert _ws86.words == [42, 43], "apply(replace) should update words"
+        print(f" 86. PASS  WordStream.subscribe() notified on set_from_program and apply()")
+
+        # 87. WordStreamEdit.invert() produces correct round-trip
+        _before87 = [10, 20, 30]
+        _after87  = [10, 99, 30]
+        _edit87   = WordStreamEdit_t(op='replace', position=0,
+                                     words_before=_before87,
+                                     words_after=_after87,
+                                     semantic_label='Test replace')
+        _inv87 = _edit87.invert()
+        assert _inv87.op           == 'replace',   "invert() should preserve op for 'replace'"
+        assert _inv87.words_before == _after87,    "invert() should swap before ↔ after"
+        assert _inv87.words_after  == _before87,   "invert() should swap before ↔ after"
+        assert _inv87.semantic_label == 'Test replace', "invert() should preserve label"
+        # insert ↔ delete
+        _ins87 = WordStreamEdit_t(op='insert', position=5,
+                                  words_before=[], words_after=[7, 8])
+        _del87 = _ins87.invert()
+        assert _del87.op == 'delete', "invert() should flip 'insert' to 'delete'"
+        print(f" 87. PASS  WordStreamEdit.invert(): replace round-trip + insert↔delete flip")
+
+    else:
+        print(f" 84. SKIP  word_stream.py not found (Phase 6A files absent)")
+        print(f" 85. SKIP  word_stream.py not found")
+        print(f" 86. SKIP  word_stream.py not found")
+        print(f" 87. SKIP  word_stream_edit.py not found")
+
     print()
     print(f"widget_lib v0.7: {len(lib.all())} programs, all tests pass")
     return True
