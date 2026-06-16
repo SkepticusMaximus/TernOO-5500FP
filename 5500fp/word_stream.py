@@ -1,21 +1,20 @@
-"""word_stream.py — Canonical TernOO word-stream data structure (Phase 6A).
+"""word_stream.py — Canonical TernOO word-stream data structure (Phase 6A/6B).
 
 The WordStream is the single source of truth for a TernOO program.  In
-Phase 6A it lives alongside gst['widgets'] in GHOST Canvas and is kept in
-lockstep with it — every widget-dict mutation produces a matching update here.
-From Phase 6B onward, all editor surfaces read from this stream directly and
-gst['widgets'] becomes a derived view.
+Phase 6A it lived alongside gst['widgets'] in GHOST Canvas and was kept in
+lockstep with it.  From Phase 6B onward all editor surfaces read from this
+stream directly; gst['widgets'] is an alias for _widget_meta.
 
-Phase 6A scope
---------------
-- Store the ordered body word list (no header — mmid and otree_word are
-  stored separately, populated externally via set_from_program).
-- notify subscribers on every mutation (apply / set_from_program).
-- Expose mmid() and otree() as simple getters returning the last values
-  set by set_from_program (recomputed from the bridge in Phase 6A; computed
-  natively from Phase 6B).
-- _rebuild_indices() is a no-op placeholder; the real index structures
-  (widget_span, containment, handler_bindings) arrive in Phase 6B.
+Phase 6B additions
+------------------
+- _widget_meta: dict   — the live widget metadata dict (same object as
+  gst['widgets'] after the alias; populated by set_from_program from
+  the bridge's ._ghost_word_map companion data or by direct canvas edits).
+- _word_map: dict      — widget_id → (start, end) half-open word indices;
+  populated by set_from_program from prog._ghost_word_map.
+- widget_span(wid)     — fast lookup into _word_map.
+- _rebuild_indices()   — now a no-op placeholder preserved for Phase 6C+
+  when native index structures (containment, handler_bindings) are added.
 
 Date: 2026-06-16, Adelaide
 Authors: Stevo (SkepticusMaximus) + Claude (Anthropic)
@@ -52,6 +51,9 @@ class WordStream:
         self._mmid_word: Optional[int] = None    # set externally via set_from_program
         self._otree_word: Optional[int] = None   # set externally via set_from_program
         self._subscribers: List[Callable] = []
+        # Phase 6B: widget metadata and word-index map
+        self._widget_meta: dict = {}   # same object as gst['widgets'] (alias in Phase 6B)
+        self._word_map: dict = {}      # widget_id → (start, end) half-open word indices
         self._rebuild_indices()
 
     # ── External sync ────────────────────────────────────────────────────────
@@ -60,14 +62,25 @@ class WordStream:
         """Sync word list and identity coordinates from a MeccanoProgram.
 
         Called by _gc_sync_stream() in flowcode.py after every widget-dict
-        mutation in Phase 6A.  prog must have:
-            .words        — list[int] body words (no header)
-            .mmid.word    — TTree MAP coordinate (structural identity)
-            .otree_word   — OTree MAP coordinate (content address)
+        mutation.  prog must have:
+            .words             — list[int] body words (no header)
+            .mmid.word         — TTree MAP coordinate (structural identity)
+            .otree_word        — OTree MAP coordinate (content address)
+            ._ghost_word_map   — optional dict: widget_id → (start, end)
+                                 (present on programs produced by ghost_to_meccano)
+
+        Phase 6B: also copies ._ghost_word_map into self._word_map so that
+        GhostCanvasView can locate per-widget word spans without re-parsing.
+        _widget_meta is NOT updated here — it is an alias to gst['widgets'],
+        which flowcode.py maintains directly.
         """
         self.words = list(prog.words)
         self._mmid_word = prog.mmid.word
         self._otree_word = prog.otree_word
+        # Phase 6B: copy word-index map if the bridge provided one
+        ghost_map = getattr(prog, '_ghost_word_map', None)
+        if ghost_map is not None:
+            self._word_map = dict(ghost_map)
         self._rebuild_indices()
         self._notify()
 
@@ -120,16 +133,30 @@ class WordStream:
         if listener not in self._subscribers:
             self._subscribers.append(listener)
 
-    # ── Indices (Phase 6A: no-op placeholder) ────────────────────────────────
+    # ── Widget span lookup (Phase 6B) ────────────────────────────────────────
+
+    def widget_span(self, widget_id) -> Optional[tuple]:
+        """Return the half-open word-index span (start, end) for a widget.
+
+        The span covers the OPCODE word and all its operands for the widget's
+        RNODE instruction.  Returns None if widget_id is not in _word_map.
+
+        _word_map is populated by set_from_program when the source MeccanoProgram
+        carries a ._ghost_word_map attribute (set by ghost_to_meccano).
+        """
+        return self._word_map.get(widget_id)
+
+    # ── Indices (Phase 6B: placeholder for future native indices) ────────────
 
     def _rebuild_indices(self) -> None:
         """Rebuild lookup indices after a mutation.
 
-        Phase 6A: no-op.  Indices (widget_span, containment,
-        opcode_index, handler_bindings) are added in Phase 6B when the
-        canvas reads from the stream directly.
+        Phase 6B: _word_map is populated from _ghost_word_map in
+        set_from_program rather than derived by walking the stream.
+        Native stream-walking indices (containment tree, handler_bindings,
+        opcode_index) are deferred to Phase 6C+.
         """
-        pass  # Phase 6B: rebuild widget_span, containment, etc.
+        pass  # Phase 6C+: rebuild containment tree, handler_bindings, etc.
 
     # ── Internal ─────────────────────────────────────────────────────────────
 

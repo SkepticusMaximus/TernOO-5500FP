@@ -562,14 +562,32 @@ SHAPE_BUTTON      = 12  # v0.2 button (explicit for retrofitting)
 # semantic relationships rather than visual arrows.  Renderers that encounter
 # these style IDs skip visible rendering.
 STYLE_CONTAIN = 100   # REDGE "child of" — containment edge (no visible render)
-# 101-126 reserved for future logical relation kinds
-# (DATA_FLOW=101, EVENT_BIND=102, REFERENCE=103 — to be assigned as needed)
+STYLE_HANDLER = 101   # reserved for Phase 6C — do NOT use yet
+# 102-126 reserved for future logical relation kinds
+
+# Layout-mode symbols (200+) — DATA-POINTER-SYMBOL payloads on container RNODEs.
+# Packed per Bundle 8's upper-trits convention (T17–T12) so they participate in
+# OTree identity.  Used by the T20 layout-presence extension (Phase 6B).
+LAYOUT_ABSOLUTE = 200   # absolute/free positioning (default; explicit form)
+LAYOUT_HBOX     = 201   # horizontal box layout
+LAYOUT_VBOX     = 202   # vertical box layout
+LAYOUT_GRID     = 203   # grid layout
+LAYOUT_STACKED  = 204   # stacked / z-order layout
 
 # Form discriminants — stored in the OPCODE word's `immediate` field (T11..T0).
 # All existing v0.1-v0.6 programs have immediate=0 → lean form.  Backward-compatible.
-FORM_LEAN      = 0   # MAP-pos, DATA-dims [, DATA-STRING-label*]        (existing)
-FORM_SHAPE     = 1   # MAP-pos, DATA-dims, DATA-SYMBOL-shape [, label*] (new v0.7)
-FORM_SHAPE_UDP = 2   # MAP-pos, DATA-dims, DATA-SYMBOL-shape, UDP-obj   (new v0.7)
+#
+# Phase 6B adds a FORM_HAS_LAYOUT bitmask (bit-2).  Existing forms are 0/1/2
+# (all < 4), so OR-ing with 4 produces new distinct values with no collision.
+# Decoders check (form & FORM_HAS_LAYOUT) to detect the trailing LAYOUT operand,
+# and (form & ~FORM_HAS_LAYOUT) to recover the base form.
+FORM_LEAN           = 0   # MAP-pos, DATA-dims [, DATA-STRING-label*]          (existing)
+FORM_SHAPE          = 1   # MAP-pos, DATA-dims, DATA-SYMBOL-shape [, label*]   (existing v0.7)
+FORM_SHAPE_UDP      = 2   # MAP-pos, DATA-dims, DATA-SYMBOL-shape, UDP-obj     (existing v0.7)
+FORM_HAS_LAYOUT     = 4   # bitmask: trailing DATA-SYMBOL(LAYOUT_*) present    (Phase 6B)
+FORM_LEAN_LAYOUT    = 4   # FORM_LEAN | FORM_HAS_LAYOUT  — lean + layout
+FORM_SHAPE_LAYOUT   = 5   # FORM_SHAPE | FORM_HAS_LAYOUT — shape + layout
+FORM_SHAPE_UDP_LAYOUT = 6 # FORM_SHAPE_UDP | FORM_HAS_LAYOUT — shape+UDP+layout
 
 
 def build_data_symbol(symbol_id: int) -> int:
@@ -652,6 +670,145 @@ def build_rnode_shape_udp(pos_xy: tuple, size_wh: tuple,
     ]
 
 
+def build_rnode_layout(pos_xy: tuple, size_wh: tuple, layout_id: int) -> List[int]:
+    """Build a lean+layout RNODE instruction (T20=+1, T21=−1 lean form).
+
+    Emits 4 words: OPCODE(immediate=FORM_LEAN_LAYOUT, arity=3) +
+    MAP(pos) + DATA(dims) + DATA-SYMBOL(layout_id).
+
+    The layout operand is always last (per the T20 layout-presence convention).
+    Existing decoders that check form==FORM_LEAN will treat this as unknown;
+    only layout-aware decoders check (form & FORM_HAS_LAYOUT).
+    """
+    x, y = pos_xy
+    w, h = size_wh
+    return [
+        build_opcode_word(OPF_PIGART, arity=3, op_index=OP_RNODE,
+                          immediate=FORM_LEAN_LAYOUT),
+        _build_xy_map(x, y),
+        _build_size_word(w, h),
+        build_data_symbol(layout_id),
+    ]
+
+
+def build_rnode_shape_layout(pos_xy: tuple, size_wh: tuple,
+                              shape_id: int, layout_id: int) -> List[int]:
+    """Build a shape+layout RNODE instruction (T20=+1, T21=0 shape form).
+
+    Emits 5 words: OPCODE(immediate=FORM_SHAPE_LAYOUT, arity=4) +
+    MAP(pos) + DATA(dims) + DATA-SYMBOL(shape_id) + DATA-SYMBOL(layout_id).
+
+    The layout operand is always last.
+    """
+    x, y = pos_xy
+    w, h = size_wh
+    return [
+        build_opcode_word(OPF_PIGART, arity=4, op_index=OP_RNODE,
+                          immediate=FORM_SHAPE_LAYOUT),
+        _build_xy_map(x, y),
+        _build_size_word(w, h),
+        build_data_symbol(shape_id),
+        build_data_symbol(layout_id),
+    ]
+
+
+def build_rnode_shape_udp_layout(pos_xy: tuple, size_wh: tuple,
+                                  shape_id: int, udp_word: int,
+                                  layout_id: int) -> List[int]:
+    """Build a shape+UDP+layout RNODE instruction (T20=+1, T21=+1 form).
+
+    Emits 6 words: OPCODE(immediate=FORM_SHAPE_UDP_LAYOUT, arity=5) +
+    MAP(pos) + DATA(dims) + DATA-SYMBOL(shape_id) + UDP-word +
+    DATA-SYMBOL(layout_id).
+
+    The layout operand is always last.
+    """
+    x, y = pos_xy
+    w, h = size_wh
+    return [
+        build_opcode_word(OPF_PIGART, arity=5, op_index=OP_RNODE,
+                          immediate=FORM_SHAPE_UDP_LAYOUT),
+        _build_xy_map(x, y),
+        _build_size_word(w, h),
+        build_data_symbol(shape_id),
+        udp_word,
+        build_data_symbol(layout_id),
+    ]
+
+
+def build_rnode_shape_labeled_layout(pos_xy: tuple, size_wh: tuple,
+                                      shape_id: int, label: str,
+                                      layout_id: int) -> List[int]:
+    """Build a shape+label+layout RNODE (for container widgets with labels).
+
+    Emits 5+N words: OPCODE(immediate=FORM_SHAPE_LAYOUT, arity=4+N) +
+    MAP(pos) + DATA(dims) + DATA-SYMBOL(shape_id) + N*DATA-STRING-label +
+    DATA-SYMBOL(layout_id).
+
+    The layout operand is always last, after the label words, so that
+    decoders stripping label words (seeking the UDP slot) work correctly.
+    Used by the flowcode bridge for container widgets that have both a
+    visible label and an explicit layout_mode.
+    """
+    x, y = pos_xy
+    w, h = size_wh
+    lw = _encode_label(label)
+    return [
+        build_opcode_word(OPF_PIGART, arity=4 + len(lw), op_index=OP_RNODE,
+                          immediate=FORM_SHAPE_LAYOUT),
+        _build_xy_map(x, y),
+        _build_size_word(w, h),
+        build_data_symbol(shape_id),
+        *lw,
+        build_data_symbol(layout_id),
+    ]
+
+
+def decode_rnode_layout(form: int, operands: List[int]) -> dict:
+    """Decode the layout_id from an RNODE operand list if layout is present.
+
+    Returns a dict with:
+        'has_layout': bool
+        'layout_id':  int or None   — LAYOUT_* constant
+        'shape_id':   int or None   — shape constant (if form has shape)
+        'udp_word':   int or None   — UDP word (if form has UDP)
+
+    For existing (non-layout) forms the same keys are returned with
+    has_layout=False and layout_id=None.
+    """
+    base_form   = form & ~FORM_HAS_LAYOUT
+    has_layout  = bool(form & FORM_HAS_LAYOUT)
+    shape_id    = None
+    udp_word    = None
+    layout_id   = None
+
+    if base_form == FORM_LEAN:
+        # operands: MAP, DATA [, label*] [, LAYOUT]
+        if has_layout and len(operands) >= 3:
+            layout_id = int(get_field(operands[-1], 12, 6))
+    elif base_form == FORM_SHAPE:
+        # operands: MAP, DATA, SYMBOL(shape) [, label*] [, LAYOUT]
+        if len(operands) >= 3:
+            shape_id = int(get_field(operands[2], 12, 6))
+        if has_layout and len(operands) >= 4:
+            layout_id = int(get_field(operands[-1], 12, 6))
+    elif base_form == FORM_SHAPE_UDP:
+        # operands: MAP, DATA, SYMBOL(shape), UDP [, LAYOUT]
+        if len(operands) >= 3:
+            shape_id = int(get_field(operands[2], 12, 6))
+        if len(operands) >= 4:
+            udp_word = operands[3]
+        if has_layout and len(operands) >= 5:
+            layout_id = int(get_field(operands[-1], 12, 6))
+
+    return {
+        'has_layout': has_layout,
+        'layout_id':  layout_id,
+        'shape_id':   shape_id,
+        'udp_word':   udp_word,
+    }
+
+
 def build_redge_styled(src_xy: tuple, dst_xy: tuple, style_id: int) -> List[int]:
     """Build a styled-form REDGE (3 operands).
 
@@ -702,9 +859,14 @@ def iterate_instructions(words: List[int]):
     decoded:  dict from decode_opcode_word() — includes 'family', 'mnemonic',
               'arity', 'immediate', etc.
     form:     decoded['immediate'] — form discriminant for RNODE and REDGE:
-                FORM_LEAN (0)      — lean / classic operand layout
-                FORM_SHAPE (1)     — operands[2] = DATA-SYMBOL shape/style
-                FORM_SHAPE_UDP (2) — RNODE shape+UDP or REDGE labeled
+                FORM_LEAN (0)           — lean / classic operand layout
+                FORM_SHAPE (1)          — operands[2] = DATA-SYMBOL shape/style
+                FORM_SHAPE_UDP (2)      — RNODE shape+UDP or REDGE labeled
+                FORM_LEAN_LAYOUT (4)    — lean + trailing LAYOUT operand (Phase 6B)
+                FORM_SHAPE_LAYOUT (5)   — shape + trailing LAYOUT operand (Phase 6B)
+                FORM_SHAPE_UDP_LAYOUT (6) — shape+UDP + trailing LAYOUT operand (Phase 6B)
+              Check (form & FORM_HAS_LAYOUT) for layout-operand presence.
+              Check (form & ~FORM_HAS_LAYOUT) for the base form (0/1/2).
     operands: list of words[i+1 : i+1+arity] — the operand words for this
               instruction.
 
@@ -2082,6 +2244,185 @@ def test_meccano_library() -> bool:
         print(f" 85. SKIP  word_stream.py not found")
         print(f" 86. SKIP  word_stream.py not found")
         print(f" 87. SKIP  word_stream_edit.py not found")
+
+    # ── 88-N. Phase 6B — LAYOUT_* constants, new RNODE builders, decoder ────────
+
+    # ── 88. LAYOUT_* constants are distinct and in range 200–204 ────────────────
+    _layouts88 = [LAYOUT_ABSOLUTE, LAYOUT_HBOX, LAYOUT_VBOX, LAYOUT_GRID, LAYOUT_STACKED]
+    assert _layouts88 == [200, 201, 202, 203, 204], \
+        "LAYOUT_* constants must be 200–204 in order"
+    assert len(set(_layouts88)) == 5, "LAYOUT_* constants must all be distinct"
+    print(f" 88. PASS  LAYOUT_ABSOLUTE=200, LAYOUT_HBOX=201, LAYOUT_VBOX=202, "
+          f"LAYOUT_GRID=203, LAYOUT_STACKED=204 — all distinct")
+
+    # ── 89. STYLE_HANDLER reserved at 101 ───────────────────────────────────────
+    assert STYLE_HANDLER == 101, "STYLE_HANDLER must be 101"
+    print(f" 89. PASS  STYLE_HANDLER=101 (reserved for Phase 6C)")
+
+    # ── 90. FORM_HAS_LAYOUT bitmask and compound form values ────────────────────
+    assert FORM_HAS_LAYOUT == 4, "FORM_HAS_LAYOUT must be 4"
+    assert FORM_LEAN_LAYOUT    == FORM_LEAN      | FORM_HAS_LAYOUT, \
+        "FORM_LEAN_LAYOUT must equal FORM_LEAN | FORM_HAS_LAYOUT"
+    assert FORM_SHAPE_LAYOUT   == FORM_SHAPE     | FORM_HAS_LAYOUT, \
+        "FORM_SHAPE_LAYOUT must equal FORM_SHAPE | FORM_HAS_LAYOUT"
+    assert FORM_SHAPE_UDP_LAYOUT == FORM_SHAPE_UDP | FORM_HAS_LAYOUT, \
+        "FORM_SHAPE_UDP_LAYOUT must equal FORM_SHAPE_UDP | FORM_HAS_LAYOUT"
+    # All 6 forms are distinct
+    _all_forms90 = [FORM_LEAN, FORM_SHAPE, FORM_SHAPE_UDP,
+                    FORM_LEAN_LAYOUT, FORM_SHAPE_LAYOUT, FORM_SHAPE_UDP_LAYOUT]
+    assert len(set(_all_forms90)) == 6, "All 6 FORM_* values must be distinct"
+    # Stripping the layout bit recovers the base form
+    for _lf in [FORM_LEAN_LAYOUT, FORM_SHAPE_LAYOUT, FORM_SHAPE_UDP_LAYOUT]:
+        assert _lf & FORM_HAS_LAYOUT, "layout forms must have FORM_HAS_LAYOUT bit set"
+        assert _lf & ~FORM_HAS_LAYOUT in [FORM_LEAN, FORM_SHAPE, FORM_SHAPE_UDP], \
+            "stripping FORM_HAS_LAYOUT must yield a valid base form"
+    print(f" 90. PASS  FORM_HAS_LAYOUT=4 bitmask; all 6 form values distinct; "
+          f"base-form recovery correct")
+
+    # ── 91. build_rnode_layout: lean+layout form (4 words) ─────────────────────
+    _rl91 = build_rnode_layout((2, 3), (10, 5), LAYOUT_HBOX)
+    assert len(_rl91) == 4, "build_rnode_layout must emit 4 words"
+    _d91 = decode_opcode_word(_rl91[0])
+    assert _d91['arity'] == 3, "build_rnode_layout: arity must be 3"
+    assert _d91['immediate'] == FORM_LEAN_LAYOUT, \
+        "build_rnode_layout: immediate must be FORM_LEAN_LAYOUT"
+    # Last word encodes LAYOUT_HBOX
+    assert int(get_field(_rl91[-1], 12, 6)) == LAYOUT_HBOX, \
+        "build_rnode_layout: last operand must encode LAYOUT_HBOX"
+    print(f" 91. PASS  build_rnode_layout: 4 words, arity=3, FORM_LEAN_LAYOUT, "
+          f"last word = LAYOUT_HBOX")
+
+    # ── 92. build_rnode_shape_layout: shape+layout form (5 words) ──────────────
+    _rsl92 = build_rnode_shape_layout((1, 1), (8, 4), SHAPE_WINDOW, LAYOUT_VBOX)
+    assert len(_rsl92) == 5, "build_rnode_shape_layout must emit 5 words"
+    _d92 = decode_opcode_word(_rsl92[0])
+    assert _d92['arity'] == 4, "build_rnode_shape_layout: arity must be 4"
+    assert _d92['immediate'] == FORM_SHAPE_LAYOUT, \
+        "build_rnode_shape_layout: immediate must be FORM_SHAPE_LAYOUT"
+    assert int(get_field(_rsl92[3], 12, 6)) == SHAPE_WINDOW, \
+        "build_rnode_shape_layout: operand[2] must encode SHAPE_WINDOW"
+    assert int(get_field(_rsl92[4], 12, 6)) == LAYOUT_VBOX, \
+        "build_rnode_shape_layout: last word must encode LAYOUT_VBOX"
+    print(f" 92. PASS  build_rnode_shape_layout: 5 words, arity=4, FORM_SHAPE_LAYOUT, "
+          f"shape=SHAPE_WINDOW, layout=LAYOUT_VBOX")
+
+    # ── 93. build_rnode_shape_udp_layout: shape+UDP+layout form (6 words) ──────
+    _udp93 = build_int_word(42)
+    _rsul93 = build_rnode_shape_udp_layout((0, 0), (6, 3), SHAPE_BUTTON, _udp93, LAYOUT_ABSOLUTE)
+    assert len(_rsul93) == 6, "build_rnode_shape_udp_layout must emit 6 words"
+    _d93 = decode_opcode_word(_rsul93[0])
+    assert _d93['arity'] == 5, "build_rnode_shape_udp_layout: arity must be 5"
+    assert _d93['immediate'] == FORM_SHAPE_UDP_LAYOUT, \
+        "build_rnode_shape_udp_layout: immediate must be FORM_SHAPE_UDP_LAYOUT"
+    assert int(get_field(_rsul93[3], 12, 6)) == SHAPE_BUTTON, \
+        "build_rnode_shape_udp_layout: operand[2] must encode SHAPE_BUTTON"
+    assert _rsul93[4] == _udp93, \
+        "build_rnode_shape_udp_layout: operand[3] must be the UDP word"
+    assert int(get_field(_rsul93[5], 12, 6)) == LAYOUT_ABSOLUTE, \
+        "build_rnode_shape_udp_layout: last word must encode LAYOUT_ABSOLUTE"
+    print(f" 93. PASS  build_rnode_shape_udp_layout: 6 words, arity=5, "
+          f"FORM_SHAPE_UDP_LAYOUT, shape/UDP/layout all correct")
+
+    # ── 94. decode_rnode_layout: all 6 builder/decoder symmetry cases ──────────
+    # Case 1: FORM_LEAN (no layout)
+    _words94a = [build_opcode_word(OPF_PIGART, arity=2, op_index=OP_RNODE, immediate=FORM_LEAN),
+                 _build_xy_map(0, 0), _build_size_word(4, 2)]
+    _c94a_instrs = list(iterate_instructions(_words94a))
+    _r94a = decode_rnode_layout(_c94a_instrs[0][1], _c94a_instrs[0][2])
+    assert not _r94a['has_layout'] and _r94a['layout_id'] is None, \
+        "FORM_LEAN: has_layout must be False"
+
+    # Case 2: FORM_SHAPE (no layout)
+    _rsl94b = build_rnode_shape((5, 5), (4, 2), SHAPE_RECTANGLE)
+    _c94b = list(iterate_instructions(_rsl94b))
+    _r94b = decode_rnode_layout(_c94b[0][1], _c94b[0][2])
+    assert not _r94b['has_layout'] and _r94b['shape_id'] == SHAPE_RECTANGLE, \
+        "FORM_SHAPE: has_layout False, shape_id correct"
+
+    # Case 3: FORM_SHAPE_UDP (no layout)
+    _rsl94c = build_rnode_shape_udp((0, 0), (4, 2), SHAPE_CONNECTOR, build_int_word(0))
+    _c94c = list(iterate_instructions(_rsl94c))
+    _r94c = decode_rnode_layout(_c94c[0][1], _c94c[0][2])
+    assert not _r94c['has_layout'] and _r94c['shape_id'] == SHAPE_CONNECTOR, \
+        "FORM_SHAPE_UDP: has_layout False, shape_id correct"
+
+    # Case 4: FORM_LEAN_LAYOUT
+    _rsl94d = build_rnode_layout((0, 0), (4, 2), LAYOUT_GRID)
+    _c94d = list(iterate_instructions(_rsl94d))
+    _r94d = decode_rnode_layout(_c94d[0][1], _c94d[0][2])
+    assert _r94d['has_layout'] and _r94d['layout_id'] == LAYOUT_GRID, \
+        "FORM_LEAN_LAYOUT: has_layout True, layout_id=LAYOUT_GRID"
+
+    # Case 5: FORM_SHAPE_LAYOUT
+    _rsl94e = build_rnode_shape_layout((0, 0), (4, 2), SHAPE_WINDOW, LAYOUT_HBOX)
+    _c94e = list(iterate_instructions(_rsl94e))
+    _r94e = decode_rnode_layout(_c94e[0][1], _c94e[0][2])
+    assert _r94e['has_layout'] and _r94e['shape_id'] == SHAPE_WINDOW \
+        and _r94e['layout_id'] == LAYOUT_HBOX, \
+        "FORM_SHAPE_LAYOUT: has_layout True, shape_id=SHAPE_WINDOW, layout=LAYOUT_HBOX"
+
+    # Case 6: FORM_SHAPE_UDP_LAYOUT
+    _udp94f = build_int_word(7)
+    _rsl94f = build_rnode_shape_udp_layout((0, 0), (4, 2), SHAPE_DECISION, _udp94f, LAYOUT_STACKED)
+    _c94f = list(iterate_instructions(_rsl94f))
+    _r94f = decode_rnode_layout(_c94f[0][1], _c94f[0][2])
+    assert _r94f['has_layout'] and _r94f['shape_id'] == SHAPE_DECISION \
+        and _r94f['udp_word'] == _udp94f and _r94f['layout_id'] == LAYOUT_STACKED, \
+        "FORM_SHAPE_UDP_LAYOUT: all fields correct"
+
+    print(f" 94. PASS  decode_rnode_layout: all 6 form cases symmetric with builders")
+
+    # ── 95. OTree determinism with layout operands ──────────────────────────────
+    # Same position+dims+shape+layout → identical OTree
+    _p95a = MeccanoProgram('_t95a',
+        build_rnode_shape_layout((3, 3), (8, 4), SHAPE_WINDOW, LAYOUT_HBOX),
+        category='pigart')
+    _p95b = MeccanoProgram('_t95b',
+        build_rnode_shape_layout((3, 3), (8, 4), SHAPE_WINDOW, LAYOUT_HBOX),
+        category='pigart')
+    assert _p95a.otree_word == _p95b.otree_word, \
+        "Same shape+layout → identical OTree (content addressing preserved)"
+    print(f" 95. PASS  Same shape+layout → identical OTree (determinism preserved)")
+
+    # ── 96. Two containers identical except layout_mode → different OTree ───────
+    # Acceptance criterion 9: layout_mode participates in OTree identity.
+    _p96a = MeccanoProgram('_t96a',
+        build_rnode_shape_layout((3, 3), (8, 4), SHAPE_WINDOW, LAYOUT_HBOX),
+        category='pigart')
+    _p96b = MeccanoProgram('_t96b',
+        build_rnode_shape_layout((3, 3), (8, 4), SHAPE_WINDOW, LAYOUT_VBOX),
+        category='pigart')
+    assert _p96a.otree_word != _p96b.otree_word, \
+        "Containers differing only in layout_mode must have different OTree addresses"
+    print(f" 96. PASS  LAYOUT_HBOX vs LAYOUT_VBOX → different OTree "
+          f"(layout_mode participates in OTree identity — AC9)")
+
+    # ── 97. LAYOUT_ABSOLUTE vs no-layout form → different OTree ─────────────────
+    _p97a = MeccanoProgram('_t97a',
+        build_rnode_shape((3, 3), (8, 4), SHAPE_WINDOW),
+        category='pigart')
+    _p97b = MeccanoProgram('_t97b',
+        build_rnode_shape_layout((3, 3), (8, 4), SHAPE_WINDOW, LAYOUT_ABSOLUTE),
+        category='pigart')
+    assert _p97a.otree_word != _p97b.otree_word, \
+        "Explicit LAYOUT_ABSOLUTE form must differ from no-layout form in OTree"
+    print(f" 97. PASS  No-layout form vs LAYOUT_ABSOLUTE form → different OTree")
+
+    # ── 98. build_rnode_shape_labeled_layout: label + layout both present ────────
+    _rsll98 = build_rnode_shape_labeled_layout(
+        (2, 2), (12, 4), SHAPE_WINDOW, 'Win', LAYOUT_VBOX
+    )
+    _d98 = decode_opcode_word(_rsll98[0])
+    assert _d98['immediate'] == FORM_SHAPE_LAYOUT, \
+        "build_rnode_shape_labeled_layout: immediate must be FORM_SHAPE_LAYOUT"
+    # Last word must encode LAYOUT_VBOX
+    assert int(get_field(_rsll98[-1], 12, 6)) == LAYOUT_VBOX, \
+        "build_rnode_shape_labeled_layout: last word must encode LAYOUT_VBOX"
+    # shape word is operand[2]
+    assert int(get_field(_rsll98[3], 12, 6)) == SHAPE_WINDOW, \
+        "build_rnode_shape_labeled_layout: operand[2] must encode SHAPE_WINDOW"
+    print(f" 98. PASS  build_rnode_shape_labeled_layout: shape+label+layout all present, "
+          f"layout last")
 
     print()
     print(f"widget_lib v0.7: {len(lib.all())} programs, all tests pass")

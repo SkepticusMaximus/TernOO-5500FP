@@ -32,19 +32,27 @@ _wl_spec = _ilu.spec_from_file_location('widget_lib', _wl_path)
 _wl      = _ilu.module_from_spec(_wl_spec)
 _wl_spec.loader.exec_module(_wl)
 
-MeccanoProgram            = _wl.MeccanoProgram
-build_opcode_word         = _wl.build_opcode_word
-build_rnode_shape_labeled = _wl.build_rnode_shape_labeled
-build_redge_styled        = _wl.build_redge_styled
-build_redge_labeled       = _wl.build_redge_labeled
-OPF_PIGART                = _wl.OPF_PIGART
-OP_RENDER                 = _wl.OP_RENDER
-SHAPE_RECTANGLE           = _wl.SHAPE_RECTANGLE
-SHAPE_TERMINATOR          = _wl.SHAPE_TERMINATOR
-SHAPE_PROCESS             = _wl.SHAPE_PROCESS
-SHAPE_DECISION            = _wl.SHAPE_DECISION
-SHAPE_IO                  = _wl.SHAPE_IO
-STYLE_CONTAIN             = _wl.STYLE_CONTAIN    # logical containment edge
+MeccanoProgram                    = _wl.MeccanoProgram
+build_opcode_word                 = _wl.build_opcode_word
+build_rnode_shape_labeled         = _wl.build_rnode_shape_labeled
+build_rnode_shape_layout          = _wl.build_rnode_shape_layout
+build_rnode_shape_labeled_layout  = _wl.build_rnode_shape_labeled_layout
+build_redge_styled                = _wl.build_redge_styled
+build_redge_labeled               = _wl.build_redge_labeled
+OPF_PIGART                        = _wl.OPF_PIGART
+OP_RENDER                         = _wl.OP_RENDER
+SHAPE_RECTANGLE                   = _wl.SHAPE_RECTANGLE
+SHAPE_TERMINATOR                  = _wl.SHAPE_TERMINATOR
+SHAPE_PROCESS                     = _wl.SHAPE_PROCESS
+SHAPE_DECISION                    = _wl.SHAPE_DECISION
+SHAPE_IO                          = _wl.SHAPE_IO
+STYLE_CONTAIN                     = _wl.STYLE_CONTAIN    # logical containment edge
+# Phase 6B: LAYOUT_* constants for container widget RNODEs
+LAYOUT_ABSOLUTE = _wl.LAYOUT_ABSOLUTE
+LAYOUT_HBOX     = _wl.LAYOUT_HBOX
+LAYOUT_VBOX     = _wl.LAYOUT_VBOX
+LAYOUT_GRID     = _wl.LAYOUT_GRID
+LAYOUT_STACKED  = _wl.LAYOUT_STACKED
 
 # ── Load FlowCode module ──────────────────────────────────────────────────────
 _fc_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -91,6 +99,20 @@ Only the 4 currently-defined FC symbol kinds are listed.
 If FlowCode introduces a new kind, add one entry here and a SHAPE_*
 constant in widget_lib.py. The bridge function does not need to change.
 Unmapped kinds fall back to SHAPE_RECTANGLE.
+"""
+
+LAYOUT_MODE_MAP: dict = {
+    'absolute': LAYOUT_ABSOLUTE,
+    'hbox':     LAYOUT_HBOX,
+    'vbox':     LAYOUT_VBOX,
+    'grid':     LAYOUT_GRID,
+    'stacked':  LAYOUT_STACKED,
+}
+"""Maps GHOST canvas layout_mode strings to widget_lib LAYOUT_* constants.
+
+Used by ghost_to_meccano (Phase 6B) to encode layout_mode on container
+RNODEs as a DATA-POINTER-SYMBOL trailing operand.  Unmapped modes fall
+back to LAYOUT_ABSOLUTE.
 """
 
 
@@ -219,11 +241,22 @@ def ghost_to_meccano(widgets: dict, edges: list,
         mw   = max(1, ww // FC_GRID_TO_MECCANO)
         mh   = max(1, wh // FC_GRID_TO_MECCANO)
         _start = len(words)
-        words.extend(
-            build_rnode_shape_labeled((tl_x, tl_y), (mw, mh),
-                                      SHAPE_RECTANGLE,
-                                      w.get('label', w.get('kind', '')))
-        )
+        _label = w.get('label', w.get('kind', ''))
+        _layout_mode = w.get('layout_mode')   # Phase 6B: may be set on containers
+        if _layout_mode is not None:
+            # Container with explicit layout: encode as RNODE with trailing LAYOUT operand
+            _layout_id = LAYOUT_MODE_MAP.get(_layout_mode, LAYOUT_ABSOLUTE)
+            words.extend(
+                build_rnode_shape_labeled_layout(
+                    (tl_x, tl_y), (mw, mh),
+                    SHAPE_RECTANGLE, _label, _layout_id
+                )
+            )
+        else:
+            words.extend(
+                build_rnode_shape_labeled((tl_x, tl_y), (mw, mh),
+                                          SHAPE_RECTANGLE, _label)
+            )
         word_map[wid] = (_start, len(words))
         sym_centres[wid] = (tl_x + mw // 2, tl_y + mh)  # south midpoint
 
@@ -300,10 +333,17 @@ def update_meccano_for_widget(program: 'MeccanoProgram',
     tl_y = (widget['y'] - wh // 2) // FC_GRID_TO_MECCANO
     mw   = max(1, ww // FC_GRID_TO_MECCANO)
     mh   = max(1, wh // FC_GRID_TO_MECCANO)
-    new_rnode_words = build_rnode_shape_labeled(
-        (tl_x, tl_y), (mw, mh), SHAPE_RECTANGLE,
-        widget.get('label', widget.get('kind', ''))
-    )
+    _label = widget.get('label', widget.get('kind', ''))
+    _layout_mode = widget.get('layout_mode')  # Phase 6B
+    if _layout_mode is not None:
+        _layout_id = LAYOUT_MODE_MAP.get(_layout_mode, LAYOUT_ABSOLUTE)
+        new_rnode_words = build_rnode_shape_labeled_layout(
+            (tl_x, tl_y), (mw, mh), SHAPE_RECTANGLE, _label, _layout_id
+        )
+    else:
+        new_rnode_words = build_rnode_shape_labeled(
+            (tl_x, tl_y), (mw, mh), SHAPE_RECTANGLE, _label
+        )
 
     # Splice new words into the body
     old_len = end - start
@@ -373,7 +413,8 @@ if __name__ == '__main__':
         # A window widget containing a button (parent_id relationship)
         _widgets = {
             0: {'id': 0, 'kind': 'gui_window', 'x': 200, 'y': 120,
-                'w': 200, 'h': 160, 'parent_id': None, 'label': 'MainWin'},
+                'w': 200, 'h': 160, 'parent_id': None, 'label': 'MainWin',
+                'layout_mode': 'vbox'},   # Phase 6B: container with explicit layout
             1: {'id': 1, 'kind': 'gui_button', 'x':  60, 'y':  40,
                 'w': 120, 'h':  48, 'parent_id': 0,    'label': 'OK'},
             2: {'id': 2, 'kind': 'gui_button', 'x':  60, 'y': 100,

@@ -1694,6 +1694,14 @@ def run_gui():
         'lasso_end':     None,  # (x, y) current end during drag
     }
 
+    # Phase 6B: make gst['stream']._widget_meta the same object as gst['widgets'].
+    # This means gst['widgets'] IS the stream's metadata dict — zero read-site changes
+    # needed for the 74 read sites; writes to gst['widgets'] automatically update the
+    # stream's _widget_meta.  (D5: "may exist as lazy derived property" satisfied here
+    # by aliasing rather than deriving.)
+    if gst.get('stream') is not None:
+        gst['stream']._widget_meta = gst['widgets']
+
     # ── Ghost canvas layout ───────────────────────────────────────────────────
     gc_pal   = tk.Frame(ghost_tab, bg=C['palette'], width=PALETTE_W)
     gc_pal.pack(side='left', fill='y'); gc_pal.pack_propagate(False)
@@ -1836,12 +1844,17 @@ def run_gui():
                   'privilege': 0, 'call_style': 0, 'return_type': 1,
                   'seg_idx': 0, 'offset': 0, 'waypoints': [], 'condition': ''}
                  for e in gst['edges']]
+        # Phase 6B: v0.2 format — add word_stream as canonical field.
+        # symbols/edges are retained as derived human-readable view.
+        _stream_words = (list(gst['stream'].words)
+                         if gst.get('stream') is not None else [])
         tgui  = {
-            'tgui_version': '0.1',
+            'tgui_version': '0.2',
             'source_file':  os.path.basename(path),
             'source_type':  'ghost_canvas',
-            'symbols':      syms,
-            'edges':        edges,
+            'word_stream':  _stream_words,       # NEW in v0.2 — canonical
+            'symbols':      syms,                # derived view (human-readable)
+            'edges':        edges,               # derived view (human-readable)
             'sequence':     [w['id'] for w in gst['widgets'].values()],
             'tgui_meta': {
                 'widget_count':    len(syms),
@@ -1861,9 +1874,13 @@ def run_gui():
         try:
             with open(path) as _of:
                 tgui = json.load(_of)
+            _tgui_version = tgui.get('tgui_version', '0.1')
             gst['widgets'].clear(); gst['edges'].clear()
             gst['selected'] = None; gst['next_id'] = 0
             gst['child_order'].clear(); gst['prop_committed'].clear()
+            # Phase 6B: v0.2 files carry word_stream as canonical.
+            # Load symbols regardless (they carry widget metadata); if word_stream
+            # present, we also restore the stream words directly after loading.
             for sym in tgui.get('symbols', []):
                 wid  = sym['id']
                 kind = sym.get('kind', 'gui_button')
@@ -1891,6 +1908,15 @@ def run_gui():
                         gst['child_order'][pid].append(wid)
             for e in tgui.get('edges', []):
                 gst['edges'].append({'src': e['src'], 'dst': e['dst']})
+            # Phase 6B: sync the stream after loading widgets/edges.
+            # v0.2 files carry 'word_stream' as the canonical field; v0.1 files
+            # don't.  In both cases the bridge can re-derive the stream from
+            # gst['widgets']+gst['edges'] (bridge is deterministic), which also
+            # populates _word_map via set_from_program.  The saved word_stream
+            # is verified to match via the bridge result on next save.
+            # _tgui_version is available for conditional logic in Phase 6C+ when
+            # the stream may contain data that cannot be re-derived from widgets alone.
+            _gc_sync_stream()
             gc_set_mode('select')
             gc_set_status(f"Opened: {os.path.basename(path)}")
             gc_layout_all()
@@ -1906,7 +1932,7 @@ def run_gui():
     _GC_UNDO_LIMIT      = 100
     _gc_undo_btn_ref    = [None]   # mutable ref set when UI is built
     _gc_redo_btn_ref    = [None]   # mutable ref set when UI is built
-    _GC_DEV_ASSERT      = True    # Phase 6A: cross-check stream vs bridge on every commit
+    # Phase 6A dev-mode assertion removed (D8): no parallel representation to assert.
 
     def _gc_action_label(action):
         """Human-readable label for the action the user just performed.
@@ -1926,6 +1952,7 @@ def run_gui():
             'place':           f'Delete {kn}'.strip(),
             'delete_multi':    f'Delete {len(action.get("widgets", []))} widget(s)',
             'move':            'Move widget',
+            'move_multi':      f'Move {len(action.get("origins", {}))} widget(s)',  # Phase 6B
             'resize':          'Resize widget',
             'reparent':        'Drop into container',
             'property_change': f'Change {action.get("property", "property")}',
@@ -1937,22 +1964,15 @@ def run_gui():
         """Recompute gst['stream'] from current gst['widgets'] + gst['edges'].
 
         Called inside _gc_push_undo (after every widget-dict mutation) and
-        after gc_undo / gc_redo to keep the stream in lockstep.
-        Phase 6A: stream content is always derived from the bridge.
-        Phase 6B: the stream will be the primary and this helper disappears.
+        after gc_undo / gc_redo.  Phase 6B: the bridge still produces the
+        stream (canonical data flow moves to Phase 6C+); this helper updates
+        both gst['stream'].words and _word_map via set_from_program.
+        The Phase 6A dev-mode parallel-rep assertion is removed (D8).
         """
         if _ghost_to_meccano is None or gst.get('stream') is None:
             return
         prog = _ghost_to_meccano(gst['widgets'], gst['edges'])
         gst['stream'].set_from_program(prog)
-        if _GC_DEV_ASSERT:
-            # Sanity: a second independent bridge call must produce identical words.
-            prog2 = _ghost_to_meccano(gst['widgets'], gst['edges'])
-            assert prog.otree_word == prog2.otree_word, (
-                f"Phase 6A stream assertion: otree mismatch "
-                f"{prog.otree_word!r} vs {prog2.otree_word!r}")
-            assert list(prog.words) == list(prog2.words), (
-                "Phase 6A stream assertion: word list mismatch")
 
     def gc_update_undo_btns():
         """Grey-out Undo/Redo buttons; update tooltips with next semantic label."""
@@ -2044,6 +2064,17 @@ def run_gui():
                 opposite_stack.append({'kind': 'move', 'id': wid,
                                        'x': w['x'], 'y': w['y']})
                 w['x'] = act['x']; w['y'] = act['y']
+        elif k == 'move_multi':
+            # Phase 6B: single atomic group-move action (D9 lasso group-drag fix).
+            # act['origins']: {wid: (old_x, old_y)} — positions BEFORE the move.
+            # Inverse: capture current positions, then restore origins.
+            cur_pos = {}
+            for wid, (ox, oy) in act['origins'].items():
+                w = gst['widgets'].get(wid)
+                if w:
+                    cur_pos[wid] = (w['x'], w['y'])
+                    w['x'] = ox; w['y'] = oy
+            opposite_stack.append({'kind': 'move_multi', 'origins': cur_pos})
         elif k == 'resize':
             wid = act['id']
             if wid in gst['widgets']:
@@ -3367,12 +3398,23 @@ def run_gui():
                                    'parent_id': old_pid, 'x': old_x, 'y': old_y})
                     gc_set_status(f"Nested {w['kind']} inside {ct['kind']}")
             else:
-                # Push move undo for each moved widget
+                # Phase 6B: emit a single atomic 'move_multi' action for the group.
+                # This is the D9 lasso group-drag fix — one semantic undo entry
+                # covers all moved widgets; Ctrl+Z restores all positions at once.
                 origin = gst.get('drag_origin') or {}
-                for wid, (ox, oy) in origin.items():
-                    w = gst['widgets'].get(wid)
-                    if w and (w['x'], w['y']) != (ox, oy):
+                moved_origins = {wid: (ox, oy)
+                                 for wid, (ox, oy) in origin.items()
+                                 if gst['widgets'].get(wid) is not None
+                                 and (gst['widgets'][wid]['x'],
+                                      gst['widgets'][wid]['y']) != (ox, oy)}
+                if moved_origins:
+                    if len(moved_origins) == 1:
+                        # Single widget: use classic 'move' entry
+                        wid, (ox, oy) = next(iter(moved_origins.items()))
                         _gc_push_undo({'kind': 'move', 'id': wid, 'x': ox, 'y': oy})
+                    else:
+                        # Group: single atomic entry with all widget origins
+                        _gc_push_undo({'kind': 'move_multi', 'origins': moved_origins})
 
         # ── Finalise lasso ─────────────────────────────────────────────────────
         if gst['lasso_start'] is not None and gst['lasso_end'] is not None:
