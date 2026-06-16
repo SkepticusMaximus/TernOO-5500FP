@@ -2015,8 +2015,13 @@ def test_meccano_library() -> bool:
     if _ws_available:
         _ws_spec  = _6a_ilu.spec_from_file_location('word_stream',      _ws_path)
         _wse_spec = _6a_ilu.spec_from_file_location('word_stream_edit', _wse_path)
-        _ws_mod   = _6a_ilu.module_from_spec(_ws_spec);  _ws_spec.loader.exec_module(_ws_mod)
-        _wse_mod  = _6a_ilu.module_from_spec(_wse_spec); _wse_spec.loader.exec_module(_wse_mod)
+        import sys as _6a_sys
+        _ws_mod   = _6a_ilu.module_from_spec(_ws_spec)
+        _wse_mod  = _6a_ilu.module_from_spec(_wse_spec)
+        _6a_sys.modules['word_stream']      = _ws_mod
+        _6a_sys.modules['word_stream_edit'] = _wse_mod
+        _ws_spec.loader.exec_module(_ws_mod)
+        _wse_spec.loader.exec_module(_wse_mod)
         WordStream_t     = _ws_mod.WordStream
         WordStreamEdit_t = _wse_mod.WordStreamEdit
 

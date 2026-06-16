@@ -1638,8 +1638,13 @@ def run_gui():
         import importlib.util as _wsu
         _ws_spec  = _wsu.spec_from_file_location('word_stream',      _ws_path)
         _wse_spec = _wsu.spec_from_file_location('word_stream_edit', _wse_path)
-        _ws_mod   = _wsu.module_from_spec(_ws_spec);  _ws_spec.loader.exec_module(_ws_mod)
-        _wse_mod  = _wsu.module_from_spec(_wse_spec); _wse_spec.loader.exec_module(_wse_mod)
+        import sys as _wssys
+        _ws_mod   = _wsu.module_from_spec(_ws_spec)
+        _wse_mod  = _wsu.module_from_spec(_wse_spec)
+        _wssys.modules['word_stream']      = _ws_mod
+        _wssys.modules['word_stream_edit'] = _wse_mod
+        _ws_spec.loader.exec_module(_ws_mod)
+        _wse_spec.loader.exec_module(_wse_mod)
         WordStream     = _ws_mod.WordStream
         WordStreamEdit = _wse_mod.WordStreamEdit
     else:
