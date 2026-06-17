@@ -573,6 +573,21 @@ LAYOUT_HBOX     = 201   # horizontal box layout
 LAYOUT_VBOX     = 202   # vertical box layout
 LAYOUT_GRID     = 203   # grid layout
 LAYOUT_STACKED  = 204   # stacked / z-order layout
+# 205-226 reserved for future layout modes
+
+# Signal IDs (300+) — DATA-POINTER-SYMBOL payloads on REDGE handler bindings.
+# Packed per Bundle 8's upper-trits convention (T17–T12) so signal IDs
+# participate in OTree identity — two bindings with the same src/dst/style
+# but different signals produce distinct OTree addresses. (Bundle 12)
+SIGNAL_CLICKED            = 300   # gui_button: primary activation
+SIGNAL_TOGGLED            = 301   # gui_toggle / gui_check / gui_radio: state flip
+SIGNAL_CHANGED            = 302   # gui_entry: text content changed
+SIGNAL_ACTIVATED          = 303   # gui_entry: Return key or focus-out commit
+SIGNAL_CLOSE_REQUESTED    = 304   # gui_window: close button pressed
+SIGNAL_FOCUS_CHANGED      = 305   # gui_window: focus gained/lost
+SIGNAL_VALUE_CHANGED      = 306   # gui_scale / gui_spinbutton: numeric value changed
+SIGNAL_SELECTION_CHANGED  = 307   # gui_combobox: selection index changed
+# 308-326 reserved for future signals
 
 # ── Flow kind → shape mapping (Phase 6C) ─────────────────────────────────────
 # Maps flow_* kind strings (FlowCode tab namespace) to SHAPE_* IDs.
@@ -601,7 +616,7 @@ FORM_HAS_LAYOUT     = 4   # bitmask: trailing DATA-SYMBOL(LAYOUT_*) present    (
 FORM_LEAN_LAYOUT    = 4   # FORM_LEAN | FORM_HAS_LAYOUT  — lean + layout
 FORM_SHAPE_LAYOUT   = 5   # FORM_SHAPE | FORM_HAS_LAYOUT — shape + layout
 FORM_SHAPE_UDP_LAYOUT = 6 # FORM_SHAPE_UDP | FORM_HAS_LAYOUT — shape+UDP+layout
-FORM_HANDLER        = -1  # REDGE handler form: 5 operands, T20=−1 (Phase 6D)
+FORM_HANDLER        = -1  # REDGE handler form: 4 operands, T20=−1 (Bundle 12)
 
 
 def build_data_symbol(symbol_id: int) -> int:
@@ -878,51 +893,40 @@ def build_redge(src_xy: tuple, dst_xy: tuple) -> List[int]:
 
 
 def build_redge_handler(src_xy: tuple, dst_xy: tuple,
-                        signal_name: str,
-                        symbolic_name: str = '') -> List[int]:
-    """Build a REDGE handler-binding segment (Phase 6D).
+                        signal_id: int) -> List[int]:
+    """Build a REDGE handler-binding segment (Bundle 12).
 
-    Always emits exactly 6 words: OPCODE (FORM_HANDLER, arity=5) + MAP(src) +
-    MAP(dst) + DATA-POINTER-SYMBOL(STYLE_HANDLER) + DATA-STRING(signal_name,
-    first 3 chars) + DATA-STRING(symbolic_name, first 3 chars).
+    Always emits exactly 5 words: OPCODE (FORM_HANDLER, arity=4) + MAP(src) +
+    MAP(dst) + DATA-POINTER-SYMBOL(STYLE_HANDLER) + DATA-POINTER-SYMBOL(SIGNAL_*).
 
-    String operands are truncated to 3 chars (1 word) to satisfy the arity≤8
-    architecture constraint.  Full names live in the editor's widget dict.
-    Stage 7+ will extend to multi-word encoding with a matching decoder.
+    Replaces the Phase 6D 6-word / 5-operand / truncated-string form.
+    No DATA-STRING operands.  Arity = 4 — well under the PIGART ceiling of 8.
+    Symbolic name is recovered at lookup time from the dst terminator's label.
 
-    Operand layout (D4):
-      operands[0] = MAP — canvas position of the widget emitting the signal
-      operands[1] = MAP — canvas position of the flow_terminator handling it
+    Operand layout (D4, Bundle 12):
+      operands[0] = MAP                 — widget canvas position (src)
+      operands[1] = MAP                 — flow_terminator position (dst)
       operands[2] = DATA-POINTER-SYMBOL — STYLE_HANDLER (101)
-      operands[3] = DATA-STRING         — signal name (e.g. 'clicked')
-      operands[4] = DATA-STRING         — symbolic flow entry name (label at
-                                          binding time; may be empty string)
+      operands[3] = DATA-POINTER-SYMBOL — SIGNAL_* constant (300–307)
 
-    FORM_HANDLER (−1) in the OPCODE immediate field is the T20=−1 sentinel
-    (D3).  Decoders check immediate == FORM_HANDLER to dispatch this form.
-    T21 is ignored for this form (D5); operand count is fixed at 5.
+    FORM_HANDLER (−1) in the OPCODE immediate field is the T20=−1 sentinel.
+    Decoders check immediate == FORM_HANDLER to dispatch this form.
 
-    Renderers that encounter STYLE_HANDLER skip visible rendering (consistent
-    with STYLE_CONTAIN — both are logical qualifiers, not visual edges).
+    Signal IDs are packed in T17–T12 per Bundle 8 upper-trits convention,
+    so two bindings differing only in signal_id get distinct OTree addresses.
+
+    Renderers that encounter STYLE_HANDLER skip visible rendering (same as
+    STYLE_CONTAIN — both are logical qualifiers, not visual edges).
     """
     sx, sy = src_xy
     dx, dy = dst_xy
-    # Encode each string as exactly ONE DATA-STRING word (3 chars, truncated).
-    # Arity is fixed at 5 per spec (D4/D5).  The architecture caps arity at 8
-    # (4-trit field), so variable-length string encoding is not viable here.
-    # Full signal/symbolic names live in the editor's widget dict; the stream
-    # words are the canonical address.  Stage 7+ can extend to multi-word
-    # encoding when a decoder is added.
-    sig_w = _encode_label(signal_name[:3] if signal_name else '')[:1]
-    sym_w = _encode_label(symbolic_name[:3] if symbolic_name else '')[:1]
     return [
-        build_opcode_word(OPF_PIGART, arity=5, op_index=OP_REDGE,
+        build_opcode_word(OPF_PIGART, arity=4, op_index=OP_REDGE,
                           immediate=FORM_HANDLER),
         _build_xy_map(sx, sy),
         _build_xy_map(dx, dy),
         build_data_symbol(STYLE_HANDLER),
-        sig_w[0],
-        sym_w[0],
+        build_data_symbol(signal_id),
     ]
 
 
@@ -945,10 +949,9 @@ def iterate_instructions(words: List[int]):
                 FORM_LEAN_LAYOUT (4)    — lean + trailing LAYOUT operand (Phase 6B)
                 FORM_SHAPE_LAYOUT (5)   — shape + trailing LAYOUT operand (Phase 6B)
                 FORM_SHAPE_UDP_LAYOUT (6) — shape+UDP + trailing LAYOUT operand (Phase 6B)
-                FORM_HANDLER (-1)       — REDGE handler binding (Phase 6D, T20=−1):
+                FORM_HANDLER (-1)       — REDGE handler binding (Bundle 12, T20=−1):
                                           src MAP, dst MAP, STYLE_HANDLER symbol,
-                                          signal-name DATA-STRING, symbolic-name
-                                          DATA-STRING (arity ≥ 5 per string lengths)
+                                          SIGNAL_* symbol (arity = 4, 5 words total)
               Check (form & FORM_HAS_LAYOUT) for layout-operand presence.
               Check (form & ~FORM_HAS_LAYOUT) for the base form (0/1/2).
               Check (form == FORM_HANDLER) for the handler binding form.
@@ -2629,7 +2632,7 @@ def test_meccano_library() -> bool:
     print(f"107. PASS  FORM_HANDLER=-1, distinct from all existing form constants")
 
     # ── 108. build_redge_handler() emits OPCODE with FORM_HANDLER immediate ───────
-    _h108 = build_redge_handler((10, 20), (30, 40), 'clicked', 'on_submit')
+    _h108 = build_redge_handler((10, 20), (30, 40), SIGNAL_CLICKED)
     _dec108 = decode_opcode_word(_h108[0])
     assert _dec108['mnemonic'] == 'REDGE', \
         f"108: expected REDGE opcode, got {_dec108['mnemonic']}"
@@ -2637,15 +2640,15 @@ def test_meccano_library() -> bool:
         f"108: expected immediate=FORM_HANDLER({FORM_HANDLER}), got {_dec108['immediate']}"
     print(f"108. PASS  build_redge_handler() produces REDGE with FORM_HANDLER immediate")
 
-    # ── 109. handler word count: always arity=5, total=6 words (strings truncated to 3 chars)
+    # ── 109. handler word count: always arity=4, total=5 words (Bundle 12) ───────
     _dec108_arity = _dec108['arity']
     _h108_total   = len(_h108)
-    assert _dec108_arity == 5, \
-        f"109: arity must be fixed 5, got {_dec108_arity}"
-    assert _h108_total == 6, \
-        f"109: total words must be 6, got {_h108_total}"
-    print(f"109. PASS  build_redge_handler('clicked','on_submit'): "
-          f"arity={_dec108_arity}, total={_h108_total} words (strings truncated to 3 chars)")
+    assert _dec108_arity == 4, \
+        f"109: arity must be fixed 4, got {_dec108_arity}"
+    assert _h108_total == 5, \
+        f"109: total words must be 5, got {_h108_total}"
+    print(f"109. PASS  build_redge_handler(SIGNAL_CLICKED): "
+          f"arity={_dec108_arity}, total={_h108_total} words (Bundle 12 4-operand form)")
 
     # ── 110. 3rd operand is STYLE_HANDLER data-symbol ────────────────────────────
     _style_word110 = _h108[3]   # opcode=0, src=1, dst=2, style=3
@@ -2672,18 +2675,54 @@ def test_meccano_library() -> bool:
         f"112: form should be FORM_HANDLER={FORM_HANDLER}, got {_form112}"
     print(f"112. PASS  iterate_instructions yields REDGE with form=FORM_HANDLER")
 
-    # ── 113. all inputs always produce arity=5, total=6 words ───────────────────────
-    _h113 = build_redge_handler((1, 2), (3, 4), 'click', 'go')
-    _dec113 = decode_opcode_word(_h113[0])
-    assert _dec113['arity'] == 5 and len(_h113) == 6, \
-        f"113: 'click'/'go' should give arity=5/6 words, got {_dec113['arity']}/{len(_h113)}"
-    _h113e = build_redge_handler((0, 0), (1, 1), 'ok', '')
-    _dec113e = decode_opcode_word(_h113e[0])
-    assert _dec113e['mnemonic'] == 'REDGE'
-    assert _dec113e['immediate'] == FORM_HANDLER
-    assert _dec113e['arity'] == 5 and len(_h113e) == 6, \
-        f"113: 'ok'/'' should give arity=5/6 words, got {_dec113e['arity']}/{len(_h113e)}"
-    print(f"113. PASS  all build_redge_handler inputs give fixed arity=5, 6 words")
+    # ── 113. all signal_id inputs produce arity=4, total=5 words (Bundle 12) ─────
+    _h113a = build_redge_handler((1, 2), (3, 4), SIGNAL_TOGGLED)
+    _dec113a = decode_opcode_word(_h113a[0])
+    assert _dec113a['arity'] == 4 and len(_h113a) == 5, \
+        f"113: SIGNAL_TOGGLED should give arity=4/5 words, got {_dec113a['arity']}/{len(_h113a)}"
+    _h113b = build_redge_handler((0, 0), (1, 1), SIGNAL_SELECTION_CHANGED)
+    _dec113b = decode_opcode_word(_h113b[0])
+    assert _dec113b['mnemonic'] == 'REDGE'
+    assert _dec113b['immediate'] == FORM_HANDLER
+    assert _dec113b['arity'] == 4 and len(_h113b) == 5, \
+        f"113: SIGNAL_SELECTION_CHANGED should give arity=4/5 words, " \
+        f"got {_dec113b['arity']}/{len(_h113b)}"
+    print(f"113. PASS  all build_redge_handler signal_id inputs give fixed arity=4, 5 words")
+
+    # ── 114. SIGNAL_* constants are distinct and in range 300–307 (Bundle 12) ────
+    _signals114 = [SIGNAL_CLICKED, SIGNAL_TOGGLED, SIGNAL_CHANGED, SIGNAL_ACTIVATED,
+                   SIGNAL_CLOSE_REQUESTED, SIGNAL_FOCUS_CHANGED,
+                   SIGNAL_VALUE_CHANGED, SIGNAL_SELECTION_CHANGED]
+    assert _signals114 == list(range(300, 308)), \
+        f"114: SIGNAL_* constants must be 300-307 in order, got {_signals114}"
+    assert len(set(_signals114)) == 8, "114: SIGNAL_* constants must all be distinct"
+    print(f"114. PASS  SIGNAL_CLICKED=300..SIGNAL_SELECTION_CHANGED=307 — all distinct")
+
+    # ── 115. SIGNAL_* IDs round-trip via build_data_symbol / get_field ────────────
+    for _sig115 in _signals114:
+        _sw115 = build_data_symbol(_sig115)
+        _got115 = int(get_field(_sw115, 12, 6))
+        assert _got115 == _sig115, \
+            f"115: build_data_symbol({_sig115}) should round-trip to {_sig115}, got {_got115}"
+    print(f"115. PASS  all SIGNAL_* IDs round-trip correctly through build_data_symbol")
+
+    # ── 116. 4th operand of handler REDGE encodes the signal_id ──────────────────
+    _sig116 = SIGNAL_CLICKED   # 300
+    _h116 = build_redge_handler((5, 5), (10, 10), _sig116)
+    _sig_word116 = _h116[4]    # opcode=0, src=1, dst=2, style=3, signal=4
+    _sig_val116 = int(get_field(_sig_word116, 12, 6))
+    assert _sig_val116 == _sig116, \
+        f"116: 4th operand should encode SIGNAL_CLICKED={_sig116}, got {_sig_val116}"
+    print(f"116. PASS  4th operand of handler REDGE correctly encodes SIGNAL_CLICKED={_sig116}")
+
+    # ── 117. different signal_ids → different OTree addresses ─────────────────────
+    _p117a = MeccanoProgram('_h117a',
+        build_redge_handler((0, 0), (5, 5), SIGNAL_CLICKED),    category='pigart')
+    _p117b = MeccanoProgram('_h117b',
+        build_redge_handler((0, 0), (5, 5), SIGNAL_TOGGLED),    category='pigart')
+    assert _p117a.otree_word != _p117b.otree_word, \
+        "117: handler REDGEs differing only in signal_id should produce different OTree"
+    print(f"117. PASS  different signal_id values produce distinct OTree addresses")
 
     print()
     print(f"widget_lib v0.7: {len(lib.all())} programs, all tests pass")

@@ -469,42 +469,33 @@ def update_meccano_for_widget(program: 'MeccanoProgram',
 def build_handler_bindings(widgets: dict, flow_symbols: dict) -> list:
     """Build REDGE handler-binding words for all signal bindings in widgets.
 
-    Walks fc_state['widgets'], collecting each widget's 'bindings' dict
-    (signal_name → {'dst_x', 'dst_y', 'symbolic'}).  For each binding
-    that has a valid dst position and maps to a live flow_terminator with
-    is_entry=True, emits one build_redge_handler() word sequence.
+    Walks fc_state['widgets'], collecting each widget's 'signal_ids' dict
+    (signal_id: int → {'dst_x': int, 'dst_y': int}).  For each binding,
+    emits one build_redge_handler() word sequence.
+
+    Bundle 12: uses SIGNAL_* integer IDs, 4-operand / 5-word form.
+    widget_dict['bindings'] has been retired; reads only 'signal_ids'.
 
     Returns a flat list of words suitable for appending to the combined
     stream in _guic_sync_stream().
 
-    Phase 6D: editor-side only.  No runtime firing here — Stage 7+.
+    Editor-side only.  No runtime firing here — Stage 7+.
     """
     _GC_SCALE = 10   # pixel → Meccano coordinate scale (matches ghost_to_meccano)
     words = []
-    # Build a quick lookup: (dst_x, dst_y) → True for valid entry terminators
-    _entry_positions = set()
-    for sym in flow_symbols.values():
-        if sym.get('kind') != 'flow_terminator':
-            continue
-        for p in sym.get('properties', []):
-            if p.get('name') == 'is_entry' and p.get('value'):
-                _entry_positions.add((sym.get('x', 0), sym.get('y', 0)))
-                break
-
     for wid, w in widgets.items():
-        bindings = w.get('bindings') or {}
+        sig_ids = w.get('signal_ids') or {}
         wx = w.get('x', 0)
         wy = w.get('y', 0)
-        for sig_name, binfo in bindings.items():
+        for signal_id, binfo in sig_ids.items():
             if not binfo:
                 continue
             dx = binfo.get('dst_x', 0)
             dy = binfo.get('dst_y', 0)
-            symbolic = binfo.get('symbolic', '')
             # Scale positions to Meccano units
             src_mc = (wx // _GC_SCALE, wy // _GC_SCALE)
             dst_mc = (dx // _GC_SCALE, dy // _GC_SCALE)
-            words.extend(build_redge_handler(src_mc, dst_mc, sig_name, symbolic))
+            words.extend(build_redge_handler(src_mc, dst_mc, int(signal_id)))
     return words
 
 

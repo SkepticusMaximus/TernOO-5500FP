@@ -170,24 +170,53 @@ class WordStream:
             except Exception:
                 pass  # views must not crash the stream
 
-    # ── Phase 6D: Signal binding helpers ────────────────────────────────────
+    # ── Bundle 12: Signal binding helpers ────────────────────────────────────
 
-    def handler_for(self, widget_id: int, signal: str):
-        """Return the handler binding for (widget_id, signal), or None.
+    def handler_for(self, widget_id: int, signal_id: int):
+        """Return (otree_addr, signal_name, symbolic_name) for the handler
+        bound to (widget_id, signal_id), or None if not bound.
 
         Reads from the widget metadata (_widget_meta, aliased to
-        fc_state['widgets']) rather than walking the raw word stream —
-        the current architecture stores bindings in the widget dict for
-        editor speed.  Stream-walking is the Stage 7+ canonical path.
+        fc_state['widgets']).  The 'signal_ids' dict maps SIGNAL_* int IDs
+        to {'dst_x': int, 'dst_y': int} — the canonical Bundle 12 storage.
 
-        Returns dict {'dst_x': int, 'dst_y': int, 'symbolic': str}
-        or None if no binding exists for this (widget_id, signal).
+        Returns:
+          (None, signal_name, symbolic_name)
+            — otree_addr is None until Stage 7+ native stream-walking is added;
+              signal_name is the human-readable name from flowcode_signals;
+              symbolic_name is the dst terminator's current 'label'.
+          None — if not bound or widget/terminator not found.
         """
         w = self._widget_meta.get(widget_id)
         if w is None:
             return None
-        bindings = w.get('bindings') or {}
-        return bindings.get(signal)
+        sig_ids = w.get('signal_ids') or {}
+        binfo = sig_ids.get(signal_id)
+        if binfo is None:
+            return None
+        # Look up the symbolic name from the flow terminator
+        dst_x = binfo.get('dst_x', 0)
+        dst_y = binfo.get('dst_y', 0)
+        symbolic_name = ''
+        for sym in self._flow_meta.values():
+            if (sym.get('x', 0) == dst_x and sym.get('y', 0) == dst_y
+                    and sym.get('kind') == 'flow_terminator'):
+                symbolic_name = sym.get('label', '')
+                break
+        # Look up the signal name from the imported helper (lazy import to avoid
+        # circular imports — flowcode_signals imports widget_lib, not word_stream)
+        try:
+            import os as _os
+            import importlib.util as _ilu
+            _fs_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                                     'flowcode_signals.py')
+            _fs_spec = _ilu.spec_from_file_location('flowcode_signals', _fs_path)
+            _fs      = _ilu.module_from_spec(_fs_spec)
+            _fs_spec.loader.exec_module(_fs)
+            signal_name = _fs.signal_id_to_name(signal_id) or str(signal_id)
+        except Exception:
+            signal_name = str(signal_id)
+        return (None, signal_name, symbolic_name)
 
     def flow_entries(self):
         """Yield (sym_id, label, x, y) for every flow_terminator with is_entry=True.

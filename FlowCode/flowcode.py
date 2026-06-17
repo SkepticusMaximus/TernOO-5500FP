@@ -1242,10 +1242,11 @@ def run_gui():
         draw_grid()
         for e in fc_state['flow_edges']:            # Phase 6C: draw from fc_state
             draw_edge(e)
-        # Phase 6D: build set of bound target positions for visual annotation
+        # Bundle 12: build set of bound target positions for visual annotation
+        # Reads from 'signal_ids' (Bundle 12 format; 'bindings' retired)
         _bound_targets: set = set()
         for _bw in fc_state['widgets'].values():
-            for _bi in (_bw.get('bindings') or {}).values():
+            for _bi in (_bw.get('signal_ids') or {}).values():
                 if _bi:
                     _bound_targets.add((_bi.get('dst_x', 0), _bi.get('dst_y', 0)))
         fc_state['_bound_targets'] = _bound_targets
@@ -1971,7 +1972,9 @@ def run_gui():
                   'layout_mode': w.get('layout_mode',
                                        _GC_LAYOUT_DEFAULTS.get(w['kind'], 'absolute')),
                   'properties': list(w.get('properties', [])), 'signals': [],
-                  'bindings': dict(w.get('bindings') or {})}   # Phase 6D
+                  'signal_ids': {str(k): dict(v)
+                                 for k, v in (w.get('signal_ids') or {}).items()}}
+                 # Bundle 12: 'bindings' key retired; signal_ids uses int signal IDs
                  for w in fc_state['widgets'].values()]
         edges = [{'src': e['src'], 'dst': e['dst'],
                   'privilege': 0, 'call_style': 0, 'return_type': 1,
@@ -2006,6 +2009,80 @@ def run_gui():
 
     # Directory where FlowCode saves/opens files (same dir as flowcode.py)
     _FC_DIR = os.path.dirname(os.path.abspath(__file__))
+
+    # ── Bundle 12: migrate Phase 6D 'bindings' → 'signal_ids' on load ────────
+    def _migrate_bindings_to_signal_ids(sym: dict) -> dict:
+        """Convert a loaded widget's binding data to Bundle 12 signal_ids format.
+
+        Handles three cases:
+          1. 'signal_ids' present (Bundle 12 format) — use directly.
+          2. 'bindings' present (Phase 6D format) — convert via signal_name_to_id.
+          3. Neither — return empty dict.
+
+        Phase 6D stored: {'clicked': {'dst_x': int, 'dst_y': int, 'symbolic': str}}
+        Bundle 12 stores: {300: {'dst_x': int, 'dst_y': int}}
+
+        The integer keys are stored as strings in JSON; int() conversion is applied
+        when reading 'signal_ids'.  When reading 'bindings', the signal name is
+        looked up via signal_name_to_id(); if the name is not found (truncated
+        3-char Phase 6D form like 'cli'), the truncated form is tried as a prefix
+        against all known signal names.
+        """
+        # Case 1: Bundle 12 native format
+        raw_sig_ids = sym.get('signal_ids')
+        if raw_sig_ids:
+            result = {}
+            for k, v in raw_sig_ids.items():
+                try:
+                    result[int(k)] = dict(v)
+                except (ValueError, TypeError):
+                    pass
+            return result
+
+        # Case 2: Phase 6D 'bindings' dict — migrate
+        old_bindings = sym.get('bindings')
+        if not old_bindings:
+            return {}
+        result = {}
+        for sig_name, binfo in old_bindings.items():
+            if not binfo:
+                continue
+            # Try direct lookup first
+            sig_id = None
+            try:
+                _fs = _guic_get_signals_mod()
+                sig_id = _fs.signal_name_to_id(sig_name)
+                if sig_id is None:
+                    # Try matching by prefix (Phase 6D truncated to 3 chars)
+                    for entries in _fs.SIGNAL_REGISTRY.values():
+                        for entry in entries:
+                            if entry['name'].startswith(sig_name[:3]):
+                                sig_id = entry['id']
+                                break
+                        if sig_id is not None:
+                            break
+            except Exception:
+                pass
+            if sig_id is not None:
+                result[sig_id] = {'dst_x': binfo.get('dst_x', 0),
+                                  'dst_y': binfo.get('dst_y', 0)}
+            else:
+                print(f"[Bundle12] Warning: could not migrate binding '{sig_name}' "
+                      f"— no matching SIGNAL_* ID found; skipped.")
+        return result
+
+    def _guic_get_signals_mod():
+        """Lazy-load flowcode_signals module."""
+        import importlib.util as _ilu2
+        _path2 = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              '../5500fp/flowcode_signals.py')
+        if not os.path.exists(_path2):
+            _path2 = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                  'flowcode_signals.py')
+        _spec2 = _ilu2.spec_from_file_location('flowcode_signals', _path2)
+        _mod2  = _ilu2.module_from_spec(_spec2)
+        _spec2.loader.exec_module(_mod2)
+        return _mod2
 
     def guic_do_open():
         path = filedialog.askopenfilename(
@@ -2042,7 +2119,7 @@ def run_gui():
                     'layout_mode': sym.get('layout_mode',
                                           _GC_LAYOUT_DEFAULTS.get(kind, 'absolute')),
                     'properties':  list(sym.get('properties', [])),
-                    'bindings':    dict(sym.get('bindings') or {}),  # Phase 6D
+                    'signal_ids':  _migrate_bindings_to_signal_ids(sym),  # Bundle 12
                 }
                 fc_state['next_id'] = max(fc_state['next_id'], wid + 1)
             # Rebuild child_order from parent_id links (preserve file order)
@@ -2329,20 +2406,20 @@ def run_gui():
             fc_state['child_order'][pid] = list(act['order'])
             guic_apply_layout(pid)
         elif k == 'binding_change':
-            # Phase 6D: undo/redo a signal binding change
-            wid     = act['widget_id']
-            signal  = act['signal']
-            old_b   = act['old_binding']
+            # Bundle 12: undo/redo a signal binding change (uses signal_id: int)
+            wid       = act['widget_id']
+            signal_id = act['signal_id']   # int SIGNAL_* constant
+            old_b     = act['old_binding']
             w = fc_state['widgets'].get(wid)
             if w is not None:
-                cur_b = (w.get('bindings') or {}).get(signal)
+                cur_b = (w.get('signal_ids') or {}).get(signal_id)
                 opposite_stack.append({'kind': 'binding_change', 'widget_id': wid,
-                                       'signal': signal, 'old_binding': cur_b})
-                bindings = w.setdefault('bindings', {})
+                                       'signal_id': signal_id, 'old_binding': cur_b})
+                sig_ids = w.setdefault('signal_ids', {})
                 if old_b is None:
-                    bindings.pop(signal, None)
+                    sig_ids.pop(signal_id, None)
                 else:
-                    bindings[signal] = old_b
+                    sig_ids[signal_id] = old_b
         # ── Phase 6C: FlowCode tab undo/redo actions ─────────────────────────
         elif k == 'flow_remove':
             # Undo of user adding a symbol → remove it
@@ -3418,18 +3495,30 @@ def run_gui():
 
             for sig in sig_list:
                 sig_name = sig['name']
+                sig_id   = sig['id']   # Bundle 12: int SIGNAL_* constant
 
-                # Determine current binding display value
-                # If all selected widgets share the same symbolic target → show it
-                # otherwise → "(multiple values)"
-                primary_binding = (primary_w.get('bindings') or {}).get(sig_name)
+                # Determine current binding display value.
+                # Bundle 12: look up by signal_id (int) in 'signal_ids' dict.
+                # Symbolic name is recovered at display time from the flow_terminator
+                # at the stored dst position.
+                def _get_symbolic(w_dict, s_id):
+                    """Return symbolic label for bound terminator, or None if unbound."""
+                    binfo = (w_dict.get('signal_ids') or {}).get(s_id)
+                    if not binfo:
+                        return None
+                    dx, dy = binfo.get('dst_x', 0), binfo.get('dst_y', 0)
+                    for _sym in fc_state['flow_symbols'].values():
+                        if _sym.get('x', 0) == dx and _sym.get('y', 0) == dy:
+                            return _sym.get('label', '') or ''
+                    return ''   # binding exists but terminator not found
+
+                primary_sym = _get_symbolic(primary_w, sig_id)
                 if is_multi:
                     b_vals = []
                     for wid in widget_ids:
                         ww = fc_state['widgets'].get(wid)
                         if ww:
-                            b = (ww.get('bindings') or {}).get(sig_name)
-                            b_vals.append(b.get('symbolic', '') if b else None)
+                            b_vals.append(_get_symbolic(ww, sig_id))
                     all_same = len(set(str(v) for v in b_vals)) == 1
                     if not all_same:
                         disp = '(multiple values)'
@@ -3438,11 +3527,10 @@ def run_gui():
                     else:
                         disp = f'{sig_name} → {b_vals[0] or "(unnamed)"}'
                 else:
-                    if primary_binding is None:
+                    if primary_sym is None:
                         disp = 'Not bound'
                     else:
-                        sym = primary_binding.get('symbolic', '') or '(unnamed)'
-                        disp = f'{sig_name} → {sym}'
+                        disp = f'{sig_name} → {primary_sym or "(unnamed)"}'
 
                 sig_row = tk.Frame(_guic_prop_inner, bg=C['palette'],
                                    cursor='hand2')
@@ -3457,13 +3545,13 @@ def run_gui():
                 # Click anywhere on the row → open picker
                 # Guard against double-click firing <Button-1> twice
                 _pick_guard = [False]
-                def _open_picker(event=None, _sig=sig_name, _wids=widget_ids,
-                                 _g=_pick_guard):
+                def _open_picker(event=None, _sid=sig_id, _sname=sig_name,
+                                 _wids=widget_ids, _g=_pick_guard):
                     if _g[0]:
                         return
                     _g[0] = True
                     try:
-                        _guic_signal_picker(_sig, _wids)
+                        _guic_signal_picker(_sid, _sname, _wids)
                     finally:
                         _g[0] = False
                 sig_row.bind('<Button-1>',         _open_picker)
@@ -3475,8 +3563,13 @@ def run_gui():
         # Scroll to top after rebuild
         _guic_prop_cvs.yview_moveto(0)
 
-    def _guic_signal_picker(signal_name: str, widget_ids: list):
-        """Open a modal picker to bind/unbind a signal to a flow entry (Phase 6D)."""
+    def _guic_signal_picker(signal_id: int, signal_name: str, widget_ids: list):
+        """Open a modal picker to bind/unbind a signal to a flow entry (Bundle 12).
+
+        signal_id:   int SIGNAL_* constant (e.g. SIGNAL_CLICKED=300)
+        signal_name: display string (e.g. 'clicked') — UI only
+        widget_ids:  list of selected widget IDs to bind/unbind
+        """
         # Build list of flow_terminator symbols with is_entry=True, directly from
         # fc_state['flow_symbols'] — no stream indirection needed since we are in
         # the same closure as the flow tab.
@@ -3526,7 +3619,8 @@ def run_gui():
 
         for sid, label, ex, ey in entries:
             lb.insert('end', f'  {label or "(unnamed)"}')
-            _picker_data.append({'dst_x': ex, 'dst_y': ey, 'symbolic': label})
+            # Bundle 12: no 'symbolic' key — recovered at display time from terminator
+            _picker_data.append({'dst_x': ex, 'dst_y': ey})
 
         if not entries:
             tk.Label(dlg, text='(No flow entries with is_entry=True found)',
@@ -3538,25 +3632,32 @@ def run_gui():
             if not sel:
                 return
             idx = sel[0]
-            chosen = _picker_data[idx]   # None or {'dst_x', 'dst_y', 'symbolic'}
+            chosen = _picker_data[idx]   # None or {'dst_x': int, 'dst_y': int}
             dlg.destroy()
-            # Apply binding to all selected widgets
+            # Apply binding to all selected widgets (Bundle 12: uses signal_ids dict)
             for wid in widget_ids:
                 w = fc_state['widgets'].get(wid)
                 if w is None:
                     continue
-                old_b = (w.get('bindings') or {}).get(signal_name)
+                old_b = (w.get('signal_ids') or {}).get(signal_id)
                 _guic_push_undo({'kind': 'binding_change', 'widget_id': wid,
-                                 'signal': signal_name, 'old_binding': old_b})
-                bindings = w.setdefault('bindings', {})
+                                 'signal_id': signal_id, 'old_binding': old_b})
+                sig_ids = w.setdefault('signal_ids', {})
                 if chosen is None:
-                    bindings.pop(signal_name, None)
+                    sig_ids.pop(signal_id, None)
                 else:
-                    bindings[signal_name] = dict(chosen)
+                    sig_ids[signal_id] = dict(chosen)
             _guic_sync_stream()
             guic_rebuild_prop_panel()
             guic_update_undo_btns()
-            sym_label = chosen.get('symbolic') if chosen else None
+            # Recover symbolic name from terminator for status message
+            sym_label = None
+            if chosen:
+                dx, dy = chosen['dst_x'], chosen['dst_y']
+                for _sym in fc_state['flow_symbols'].values():
+                    if _sym.get('x', 0) == dx and _sym.get('y', 0) == dy:
+                        sym_label = _sym.get('label', '') or None
+                        break
             if chosen:
                 guic_set_status(f"Bound {signal_name} → {sym_label or '(unnamed)'}")
             else:
