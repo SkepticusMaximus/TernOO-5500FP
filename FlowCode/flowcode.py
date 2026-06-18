@@ -81,6 +81,24 @@ if _interp_path:
         _ispec.loader.exec_module(_imod)
     _TernOOInterpreter = _imod.TernOOInterpreter
 
+# ── Compiler + engine (Phase 7b-1) ───────────────────────────────────────────
+_compile_to_t5asm = None
+_CompileError     = None
+_compiler_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               '..', '5500fp', 'compile_to_t5asm.py')
+if os.path.exists(_compiler_path):
+    _cspec = spec_from_file_location("compile_to_t5asm", _compiler_path)
+    _cmod  = module_from_spec(_cspec)
+    _cspec.loader.exec_module(_cmod)
+    _compile_to_t5asm = _cmod.compile_wordstream_to_t5asm
+    _CompileError     = _cmod.CompileError
+
+# Absolute path to C emulator binary (built by Bundle 14).
+# If missing, the Run button shows an error rather than crashing.
+_engine_path = os.path.abspath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    '..', 'NASM-TernOO-5500FP-Emulator', 'c_emulator', '5500fp'))
+
 # ── Brain loader (FlowCodeBrain / shadow-GHOST) ───────────────────────────────
 
 def _find_neural():
@@ -687,6 +705,26 @@ def run_gui():
                   background=[('selected', C['pal_active'])],
                   foreground=[('selected', C['pal_border'])])
 
+    # ── Run output panel (Phase 7b-1) — must be packed BEFORE notebook ───────
+    # Pack side='bottom' first so tkinter reserves the space; notebook fills rest.
+    _run_panel = tk.Frame(right_outer, bg=C['palette'], height=120)
+    _run_panel.pack(side='bottom', fill='x')
+    _run_panel.pack_propagate(False)
+    _run_inner = tk.Frame(_run_panel, bg=C['inspect'])
+    _run_inner.pack(fill='both', expand=True)
+    _run_txt = tk.Text(_run_inner, bg=C['inspect'], fg=C['text'],
+                       font=('Monospace', 8), state='disabled',
+                       wrap='word', relief='flat', padx=6, pady=4,
+                       insertbackground=C['text'])
+    _run_sb  = tk.Scrollbar(_run_inner, command=_run_txt.yview, bg=C['palette'])
+    _run_txt.configure(yscrollcommand=_run_sb.set)
+    _run_sb.pack(side='right', fill='y')
+    _run_txt.pack(fill='both', expand=True)
+    _run_txt.tag_config('header_run', foreground='#5599ff')
+    _run_txt.tag_config('header_ok',  foreground='#7aff7a')
+    _run_txt.tag_config('header_err', foreground='#ff6666')
+    _run_txt.tag_config('stderr_out', foreground='#cc8844')
+
     notebook = ttk.Notebook(right_outer)
     notebook.pack(fill='both',expand=True)
 
@@ -828,6 +866,7 @@ def run_gui():
                         activeforeground=C['text'],
                         cursor='hand2', padx=4, pady=4)
         btn.pack(fill='x', padx=6, pady=2)
+        return btn
 
     def do_run():
         # Phase 6C: sync canvas_model from fc_state for execution
@@ -970,6 +1009,105 @@ def run_gui():
     _action_btn("⬇ Word Dump", do_dump,   icon_key='dump')
     _action_btn("▶ Load→EMU",  do_load,   fg='#7aff7a', icon_key='load')
     _action_btn("▶▶ Run",      do_run,    fg='#ffdd57')
+
+    # ── Phase 7b-1: Compile + Run via C emulator subprocess ──────────────────
+
+    _btn_compile_run = [None]   # mutable ref so do_compile_run can re-enable itself
+
+    def do_compile_run():
+        import subprocess, time as _time, traceback as _tb
+
+        def _append(text, tag=None):
+            _run_txt.config(state='normal')
+            if tag:
+                _run_txt.insert('end', text, tag)
+            else:
+                _run_txt.insert('end', text)
+            _run_txt.see('end')
+            _run_txt.config(state='disabled')
+
+        # Clear previous output
+        _run_txt.config(state='normal')
+        _run_txt.delete('1.0', 'end')
+        _run_txt.config(state='disabled')
+
+        # Disable Run button while executing
+        if _btn_compile_run[0]:
+            _btn_compile_run[0].config(state='disabled')
+        root.update_idletasks()
+
+        try:
+            # Check compiler available
+            if not _compile_to_t5asm:
+                _append('✗ compile_to_t5asm.py not found in 5500fp/\n', 'header_err')
+                return
+
+            # Check engine binary
+            if not os.path.isfile(_engine_path) or not os.access(_engine_path, os.X_OK):
+                rel = os.path.relpath(_engine_path)
+                _append(
+                    f'✗ Engine not found: {rel}\n'
+                    f'  Run `make` in NASM-TernOO-5500FP-Emulator/c_emulator/ first.\n',
+                    'header_err')
+                return
+
+            # Compile
+            _append('▶ Compiling…\n', 'header_run')
+            root.update_idletasks()
+
+            src_path = _current_design_path[0] or '<in-memory>'
+            stream   = fc_state.get('stream')
+            if stream is None:
+                _append('✗ No WordStream available\n', 'header_err')
+                return
+
+            try:
+                t5asm_text = _compile_to_t5asm(stream, source_path=src_path)
+            except _CompileError as ce:
+                _append(f'✗ CompileError: {ce}\n', 'header_err')
+                set_status(f'Compile error: {ce}')
+                return
+            except Exception:
+                _append(f'✗ Internal compiler error:\n{_tb.format_exc()}\n', 'header_err')
+                return
+
+            # Write temp file (overwrite same pid-slot on each run)
+            pid = os.getpid()
+            ts  = _time.strftime('%Y%m%dT%H%M%S')
+            tmp_path = f'/tmp/flowcode_{pid}_{ts}.t5asm'
+            with open(tmp_path, 'w') as _f:
+                _f.write(t5asm_text)
+
+            # Run subprocess
+            rel_engine = os.path.relpath(_engine_path)
+            _append(f'▶ Running {rel_engine}  --run  {tmp_path}\n', 'header_run')
+            root.update_idletasks()
+
+            t0 = _time.monotonic()
+            try:
+                proc = subprocess.run(
+                    [_engine_path, '--run', tmp_path],
+                    capture_output=True, text=True, timeout=30.0)
+                elapsed = _time.monotonic() - t0
+                if proc.stdout:
+                    _append(proc.stdout)
+                if proc.stderr:
+                    _append(proc.stderr, 'stderr_out')
+                if proc.returncode == 0:
+                    _append(f'✓ Exit 0 in {elapsed:.3f}s\n', 'header_ok')
+                    set_status(f'Run OK — Exit 0 in {elapsed:.3f}s')
+                else:
+                    _append(f'✗ Exit {proc.returncode} in {elapsed:.3f}s\n', 'header_err')
+                    set_status(f'Run failed — Exit {proc.returncode}')
+            except subprocess.TimeoutExpired:
+                _append('✗ Timeout (30s)\n', 'header_err')
+                set_status('Run timed out (30s)')
+        finally:
+            if _btn_compile_run[0]:
+                _btn_compile_run[0].config(state='normal')
+
+    _btn_compile_run[0] = _action_btn("▶ Run", do_compile_run, fg='#7aff7a')
+
     _action_btn("💾 Save",     do_save,   icon_key='save')
     _action_btn("📂 Open",     do_open,   icon_key='open')
     _action_btn("🗑 Clear",    do_clear,  fg='#ff8888', icon_key='clear')
@@ -1794,6 +1932,9 @@ def run_gui():
         def _fp_properties_for(kind): return []
         def _fp_common_for_kinds(kinds): return []
 
+    # Phase 7b-1: track the most recently saved/opened .ternoo path for compiler header.
+    _current_design_path = [None]   # mutable so closures can update it
+
     # ── Shared canvas state (GHOST + FlowCode) ───────────────────────────────
     fc_state = {
         'widgets':       {},    # id → {id, kind, x, y, label, w, h, parent_id, layout_mode, properties}
@@ -2011,6 +2152,7 @@ def run_gui():
         }
         with open(path, 'w') as _sf:
             json.dump(tgui, _sf, indent=2)
+        _current_design_path[0] = path  # Phase 7b-1: track for compiler header
         guic_set_status(f"Saved: {os.path.basename(path)}")
 
     # Directory where FlowCode saves/opens files (same dir as flowcode.py)
@@ -2166,6 +2308,7 @@ def run_gui():
             # Phase 6B/6C: sync stream from widgets+flow content
             _guic_sync_stream()
             guic_set_mode('select')
+            _current_design_path[0] = path  # Phase 7b-1: track for compiler header
             guic_set_status(f"Opened: {os.path.basename(path)}")
             guic_layout_all()
             guic_redraw()
