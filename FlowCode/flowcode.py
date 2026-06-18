@@ -710,6 +710,10 @@ def run_gui():
     ghost_tab = tk.Frame(notebook,bg=C['bg'])
     notebook.add(ghost_tab, text='  GUI  ')
 
+    # ── Tab 3: GristMill — OTree/vocabulary explorer (Bundle 13) ─────────────
+    gm_tab = tk.Frame(notebook,bg=C['bg'])
+    notebook.add(gm_tab, text='  GristMill  ')
+
     def set_status(m): status.config(text=m)
     def set_inspect(m): inspect.config(text=m)
 
@@ -4064,6 +4068,10 @@ def run_gui():
             except Exception: pass
             _guic_active_tip[0] = None
         if idx == 1: guic_redraw()
+        elif idx == 2:
+            # GristMill tab — subscriber keeps Program current; force refresh on switch
+            try: _gristmill_view._rebuild_program()
+            except Exception: pass
         else: redraw()
     notebook.bind('<<NotebookTabChanged>>', _on_tab_change)
 
@@ -4091,6 +4099,24 @@ def run_gui():
     _flowcode_tab_view = FlowCodeTabView()
     if fc_state.get('stream') is not None:
         fc_state['stream'].subscribe(_flowcode_tab_view.on_stream_change)
+
+    # ── Bundle 13: GristMillTabView — OTree/vocabulary explorer ──────────────
+    _gristmill_view = None
+    _gmtv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               '../5500fp/gristmill_tab_view.py')
+    if os.path.exists(_gmtv_path):
+        try:
+            import importlib.util as _gmtv_u
+            _gmtv_spec = _gmtv_u.spec_from_file_location('gristmill_tab_view', _gmtv_path)
+            _gmtv_mod  = _gmtv_u.module_from_spec(_gmtv_spec)
+            _gmtv_spec.loader.exec_module(_gmtv_mod)
+            _gristmill_view = _gmtv_mod.GristMillTabView(gm_tab, fc_state, C, root)
+            if fc_state.get('stream') is not None:
+                fc_state['stream'].subscribe(_gristmill_view.on_stream_change)
+        except Exception as _gmtv_err:
+            import traceback
+            traceback.print_exc()
+            print(f'[FlowCode] GristMill tab failed to load: {_gmtv_err}')
 
     tk_canvas.bind('<Button-1>',on_click)
     tk_canvas.bind('<B1-Motion>',on_motion)
