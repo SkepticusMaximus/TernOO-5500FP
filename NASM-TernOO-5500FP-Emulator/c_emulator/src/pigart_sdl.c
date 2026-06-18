@@ -30,6 +30,11 @@
 #include <string.h>
 #include <math.h>
 
+/* M_PI is a POSIX extension, not guaranteed by C11 */
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 /* -----------------------------------------------------------------------
  * Static SDL state
  * --------------------------------------------------------------------- */
@@ -77,25 +82,6 @@ static TTF_Font *get_font(int size) {
     }
     fprintf(stderr, "[PIGART SDL] Warning: no font found — text will not render.\n");
     return NULL;
-}
-
-/* Pump SDL event queue; return 1 if a quit event was seen. */
-static int pump_events_internal(SDL_Event *out_ev) {
-    SDL_Event ev;
-    while (SDL_PollEvent(&ev)) {
-        if (ev.type == SDL_QUIT) {
-            if (out_ev) *out_ev = ev;
-            return 1;
-        }
-        /* Ignore other events in the pump — they'll be returned to callers */
-        if (out_ev && (ev.type == SDL_KEYDOWN || ev.type == SDL_KEYUP ||
-                       ev.type == SDL_MOUSEBUTTONDOWN || ev.type == SDL_MOUSEBUTTONUP ||
-                       ev.type == SDL_MOUSEMOTION)) {
-            *out_ev = ev;
-            return 0;
-        }
-    }
-    return 0;
 }
 
 /* -----------------------------------------------------------------------
