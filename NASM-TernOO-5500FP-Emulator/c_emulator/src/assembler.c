@@ -353,13 +353,49 @@ int assemble(const char *source, int64_t *program, int max_words,
                     rs1 = 0;
                     /* tok2 may be a label or immediate */
                     int64_t lv = label_lookup(tok2);
-                    if (lv == -999999) imm = parse_imm(tok2);
-                    else imm = lv;
+                    if (lv == -999999) {
+                        if (isalpha((unsigned char)tok2[0]) || tok2[0] == '_') {
+                            /* Forward label reference — add fixup for pass 2 */
+                            if (n_fixups < MAX_LABELS) {
+                                fixups[n_fixups].addr        = cur_addr;
+                                strncpy(fixups[n_fixups].label, tok2, 63);
+                                fixups[n_fixups].opcode      = me->opcode;
+                                fixups[n_fixups].fmt         = FMT_I;
+                                fixups[n_fixups].rd          = rd;
+                                fixups[n_fixups].rs1         = 0;
+                                fixups[n_fixups].is_relative = 0;
+                                n_fixups++;
+                            }
+                            imm = 0; /* placeholder */
+                        } else {
+                            imm = parse_imm(tok2);
+                        }
+                    } else {
+                        imm = lv;
+                    }
                 } else {
                     /* Check if tok3 is a label */
                     int64_t lv = label_lookup(tok3);
-                    if (lv == -999999) imm = parse_imm(tok3);
-                    else imm = lv;
+                    if (lv == -999999) {
+                        if (isalpha((unsigned char)tok3[0]) || tok3[0] == '_') {
+                            /* Forward label reference — add fixup for pass 2 */
+                            if (n_fixups < MAX_LABELS) {
+                                fixups[n_fixups].addr        = cur_addr;
+                                strncpy(fixups[n_fixups].label, tok3, 63);
+                                fixups[n_fixups].opcode      = me->opcode;
+                                fixups[n_fixups].fmt         = FMT_I;
+                                fixups[n_fixups].rd          = rd;
+                                fixups[n_fixups].rs1         = rs1;
+                                fixups[n_fixups].is_relative = 0;
+                                n_fixups++;
+                            }
+                            imm = 0; /* placeholder */
+                        } else {
+                            imm = parse_imm(tok3);
+                        }
+                    } else {
+                        imm = lv;
+                    }
                 }
                 inst = encode_i(me->opcode, rd, rs1, imm);
                 break;
@@ -484,6 +520,8 @@ int assemble(const char *source, int64_t *program, int max_words,
             program[fix_idx] = encode_j(op, imm);
         } else if (fixups[i].fmt == FMT_B) {
             program[fix_idx] = encode_b(op, fixups[i].rd, fixups[i].rs1, imm);
+        } else if (fixups[i].fmt == FMT_I) {
+            program[fix_idx] = encode_i(op, fixups[i].rd, fixups[i].rs1, imm);
         }
     }
 

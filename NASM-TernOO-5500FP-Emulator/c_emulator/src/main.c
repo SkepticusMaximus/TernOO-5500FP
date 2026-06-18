@@ -10,6 +10,7 @@
 
 #define _GNU_SOURCE
 #include "../include/cpu.h"
+#include "../include/pigart.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -305,6 +306,76 @@ static void run_tests(void) {
         cpu_destroy(cpu);
     }
 
+    /* -----------------------------------------------------------------------
+     * PIGART Tests — ASCII backend (6 new tests, Phase 7b-2)
+     * --------------------------------------------------------------------- */
+    printf("\n-- PIGART ASCII Backend Tests --\n");
+
+    /* Test P1: PIGART_OPEN_WINDOW returns 0 with no backend */
+    {
+        pigart_active_backend = NULL;
+        int64_t regs[81];
+        memset(regs, 0, sizeof(regs));
+        regs[1] = PIGART_OPEN_WINDOW;
+        regs[2] = 800; regs[3] = 600; regs[4] = 0;
+        int64_t tmem[1] = {0};
+        pigart_handle_syscall(PIGART_OPEN_WINDOW, regs, tmem, 1);
+        test_assert("PIGART_OPEN_WINDOW returns 0, no backend", regs[1], 0);
+    }
+
+    /* Test P2: PIGART_OPEN_WINDOW returns 1 with ASCII backend */
+    {
+        pigart_active_backend = pigart_ascii_backend();
+        int64_t regs[81];
+        memset(regs, 0, sizeof(regs));
+        regs[1] = PIGART_OPEN_WINDOW;
+        regs[2] = 800; regs[3] = 600; regs[4] = 0;
+        int64_t tmem[1] = {0};
+        pigart_handle_syscall(PIGART_OPEN_WINDOW, regs, tmem, 1);
+        test_assert("PIGART_OPEN_WINDOW returns 1 with backend", regs[1], 1);
+        /* Leave window open for subsequent tests */
+    }
+
+    /* Test P3: PIGART_DRAW_TEXT places text at correct ASCII grid position
+     *   Window: 800x600, grid: 80x24 (default).
+     *   draw_text at pixel (80, 150) → grid (80*80/800=8, 150*24/600=6).
+     *   So 'H' at grid[6][8], 'i' at grid[6][9]. */
+    {
+        pigart_active_backend->clear(0);
+        pigart_active_backend->draw_text(80, 150, "Hi", 16, 0xFFFFFF);
+        char ch = pigart_ascii_cell(8, 6);
+        test_assert("PIGART_DRAW_TEXT 'H' at grid(8,6)", (int64_t)ch, (int64_t)'H');
+        char ci = pigart_ascii_cell(9, 6);
+        test_assert("PIGART_DRAW_TEXT 'i' at grid(9,6)", (int64_t)ci, (int64_t)'i');
+    }
+
+    /* Test P4: PIGART_DRAW_RECT filled region contains '#'
+     *   Filled rect at pixel (400,300,200,120).
+     *   Scaled: x=400*80/800=40, y=300*24/600=12, w=200*80/800=20, h=120*24/600=4.
+     *   Centre of rect: grid(50, 14) → should be '#'. */
+    {
+        pigart_active_backend->clear(0);
+        pigart_active_backend->draw_rect(400, 300, 200, 120, 0x0000FF, 1);
+        char c = pigart_ascii_cell(50, 14);
+        test_assert("PIGART_DRAW_RECT filled → '#' at centre", (int64_t)c, (int64_t)'#');
+    }
+
+    /* Test P5: PIGART_POLL_EVENT returns 0 in ASCII mode */
+    {
+        int64_t ev4[4] = {1, 2, 3, 4};
+        int r = pigart_active_backend->poll_event(ev4);
+        test_assert("PIGART_POLL_EVENT returns 0 in ASCII mode", (int64_t)r, 0);
+    }
+
+    /* Test P6: PIGART_GET_TICKS returns positive value after sleep */
+    {
+        pigart_active_backend->sleep_ms(50);
+        int ticks = pigart_active_backend->get_ticks();
+        test_assert("PIGART_GET_TICKS > 0 after 50ms", (int64_t)(ticks > 0 ? 1 : 0), 1);
+        pigart_active_backend->close_window();
+        pigart_active_backend = NULL;
+    }
+
     printf("\n=== Test Results: %d passed, %d failed ===\n",
            tests_passed, tests_failed);
 }
@@ -411,6 +482,20 @@ int main(int argc, char *argv[]) {
     printf("Architecture: 24-trit, 81 registers, binary-encoded ternary on x86\n");
     printf("--------------------------------------------------------------\n");
 
+    /* Scan for --display flag (may appear before --run) */
+    for (int i = 1; i < argc - 1; i++) {
+        if (strcmp(argv[i], "--display") == 0) {
+            const char *name = argv[i + 1];
+            pigart_backend_t *b = pigart_select_backend(name);
+            if (!b) {
+                fprintf(stderr, "Error: unknown display backend '%s' (try: sdl, ascii)\n",
+                        name);
+                return 1;
+            }
+            break;
+        }
+    }
+
     if (argc < 2 || strcmp(argv[1], "--demo") == 0) {
         run_demo("Hello World",        demo_hello,         1);
         run_demo("Fibonacci",          demo_fibonacci,     0);
@@ -424,14 +509,21 @@ int main(int argc, char *argv[]) {
     } else if (strcmp(argv[1], "--run") == 0 && argc >= 3) {
         int verbose = (argc >= 4 && strcmp(argv[3], "--verbose") == 0);
         run_file(argv[2], verbose);
+    } else if (strcmp(argv[1], "--display") == 0 && argc >= 4
+               && strcmp(argv[3], "--run") == 0 && argc >= 5) {
+        /* ./5500fp --display <name> --run <file> [--verbose] */
+        int verbose = (argc >= 6 && strcmp(argv[5], "--verbose") == 0);
+        run_file(argv[4], verbose);
     } else {
         printf("Usage:\n");
-        printf("  %s                        Run all demos\n", argv[0]);
-        printf("  %s --demo                 Run all demos\n", argv[0]);
-        printf("  %s --test                 Run self-tests\n", argv[0]);
-        printf("  %s --interactive          Interactive mode\n", argv[0]);
-        printf("  %s --run <file.t5asm>     Run assembly file\n", argv[0]);
-        printf("  %s --run <file> --verbose Verbose output\n", argv[0]);
+        printf("  %s                                Run all demos\n", argv[0]);
+        printf("  %s --demo                         Run all demos\n", argv[0]);
+        printf("  %s --test                         Run self-tests\n", argv[0]);
+        printf("  %s --interactive                  Interactive mode\n", argv[0]);
+        printf("  %s --run <file.t5asm>             Run assembly file\n", argv[0]);
+        printf("  %s --run <file> --verbose         Verbose output\n", argv[0]);
+        printf("  %s --display sdl   --run <file>  Run with SDL2 window\n", argv[0]);
+        printf("  %s --display ascii --run <file>  Run with ASCII frames\n", argv[0]);
     }
 
     return 0;

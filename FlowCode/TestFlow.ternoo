@@ -1,0 +1,159 @@
+{
+  "ternoo_version": "0.3",
+  "source_type": "ternoo_design",
+  "symbols": [],
+  "edges": [],
+  "flow_symbols": [
+    {
+      "id": 1,
+      "kind": "flow_process",
+      "x": 200,
+      "y": 240,
+      "w": 120,
+      "h": 60,
+      "label": "P1",
+      "properties": []
+    },
+    {
+      "id": 2,
+      "kind": "flow_io",
+      "x": 200,
+      "y": 80,
+      "w": 120,
+      "h": 60,
+      "label": "I2",
+      "properties": []
+    },
+    {
+      "id": 3,
+      "kind": "flow_decision",
+      "x": 200,
+      "y": 400,
+      "w": 120,
+      "h": 60,
+      "label": "D3",
+      "properties": []
+    },
+    {
+      "id": 4,
+      "kind": "flow_process",
+      "x": 200,
+      "y": 560,
+      "w": 120,
+      "h": 60,
+      "label": "P4",
+      "properties": []
+    },
+    {
+      "id": 5,
+      "kind": "flow_decision",
+      "x": 480,
+      "y": 400,
+      "w": 120,
+      "h": 60,
+      "label": "D5",
+      "properties": []
+    },
+    {
+      "id": 6,
+      "kind": "flow_io",
+      "x": 200,
+      "y": 720,
+      "w": 120,
+      "h": 60,
+      "label": "I6",
+      "properties": []
+    },
+    {
+      "id": 7,
+      "kind": "flow_process",
+      "x": 480,
+      "y": 560,
+      "w": 120,
+      "h": 60,
+      "label": "P7",
+      "properties": []
+    },
+    {
+      "id": 8,
+      "kind": "flow_decision",
+      "x": 480,
+      "y": 720,
+      "w": 120,
+      "h": 60,
+      "label": "D8",
+      "properties": []
+    },
+    {
+      "id": 9,
+      "kind": "flow_io",
+      "x": 680,
+      "y": 720,
+      "w": 120,
+      "h": 60,
+      "label": "I9",
+      "properties": []
+    }
+  ],
+  "flow_edges": [
+    {
+      "src": 1,
+      "dst": 3,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 4,
+      "dst": 3,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 3,
+      "dst": 5,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 5,
+      "dst": 1,
+      "waypoints": [
+        [
+          480,
+          240
+        ]
+      ],
+      "condition": ""
+    },
+    {
+      "src": 4,
+      "dst": 6,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 7,
+      "dst": 5,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 7,
+      "dst": 8,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 8,
+      "dst": 9,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 2,
+      "dst": 1,
+      "waypoints": [],
+      "condition": ""
+    }
+  ]
+}

@@ -15,6 +15,7 @@
  */
 
 #include "../include/cpu.h"
+#include "../include/pigart.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -320,6 +321,21 @@ static void handle_syscall(cpu_t *cpu) {
             break;
         case SYS_PRINT_NL:
             putchar('\n');
+            break;
+        /* ---- PIGART rendering syscalls 100-111 ---- */
+        case PIGART_OPEN_WINDOW:
+        case PIGART_CLEAR:
+        case PIGART_DRAW_RECT:
+        case PIGART_DRAW_POLYGON:
+        case PIGART_DRAW_OVAL:
+        case PIGART_DRAW_TEXT:
+        case PIGART_DRAW_LINE:
+        case PIGART_PRESENT:
+        case PIGART_POLL_EVENT:
+        case PIGART_SLEEP_MS:
+        case PIGART_GET_TICKS:
+        case PIGART_CLOSE_WINDOW:
+            pigart_handle_syscall((int)call, cpu->reg, cpu->mem, cpu->mem_size);
             break;
         default:
             fprintf(stderr, "[5500FP] Unknown syscall %lld\n", (long long)call);

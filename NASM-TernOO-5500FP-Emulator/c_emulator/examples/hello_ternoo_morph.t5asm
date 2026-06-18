@@ -1,0 +1,319 @@
+; hello_ternoo_morph.t5asm — Hello World → TernOO World morph demo
+;
+; Demonstrates the full PIGART syscall family (Phase 7b-2).
+; Run with:
+;   ./5500fp --display sdl   --run examples/hello_ternoo_morph.t5asm
+;   ./5500fp --display ascii --run examples/hello_ternoo_morph.t5asm
+;
+; Morph sequence:
+;   "Hello World"   (5 seconds)
+;   "Tello World"   (1 second)
+;   "Terlo World"   (1 second)
+;   "Terno World"   (1 second)
+;   "TernO World"   (1 second)
+;   "TernOO World"  (hold — close window or Ctrl+C to exit)
+;
+; String encoding: one char per .word (null-terminated with .word 0).
+; Colors stored as .word to stay within 10-trit LI immediate range (±29524).
+;
+; Phase 7b-2, TernOO 5500FP project.
+; Date: 2026-06-19, Adelaide.
+
+; -----------------------------------------------------------------------
+; OPEN WINDOW  (PIGART_OPEN_WINDOW = 100)
+;   R2 = 800  (width)
+;   R3 = 200  (height)
+;   R4 = title_addr
+; -----------------------------------------------------------------------
+    LI   R1, 100
+    LI   R2, 800
+    LI   R3, 200
+    LI   R4, title_addr
+    SYSCALL
+    ; R1 == 0 means no backend loaded — that's fine, ops are no-ops
+
+; -----------------------------------------------------------------------
+; Frame 0: "Hello World" — hold 5 seconds
+; -----------------------------------------------------------------------
+    LI   R1, 101            ; PIGART_CLEAR
+    LI   R20, color_white
+    LDW  R2, R20, 0         ; R2 = white
+    SYSCALL
+
+    LI   R1, 105            ; PIGART_DRAW_TEXT
+    LI   R2, 280            ; x
+    LI   R3, 84             ; y (centred-ish in 200px window)
+    LI   R4, hello_addr
+    LI   R5, 32             ; font size
+    LI   R20, color_navy
+    LDW  R6, R20, 0         ; R6 = navy
+    SYSCALL
+
+    LI   R1, 107            ; PIGART_PRESENT
+    SYSCALL
+
+    LI   R1, 109            ; PIGART_SLEEP_MS
+    LI   R2, 5000           ; 5 seconds
+    SYSCALL
+
+; -----------------------------------------------------------------------
+; Frame 1: "Tello World" — 1 second
+; -----------------------------------------------------------------------
+    LI   R1, 101
+    LI   R20, color_white
+    LDW  R2, R20, 0
+    SYSCALL
+
+    LI   R1, 105
+    LI   R2, 280
+    LI   R3, 84
+    LI   R4, frame1_addr
+    LI   R5, 32
+    LI   R20, color_navy
+    LDW  R6, R20, 0
+    SYSCALL
+
+    LI   R1, 107
+    SYSCALL
+
+    LI   R1, 109
+    LI   R2, 1000
+    SYSCALL
+
+; -----------------------------------------------------------------------
+; Frame 2: "Terlo World" — 1 second
+; -----------------------------------------------------------------------
+    LI   R1, 101
+    LI   R20, color_white
+    LDW  R2, R20, 0
+    SYSCALL
+
+    LI   R1, 105
+    LI   R2, 280
+    LI   R3, 84
+    LI   R4, frame2_addr
+    LI   R5, 32
+    LI   R20, color_navy
+    LDW  R6, R20, 0
+    SYSCALL
+
+    LI   R1, 107
+    SYSCALL
+
+    LI   R1, 109
+    LI   R2, 1000
+    SYSCALL
+
+; -----------------------------------------------------------------------
+; Frame 3: "Terno World" — 1 second
+; -----------------------------------------------------------------------
+    LI   R1, 101
+    LI   R20, color_white
+    LDW  R2, R20, 0
+    SYSCALL
+
+    LI   R1, 105
+    LI   R2, 280
+    LI   R3, 84
+    LI   R4, frame3_addr
+    LI   R5, 32
+    LI   R20, color_navy
+    LDW  R6, R20, 0
+    SYSCALL
+
+    LI   R1, 107
+    SYSCALL
+
+    LI   R1, 109
+    LI   R2, 1000
+    SYSCALL
+
+; -----------------------------------------------------------------------
+; Frame 4: "TernO World" — 1 second
+; -----------------------------------------------------------------------
+    LI   R1, 101
+    LI   R20, color_white
+    LDW  R2, R20, 0
+    SYSCALL
+
+    LI   R1, 105
+    LI   R2, 280
+    LI   R3, 84
+    LI   R4, frame4_addr
+    LI   R5, 32
+    LI   R20, color_navy
+    LDW  R6, R20, 0
+    SYSCALL
+
+    LI   R1, 107
+    SYSCALL
+
+    LI   R1, 109
+    LI   R2, 1000
+    SYSCALL
+
+; -----------------------------------------------------------------------
+; Frame 5: "TernOO World" — hold until window close event
+; -----------------------------------------------------------------------
+    LI   R1, 101
+    LI   R20, color_white
+    LDW  R2, R20, 0
+    SYSCALL
+
+    LI   R1, 105
+    LI   R2, 260
+    LI   R3, 84
+    LI   R4, frame5_addr
+    LI   R5, 32
+    LI   R20, color_navy
+    LDW  R6, R20, 0
+    SYSCALL
+
+    LI   R1, 107
+    SYSCALL
+
+; -----------------------------------------------------------------------
+; Event loop — poll until PIGART_EVENT_CLOSE (type 1)
+; -----------------------------------------------------------------------
+hold_loop:
+    LI   R1, 108            ; PIGART_POLL_EVENT
+    LI   R2, event_buf
+    SYSCALL
+    BEQZ R1, no_event       ; R1==0 → no event, skip check
+
+    ; Got an event — load event type
+    LDW  R5, R2, 0          ; R5 = event_type (event_buf[0])
+    LI   R6, 1              ; PIGART_EVENT_CLOSE
+    BEQ  R5, R6, exit_prog  ; close → exit
+
+no_event:
+    LI   R1, 109            ; PIGART_SLEEP_MS
+    LI   R2, 100            ; 100ms poll rate
+    SYSCALL
+    JMP  hold_loop
+
+exit_prog:
+    LI   R1, 111            ; PIGART_CLOSE_WINDOW
+    SYSCALL
+    HALT
+
+; -----------------------------------------------------------------------
+; Data section — strings (one .word per char, terminated by .word 0)
+; -----------------------------------------------------------------------
+title_addr:
+    .word 84   ; T
+    .word 101  ; e
+    .word 114  ; r
+    .word 110  ; n
+    .word 79   ; O
+    .word 79   ; O
+    .word 32   ; (space)
+    .word 53   ; 5
+    .word 53   ; 5
+    .word 48   ; 0
+    .word 48   ; 0
+    .word 70   ; F
+    .word 80   ; P
+    .word 32   ; (space)
+    .word 68   ; D
+    .word 101  ; e
+    .word 109  ; m
+    .word 111  ; o
+    .word 0    ; NUL
+
+hello_addr:
+    .word 72   ; H
+    .word 101  ; e
+    .word 108  ; l
+    .word 108  ; l
+    .word 111  ; o
+    .word 32   ; (space)
+    .word 87   ; W
+    .word 111  ; o
+    .word 114  ; r
+    .word 108  ; l
+    .word 100  ; d
+    .word 0    ; NUL
+
+frame1_addr:
+    .word 84   ; T
+    .word 101  ; e
+    .word 108  ; l
+    .word 108  ; l
+    .word 111  ; o
+    .word 32   ; (space)
+    .word 87   ; W
+    .word 111  ; o
+    .word 114  ; r
+    .word 108  ; l
+    .word 100  ; d
+    .word 0    ; NUL
+
+frame2_addr:
+    .word 84   ; T
+    .word 101  ; e
+    .word 114  ; r
+    .word 108  ; l
+    .word 111  ; o
+    .word 32   ; (space)
+    .word 87   ; W
+    .word 111  ; o
+    .word 114  ; r
+    .word 108  ; l
+    .word 100  ; d
+    .word 0    ; NUL
+
+frame3_addr:
+    .word 84   ; T
+    .word 101  ; e
+    .word 114  ; r
+    .word 110  ; n
+    .word 111  ; o
+    .word 32   ; (space)
+    .word 87   ; W
+    .word 111  ; o
+    .word 114  ; r
+    .word 108  ; l
+    .word 100  ; d
+    .word 0    ; NUL
+
+frame4_addr:
+    .word 84   ; T
+    .word 101  ; e
+    .word 114  ; r
+    .word 110  ; n
+    .word 79   ; O
+    .word 32   ; (space)
+    .word 87   ; W
+    .word 111  ; o
+    .word 114  ; r
+    .word 108  ; l
+    .word 100  ; d
+    .word 0    ; NUL
+
+frame5_addr:
+    .word 84   ; T
+    .word 101  ; e
+    .word 114  ; r
+    .word 110  ; n
+    .word 79   ; O
+    .word 79   ; O
+    .word 32   ; (space)
+    .word 87   ; W
+    .word 111  ; o
+    .word 114  ; r
+    .word 108  ; l
+    .word 100  ; d
+    .word 0    ; NUL
+
+color_white:
+    .word 16777215          ; 0xFFFFFF
+
+color_navy:
+    .word 128               ; 0x000080
+
+event_buf:
+    .word 0
+    .word 0
+    .word 0
+    .word 0

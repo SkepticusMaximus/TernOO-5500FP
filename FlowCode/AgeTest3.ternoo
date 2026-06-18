@@ -1,0 +1,144 @@
+{
+  "ternoo_version": "0.3",
+  "source_type": "ternoo_design",
+  "symbols": [],
+  "edges": [],
+  "flow_symbols": [
+    {
+      "id": 1,
+      "kind": "flow_terminator",
+      "x": 240,
+      "y": 80,
+      "w": 120,
+      "h": 60,
+      "label": "START",
+      "properties": []
+    },
+    {
+      "id": 2,
+      "kind": "flow_decision",
+      "x": 240,
+      "y": 560,
+      "w": 120,
+      "h": 60,
+      "label": "AGE TEST",
+      "properties": []
+    },
+    {
+      "id": 3,
+      "kind": "flow_io",
+      "x": 240,
+      "y": 800,
+      "w": 120,
+      "h": 60,
+      "label": "ACCEPT AGE",
+      "properties": []
+    },
+    {
+      "id": 4,
+      "kind": "flow_io",
+      "x": 240,
+      "y": 240,
+      "w": 120,
+      "h": 60,
+      "label": "GET AGE",
+      "properties": []
+    },
+    {
+      "id": 5,
+      "kind": "flow_terminator",
+      "x": 480,
+      "y": 800,
+      "w": 120,
+      "h": 60,
+      "label": "END",
+      "properties": []
+    },
+    {
+      "id": 6,
+      "kind": "flow_io",
+      "x": 480,
+      "y": 560,
+      "w": 120,
+      "h": 60,
+      "label": "UNDER AGE",
+      "properties": []
+    },
+    {
+      "id": 7,
+      "kind": "flow_process",
+      "x": 240,
+      "y": 400,
+      "w": 120,
+      "h": 60,
+      "label": "COMPARE 14 18",
+      "properties": []
+    },
+    {
+      "id": 8,
+      "kind": "flow_io",
+      "x": 720,
+      "y": 560,
+      "w": 120,
+      "h": 60,
+      "label": "ADULT SUPERVISION",
+      "properties": []
+    }
+  ],
+  "flow_edges": [
+    {
+      "src": 2,
+      "dst": 3,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 3,
+      "dst": 5,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 2,
+      "dst": 6,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 1,
+      "dst": 4,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 6,
+      "dst": 5,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 4,
+      "dst": 7,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 7,
+      "dst": 2,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 2,
+      "dst": 8,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 8,
+      "dst": 5,
+      "waypoints": [],
+      "condition": ""
+    }
+  ]
+}

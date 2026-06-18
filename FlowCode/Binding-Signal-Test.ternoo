@@ -1,0 +1,181 @@
+{
+  "ternoo_version": "0.3",
+  "source_file": "Binding-Signal-Test.ternoo",
+  "source_type": "ternoo_design",
+  "word_stream": [
+    60071433440,
+    -80196041219,
+    -76709245151,
+    -62374698729,
+    -55786634798,
+    -55786733852,
+    -62268410529,
+    60071433440,
+    -80195568827,
+    -76709245151,
+    -62374698729,
+    -55786635691,
+    -55788534814,
+    -62268410529,
+    60071433440,
+    -80196041207,
+    -76709245151,
+    -62374698729,
+    -55786634798,
+    -55786733852,
+    -62268410529,
+    60071433440,
+    -80196041219,
+    -76709245151,
+    -62374698729,
+    -55786634798,
+    -55786733852,
+    -62268410529,
+    57724589979,
+    60071433436,
+    -80195923120,
+    -76709248068,
+    -62374167288,
+    -55786979745,
+    -55786816173,
+    -55788536621,
+    57724589979,
+    59662223864,
+    -80195883751,
+    -80195805019,
+    -62321023188,
+    -55786816173,
+    -55786979745,
+    59662223864,
+    -80195883739,
+    -80195805019,
+    -62321023188,
+    -55786816173,
+    -55786979745,
+    59662223864,
+    -80195883751,
+    -80195805019,
+    -62321023188,
+    -55786816173,
+    -55786979745
+  ],
+  "symbols": [
+    {
+      "id": 0,
+      "kind": "gui_button",
+      "label": "button",
+      "gtk_class": "",
+      "x": 80,
+      "y": 80,
+      "depth": 0,
+      "w": 160,
+      "h": 72,
+      "parent_id": null,
+      "layout_mode": "absolute",
+      "properties": [],
+      "signals": [],
+      "bindings": {
+        "clicked": {
+          "dst_x": 120,
+          "dst_y": 80,
+          "symbolic": "on_click"
+        }
+      }
+    },
+    {
+      "id": 1,
+      "kind": "gui_entry",
+      "label": "entry",
+      "gtk_class": "",
+      "x": 320,
+      "y": 80,
+      "depth": 0,
+      "w": 160,
+      "h": 72,
+      "parent_id": null,
+      "layout_mode": "absolute",
+      "properties": [],
+      "signals": [],
+      "bindings": {}
+    },
+    {
+      "id": 4,
+      "kind": "gui_button",
+      "label": "button",
+      "gtk_class": "",
+      "x": 80,
+      "y": 200,
+      "depth": 0,
+      "w": 160,
+      "h": 72,
+      "parent_id": null,
+      "layout_mode": "absolute",
+      "properties": [],
+      "signals": [],
+      "bindings": {
+        "clicked": {
+          "dst_x": 120,
+          "dst_y": 80,
+          "symbolic": "on_click"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "kind": "gui_button",
+      "label": "button",
+      "gtk_class": "",
+      "x": 80,
+      "y": 80,
+      "depth": 0,
+      "w": 160,
+      "h": 72,
+      "parent_id": null,
+      "layout_mode": "absolute",
+      "properties": [],
+      "signals": [],
+      "bindings": {
+        "clicked": {
+          "dst_x": 120,
+          "dst_y": 80,
+          "symbolic": "on_click"
+        }
+      }
+    }
+  ],
+  "edges": [],
+  "flow_symbols": [
+    {
+      "id": 0,
+      "kind": "flow_terminator",
+      "x": 120,
+      "y": 80,
+      "w": 120,
+      "h": 60,
+      "label": "on_click",
+      "properties": [
+        {
+          "name": "is_entry",
+          "value": true
+        }
+      ]
+    }
+  ],
+  "flow_edges": [],
+  "sequence": [
+    0,
+    1,
+    4,
+    5
+  ],
+  "tgui_meta": {
+    "widget_count": 4,
+    "edge_count": 0,
+    "flow_symbol_count": 1,
+    "flow_edge_count": 0,
+    "mmoe_types_used": [
+      "gui_button",
+      "gui_entry"
+    ]
+  }
+}

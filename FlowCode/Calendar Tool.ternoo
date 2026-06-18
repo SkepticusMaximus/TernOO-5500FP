@@ -1,0 +1,134 @@
+{
+  "source_file": "Calendar Tool.tgui",
+  "source_type": "ternoo_design",
+  "symbols": [
+    {
+      "id": 0,
+      "kind": "gui_window",
+      "label": "MyWindow",
+      "gtk_class": "",
+      "x": 280,
+      "y": 200,
+      "depth": 0,
+      "w": 500,
+      "h": 306,
+      "parent_id": null,
+      "layout_mode": "absolute",
+      "properties": [
+        {
+          "name": "title",
+          "value": "CALENDAR TOOL"
+        }
+      ],
+      "signals": []
+    },
+    {
+      "id": 4,
+      "kind": "gui_entry",
+      "label": "entry",
+      "gtk_class": "",
+      "x": -94,
+      "y": -56,
+      "depth": 0,
+      "w": 285,
+      "h": 40,
+      "parent_id": 0,
+      "layout_mode": "absolute",
+      "properties": [
+        {
+          "name": "placeholder",
+          "value": ""
+        }
+      ],
+      "signals": []
+    },
+    {
+      "id": 6,
+      "kind": "gui_button",
+      "label": "OK",
+      "gtk_class": "",
+      "x": 200,
+      "y": 120,
+      "depth": 0,
+      "w": 87,
+      "h": 30,
+      "parent_id": 0,
+      "layout_mode": "absolute",
+      "properties": [],
+      "signals": []
+    },
+    {
+      "id": 7,
+      "kind": "gui_overlay",
+      "label": "overlay",
+      "gtk_class": "",
+      "x": 148,
+      "y": 3,
+      "depth": 0,
+      "w": 184,
+      "h": 157,
+      "parent_id": 0,
+      "layout_mode": "absolute",
+      "properties": [],
+      "signals": []
+    },
+    {
+      "id": 9,
+      "kind": "gui_calendar",
+      "label": "calendar",
+      "gtk_class": "",
+      "x": -92,
+      "y": 59,
+      "depth": 0,
+      "w": 282,
+      "h": 165,
+      "parent_id": 0,
+      "layout_mode": "absolute",
+      "properties": [],
+      "signals": []
+    }
+  ],
+  "edges": [
+    {
+      "src": 4,
+      "dst": 0,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 6,
+      "dst": 0,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    }
+  ],
+  "sequence": [
+    0,
+    4,
+    6,
+    7,
+    9
+  ],
+  "tgui_meta": {
+    "widget_count": 5,
+    "edge_count": 2,
+    "mmoe_types_used": [
+      "gui_overlay",
+      "gui_entry",
+      "gui_window",
+      "gui_button",
+      "gui_calendar"
+    ]
+  },
+  "ternoo_version": "0.3"
+}

@@ -1,0 +1,100 @@
+{
+  "tgui_version": "0.1",
+  "source_file": "My-Window.tgui",
+  "source_type": "ghost_canvas",
+  "symbols": [
+    {
+      "id": 0,
+      "kind": "gui_window",
+      "label": "MyWindow",
+      "gtk_class": "",
+      "x": 360,
+      "y": 200,
+      "depth": 0,
+      "w": 500,
+      "h": 300,
+      "parent_id": null,
+      "layout_mode": "absolute",
+      "properties": [
+        {
+          "name": "title",
+          "value": "My Window"
+        }
+      ],
+      "signals": []
+    },
+    {
+      "id": 4,
+      "kind": "gui_entry",
+      "label": "entry",
+      "gtk_class": "",
+      "x": 269,
+      "y": 148,
+      "depth": 0,
+      "w": 285,
+      "h": 40,
+      "parent_id": null,
+      "layout_mode": "absolute",
+      "properties": [
+        {
+          "name": "placeholder",
+          "value": ""
+        }
+      ],
+      "signals": []
+    },
+    {
+      "id": 6,
+      "kind": "gui_button",
+      "label": "OK",
+      "gtk_class": "",
+      "x": 193,
+      "y": 107,
+      "depth": 0,
+      "w": 87,
+      "h": 30,
+      "parent_id": 0,
+      "layout_mode": "absolute",
+      "properties": [],
+      "signals": []
+    }
+  ],
+  "edges": [
+    {
+      "src": 4,
+      "dst": 0,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 6,
+      "dst": 0,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    }
+  ],
+  "sequence": [
+    0,
+    4,
+    6
+  ],
+  "tgui_meta": {
+    "widget_count": 3,
+    "edge_count": 2,
+    "mmoe_types_used": [
+      "gui_entry",
+      "gui_button",
+      "gui_window"
+    ]
+  }
+}

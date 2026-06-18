@@ -1,0 +1,84 @@
+{
+  "ternoo_version": "0.3",
+  "source_type": "ternoo_design",
+  "symbols": [],
+  "edges": [],
+  "flow_symbols": [
+    {
+      "id": 1,
+      "kind": "flow_io",
+      "x": 200,
+      "y": 80,
+      "w": 120,
+      "h": 60,
+      "label": "I1",
+      "properties": []
+    },
+    {
+      "id": 2,
+      "kind": "flow_process",
+      "x": 200,
+      "y": 240,
+      "w": 120,
+      "h": 60,
+      "label": "P2",
+      "properties": []
+    },
+    {
+      "id": 3,
+      "kind": "flow_decision",
+      "x": 200,
+      "y": 400,
+      "w": 120,
+      "h": 60,
+      "label": "D3",
+      "properties": []
+    },
+    {
+      "id": 4,
+      "kind": "flow_io",
+      "x": 200,
+      "y": 560,
+      "w": 120,
+      "h": 60,
+      "label": "I4",
+      "properties": []
+    },
+    {
+      "id": 5,
+      "kind": "flow_io",
+      "x": 440,
+      "y": 400,
+      "w": 120,
+      "h": 60,
+      "label": "I5",
+      "properties": []
+    }
+  ],
+  "flow_edges": [
+    {
+      "src": 1,
+      "dst": 2,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 2,
+      "dst": 3,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 3,
+      "dst": 4,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 3,
+      "dst": 5,
+      "waypoints": [],
+      "condition": ""
+    }
+  ]
+}

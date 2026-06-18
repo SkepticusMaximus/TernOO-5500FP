@@ -35,16 +35,30 @@ For performance, the core ALU operations (such as balanced ternary addition) are
 The project requires GCC and targets x86-64 Linux systems.
 
 ```bash
-cd 5500fp_emulator
+cd c_emulator
 make
 ```
+
+### Optional: SDL2 rendering (PIGART backend)
+
+The SDL2 display backend requires `libsdl2-dev` and `libsdl2-ttf-dev`.
+Install once, then rebuild:
+
+```bash
+sudo apt install libsdl2-dev libsdl2-ttf-dev
+make clean && make
+```
+
+If SDL2 is not installed, the build still succeeds — the SDL backend is
+replaced by a stub that prints an informative error, and the ASCII backend
+(no extra dependencies) is always available.
 
 ## Usage
 
 The emulator provides several run modes:
 
 ```bash
-# Run the built-in self-test suite
+# Run the built-in self-test suite (42 tests after Phase 7b-2)
 ./5500fp --test
 
 # Run the included demo programs (Hello World, Fibonacci, Factorial, etc.)
@@ -55,7 +69,38 @@ The emulator provides several run modes:
 
 # Start the interactive assembler and debugger shell
 ./5500fp --interactive
+
+# PIGART rendering — SDL2 window (requires libsdl2-dev libsdl2-ttf-dev)
+./5500fp --display sdl   --run examples/hello_ternoo_morph.t5asm
+
+# PIGART rendering — ASCII frames to stdout (headless / CI / SSH)
+./5500fp --display ascii --run examples/hello_ternoo_morph.t5asm
 ```
+
+### PIGART syscalls (100–111)
+
+Running TernOO programs can open their own rendering window using the PIGART
+syscall family. Programs call `R1=100, SYSCALL` (PIGART_OPEN_WINDOW) and then
+draw using syscalls 101–111. The backend is selected via `--display`:
+
+| Syscall | Number | Description |
+|---------|--------|-------------|
+| PIGART_OPEN_WINDOW  | 100 | Open window (R2=w, R3=h, R4=title_ptr) → R1=handle |
+| PIGART_CLEAR        | 101 | Clear back-buffer (R2=RGB color) |
+| PIGART_DRAW_RECT    | 102 | Draw rectangle (R2=x,R3=y,R4=w,R5=h,R6=color,R7=filled) |
+| PIGART_DRAW_POLYGON | 103 | Draw polygon (R2=n,R3=pts_ptr,R4=color,R5=filled) |
+| PIGART_DRAW_OVAL    | 104 | Draw oval (R2=x,R3=y,R4=w,R5=h,R6=color,R7=filled) |
+| PIGART_DRAW_TEXT    | 105 | Draw text (R2=x,R3=y,R4=text_ptr,R5=size,R6=color) |
+| PIGART_DRAW_LINE    | 106 | Draw line (R2=x1,R3=y1,R4=x2,R5=y2,R6=color) |
+| PIGART_PRESENT      | 107 | Present back-buffer / dump ASCII frame |
+| PIGART_POLL_EVENT   | 108 | Poll event (R2=buf_ptr) → R1=count |
+| PIGART_SLEEP_MS     | 109 | Sleep (R2=ms) |
+| PIGART_GET_TICKS    | 110 | Get ticks since open → R1=ms |
+| PIGART_CLOSE_WINDOW | 111 | Close window |
+
+Colors: RGB packed in low 24 bits of int64 (e.g., 16711680 = 0xFF0000 = red).
+Strings: null-terminated sequences of words in engine memory (one char code per word).
+Events: 4-word buffer [type, x\_or\_key, y\_or\_mod, button\_or\_zero].
 
 ## Instruction Set Architecture (Subset)
 

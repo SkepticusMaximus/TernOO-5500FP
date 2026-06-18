@@ -63,6 +63,28 @@ WIDGET_PROPERTIES: dict[str, list[dict]] = {
 }
 
 
+# ── Phase 6C: FlowCode tab symbol properties ─────────────────────────────────
+# Flow symbols share COMMON_PROPERTIES (x, y, w, h, label) and gain
+# kind-specific properties listed below.  The 'is_entry' flag on
+# flow_terminator designates a flow-entry point; Phase 6D's handler-binding
+# picker consumes it.  The 'condition' string on flow_decision captures the
+# branch predicate expression.
+WIDGET_PROPERTIES.update({
+    'flow_terminator': [
+        {'name': 'is_entry', 'kind': 'bool',   'section': 'Flow'},
+    ],
+    'flow_process':    [],
+    'flow_decision':   [
+        {'name': 'condition', 'kind': 'string', 'section': 'Flow'},
+    ],
+    'flow_io':         [],
+    'flow_subroutine': [
+        {'name': 'target',    'kind': 'string', 'section': 'Flow'},
+    ],
+    'flow_connector':  [],
+})
+
+
 def properties_for(kind: str) -> list[dict]:
     """Merged property list (COMMON + kind-specific) for a widget kind.
 

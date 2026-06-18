@@ -1,0 +1,87 @@
+{
+  "tgui_version": "0.1",
+  "source_file": "First-Composite-Widget.tgui",
+  "source_type": "ghost_canvas",
+  "symbols": [
+    {
+      "id": 0,
+      "kind": "gui_window",
+      "label": "window",
+      "gtk_class": "",
+      "x": 280,
+      "y": 160,
+      "depth": 0,
+      "w": 291,
+      "h": 212,
+      "parent_id": null,
+      "properties": [],
+      "signals": []
+    },
+    {
+      "id": 3,
+      "kind": "gui_button",
+      "label": "button",
+      "gtk_class": "",
+      "x": 80,
+      "y": 80,
+      "depth": 0,
+      "w": 133,
+      "h": 42,
+      "parent_id": 0,
+      "properties": [],
+      "signals": []
+    },
+    {
+      "id": 7,
+      "kind": "gui_entry",
+      "label": "entry",
+      "gtk_class": "",
+      "x": 280,
+      "y": 137,
+      "depth": 0,
+      "w": 263,
+      "h": 37,
+      "parent_id": null,
+      "properties": [],
+      "signals": []
+    }
+  ],
+  "edges": [
+    {
+      "src": 0,
+      "dst": 3,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    },
+    {
+      "src": 7,
+      "dst": 0,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    }
+  ],
+  "sequence": [
+    0,
+    3,
+    7
+  ],
+  "tgui_meta": {
+    "widget_count": 3,
+    "edge_count": 2,
+    "mmoe_types_used": [
+      "gui_entry",
+      "gui_window",
+      "gui_button"
+    ]
+  }
+}
