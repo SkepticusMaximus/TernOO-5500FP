@@ -1,0 +1,22 @@
+; 5500FP GCD Example (Euclidean Algorithm)
+; Computes GCD(48, 18) = 6
+; Uses R10=a, R11=b to avoid collision with syscall registers R1, R2
+
+    LI   R10, 48        ; a = 48
+    LI   R11, 18        ; b = 18
+
+gcd_loop:
+    BEQZ R11, gcd_done  ; if b == 0, done
+    MOD  R12, R10, R11  ; r = a % b
+    MOV  R10, R11       ; a = b
+    MOV  R11, R12       ; b = r
+    JMP  gcd_loop
+
+gcd_done:
+    ; R10 = GCD result = 6
+    LI   R1, 1          ; PRINT_INT syscall
+    MOV  R2, R10        ; arg = GCD
+    SYSCALL
+    LI   R1, 6          ; PRINT_NL
+    SYSCALL
+    HALT

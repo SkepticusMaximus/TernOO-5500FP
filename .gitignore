@@ -11,7 +11,8 @@ pics/First-Flowcode-For-TernOO.png
 docs/TernOO-5500FP-Companion.md
 private/
 GHOST/
-NASM-TernOO-5500FP-Emulator/
+NASM-TernOO-5500FP-Emulator/obj/
+NASM-TernOO-5500FP-Emulator/c_emulator/src/*.o
 
 # Benchmark build artifacts
 benchmarks/scripts/*.o

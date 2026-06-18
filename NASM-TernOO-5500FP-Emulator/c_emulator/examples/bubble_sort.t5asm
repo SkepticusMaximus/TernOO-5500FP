@@ -1,0 +1,65 @@
+; 5500FP Bubble Sort Example
+; Sorts an array of 5 elements in memory
+; Array stored at address 200: [5, 3, 8, 1, 4]
+; After sorting: [1, 3, 4, 5, 8]
+
+    LI   R20, 200       ; base address of array
+
+    ; Store initial array
+    LI   R1, 5
+    STW  R1, R20, 0     ; mem[200] = 5
+    LI   R1, 3
+    STW  R1, R20, 1     ; mem[201] = 3
+    LI   R1, 8
+    STW  R1, R20, 2     ; mem[202] = 8
+    LI   R1, 1
+    STW  R1, R20, 3     ; mem[203] = 1
+    LI   R1, 4
+    STW  R1, R20, 4     ; mem[204] = 4
+
+    LI   R21, 5         ; n = 5
+
+; Outer loop: i = 0..n-2
+    LI   R10, 0         ; i = 0
+    SUBI R22, R21, 1    ; n-1
+
+outer_loop:
+    BEQ  R10, R22, sort_done
+    LI   R11, 0         ; j = 0
+    SUB  R23, R22, R10  ; inner limit = n-1-i
+
+inner_loop:
+    BEQ  R11, R23, outer_next
+    ; Load arr[j] and arr[j+1]
+    ADD  R12, R20, R11  ; addr of arr[j]
+    LDW  R13, R12, 0    ; R13 = arr[j]
+    LDW  R14, R12, 1    ; R14 = arr[j+1]
+    ; If arr[j] <= arr[j+1], no swap
+    BLE  R13, R14, no_swap
+    ; Swap
+    STW  R14, R12, 0
+    STW  R13, R12, 1
+no_swap:
+    ADDI R11, R11, 1    ; j++
+    JMP  inner_loop
+
+outer_next:
+    ADDI R10, R10, 1    ; i++
+    JMP  outer_loop
+
+sort_done:
+    ; Print sorted array
+    LI   R30, 0         ; index
+print_loop:
+    BEQ  R30, R21, print_done
+    ADD  R31, R20, R30
+    LDW  R2, R31, 0
+    LI   R1, 1          ; PRINT_INT
+    SYSCALL
+    LI   R1, 6          ; PRINT_NL
+    SYSCALL
+    ADDI R30, R30, 1
+    JMP  print_loop
+
+print_done:
+    HALT
