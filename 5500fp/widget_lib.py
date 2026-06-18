@@ -2059,18 +2059,66 @@ def test_meccano_library() -> bool:
     print(f" 67. PASS  translate() works on shape-form RNODE")
 
     # ── 68–70: FlowCode bridge fixture tests ─────────────────────────────────
+    # Phase 6E: flowcode_bridge.py deleted; flowcode_to_meccano and FLOWCODE_SHAPE_MAP
+    # are defined inline here (FCCanvas-dependent, test-only).
     import sys as _sys, os as _os
     _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-    from flowcode_bridge import flowcode_to_meccano, FLOWCODE_SHAPE_MAP, FC_GRID_TO_MECCANO
-
-    # Fixture builder (inline FCCanvas, avoids importing full FlowCode GUI)
     _sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
                                       '..', 'FlowCode'))
 
-    # ── 68. bridge: hello-world single-node canvas ────────────────────────────
+    FC_GRID_TO_MECCANO = 10   # test 72: pixel → Meccano unit divisor
+    _FC_SYMBOL_W = 120        # standard FC symbol width in pixels
+    _FC_SYMBOL_H = 60         # standard FC symbol height in pixels
+
     try:
         from flowcode import FCCanvas, FCSymbol, SYMBOL_PROCESS, SYMBOL_TERMINATOR, \
                              SYMBOL_DECISION, SYMBOL_IO
+        FLOWCODE_SHAPE_MAP = {
+            SYMBOL_PROCESS:    SHAPE_PROCESS,
+            SYMBOL_DECISION:   SHAPE_DECISION,
+            SYMBOL_IO:         SHAPE_IO,
+            SYMBOL_TERMINATOR: SHAPE_TERMINATOR,
+        }
+        def flowcode_to_meccano(canvas, name='flowcode_program', category='pigart'):
+            """Translate FCCanvas → MeccanoProgram. Inlined from flowcode_bridge (Phase 6E)."""
+            sym_w_m = _FC_SYMBOL_W // FC_GRID_TO_MECCANO
+            sym_h_m = _FC_SYMBOL_H // FC_GRID_TO_MECCANO
+            words = []
+            sym_boxes = {}
+            for sid, sym in canvas.symbols.items():
+                tl_x = (sym.x - _FC_SYMBOL_W // 2) // FC_GRID_TO_MECCANO
+                tl_y = (sym.y - _FC_SYMBOL_H // 2) // FC_GRID_TO_MECCANO
+                shape_id = FLOWCODE_SHAPE_MAP.get(sym.kind, SHAPE_RECTANGLE)
+                words.extend(build_rnode_shape_labeled(
+                    (tl_x, tl_y), (sym_w_m, sym_h_m), shape_id, sym.label))
+                sym_boxes[sid] = (tl_x, tl_y, sym_w_m, sym_h_m)
+            for edge in canvas.edges:
+                if edge.src_id not in sym_boxes or edge.dst_id not in sym_boxes:
+                    continue
+                sx, sy, sw, sh = sym_boxes[edge.src_id]
+                dx, dy, dw, dh = sym_boxes[edge.dst_id]
+                src_pt = (sx + sw // 2, sy + sh)
+                dst_pt = (dx + dw // 2, dy)
+                if edge.condition:
+                    words.extend(build_redge_labeled(src_pt, dst_pt,
+                                                     SHAPE_RECTANGLE, edge.condition))
+                else:
+                    words.extend(build_redge_styled(src_pt, dst_pt, SHAPE_RECTANGLE))
+            words.append(build_opcode_word(OPF_PIGART, arity=0, op_index=OP_RENDER))
+            return MeccanoProgram(name=name, opcode_words=words, category=category,
+                                  description=(f'FlowCode bridge: {len(canvas.symbols)} '
+                                               f'symbol(s), {len(canvas.edges)} edge(s)'))
+        _fc_bridge_ok = True
+    except Exception as _efc:
+        FLOWCODE_SHAPE_MAP = {}
+        def flowcode_to_meccano(canvas, name='flowcode_program', category='pigart'):
+            raise RuntimeError(f'flowcode not available: {_efc}')
+        _fc_bridge_ok = False
+
+    # ── 68. bridge: hello-world single-node canvas ────────────────────────────
+    try:
+        if not _fc_bridge_ok:
+            raise RuntimeError('flowcode import failed')
         _cv68 = FCCanvas()
         _s1   = _cv68.add_symbol(SYMBOL_TERMINATOR, 120, 40, 'Hello')
         _prog68 = flowcode_to_meccano(_cv68, name='hello_world')

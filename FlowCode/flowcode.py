@@ -1732,25 +1732,27 @@ def run_gui():
         _signals_for         = lambda kind: []
         _common_signals_for  = lambda kinds: []
 
-    # ── Load flowcode_bridge for incremental word-stream updates ──────────────
-    _fb_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            '../5500fp/flowcode_bridge.py')
-    if os.path.exists(_fb_path):
-        import importlib.util as _fbu2
-        _fb_spec2 = _fbu2.spec_from_file_location('flowcode_bridge', _fb_path)
-        _fb_mod2  = _fbu2.module_from_spec(_fb_spec2)
-        _fb_spec2.loader.exec_module(_fb_mod2)
-        _ghost_to_meccano      = _fb_mod2.ghost_to_meccano
-        _update_meccano_widget = _fb_mod2.update_meccano_for_widget
+    # ── Load ghost_meccano for incremental word-stream updates (Phase 6E) ───────
+    # flowcode_bridge.py deleted; functions now live in ghost_meccano.py
+    # (GHOST+flow bridges) and flowcode_signals.py (handler binding emitter).
+    _ghmc_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              '../5500fp/ghost_meccano.py')
+    if os.path.exists(_ghmc_path):
+        import importlib.util as _ghmc_u
+        _ghmc_spec = _ghmc_u.spec_from_file_location('ghost_meccano', _ghmc_path)
+        _ghmc_mod  = _ghmc_u.module_from_spec(_ghmc_spec)
+        _ghmc_spec.loader.exec_module(_ghmc_mod)
+        _ghost_to_meccano      = _ghmc_mod.ghost_to_meccano
+        _update_meccano_widget = _ghmc_mod.update_meccano_for_widget
         # Phase 6C: flow-dict → MeccanoProgram bridge
-        _flow_to_meccano       = _fb_mod2.flow_symbols_to_meccano
-        # Phase 6D: handler binding REDGE word emitter
-        _build_handler_bindings = _fb_mod2.build_handler_bindings
+        _flow_to_meccano       = _ghmc_mod.flow_symbols_to_meccano
     else:
         _ghost_to_meccano      = None
         _update_meccano_widget = None
         _flow_to_meccano       = None
-        _build_handler_bindings = None
+    # Phase 6D/Phase 6E: handler binding REDGE word emitter — now in flowcode_signals
+    _build_handler_bindings = (getattr(_fsig_mod, 'build_handler_bindings', None)
+                                if os.path.exists(_fsig_path) else None)
 
     # ── Load WordStream + WordStreamEdit (Phase 6A) ───────────────────────────
     _ws_path  = os.path.join(os.path.dirname(os.path.abspath(__file__)),

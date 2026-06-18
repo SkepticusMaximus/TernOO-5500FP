@@ -127,3 +127,40 @@ def common_signals_for_kinds(kinds: list) -> list:
     common_names = sets[0].intersection(*sets[1:])
     # Preserve order from the first kind
     return [s for s in signals_for(kinds[0]) if s['name'] in common_names]
+
+
+# ── Phase 6E: migrated from flowcode_bridge.py ───────────────────────────────
+
+_build_redge_handler = _wl.build_redge_handler
+
+
+def build_handler_bindings(widgets: dict, flow_symbols: dict) -> list:
+    """Build REDGE handler-binding words for all signal bindings in widgets.
+
+    Walks widgets dict, collecting each widget's 'signal_ids' dict
+    (signal_id: int → {'dst_x': int, 'dst_y': int}).  For each binding,
+    emits one build_redge_handler() word sequence.
+
+    Bundle 12: uses SIGNAL_* integer IDs, 4-operand / 5-word form.
+    widget_dict['bindings'] has been retired; reads only 'signal_ids'.
+
+    Returns a flat list of words suitable for appending to the combined
+    stream in _guic_sync_stream().
+
+    Editor-side only.  No runtime firing here — Stage 7+.
+    """
+    _GC_SCALE = 10   # pixel → Meccano coordinate scale (matches ghost_meccano.FC_GRID_TO_MECCANO)
+    words = []
+    for wid, w in widgets.items():
+        sig_ids = w.get('signal_ids') or {}
+        wx = w.get('x', 0)
+        wy = w.get('y', 0)
+        for signal_id, binfo in sig_ids.items():
+            if not binfo:
+                continue
+            dx = binfo.get('dst_x', 0)
+            dy = binfo.get('dst_y', 0)
+            src_mc = (wx // _GC_SCALE, wy // _GC_SCALE)
+            dst_mc = (dx // _GC_SCALE, dy // _GC_SCALE)
+            words.extend(_build_redge_handler(src_mc, dst_mc, int(signal_id)))
+    return words
