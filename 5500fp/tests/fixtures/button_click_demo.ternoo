@@ -1,0 +1,84 @@
+{
+  "ternoo_version": "0.3",
+  "source_file": "button_click_demo.ternoo",
+  "source_type": "ternoo_design",
+  "word_stream": [],
+  "symbols": [
+    {
+      "id": 1,
+      "kind": "gui_window",
+      "label": "Click Demo",
+      "gtk_class": "",
+      "x": 10,
+      "y": 10,
+      "depth": 0,
+      "w": 600,
+      "h": 300,
+      "parent_id": null,
+      "layout_mode": "absolute",
+      "properties": [],
+      "signals": [],
+      "signal_ids": {}
+    },
+    {
+      "id": 2,
+      "kind": "gui_button",
+      "label": "Press Me",
+      "gtk_class": "",
+      "x": 250,
+      "y": 130,
+      "depth": 0,
+      "w": 100,
+      "h": 40,
+      "parent_id": 1,
+      "layout_mode": "absolute",
+      "properties": [],
+      "signals": [],
+      "signal_ids": {
+        "300": {
+          "dst_x": 700,
+          "dst_y": 200
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "src": 1,
+      "dst": 2,
+      "privilege": 0,
+      "call_style": 0,
+      "return_type": 1,
+      "seg_idx": 0,
+      "offset": 0,
+      "waypoints": [],
+      "condition": ""
+    }
+  ],
+  "flow_symbols": [
+    {
+      "id": 100,
+      "kind": "flow_terminator",
+      "x": 700,
+      "y": 200,
+      "w": 120,
+      "h": 60,
+      "label": "You pressed it!",
+      "properties": [
+        {
+          "name": "is_entry",
+          "value": true
+        }
+      ]
+    }
+  ],
+  "flow_edges": [],
+  "sequence": [1, 2],
+  "tgui_meta": {
+    "widget_count": 2,
+    "edge_count": 1,
+    "flow_symbol_count": 1,
+    "flow_edge_count": 0,
+    "mmoe_types_used": ["gui_window", "gui_button"]
+  }
+}

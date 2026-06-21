@@ -245,6 +245,72 @@ class WordStream:
         entries.sort(key=lambda t: t[1])
         yield from entries
 
+    # ── Phase 7b-3: Compiler helpers ─────────────────────────────────────────
+
+    def iter_widgets(self, kind_prefix: str = ''):
+        """Yield SimpleNamespace objects for each widget in _widget_meta (insertion order).
+
+        Each namespace exposes: id, kind, x, y, w, h, label, parent_id,
+        layout_mode, signal_ids, properties — matching the widget dict schema.
+
+        Args:
+            kind_prefix: if given, only yield widgets whose kind starts with
+                         this prefix (e.g. 'gui_' for all GUI widgets).
+
+        Yields:
+            types.SimpleNamespace with the widget attributes.
+        """
+        from types import SimpleNamespace
+        for wid, w in self._widget_meta.items():
+            k = w.get('kind', '')
+            if kind_prefix and not k.startswith(kind_prefix):
+                continue
+            yield SimpleNamespace(
+                id          = wid,
+                kind        = k,
+                x           = w.get('x', 0),
+                y           = w.get('y', 0),
+                w           = w.get('w', 0),
+                h           = w.get('h', 0),
+                label       = w.get('label', ''),
+                parent_id   = w.get('parent_id'),
+                layout_mode = w.get('layout_mode', 'absolute'),
+                signal_ids  = w.get('signal_ids') or {},
+                properties  = w.get('properties') or [],
+            )
+
+    def find_terminator_for(self, widget_id: int, signal_id: int):
+        """Return the flow_terminator sym dict bound to (widget_id, signal_id), or None.
+
+        Reads the signal_ids binding (dst_x, dst_y) from _widget_meta, then
+        scans _flow_meta for a flow_terminator at that canvas position.
+
+        This is the Phase 7b-3 positional lookup: OTree-native resolution is
+        deferred to Phase 7b-4 when stream-walking index is added.
+
+        Args:
+            widget_id:  int widget identifier (key in _widget_meta).
+            signal_id:  int signal identifier (e.g. SIGNAL_CLICKED = 300).
+
+        Returns:
+            sym dict from _flow_meta, or None if no binding / no matching terminator.
+        """
+        w = self._widget_meta.get(widget_id)
+        if w is None:
+            return None
+        sig_ids = w.get('signal_ids') or {}
+        binfo   = sig_ids.get(signal_id)
+        if binfo is None:
+            return None
+        dst_x = binfo.get('dst_x', 0)
+        dst_y = binfo.get('dst_y', 0)
+        for sym in self._flow_meta.values():
+            if (sym.get('kind') == 'flow_terminator'
+                    and sym.get('x', 0) == dst_x
+                    and sym.get('y', 0) == dst_y):
+                return sym
+        return None
+
     # ── Helpers ──────────────────────────────────────────────────────────────
 
     def __len__(self) -> int:
