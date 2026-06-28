@@ -786,16 +786,21 @@ def run_gui():
     ghost_tab = tk.Frame(notebook,bg=C['bg'])
     notebook.add(ghost_tab, text='  GUI  ')
 
-    # ── Tab 3: Lingo — command-composition surface (Stage 9-0, built below) ──
-    # UI label "Lingo" (Bundle 23 Piece 1). Internal symbols stay sh_*/cmd_*.
+    # ── Tab 3: Shell — three-pane command builder (Bundle 24). Internal symbol
+    # stays sh_tab; the three-pane _lingo_view lives here. ────────────────────
     sh_tab = tk.Frame(notebook,bg=C['bg'])
-    notebook.add(sh_tab, text='  Lingo  ')
+    notebook.add(sh_tab, text='  Shell  ')
 
-    # ── Tab 4: GMill — OTree/vocabulary explorer (Bundle 13) ─────────────────
-    # UI label "GMill" (Bundle 23 Piece 1); "GristMill" reserved for the future
-    # content-addressed package-manager arc. Module/concept names unchanged.
+    # ── Tab 4: Connectors — Stage 9-0 cmd_* canvas (Bundle 24). Internal symbol
+    # conn_tab; hosts the canvas (_sh_cv_frame etc.). Future: binding graph. ───
+    conn_tab = tk.Frame(notebook,bg=C['bg'])
+    notebook.add(conn_tab, text='  Connectors  ')
+
+    # ── Tab 5: Lingo — OTree/vocabulary explorer (Bundle 13). Internal symbol
+    # stays gm_tab; module is still ternoo_gristmill / GristMill concept. The
+    # "GristMill" name is reserved for the future package-manager arc. ─────────
     gm_tab = tk.Frame(notebook,bg=C['bg'])
-    notebook.add(gm_tab, text='  GMill  ')
+    notebook.add(gm_tab, text='  Lingo  ')
 
     def set_status(m): status.config(text=m)
     def set_inspect(m): inspect.config(text=m)
@@ -1145,31 +1150,41 @@ def run_gui():
         guic_redraw()
 
     def _clear_shell():
-        """Stage 9-0: Clear Shell canvas (cmd_* widgets) without prompting."""
+        """Clear the Connectors canvas (cmd_* widgets) without prompting."""
         fc_state['cmd_widgets'].clear()
         fc_state['cmd_selected']  = None
         fc_state['cmd_multi_sel'] = set()
         fc_state['cmd_next_id']   = 0
         _sh_set_mode('select')
-        _sh_set_status('Lingo canvas cleared')
+        _sh_set_status('Connectors canvas cleared')
         _sh_redraw()
 
     def do_clear():
-        # Bundle 22 + Stage 9-0: Tab-aware clear — dispatches to the active canvas
+        # Tab-aware clear (Bundle 24 order: Flow | GUI | Shell | Connectors | Lingo)
         idx      = notebook.index('current')
         has_flow = bool(fc_state.get('flow_symbols'))
         has_gui  = bool(fc_state.get('widgets'))
 
-        if idx == 3:       # GristMill — read-only, nothing to clear
+        if idx == 4:       # Lingo (vocabulary explorer) — read-only
             return
 
-        if idx == 2:       # Shell tab — clears cmd_* only (Stage 9-0)
+        if idx == 3:       # Connectors tab — clears cmd_* canvas widgets only
             if not fc_state.get('cmd_widgets'):
-                _sh_set_status('Lingo canvas already empty'); return
-            if not messagebox.askyesno('Clear Lingo canvas',
+                _sh_set_status('Connectors canvas already empty'); return
+            if not messagebox.askyesno('Clear Connectors canvas',
                     'Clear all command widgets? Unsaved changes will be lost.'):
                 return
             _clear_shell()
+            return
+
+        if idx == 2:       # Shell tab — clears the staged pipeline
+            if not _lingo.get('pipeline'):
+                set_status('Pipeline already empty'); return
+            if not messagebox.askyesno('Clear pipeline',
+                    'Clear all staged pipeline steps?'):
+                return
+            _lingo_clear_pipeline()
+            set_status('Pipeline cleared')
             return
 
         if idx == 0:       # Flow tab
@@ -5068,18 +5083,20 @@ def run_gui():
                       ).pack(fill='x', padx=4, pady=1)
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # Stage 9-0: Shell tab — command-composition canvas (scaffolding)
+    # Connectors tab — command-composition canvas (Stage 9-0; Bundle 24 promoted
+    # it from a dormant sub-view to its own tab)
     #
     # Command widgets (cmd_*) are flow-symbol-shaped tiles with a header
     # (name + kind) and a body (placeholder input/output sockets + a pocket
-    # indicator). This bundle is scaffolding only: placement, selection, drag,
-    # delete, scroll/zoom/pan, and .fc persistence. Pipes (edges) and the real
-    # command vocabulary arrive in Stages 9-1 / 9-2. The canvas mirrors the
-    # Flow canvas machinery (viewport transform, scrollbars, Home reset).
+    # indicator). Placement, selection, drag, delete, scroll/zoom/pan, and .fc
+    # persistence. Pipes (edges) and the real command vocabulary arrive later.
+    # The canvas mirrors the Flow canvas machinery (viewport transform,
+    # scrollbars, Home reset). Internal symbols stay sh_*/cmd_* (the canvas
+    # predates the Connectors name). Future: binding-graph view of the trinity.
     # ═══════════════════════════════════════════════════════════════════════════
 
-    # ── Shell canvas widgets ──────────────────────────────────────────────────
-    _sh_cv_frame = tk.Frame(sh_tab, bg=C['canvas'])
+    # ── Connectors canvas widgets (live in conn_tab) ──────────────────────────
+    _sh_cv_frame = tk.Frame(conn_tab, bg=C['canvas'])
     _sh_cv_frame.pack(side='top', fill='both', expand=True)
     _sh_vsb = tk.Scrollbar(_sh_cv_frame, orient='vertical',   bg=C['palette'])
     _sh_hsb = tk.Scrollbar(_sh_cv_frame, orient='horizontal', bg=C['palette'])
@@ -5087,12 +5104,12 @@ def run_gui():
     _sh_vsb.pack(side='right',  fill='y')
     sh_canvas = tk.Canvas(_sh_cv_frame, bg=C['canvas'], highlightthickness=0)
     sh_canvas.pack(fill='both', expand=True)
-    sh_inspect = tk.Label(sh_tab, text="Lingo (canvas view) — Add Command, then click the canvas",
+    sh_inspect = tk.Label(conn_tab, text="Connectors — Add Command, then click the canvas",
                           bg=C['inspect'], fg=C['inspect_fg'],
                           font=('Monospace', 9), anchor='nw', justify='left',
                           padx=8, pady=4, height=3)
     sh_inspect.pack(side='top', fill='x')
-    _sh_status_frame = tk.Frame(sh_tab, bg=C['status'])
+    _sh_status_frame = tk.Frame(conn_tab, bg=C['status'])
     _sh_status_frame.pack(side='bottom', fill='x')
     sh_status = tk.Label(_sh_status_frame, text="Ready", anchor='w',
                          bg=C['status'], fg=C['pal_border'],
@@ -5298,7 +5315,7 @@ def run_gui():
                 f"  name: {c.get('name','')}   label: {c['label']}\n"
                 f"  pos: ({c['x']}, {c['y']})  size: {c['w']}×{c['h']}")
         else:
-            _sh_set_inspect("Lingo (canvas view) — Add Command, then click the canvas")
+            _sh_set_inspect("Connectors — Add Command, then click the canvas")
 
     # ── Shell mode / palette ──────────────────────────────────────────────────
     def _sh_set_mode(mode):
@@ -5516,14 +5533,15 @@ def run_gui():
     ]
     _lingo = {'active': None, 'filtered': list(LINGO_COMMANDS),
               'flag_vars': {}, 'param_vars': {}, 'pipeline': []}
-    _lingo_canvas_active = [False]
 
+    # Three-pane builder lives in the Shell tab (sh_tab), packed permanently.
     _lingo_view = tk.Frame(sh_tab, bg=C['bg'])
+    _lingo_view.pack(fill='both', expand=True)
 
     # ── Title bar ─────────────────────────────────────────────────────────────
     _lg_title = tk.Frame(_lingo_view, bg=C['palette'])
     _lg_title.pack(side='top', fill='x')
-    tk.Label(_lg_title, text='Lingo', bg=C['palette'], fg=C['pal_border'],
+    tk.Label(_lg_title, text='Shell', bg=C['palette'], fg=C['pal_border'],
              font=('Monospace', 11, 'bold'), padx=8, pady=4).pack(side='left')
     tk.Label(_lg_title, text='— visual command builder', bg=C['palette'],
              fg=C['dim'], font=('Monospace', 8)).pack(side='left')
@@ -5740,65 +5758,51 @@ def run_gui():
     _lingo_refresh_list()
     _lingo_show_out('output')
 
-    # ── View toggle: three-pane builder  ⇄  dormant canvas (Connectors) ────────
-    def _lingo_show_canvas(show):
-        _lingo_canvas_active[0] = show
-        if show:
-            _lingo_view.pack_forget()
-            _sh_cv_frame.pack(side='top', fill='both', expand=True)
-            sh_inspect.pack(side='top', fill='x')
-            _sh_status_frame.pack(side='bottom', fill='x')
-            _sh_redraw()
-        else:
-            _sh_cv_frame.pack_forget()
-            sh_inspect.pack_forget()
-            _sh_status_frame.pack_forget()
-            _lingo_view.pack(fill='both', expand=True)
-        if notebook.index('current') == 2:
-            _rebuild_sidebar_tools()
+    _lingo_refresh_list()
+    _lingo_show_out('output')
 
+    def _lingo_clear_pipeline():
+        """Clear the staged pipeline (the Shell tab's clearable content)."""
+        _lingo['pipeline'].clear()
+        _lg_pipe.delete(0, 'end')
+        _lingo_show_out('pipeline')
+
+    # ── Sidebar builders (Bundle 24: Shell and Connectors are now separate) ────
     def _build_shell_tools():
-        """Bundle 23 P3: Lingo sidebar — view toggle, plus canvas tools when the
-        dormant Connectors canvas is the active view."""
+        """Shell tab (three-pane builder) sidebar. The builder is self-contained
+        in its three panes, so the sidebar just describes the surface."""
         for w in _pal_tools_frame.winfo_children(): w.destroy()
         pal_btns.clear(); sh_pal_btns.clear()
-        _pal_section("VIEW")
-        for _lbl, _is_canvas, _fg in [
-            ('▤ Builder',    False, '#aaaaff'),
-            ('⬡ Connectors', True,  '#7aff7a'),
-        ]:
-            active = (_lingo_canvas_active[0] == _is_canvas)
-            tk.Button(_pal_tools_frame, text=_lbl,
-                      bg=C['pal_active'] if active else C['pal_btn'], fg=_fg,
-                      font=('Monospace', 9), relief='sunken' if active else 'flat',
-                      activebackground=C['pal_active'], activeforeground=C['text'],
-                      cursor='hand2', padx=4, pady=4,
-                      command=lambda v=_is_canvas: _lingo_show_canvas(v)
-                      ).pack(fill='x', padx=6, pady=2)
-        if _lingo_canvas_active[0]:
-            tk.Frame(_pal_tools_frame, bg=C['dim'], height=1).pack(fill='x', padx=6, pady=3)
-            _pal_section("TOOLS  (Connectors)")
-            for _lbl, _mode, _fg in [
-                ('☞ Select',      'select', '#aaaaff'),
-                ('➕ Add Command', 'place',  '#7aff7a'),
-                ('✕ Delete',      'delete', '#ff8888'),
-            ]:
-                b = tk.Button(_pal_tools_frame, text=_lbl,
-                              bg=C['pal_btn'], fg=_fg,
-                              font=('Monospace', 9), relief='flat',
-                              activebackground=C['pal_active'], activeforeground=C['text'],
-                              cursor='hand2', padx=4, pady=4,
-                              command=lambda m=_mode: _sh_set_mode(m))
-                b.pack(fill='x', padx=6, pady=2)
-                sh_pal_btns[_mode] = b
-            _sh_set_mode(fc_state['cmd_mode'])
+        _pal_section("SHELL")
+        tk.Label(_pal_tools_frame,
+                 text='Visual command builder.\nSearch a command, set its\n'
+                      'flags & parameters, then\nAdd to Pipeline.',
+                 bg=C['palette'], fg=C['dim'], font=('Monospace', 8),
+                 anchor='w', justify='left').pack(fill='x', padx=6, pady=4)
 
-    # Default the Lingo tab to the three-pane builder; canvas stays dormant.
-    _lingo_show_canvas(False)
+    def _build_connectors_tools():
+        """Connectors tab (cmd_* canvas) sidebar — Stage 9-0 placement tools."""
+        for w in _pal_tools_frame.winfo_children(): w.destroy()
+        pal_btns.clear(); sh_pal_btns.clear()
+        _pal_section("TOOLS")
+        for _lbl, _mode, _fg in [
+            ('☞ Select',      'select', '#aaaaff'),
+            ('➕ Add Command', 'place',  '#7aff7a'),
+            ('✕ Delete',      'delete', '#ff8888'),
+        ]:
+            b = tk.Button(_pal_tools_frame, text=_lbl,
+                          bg=C['pal_btn'], fg=_fg, font=('Monospace', 9),
+                          relief='flat', activebackground=C['pal_active'],
+                          activeforeground=C['text'], cursor='hand2', padx=4, pady=4,
+                          command=lambda m=_mode: _sh_set_mode(m))
+            b.pack(fill='x', padx=6, pady=2)
+            sh_pal_btns[_mode] = b
+        _sh_set_mode(fc_state['cmd_mode'])
+
     root.after(220, _sh_redraw)
 
     def _build_gristmill_tools():
-        """Rebuild tools frame for the GristMill tab (read-only — Select only)."""
+        """Lingo tab (vocabulary explorer) sidebar — read-only."""
         for w in _pal_tools_frame.winfo_children(): w.destroy()
         pal_btns.clear()
         _pal_section("TOOLS")
@@ -5806,16 +5810,14 @@ def run_gui():
                  font=('Monospace', 7), pady=2).pack(fill='x', padx=4)
 
     def _rebuild_sidebar_tools():
-        """Rebuild the tab-aware tools section for the currently active tab."""
+        """Rebuild the tab-aware tools section for the currently active tab.
+        Tab order (Bundle 24): Flow | GUI | Shell | Connectors | Lingo."""
         idx = notebook.index('current')
-        if idx == 0:
-            _build_flow_tools()
-        elif idx == 1:
-            _build_gui_tools()
-        elif idx == 2:
-            _build_shell_tools()       # Stage 9-0
-        else:
-            _build_gristmill_tools()
+        if idx == 0:   _build_flow_tools()
+        elif idx == 1: _build_gui_tools()
+        elif idx == 2: _build_shell_tools()        # three-pane builder
+        elif idx == 3: _build_connectors_tools()   # cmd_* canvas
+        else:          _build_gristmill_tools()    # Lingo vocabulary explorer
 
     def _on_tab_change(event):
         idx = notebook.index('current')
@@ -5826,13 +5828,13 @@ def run_gui():
             try: _guic_active_tip[0].destroy()
             except Exception: pass
             _guic_active_tip[0] = None
-        if idx == 1: guic_redraw()
-        elif idx == 2: _sh_redraw()    # Stage 9-0: Shell tab
-        elif idx == 3:
-            # GristMill tab — subscriber keeps Program current; force refresh on switch
+        if idx == 1:   guic_redraw()
+        elif idx == 3: _sh_redraw()    # Connectors canvas
+        elif idx == 4:
+            # Lingo (vocabulary explorer) — force refresh on switch
             try: _gristmill_view._rebuild_program()
             except Exception: pass
-        else: redraw()
+        elif idx == 0: redraw()
     notebook.bind('<<NotebookTabChanged>>', _on_tab_change)
 
     root.after(200, guic_redraw)

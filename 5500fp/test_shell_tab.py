@@ -194,15 +194,24 @@ class TestShellTabWiring(unittest.TestCase):
             cls.src = f.read()
 
     def test_shell_tab_added(self):
-        # Bundle 23 Piece 1: UI label is "Lingo"; internal symbol stays sh_tab.
-        self.assertIn("notebook.add(sh_tab, text='  Lingo  ')", self.src)
+        # Bundle 24: Shell tab (three-pane builder); internal symbol stays sh_tab.
+        self.assertIn("notebook.add(sh_tab, text='  Shell  ')", self.src)
 
-    def test_shell_tab_between_gui_and_gristmill(self):
+    def test_tab_order_flow_gui_shell_connectors_lingo(self):
+        # Bundle 24 order: Flow | GUI | Shell | Connectors | Lingo
         i_gui  = self.src.index("notebook.add(ghost_tab")
         i_sh   = self.src.index("notebook.add(sh_tab")
+        i_conn = self.src.index("notebook.add(conn_tab")
         i_gm   = self.src.index("notebook.add(gm_tab")
-        self.assertTrue(i_gui < i_sh < i_gm,
-                        "Shell tab must sit between GUI and GristMill")
+        self.assertTrue(i_gui < i_sh < i_conn < i_gm,
+                        "order must be GUI < Shell < Connectors < Lingo")
+
+    def test_connectors_tab_added(self):
+        self.assertIn("notebook.add(conn_tab, text='  Connectors  ')", self.src)
+
+    def test_lingo_label_on_gm_tab(self):
+        # The old GristMill/GMill tab is now labelled "Lingo".
+        self.assertIn("notebook.add(gm_tab, text='  Lingo  ')", self.src)
 
     def test_shell_sidebar_builder(self):
         self.assertIn('def _build_shell_tools', self.src)
@@ -259,11 +268,11 @@ class TestLingoInterface(unittest.TestCase):
         self.assertIn('clipboard_clear', self.src)
         self.assertIn('clipboard_append', self.src)
 
-    def test_canvas_preserved_via_toggle(self):
-        # Stage 9-0 canvas kept dormant, reachable via the Connectors toggle.
-        self.assertIn('_lingo_show_canvas', self.src)
-        self.assertIn('Connectors', self.src)
-        self.assertIn('Builder', self.src)
+    def test_canvas_promoted_to_connectors_tab(self):
+        # Bundle 24: the Stage 9-0 cmd_* canvas now has its own Connectors tab,
+        # parented to conn_tab with its own sidebar builder.
+        self.assertIn('_sh_cv_frame = tk.Frame(conn_tab', self.src)
+        self.assertIn('_build_connectors_tools', self.src)
 
 
 if __name__ == '__main__':
