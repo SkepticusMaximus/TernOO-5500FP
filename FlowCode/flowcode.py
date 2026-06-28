@@ -1782,7 +1782,7 @@ def run_gui():
         # Phase 6C: read from fc_state['flow_*'] dicts
         sid = state['selected_sym']
         se  = state['selected_edge']
-        if sid and sid in fc_state['flow_symbols']:
+        if sid is not None and sid in fc_state['flow_symbols']:   # Bundle 23 P2: id 0 is valid
             s = fc_state['flow_symbols'][sid]
             cond_prop = _guic_get_prop_value(s, 'condition')
             cond_str = f"\n  condition='{cond_prop}'" if cond_prop else ""
@@ -1866,7 +1866,7 @@ def run_gui():
         # Check the actual button state and clear it so the next click starts clean.
         if state['dragging'] and not (event.state & 0x0100):
             state['dragging'] = False
-        if state['dragging'] and state['selected_sym']:
+        if state['dragging'] and state['selected_sym'] is not None:  # Bundle 23 P2: id 0 valid
             s = fc_state['flow_symbols'].get(state['selected_sym'])  # Phase 6C
             if s:
                 offx, offy = state['drag_offset']   # design-space offset
@@ -1975,7 +1975,7 @@ def run_gui():
         update_inspect(); redraw()
 
     def on_release(event):
-        if state['dragging'] and state['selected_sym']:
+        if state['dragging'] and state['selected_sym'] is not None:  # Bundle 23 P2: id 0 valid
             sid = state['selected_sym']
             s = fc_state['flow_symbols'].get(sid)  # Phase 6C
             if s:
@@ -2219,7 +2219,7 @@ def run_gui():
         elif k == 'l':
             _fc_sync_canvas_model(); do_load()
         elif k == 'delete':
-            if state['selected_sym']:
+            if state['selected_sym'] is not None:   # Bundle 23 P2: id 0 valid
                 s = fc_state['flow_symbols'].get(state['selected_sym'])  # Phase 6C
                 if s:
                     lbl = s['label']
@@ -4608,7 +4608,11 @@ def run_gui():
                 guic_apply_layout(new_pid)
             _guic_push_undo({'kind': 'delete', 'widget': new_w.copy()})
             fc_state['selected'] = nid; fc_state['multi_sel'] = {nid}
-            guic_set_status(f"Placed {kind} — click to place another, Esc to stop")
+            # Bundle 23 P2: return to Select mode after a drop (matches Flow tab).
+            # Staying in 'place' trapped the canvas — every later click placed a
+            # duplicate instead of selecting/dragging/deleting.
+            guic_set_mode('select')
+            guic_set_status(f"Placed {kind}  #{nid} — now in Select mode")
             guic_rebuild_prop_panel()
             guic_redraw(); return
 
