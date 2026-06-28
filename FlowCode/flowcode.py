@@ -238,6 +238,7 @@ SYMBOL_SUBCLASS = {
     SYMBOL_TERMINATOR:(+1, +1),
 }
 SYMBOL_W, SYMBOL_H, GRID = 120, 60, 40
+CMD_W, CMD_H = 160, 80   # Stage 9-0: command-widget block size on Shell canvas
 
 def snap(v): return round(v/GRID)*GRID
 
@@ -686,10 +687,14 @@ def run_gui():
     root.title("FlowCode v0.6.0 — TernOO-5500FP Visual IDE")
     root.configure(bg=C['bg'])
     root.resizable(True,True)
+    root.minsize(960, 600)   # Bundle 17 B1: usable at 1366×768
 
     outer = tk.Frame(root,bg=C['bg']); outer.pack(fill='both',expand=True)
     palette_frame = tk.Frame(outer,bg=C['palette'],width=PALETTE_W)
     palette_frame.pack(side='left',fill='y'); palette_frame.pack_propagate(False)
+
+    # Tab-aware tools sub-frame (middle of sidebar — content rebuilt per tab)
+    _pal_tools_frame = tk.Frame(palette_frame, bg=C['palette'])
 
     # ── Tabbed right panel ────────────────────────────────────────────────────
     right_outer = tk.Frame(outer,bg=C['bg'])
@@ -705,8 +710,18 @@ def run_gui():
                   background=[('selected', C['pal_active'])],
                   foreground=[('selected', C['pal_border'])])
 
-    # ── Run output panel (Phase 7b-1) — must be packed BEFORE notebook ───────
-    # Pack side='bottom' first so tkinter reserves the space; notebook fills rest.
+    # ── Run output panel (Phase 7b-1 + Bundle 17 B2: collapsible) ───────────
+    # Pack order (side='bottom'): toggle header → panel → notebook fills rest.
+    _output_collapsed = [False]
+
+    _run_toggle_hdr = tk.Frame(right_outer, bg=C['palette'], cursor='hand2')
+    _run_toggle_hdr.pack(side='bottom', fill='x')
+    _run_toggle_lbl = tk.Label(_run_toggle_hdr, text='▾ Output',
+                               bg=C['palette'], fg=C['pal_border'],
+                               font=('Monospace', 8, 'bold'), anchor='w',
+                               padx=6, pady=1, cursor='hand2')
+    _run_toggle_lbl.pack(side='left')
+
     _run_panel = tk.Frame(right_outer, bg=C['palette'], height=120)
     _run_panel.pack(side='bottom', fill='x')
     _run_panel.pack_propagate(False)
@@ -725,6 +740,17 @@ def run_gui():
     _run_txt.tag_config('header_err', foreground='#ff6666')
     _run_txt.tag_config('stderr_out', foreground='#cc8844')
 
+    def _toggle_output_panel(e=None):
+        _output_collapsed[0] = not _output_collapsed[0]
+        if _output_collapsed[0]:
+            _run_panel.pack_forget()
+            _run_toggle_lbl.config(text='▸ Output')
+        else:
+            _run_panel.pack(side='bottom', fill='x', before=_run_toggle_hdr)
+            _run_toggle_lbl.config(text='▾ Output')
+    _run_toggle_hdr.bind('<Button-1>', _toggle_output_panel)
+    _run_toggle_lbl.bind('<Button-1>', _toggle_output_panel)
+
     notebook = ttk.Notebook(right_outer)
     notebook.pack(fill='both',expand=True)
 
@@ -732,28 +758,144 @@ def run_gui():
     fc_tab = tk.Frame(notebook,bg=C['bg'])
     notebook.add(fc_tab, text='  Flow  ')
 
-    tk_canvas = tk.Canvas(fc_tab,bg=C['canvas'],highlightthickness=0)
-    tk_canvas.pack(side='top',fill='both',expand=True)
+    _fc_cv_frame = tk.Frame(fc_tab, bg=C['canvas'])
+    _fc_cv_frame.pack(side='top', fill='both', expand=True)
+    _fc_vsb = tk.Scrollbar(_fc_cv_frame, orient='vertical',   bg=C['palette'])
+    _fc_hsb = tk.Scrollbar(_fc_cv_frame, orient='horizontal', bg=C['palette'])
+    _fc_hsb.pack(side='bottom', fill='x')
+    _fc_vsb.pack(side='right',  fill='y')
+    tk_canvas = tk.Canvas(_fc_cv_frame, bg=C['canvas'], highlightthickness=0)
+    tk_canvas.pack(fill='both', expand=True)
     inspect = tk.Label(fc_tab,text="Select a symbol or edge to inspect",
                        bg=C['inspect'],fg=C['inspect_fg'],
                        font=('Monospace',9),anchor='nw',justify='left',
                        padx=8,pady=4,height=6)
     inspect.pack(side='top',fill='x')
-    status = tk.Label(fc_tab,text="Ready",anchor='w',
-                      bg=C['status'],fg=C['pal_border'],
-                      font=('Monospace',9),padx=8)
-    status.pack(side='bottom',fill='x',ipady=3)
+    _fc_status_frame = tk.Frame(fc_tab, bg=C['status'])
+    _fc_status_frame.pack(side='bottom', fill='x')
+    status = tk.Label(_fc_status_frame, text="Ready", anchor='w',
+                      bg=C['status'], fg=C['pal_border'],
+                      font=('Monospace', 9), padx=8)
+    status.pack(side='left', fill='x', expand=True, ipady=3)
+    _fc_zoom_lbl = tk.Label(_fc_status_frame, text='Zoom: 100%', anchor='e',
+                            bg=C['status'], fg=C['dim'],
+                            font=('Monospace', 8), padx=8)
+    _fc_zoom_lbl.pack(side='right', ipady=3)
 
     # ── Tab 2: GHOST Canvas (built below after FlowCode palette) ─────────────
     ghost_tab = tk.Frame(notebook,bg=C['bg'])
     notebook.add(ghost_tab, text='  GUI  ')
 
-    # ── Tab 3: GristMill — OTree/vocabulary explorer (Bundle 13) ─────────────
+    # ── Tab 3: Lingo — command-composition surface (Stage 9-0, built below) ──
+    # UI label "Lingo" (Bundle 23 Piece 1). Internal symbols stay sh_*/cmd_*.
+    sh_tab = tk.Frame(notebook,bg=C['bg'])
+    notebook.add(sh_tab, text='  Lingo  ')
+
+    # ── Tab 4: GMill — OTree/vocabulary explorer (Bundle 13) ─────────────────
+    # UI label "GMill" (Bundle 23 Piece 1); "GristMill" reserved for the future
+    # content-addressed package-manager arc. Module/concept names unchanged.
     gm_tab = tk.Frame(notebook,bg=C['bg'])
-    notebook.add(gm_tab, text='  GristMill  ')
+    notebook.add(gm_tab, text='  GMill  ')
 
     def set_status(m): status.config(text=m)
     def set_inspect(m): inspect.config(text=m)
+
+    # ── Bundle 18: Flow canvas viewport state + coord helpers ─────────────────
+    _fc_view = {'zoom': 1.0, 'sx': 0.0, 'sy': 0.0}
+    _fc_pan  = [None]   # [{'ox':, 'oy':, 'ex':, 'ey':}] during middle-drag, else None
+
+    def _fc_d2s(dx, dy):
+        """Design → screen coords for the Flow canvas."""
+        z = _fc_view['zoom']
+        return (dx - _fc_view['sx']) * z, (dy - _fc_view['sy']) * z
+
+    def _fc_s2d(ex, ey):
+        """Screen → design coords for the Flow canvas."""
+        z = _fc_view['zoom']
+        return ex / z + _fc_view['sx'], ey / z + _fc_view['sy']
+
+    def _fc_update_scrollregion():
+        """Update Flow canvas scrollregion and scrollbar thumb positions.
+        Bundle 21: scrollbar .set() added so thumbs reflect current view."""
+        syms = fc_state.get('flow_symbols', {})
+        cw   = tk_canvas.winfo_width()  or 860
+        ch   = tk_canvas.winfo_height() or 660
+        if not syms:
+            tk_canvas.config(scrollregion=(0, 0, cw, ch))
+            _fc_vsb.set(0.0, 1.0)
+            _fc_hsb.set(0.0, 1.0)
+            return
+        z   = _fc_view['zoom']
+        pad = 60
+        d_min_x = min(s['x'] - SYMBOL_W // 2 for s in syms.values()) - pad / z
+        d_max_x = max(s['x'] + SYMBOL_W // 2 for s in syms.values()) + pad / z
+        d_min_y = min(s['y'] - SYMBOL_H // 2 for s in syms.values()) - pad / z
+        d_max_y = max(s['y'] + SYMBOL_H // 2 for s in syms.values()) + pad / z
+        d_rng_x = max(d_max_x - d_min_x, 1.0)
+        d_rng_y = max(d_max_y - d_min_y, 1.0)
+        # scrollregion in screen space (d_min * z gives same result as old
+        # min(xs) - pad because d_min_x = min_sx - pad/z → d_min_x*z = min_sx*z - pad)
+        tk_canvas.config(scrollregion=(d_min_x * z, d_min_y * z,
+                                       d_max_x * z, d_max_y * z))
+        # Scrollbar thumb: fraction of design-space currently visible
+        vis_w = cw / z
+        vis_h = ch / z
+        f0x = (_fc_view['sx'] - d_min_x) / d_rng_x
+        f1x = f0x + vis_w / d_rng_x
+        f0y = (_fc_view['sy'] - d_min_y) / d_rng_y
+        f1y = f0y + vis_h / d_rng_y
+        _fc_hsb.set(max(0.0, f0x), min(1.0, max(f0x + 0.001, f1x)))
+        _fc_vsb.set(max(0.0, f0y), min(1.0, max(f0y + 0.001, f1y)))
+
+    # ── Bundle 21: Flow canvas scrollbar command callbacks ────────────────────
+
+    def _fc_vsb_command(*args):
+        """Drive _fc_view['sy'] from vertical scrollbar (moveto / scroll)."""
+        syms = fc_state.get('flow_symbols', {})
+        z    = _fc_view['zoom']
+        pad  = 60
+        if syms:
+            d_min_y = min(s['y'] - SYMBOL_H // 2 for s in syms.values()) - pad / z
+            d_max_y = max(s['y'] + SYMBOL_H // 2 for s in syms.values()) + pad / z
+        else:
+            d_min_y, d_max_y = 0.0, (tk_canvas.winfo_height() or 660) / z
+        d_rng_y = max(d_max_y - d_min_y, 1.0)
+        if args[0] == 'moveto':
+            _fc_view['sy'] = d_min_y + float(args[1]) * d_rng_y
+        elif args[0] == 'scroll':
+            n = int(args[1])
+            _fc_view['sy'] += (n * GRID if args[2] == 'units'
+                               else n * (tk_canvas.winfo_height() or 660) / z)
+        _fc_update_scrollregion(); redraw()
+
+    def _fc_hsb_command(*args):
+        """Drive _fc_view['sx'] from horizontal scrollbar (moveto / scroll)."""
+        syms = fc_state.get('flow_symbols', {})
+        z    = _fc_view['zoom']
+        pad  = 60
+        if syms:
+            d_min_x = min(s['x'] - SYMBOL_W // 2 for s in syms.values()) - pad / z
+            d_max_x = max(s['x'] + SYMBOL_W // 2 for s in syms.values()) + pad / z
+        else:
+            d_min_x, d_max_x = 0.0, (tk_canvas.winfo_width() or 860) / z
+        d_rng_x = max(d_max_x - d_min_x, 1.0)
+        if args[0] == 'moveto':
+            _fc_view['sx'] = d_min_x + float(args[1]) * d_rng_x
+        elif args[0] == 'scroll':
+            n = int(args[1])
+            _fc_view['sx'] += (n * GRID if args[2] == 'units'
+                               else n * (tk_canvas.winfo_width() or 860) / z)
+        _fc_update_scrollregion(); redraw()
+
+    def _fc_on_scroll_v(event):
+        """Touchpad / mouse-wheel vertical scroll (Button-4 up, Button-5 down)."""
+        _fc_view['sy'] += -3 * GRID if event.num == 4 else 3 * GRID
+        _fc_update_scrollregion(); redraw()
+
+    def _fc_on_scroll_h(event):
+        """Touchpad / mouse-wheel horizontal scroll (Shift-Button-4/5)."""
+        _fc_view['sx'] += -3 * GRID if event.num == 4 else 3 * GRID
+        _fc_update_scrollregion(); redraw()
 
     # Load PIL icons (or None if unavailable)
     icons = _make_icons()
@@ -781,14 +923,16 @@ def run_gui():
         set_status(hints.get(mode,''))
         redraw()
 
-    def _pal_section(title):
-        tk.Label(palette_frame,text=title,bg=C['palette'],fg=C['dim'],
-                 font=('Monospace',8),pady=3).pack(fill='x',padx=4)
+    def _pal_section(title, parent=None):
+        p = parent if parent is not None else _pal_tools_frame
+        tk.Label(p, text=title, bg=C['palette'], fg=C['dim'],
+                 font=('Monospace',8), pady=3).pack(fill='x', padx=4)
 
-    def _pal_btn(mode, label, sub, icon_key=None, fg=None):
-        frm = tk.Frame(palette_frame,bg=C['pal_btn'],cursor='hand2',
-                       relief='flat',bd=1)
-        frm.pack(fill='x',padx=6,pady=2,ipady=3)
+    def _pal_btn(mode, label, sub, icon_key=None, fg=None, parent=None):
+        p = parent if parent is not None else _pal_tools_frame
+        frm = tk.Frame(p, bg=C['pal_btn'], cursor='hand2',
+                       relief='flat', bd=1)
+        frm.pack(fill='x', padx=6, pady=2, ipady=3)
 
         # Icon: PIL image or fallback mini canvas
         if icons and icon_key and icons.get(icon_key):
@@ -841,25 +985,41 @@ def run_gui():
             c.create_line(6,5,W-6,H-5,fill='#ff5050',width=3)
             c.create_line(W-6,5,6,H-5,fill='#ff5050',width=3)
 
-    # Build palette
-    tk.Label(palette_frame,text="FlowCode",bg=C['palette'],fg=C['pal_border'],
-             font=('Monospace',11,'bold'),pady=6).pack(fill='x')
-    tk.Frame(palette_frame,bg=C['dim'],height=1).pack(fill='x',padx=6)
-    _pal_section("TOOLS")
-    _pal_btn('select','Select','move·edit','select')
-    _pal_btn('delete','Delete','click to del','delete',fg='#ff6b6b')
-    _pal_section("SYMBOLS → UDP")
-    _pal_btn('place_terminator','Terminator','oval · start/end','terminator')
-    _pal_btn('place_process','Process','rectangle','process')
-    _pal_btn('place_decision','Decision','diamond','decision')
-    _pal_btn('place_io','I/O','parallelogram','io')
-    _pal_section("CONNECT → EXEC")
-    _pal_btn('edge_src','Edge','src→[wp]→dst','edge')
-    tk.Frame(palette_frame,bg=C['dim'],height=1).pack(fill='x',padx=6,pady=4)
-    _pal_section("ACTIONS")
+    # ── Build palette — static header ─────────────────────────────────────────
+    tk.Label(palette_frame, text="FlowCode", bg=C['palette'], fg=C['pal_border'],
+             font=('Monospace',11,'bold'), pady=6).pack(fill='x')
+    tk.Frame(palette_frame, bg=C['dim'], height=1).pack(fill='x', padx=6)
+
+    # Actions section frame — packed BEFORE tools frame so it claims the bottom
+    _pal_actions_frame = tk.Frame(palette_frame, bg=C['palette'])
+    _pal_actions_frame.pack(side='bottom', fill='x')
+
+    # Tools frame fills the middle (dynamic, rebuilt per tab)
+    _pal_tools_frame.pack(fill='both', expand=True)
+
+    def _build_flow_tools():
+        """Rebuild tools frame for the Flow tab."""
+        for w in _pal_tools_frame.winfo_children(): w.destroy()
+        pal_btns.clear()
+        _pal_section("TOOLS")
+        _pal_btn('select','Select','move·edit','select')
+        _pal_btn('delete','Delete','click to del','delete',fg='#ff6b6b')
+        _pal_section("SYMBOLS → UDP")
+        _pal_btn('place_terminator','Terminator','oval · start/end','terminator')
+        _pal_btn('place_process','Process','rectangle','process')
+        _pal_btn('place_decision','Decision','diamond','decision')
+        _pal_btn('place_io','I/O','parallelogram','io')
+        _pal_section("CONNECT → EXEC")
+        _pal_btn('edge_src','Edge','src→[wp]→dst','edge')
+
+    _build_flow_tools()   # Flow tab is shown first
+
+    # Actions section header (inside _pal_actions_frame)
+    tk.Frame(_pal_actions_frame, bg=C['dim'], height=1).pack(fill='x', padx=6, pady=4)
+    _pal_section("ACTIONS", parent=_pal_actions_frame)
 
     def _action_btn(label, cmd, fg=None, icon_key=None):
-        btn = tk.Button(palette_frame, text=label, command=cmd,
+        btn = tk.Button(_pal_actions_frame, text=label, command=cmd,
                         bg=C['pal_btn'], fg=fg or C['text'],
                         font=('Monospace',9), relief='flat',
                         activebackground=C['pal_active'],
@@ -869,13 +1029,23 @@ def run_gui():
         return btn
 
     def do_run():
-        # Phase 6C: sync canvas_model from fc_state for execution
+        """▶ Step — run the flow via the Python interpreter; output goes to the panel."""
+        def _rout(text, tag=None):
+            _run_txt.config(state='normal')
+            if tag: _run_txt.insert('end', text, tag)
+            else:   _run_txt.insert('end', text)
+            _run_txt.see('end')
+            _run_txt.config(state='disabled')
+
+        _run_txt.config(state='normal'); _run_txt.delete('1.0', 'end')
+        _run_txt.config(state='disabled')
+
         _fc_sync_canvas_model()
         if not _TernOOInterpreter:
-            set_status("Interpreter not found — place ternoo_interpreter.py in 5500fp/")
+            _rout('✗ Interpreter not found — place ternoo_interpreter.py in 5500fp/\n', 'header_err')
             return
         if not canvas_model.symbols:
-            set_status("Canvas is empty — draw some symbols first")
+            _rout('✗ Flow canvas is empty — add flow symbols on the Flow tab first\n', 'header_err')
             return
 
         data = {
@@ -883,28 +1053,20 @@ def run_gui():
             'edges':   [e.to_dict() for e in canvas_model.edges],
         }
 
-        print(f"\n{'═'*56}")
-        print(f"  FlowCode → Running canvas ({len(canvas_model.symbols)} symbols)")
-        print(f"{'═'*56}")
+        _rout(f'▶ Step-running flow  ({len(canvas_model.symbols)} symbols)…\n', 'header_run')
+        root.update_idletasks()
 
         interp = _TernOOInterpreter(trace=True)
 
         def on_step(node_id):
-            state['selected_sym']  = node_id
-            state['selected_edge'] = None
-            fc_state['flow_selected']   = node_id  # Phase 6C
+            state['selected_sym']       = node_id
+            state['selected_edge']      = None
+            fc_state['flow_selected']   = node_id
             s = canvas_model.symbols.get(node_id)
             if s:
-                udp = s.to_udp_word()
-                mp  = s.to_map_word()
-                set_inspect(
-                    f"► Executing: {s.label}  [{s.kind}]\n"
-                    f"  UDP: {describe_word(udp)}\n"
-                    f"       {word_to_str(udp)}\n"
-                    f"  MAP: {describe_word(mp)}\n"
-                    f"       {word_to_str(mp)}")
-            redraw()
-            root.update()
+                _rout(f'  ► {s.label}  [{s.kind}]\n')
+                set_inspect(f"► {s.label}  [{s.kind}]")
+            redraw(); root.update()
 
         _orig_execute = interp._execute_node
         def _patched_execute(node, end_ids, depth):
@@ -913,23 +1075,14 @@ def run_gui():
         interp._execute_node = _patched_execute
 
         interp.load_dict(data)
-
         try:
             result = interp.run()
             steps  = result['steps']
-            stack  = result['eval_stack']
-            env    = result['env']
-            set_status(f"Run complete — {steps} steps  "
-                       f"stack={stack}  env={env}")
-            set_inspect(
-                f"Run complete — {steps} steps\n"
-                f"Eval stack: {stack}\n"
-                f"Environment: {env}\n"
-                f"Interpreter: {os.path.basename(_interp_path)}")
+            _rout(f'✓ Done — {steps} step(s)\n', 'header_ok')
+            set_status(f'Step-run complete — {steps} steps')
         except Exception as ex:
-            set_status(f"Run error: {ex}")
-            set_inspect(f"Run error:\n{ex}")
-            print(f"[FlowCode] Run error: {ex}")
+            _rout(f'✗ Error: {ex}\n', 'header_err')
+            set_status(f'Step-run error: {ex}')
 
     def do_dump():
         _fc_sync_canvas_model()  # Phase 6C: sync before execution
@@ -944,23 +1097,118 @@ def run_gui():
         print(f"[FlowCode] Loaded {n} TernOO words into emulator at addr 100–{end-1}")
 
     def do_save():
-        guic_do_save()  # Phase 6C: unified .tgui save for both tabs
+        """Phase 7c-0 Smart Save: write to current path if known; otherwise
+        delegate to guic_do_save() (Save As dialog).  Prompts for .ternoo →
+        .fc migration when the current file uses the legacy extension."""
+        path = _current_design_path[0]
+        if not path:
+            guic_do_save(); return
+        ext = os.path.splitext(path)[1].lower()
+        if ext == '.ternoo':
+            ans = messagebox.askyesnocancel(
+                "Legacy .ternoo file",
+                "This file uses the legacy .ternoo extension.\n"
+                "Save as .fc (the new FlowCode default)?",
+                icon='info')
+            if ans is None: return
+            if ans:
+                path = os.path.splitext(path)[0] + '.fc'
+        _save_to_path(path)
 
     def do_open():
         guic_do_open()  # Phase 6C: unified .tgui open
 
-    def do_clear():
-        # Phase 6C: clear fc_state['flow_*'] dicts
-        if fc_state['flow_symbols']:
-            if not messagebox.askyesno('Clear Canvas',
-                    'Clear the canvas? Unsaved changes will be lost.'):
-                return
+    def _clear_flow():
+        """Bundle 22: Clear flow canvas state without prompting."""
         fc_state['flow_symbols'].clear()
         fc_state['flow_edges'].clear()
-        state['selected_sym']  = None; state['selected_edge'] = None
-        fc_state['flow_selected']   = None; fc_state['flow_multi_sel'].clear()
+        state['selected_sym']       = None
+        state['selected_edge']      = None
+        fc_state['flow_selected']   = None
+        fc_state['flow_multi_sel'].clear()
         fc_state['flow_next_id']    = 0
-        set_inspect('Canvas cleared'); set_status('Cleared'); redraw()
+        set_inspect('Canvas cleared')
+        set_status('Flow canvas cleared')
+        redraw()
+
+    def _clear_gui():
+        """Bundle 22: Clear GUI canvas state without prompting."""
+        fc_state['widgets'].clear()
+        fc_state['edges'].clear()
+        fc_state['child_order'].clear()
+        fc_state['prop_committed'].clear()
+        fc_state['selected']  = None
+        fc_state['multi_sel'] = set()
+        fc_state['next_id']   = 0
+        guic_set_mode('select')
+        guic_set_status('GUI canvas cleared')
+        guic_redraw()
+
+    def _clear_shell():
+        """Stage 9-0: Clear Shell canvas (cmd_* widgets) without prompting."""
+        fc_state['cmd_widgets'].clear()
+        fc_state['cmd_selected']  = None
+        fc_state['cmd_multi_sel'] = set()
+        fc_state['cmd_next_id']   = 0
+        _sh_set_mode('select')
+        _sh_set_status('Lingo canvas cleared')
+        _sh_redraw()
+
+    def do_clear():
+        # Bundle 22 + Stage 9-0: Tab-aware clear — dispatches to the active canvas
+        idx      = notebook.index('current')
+        has_flow = bool(fc_state.get('flow_symbols'))
+        has_gui  = bool(fc_state.get('widgets'))
+
+        if idx == 3:       # GristMill — read-only, nothing to clear
+            return
+
+        if idx == 2:       # Shell tab — clears cmd_* only (Stage 9-0)
+            if not fc_state.get('cmd_widgets'):
+                _sh_set_status('Lingo canvas already empty'); return
+            if not messagebox.askyesno('Clear Lingo canvas',
+                    'Clear all command widgets? Unsaved changes will be lost.'):
+                return
+            _clear_shell()
+            return
+
+        if idx == 0:       # Flow tab
+            if not has_flow:
+                set_status('Flow canvas already empty'); return
+            if has_gui:
+                ans = messagebox.askyesnocancel(
+                    'Clear flow canvas?',
+                    'Clear all flowchart symbols?\n\n'
+                    'Yes    → Clear flow symbols only (GUI widgets preserved)\n'
+                    'No     → Clear everything (flow + GUI)\n'
+                    'Cancel → Abort')
+                if ans is None:   return
+                elif ans:         _clear_flow()
+                else:             _clear_flow(); _clear_gui()
+            else:
+                if not messagebox.askyesno('Clear canvas',
+                        'Clear the canvas? Unsaved changes will be lost.'):
+                    return
+                _clear_flow()
+
+        elif idx == 1:     # GUI tab
+            if not has_gui:
+                guic_set_status('GUI canvas already empty'); return
+            if has_flow:
+                ans = messagebox.askyesnocancel(
+                    'Clear GUI canvas?',
+                    'Clear all GUI widgets?\n\n'
+                    'Yes    → Clear GUI widgets only (flow symbols preserved)\n'
+                    'No     → Clear everything (GUI + flow)\n'
+                    'Cancel → Abort')
+                if ans is None:   return
+                elif ans:         _clear_gui()
+                else:             _clear_flow(); _clear_gui()
+            else:
+                if not messagebox.askyesno('Clear canvas',
+                        'Clear the canvas? Unsaved changes will be lost.'):
+                    return
+                _clear_gui()
 
     def do_learn():
         """Train the FlowCodeBrain on the current canvas."""
@@ -1008,14 +1256,16 @@ def run_gui():
 
     _action_btn("⬇ Word Dump", do_dump,   icon_key='dump')
     _action_btn("▶ Load→EMU",  do_load,   fg='#7aff7a', icon_key='load')
-    _action_btn("▶▶ Run",      do_run,    fg='#ffdd57')
+    _action_btn("▶ Step",      do_run,    fg='#ffdd57')
 
-    # ── Phase 7b-1: Compile + Run via C emulator subprocess ──────────────────
+    # ── Phase 7b-1: Compile + Run via C emulator (SDL window) ────────────────
 
-    _btn_compile_run = [None]   # mutable ref so do_compile_run can re-enable itself
+    _btn_emulate = [None]    # ▶▶ Emulate button ref
+    _btn_stop    = [None]    # ⬛ Stop button ref
+    _running_proc = [None]  # currently-running SDL subprocess
 
     def do_compile_run():
-        import subprocess, time as _time, traceback as _tb
+        import subprocess, threading, queue as _queue, time as _time, traceback as _tb
 
         def _append(text, tag=None):
             _run_txt.config(state='normal')
@@ -1031,27 +1281,20 @@ def run_gui():
         _run_txt.delete('1.0', 'end')
         _run_txt.config(state='disabled')
 
-        # Disable Run button while executing
-        if _btn_compile_run[0]:
-            _btn_compile_run[0].config(state='disabled')
+        if _btn_emulate[0]: _btn_emulate[0].config(state='disabled')
         root.update_idletasks()
 
         try:
-            # Check compiler available
             if not _compile_to_t5asm:
                 _append('✗ compile_to_t5asm.py not found in 5500fp/\n', 'header_err')
                 return
-
-            # Check engine binary
             if not os.path.isfile(_engine_path) or not os.access(_engine_path, os.X_OK):
-                rel = os.path.relpath(_engine_path)
                 _append(
-                    f'✗ Engine not found: {rel}\n'
+                    f'✗ Engine not found: {os.path.relpath(_engine_path)}\n'
                     f'  Run `make` in NASM-TernOO-5500FP-Emulator/c_emulator/ first.\n',
                     'header_err')
                 return
 
-            # Compile
             _append('▶ Compiling…\n', 'header_run')
             root.update_idletasks()
 
@@ -1060,63 +1303,121 @@ def run_gui():
             if stream is None:
                 _append('✗ No WordStream available\n', 'header_err')
                 return
-
             try:
                 t5asm_text = _compile_to_t5asm(stream, source_path=src_path)
             except _CompileError as ce:
                 _append(f'✗ CompileError: {ce}\n', 'header_err')
-                set_status(f'Compile error: {ce}')
-                return
+                set_status(f'Compile error: {ce}'); return
             except Exception:
                 _append(f'✗ Internal compiler error:\n{_tb.format_exc()}\n', 'header_err')
                 return
 
-            # Write temp file (overwrite same pid-slot on each run)
             pid = os.getpid()
             ts  = _time.strftime('%Y%m%dT%H%M%S')
             tmp_path = f'/tmp/flowcode_{pid}_{ts}.t5asm'
             with open(tmp_path, 'w') as _f:
                 _f.write(t5asm_text)
 
-            # Run subprocess
             rel_engine = os.path.relpath(_engine_path)
-            _append(f'▶ Running {rel_engine}  --run  {tmp_path}\n', 'header_run')
+            _append(f'▶ Launching SDL window…  {rel_engine}\n', 'header_run')
             root.update_idletasks()
 
-            t0 = _time.monotonic()
             try:
-                proc = subprocess.run(
-                    [_engine_path, '--run', tmp_path],
-                    capture_output=True, text=True, timeout=30.0)
-                elapsed = _time.monotonic() - t0
-                if proc.stdout:
-                    _append(proc.stdout)
-                if proc.stderr:
-                    _append(proc.stderr, 'stderr_out')
-                if proc.returncode == 0:
-                    _append(f'✓ Exit 0 in {elapsed:.3f}s\n', 'header_ok')
-                    set_status(f'Run OK — Exit 0 in {elapsed:.3f}s')
+                proc = subprocess.Popen(
+                    [_engine_path, '--display', 'sdl', '--run', tmp_path],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True, bufsize=1)
+            except OSError as oe:
+                _append(f'✗ Launch failed: {oe}\n', 'header_err')
+                return
+
+            _running_proc[0] = proc
+            if _btn_stop[0]: _btn_stop[0].config(state='normal')
+            _append('SDL window is now open — close it when finished.\n')
+            set_status('SDL window running — close it to finish')
+            # Push FlowCode behind so the SDL window is immediately visible
+            root.lower()
+
+            # Background threads drain stdout/stderr into a queue
+            out_q = _queue.SimpleQueue()
+            def _read(pipe, tag):
+                try:
+                    for line in pipe:
+                        out_q.put((tag, line))
+                finally:
+                    out_q.put((tag, None))
+            threading.Thread(target=_read, args=(proc.stdout, None),        daemon=True).start()
+            threading.Thread(target=_read, args=(proc.stderr, 'stderr_out'), daemon=True).start()
+
+            def _poll():
+                # Drain any queued output lines
+                while True:
+                    try:
+                        tag, line = out_q.get_nowait()
+                        if line is not None:
+                            _append(line, tag)
+                    except Exception:
+                        break
+                # Check if process has exited
+                # Bundle 22: defensive try/except — a silent exception in _poll
+                # would prevent rescheduling and leave Run button stuck disabled.
+                try:
+                    rc = proc.poll()
+                except Exception:
+                    rc = None
+                if rc is not None:
+                    _running_proc[0] = None
+                    try:
+                        if _btn_stop[0]:    _btn_stop[0].config(state='disabled')
+                        if _btn_emulate[0]: _btn_emulate[0].config(state='normal')
+                        root.lift()   # bring FlowCode back to front when SDL exits
+                    except Exception:
+                        pass
+                    if rc == 0:
+                        _append('✓ SDL window closed (Exit 0)\n', 'header_ok')
+                        set_status('Run complete — Exit 0')
+                    else:
+                        _append(f'✗ SDL exited with code {rc}\n', 'header_err')
+                        set_status(f'Run failed — Exit {rc}')
                 else:
-                    _append(f'✗ Exit {proc.returncode} in {elapsed:.3f}s\n', 'header_err')
-                    set_status(f'Run failed — Exit {proc.returncode}')
-            except subprocess.TimeoutExpired:
-                _append('✗ Timeout (30s)\n', 'header_err')
-                set_status('Run timed out (30s)')
+                    root.after(100, _poll)   # poll again in 100 ms
+
+            root.after(100, _poll)
+            return   # button stays disabled until _poll sees process exit
+
+        except Exception:
+            _append(f'✗ Unexpected error:\n{_tb.format_exc()}\n', 'header_err')
         finally:
-            if _btn_compile_run[0]:
-                _btn_compile_run[0].config(state='normal')
+            # Only re-enable here if we did NOT successfully launch a Popen
+            if _running_proc[0] is None and _btn_emulate[0]:
+                _btn_emulate[0].config(state='normal')
 
-    _btn_compile_run[0] = _action_btn("▶ Run", do_compile_run, fg='#7aff7a')
+    def do_stop():
+        proc = _running_proc[0]
+        if proc and proc.poll() is None:
+            proc.terminate()
+            set_status('SDL process stopped')
 
-    _action_btn("💾 Save",     do_save,   icon_key='save')
-    _action_btn("📂 Open",     do_open,   icon_key='open')
+    _btn_emulate[0] = _action_btn("▶▶ Run",     do_compile_run, fg='#7aff7a')
+    _btn_stop[0]    = _action_btn("⬛ Stop",      do_stop,        fg='#ff8888')
+    _btn_stop[0].config(state='disabled')
+
+    _action_btn("💾 Save",     do_save,           icon_key='save')
+    _action_btn("📂 Open",     do_open,           icon_key='open')
+    _action_btn("📥 Import",   lambda: guic_do_import())  # Phase 7c-0: merge into current
     _action_btn("🗑 Clear",    do_clear,  fg='#ff8888', icon_key='clear')
     _action_btn("🧠 Learn",   do_learn,  fg='#7affcc')
     _action_btn("💡 Suggest", do_suggest, fg='#ffcc44')
 
-    tk.Label(palette_frame,text=f"v0.6.0\n{os.path.basename(_emu_path)}",
-             bg=C['palette'],fg=C['dim'],font=('Monospace',7),pady=4
-             ).pack(side='bottom',fill='x')
+    # Undo / Redo — refs used by guic_update_undo_btns to enable/disable
+    _pal_undo_btn_ref = [None]
+    _pal_redo_btn_ref = [None]
+    _pal_undo_btn_ref[0] = _action_btn("↩ Undo", lambda: guic_undo(), C['dim'])
+    _pal_redo_btn_ref[0] = _action_btn("↪ Redo", lambda: guic_redo(), C['dim'])
+
+    tk.Label(_pal_actions_frame, text=f"v0.6.0\n{os.path.basename(_emu_path)}",
+             bg=C['palette'], fg=C['dim'], font=('Monospace',7), pady=4
+             ).pack(side='bottom', fill='x')
 
     # ── Phase 6C: FlowCode dict helpers ──────────────────────────────────────
 
@@ -1184,6 +1485,18 @@ def run_gui():
                     return e
         return None
 
+    def _fc_make_default_name(kind, wid):
+        """Phase 7c-1: default programmatic name <kind>_<id>, bumped with a
+        numeric suffix if that exact name is already taken in the stream."""
+        base = f"{kind}_{wid}"
+        stream = fc_state.get('stream')
+        if stream is None:
+            return base
+        nm, n = base, 1
+        while stream.name_in_use(nm):
+            nm = f"{base}_{n}"; n += 1
+        return nm
+
     def _fc_add_symbol(kind, x, y, label=''):
         """Add flow symbol dict to fc_state, push undo. Returns sym dict."""
         sid = fc_state['flow_next_id']
@@ -1192,7 +1505,8 @@ def run_gui():
         sym = {'id': sid, 'kind': kind,
                'x': snap(x), 'y': snap(y),
                'w': SYMBOL_W, 'h': SYMBOL_H,
-               'label': lbl, 'properties': []}
+               'label': lbl, 'name': _fc_make_default_name(kind, sid),
+               'properties': []}
         fc_state['flow_symbols'][sid] = sym
         _guic_push_undo({'kind': 'flow_remove', 'sym': dict(sym)})  # undo = remove
         return sym
@@ -1261,10 +1575,21 @@ def run_gui():
     # ── Drawing ───────────────────────────────────────────────────────────────
 
     def draw_grid():
-        w=tk_canvas.winfo_width() or 860
-        h=tk_canvas.winfo_height() or 660
-        for x in range(0,w,GRID): tk_canvas.create_line(x,0,x,h,fill=C['grid'])
-        for y in range(0,h,GRID): tk_canvas.create_line(0,y,w,y,fill=C['grid'])
+        cw = tk_canvas.winfo_width() or 860
+        ch = tk_canvas.winfo_height() or 660
+        z  = _fc_view['zoom']
+        gstep = GRID * z
+        if gstep < 4: return   # skip grid when too zoomed out
+        ox = (-_fc_view['sx'] * z) % gstep
+        oy = (-_fc_view['sy'] * z) % gstep
+        x = ox
+        while x <= cw:
+            tk_canvas.create_line(int(x), 0, int(x), ch, fill=C['grid'])
+            x += gstep
+        y = oy
+        while y <= ch:
+            tk_canvas.create_line(0, int(y), cw, int(y), fill=C['grid'])
+            y += gstep
 
     def draw_symbol(s):
         # Phase 6C: s is a flow symbol dict {id, kind, x, y, w, h, label, properties}
@@ -1279,20 +1604,30 @@ def run_gui():
         }.get(draw_kind, C['process'])
         bor = C['selected'] if sel else C['border']
         lw  = 3 if sel else 2
-        x, y = s['x'], s['y']
-        hw, hh = SYMBOL_W // 2, SYMBOL_H // 2
+        # ── Bundle 18: viewport transform (design → screen) ───────────────────
+        _sx2, _sy2 = _fc_d2s(s['x'], s['y'])
+        x, y = int(_sx2), int(_sy2)
+        z    = _fc_view['zoom']
+        hw   = int(SYMBOL_W // 2 * z)
+        hh   = int(SYMBOL_H // 2 * z)
+        _ofs = max(3, int(10 * z))   # label vertical clearance
+        _sub = max(1, int(4  * z))   # subroutine inset
+        _cp  = max(2, int(4  * z))   # connection-point half-size
+        _fl  = max(6, int(10 * z))   # main label font size
+        _fs  = max(5, int(7  * z))   # sub label font size
+        # ─────────────────────────────────────────────────────────────────────
 
         if draw_kind == SYMBOL_PROCESS:
             tk_canvas.create_rectangle(x-hw, y-hh, x+hw, y+hh,
                                        fill=fill, outline=bor, width=lw)
             if s['kind'] == 'flow_subroutine':  # double-border for predefined process
-                tk_canvas.create_rectangle(x-hw+4, y-hh+4, x+hw-4, y+hh-4,
+                tk_canvas.create_rectangle(x-hw+_sub, y-hh+_sub, x+hw-_sub, y+hh-_sub,
                                            fill='', outline=bor, width=1)
         elif draw_kind == SYMBOL_DECISION:
             tk_canvas.create_polygon([x, y-hh, x+hw, y, x, y+hh, x-hw, y],
                                      fill=fill, outline=bor, width=lw)
         elif draw_kind == SYMBOL_IO:
-            r = 12
+            r = max(4, int(12 * z))
             tk_canvas.create_rectangle(x-hw+r, y-hh, x+hw-r, y+hh, fill=fill, outline=fill)
             tk_canvas.create_oval(x-hw, y-hh, x-hw+r*2, y+hh, fill=fill, outline=bor, width=lw)
             tk_canvas.create_oval(x+hw-r*2, y-hh, x+hw, y+hh, fill=fill, outline=bor, width=lw)
@@ -1303,25 +1638,25 @@ def run_gui():
                                   fill=fill, outline=bor, width=lw)
             # Phase 6D: dot if this is a bound entry handler
             if (_guic_get_prop_value(s, 'is_entry') and
-                    (x, y) in fc_state.get('_bound_targets', set())):
-                r = 5
-                tk_canvas.create_oval(x+hw-r*2-2, y-hh+2,
-                                      x+hw-2,     y-hh+r*2+2,
+                    (s['x'], s['y']) in fc_state.get('_bound_targets', set())):
+                _dr = max(2, int(5 * z)); _d2 = max(1, int(2 * z))
+                tk_canvas.create_oval(x+hw-_dr*2-_d2, y-hh+_d2,
+                                      x+hw-_d2,       y-hh+_dr*2+_d2,
                                       fill='#00e5ff', outline='', width=0)
 
         tk_canvas.create_text(x, y, text=s['label'], fill=C['text'],
-                              font=('Monospace', 10, 'bold'))
-        tk_canvas.create_text(x, y+hh+10,
+                              font=('Monospace', _fl, 'bold'))
+        tk_canvas.create_text(x, y+hh+_ofs,
                               text=s['kind'].replace('flow_', ''),
-                              fill=C['dim'], font=('Monospace', 7))
+                              fill=C['dim'], font=('Monospace', _fs))
         if sel:
-            tk_canvas.create_text(x, y-hh-10, text=f"({x},{y})",
-                                  fill=C['selected'], font=('Monospace', 7))
+            tk_canvas.create_text(x, y-hh-_ofs, text=f"({s['x']},{s['y']})",
+                                  fill=C['selected'], font=('Monospace', _fs))
 
         # Connection points in edge mode
         if state['mode'] in ('edge_src', 'edge_dst_pending'):
             for cx, cy in [(x, y-hh), (x, y+hh), (x+hw, y), (x-hw, y)]:
-                tk_canvas.create_oval(cx-4, cy-4, cx+4, cy+4,
+                tk_canvas.create_oval(cx-_cp, cy-_cp, cx+_cp, cy+_cp,
                                       fill=C['pal_border'], outline=C['border'])
 
     def draw_edge(e):
@@ -1332,26 +1667,33 @@ def run_gui():
         col = C['selected'] if is_sel else C['edge']
         lw  = 3 if is_sel else 2
 
-        pts = _fc_ortho_points(e)
-        if len(pts) < 2: return
+        # ── Bundle 18: transform pts from design → screen ─────────────────────
+        pts_d = _fc_ortho_points(e)
+        if len(pts_d) < 2: return
+        z = _fc_view['zoom']
+        pts = [(int(_fc_d2s(px2, py2)[0]), int(_fc_d2s(px2, py2)[1])) for px2, py2 in pts_d]
+        _asz = (int(16 * z), int(20 * z), int(6 * z))
+        _wp  = max(2, int(5 * z))
 
         for i in range(len(pts) - 1):
             x1, y1 = pts[i]; x2, y2 = pts[i + 1]
             kw = dict(fill=col, width=lw)
             if i == len(pts) - 2:
-                kw.update(arrow='last', arrowshape=(16, 20, 6))
+                kw.update(arrow='last', arrowshape=_asz)
             tk_canvas.create_line(x1, y1, x2, y2, **kw)
 
         for wx, wy in e.get('waypoints', []):
-            tk_canvas.create_oval(wx-5, wy-5, wx+5, wy+5,
+            wxs, wys = _fc_d2s(wx, wy)
+            tk_canvas.create_oval(wxs-_wp, wys-_wp, wxs+_wp, wys+_wp,
                                   fill=C['waypoint'], outline=C['border'], width=1)
 
         cond = e.get('condition', '')
         if len(pts) >= 2 and cond:
             mx = (pts[0][0] + pts[1][0]*2) // 3
-            my = (pts[0][1] + pts[1][1]*2) // 3 - 10
+            my = (pts[0][1] + pts[1][1]*2) // 3 - max(4, int(10 * z))
             tk_canvas.create_text(mx, my, text=f"[{cond}]",
-                                  fill=C['waypoint'], font=('Monospace', 8, 'bold'))
+                                  fill=C['waypoint'],
+                                  font=('Monospace', max(5, int(8 * z)), 'bold'))
 
     def draw_edge_in_progress():
         """Draw the edge being constructed with waypoints collected so far."""
@@ -1359,24 +1701,31 @@ def run_gui():
         if not src_id: return
         src = fc_state['flow_symbols'].get(src_id)  # Phase 6C: use fc_state dict
         if not src: return
-        pts = [(src['x'], src['y'])] + state['edge_waypoints']
-        if len(pts)<1: return
+        # All coords in design space; convert to screen for drawing
+        pts_d = [(src['x'], src['y'])] + state['edge_waypoints']
+        if len(pts_d) < 1: return
+        pts = [_fc_d2s(px2, py2) for px2, py2 in pts_d]
+        z   = _fc_view['zoom']
+        _wp = max(2, int(4 * z))
         # Draw path so far
         for i in range(len(pts)-1):
             x1,y1=pts[i]; x2,y2=pts[i+1]
             tk_canvas.create_line(x1,y1,x2,y2,fill=C['waypoint'],
                                   width=1,dash=(4,3))
         # Waypoint dots
-        for wx,wy in state['edge_waypoints']:
-            tk_canvas.create_oval(wx-4,wy-4,wx+4,wy+4,
+        for wx_d,wy_d in state['edge_waypoints']:
+            wxs,wys = _fc_d2s(wx_d,wy_d)
+            tk_canvas.create_oval(wxs-_wp,wys-_wp,wxs+_wp,wys+_wp,
                                   fill=C['waypoint'],outline=C['border'])
-        # Ghost line to cursor
+        # Ghost line to cursor (ghost stored in design space)
         if state['ghost']:
-            lx,ly=pts[-1]; gx,gy=state['ghost']
+            gx_d,gy_d = state['ghost']
+            gxs,gys   = _fc_d2s(gx_d,gy_d)
+            lx,ly     = pts[-1]
             # Ortho ghost
-            tk_canvas.create_line(lx,ly,gx,ly,fill=C['waypoint'],
+            tk_canvas.create_line(lx,ly,gxs,ly,fill=C['waypoint'],
                                   width=1,dash=(2,4))
-            tk_canvas.create_line(gx,ly,gx,gy,fill=C['waypoint'],
+            tk_canvas.create_line(gxs,ly,gxs,gys,fill=C['waypoint'],
                                   width=1,dash=(2,4))
 
     def redraw():
@@ -1401,7 +1750,12 @@ def run_gui():
             _draw_placement_ghost(*state['ghost'])
 
     def _draw_placement_ghost(x,y):
-        sx,sy=snap(x),snap(y); hw,hh=SYMBOL_W//2,SYMBOL_H//2
+        # x,y are design-space ghost coords (stored by on_motion in design space)
+        x,y = snap(x),snap(y)           # snap in design space
+        sx,sy = _fc_d2s(x,y)            # convert to screen space
+        sx,sy = int(sx),int(sy)
+        z  = _fc_view['zoom']
+        hw = int(SYMBOL_W//2*z); hh=int(SYMBOL_H//2*z)
         mode=state['mode']
         fill='#161b30'; bor='#3a4060'
         if mode=='place_terminator':
@@ -1414,14 +1768,15 @@ def run_gui():
             tk_canvas.create_polygon([sx,sy-hh,sx+hw,sy,sx,sy+hh,sx-hw,sy],
                                      fill=fill,outline=bor,width=1)
         elif mode=='place_io':
-            r=12
+            r=max(4,int(12*z))
             tk_canvas.create_rectangle(sx-hw+r,sy-hh,sx+hw-r,sy+hh,fill=fill,outline=fill)
             tk_canvas.create_oval(sx-hw,sy-hh,sx-hw+r*2,sy+hh,
                                   fill=fill,outline=bor,width=1,dash=(4,4))
             tk_canvas.create_oval(sx+hw-r*2,sy-hh,sx+hw,sy+hh,
                                   fill=fill,outline=bor,width=1,dash=(4,4))
-        tk_canvas.create_text(sx,sy+hh+10,text=f"snap ({sx},{sy})",
-                              fill='#2a3050',font=('Monospace',7))
+        _gt = max(4,int(10*z)); _gf = max(5,int(7*z))
+        tk_canvas.create_text(sx,sy+hh+_gt,text=f"snap ({x},{y})",
+                              fill='#2a3050',font=('Monospace',_gf))
 
     def update_inspect():
         # Phase 6C: read from fc_state['flow_*'] dicts
@@ -1480,15 +1835,16 @@ def run_gui():
             _tooltip_win[0] = None
 
     def _schedule_tooltip(event):
-        # Phase 6C: use fc_state dicts
+        # Phase 6C: use fc_state dicts; Bundle 18: convert event to design space
         _hide_tooltip()
-        sym = _fc_sym_at(event.x, event.y)
+        dx, dy = _fc_s2d(event.x, event.y)
+        sym = _fc_sym_at(dx, dy)
         if sym:
             tip = f"{sym['kind'].upper()} #{sym['id']}  '{sym['label']}'"
             ex, ey = event.x, event.y
             _tooltip_after[0] = root.after(700, lambda: _show_tooltip(ex, ey, tip))
         else:
-            edg = _fc_edge_near(event.x, event.y)
+            edg = _fc_edge_near(dx, dy)
             if edg:
                 src = fc_state['flow_symbols'].get(edg['src'])
                 dst = fc_state['flow_symbols'].get(edg['dst'])
@@ -1502,13 +1858,20 @@ def run_gui():
     # ── Event handlers ────────────────────────────────────────────────────────
 
     def on_motion(event):
-        state['ghost'] = (event.x, event.y)
+        # Bundle 18: store ghost in design space; all drag arithmetic in design space
+        ddx, ddy = _fc_s2d(event.x, event.y)
+        state['ghost'] = (ddx, ddy)
+        # Bundle 19: defensive reset — if Button-1 was released outside the canvas
+        # (common with dodgy hardware) state['dragging'] can get stuck True.
+        # Check the actual button state and clear it so the next click starts clean.
+        if state['dragging'] and not (event.state & 0x0100):
+            state['dragging'] = False
         if state['dragging'] and state['selected_sym']:
             s = fc_state['flow_symbols'].get(state['selected_sym'])  # Phase 6C
             if s:
-                dx, dy = state['drag_offset']
-                s['x'] = snap(event.x - dx)
-                s['y'] = snap(event.y - dy)
+                offx, offy = state['drag_offset']   # design-space offset
+                s['x'] = snap(ddx - offx)
+                s['y'] = snap(ddy - offy)
             _hide_tooltip()
         else:
             _schedule_tooltip(event)
@@ -1516,7 +1879,8 @@ def run_gui():
 
     def on_click(event):
         # Phase 6C: all flow operations go through fc_state['flow_*'] + _fc_* helpers
-        x, y = event.x, event.y
+        # Bundle 18: convert click from screen to design space at input layer
+        x, y = _fc_s2d(event.x, event.y)
         mode = state['mode']
 
         # Placement modes
@@ -1626,9 +1990,10 @@ def run_gui():
         state['fc_drag_origin'] = None
 
     def on_double_click(event):
-        # Phase 6C: use fc_state dict hit tests
-        hit_s = _fc_sym_at(event.x, event.y)
-        hit_e = _fc_edge_near(event.x, event.y)
+        # Phase 6C: use fc_state dict hit tests; Bundle 18: convert to design space
+        ddx, ddy = _fc_s2d(event.x, event.y)
+        hit_s = _fc_sym_at(ddx, ddy)
+        hit_e = _fc_edge_near(ddx, ddy)
         if hit_s:
             _open_symbol_props_fc(hit_s)
         elif hit_e:
@@ -1640,6 +2005,7 @@ def run_gui():
         dlg.title(f"Symbol Properties — {s['label']}")
         dlg.configure(bg=C['bg'])
         dlg.resizable(False, False)
+        dlg.transient(root)   # always stay above parent window
 
         frm = tk.Frame(dlg, bg=C['bg']); frm.pack(padx=12, pady=8)
         tk.Label(frm, text=f"{s['kind'].upper()}  #{s['id']}",
@@ -1651,17 +2017,29 @@ def run_gui():
                  font=('Monospace', 9), anchor='e', width=12
                  ).grid(row=1, column=0, padx=8, pady=4, sticky='e')
         v_label = tk.StringVar(value=s['label'])
-        tk.Entry(frm, textvariable=v_label, bg=C['canvas'], fg=C['text'],
+        _lbl_entry = tk.Entry(frm, textvariable=v_label, bg=C['canvas'], fg=C['text'],
                  insertbackground=C['text'], font=('Monospace', 10), width=20,
-                 relief='flat', bd=4
-                 ).grid(row=1, column=1, padx=8, pady=4)
+                 relief='flat', bd=4)
+        _lbl_entry.grid(row=1, column=1, padx=8, pady=4)
+        # Auto-select existing text so typing replaces it rather than inserting
+        dlg.after(50, lambda: (_lbl_entry.focus_set(),
+                               _lbl_entry.selection_range(0, 'end')))
 
-        row_idx = [2]
+        # Phase 7c-1: Name (programmatic identity, distinct from Label)
+        tk.Label(frm, text="Name:", bg=C['bg'], fg=C['inspect_fg'],
+                 font=('Monospace', 9), anchor='e', width=12
+                 ).grid(row=2, column=0, padx=8, pady=4, sticky='e')
+        v_name = tk.StringVar(value=s.get('name', ''))
+        tk.Entry(frm, textvariable=v_name, bg=C['canvas'], fg=C['text'],
+                 insertbackground=C['text'], font=('Monospace', 10), width=20,
+                 relief='flat', bd=4).grid(row=2, column=1, padx=8, pady=4)
+
+        row_idx = [3]
         extra_vars = {}
         from_props = _fp_properties_for(s['kind'])
         for pd in from_props:
             pname = pd['name']
-            if pname in ('x', 'y', 'w', 'h', 'label'): continue
+            if pname in ('name', 'x', 'y', 'w', 'h', 'label'): continue
             tk.Label(frm, text=f"{pname}:", bg=C['bg'], fg=C['inspect_fg'],
                      font=('Monospace', 9), anchor='e', width=12
                      ).grid(row=row_idx[0], column=0, padx=8, pady=4, sticky='e')
@@ -1681,29 +2059,58 @@ def run_gui():
             row_idx[0] += 1
 
         def _apply():
-            old_label = s['label']
-            new_label = v_label.get().strip()
-            if new_label and new_label != old_label:
-                _guic_push_undo({'kind': 'flow_prop_change', 'sym_id': s['id'],
-                               'property': 'label',
-                               'old_value': old_label, 'new_value': new_label})
-                s['label'] = new_label
-            for pname, (pd, var) in extra_vars.items():
-                old_v = _guic_get_prop_value(s, pname)
-                new_v = var.get()
-                if pd['kind'] == 'bool':
-                    new_v = bool(new_v)
-                elif pd['kind'] == 'int':
-                    try: new_v = int(new_v)
-                    except ValueError: new_v = old_v
-                if new_v != old_v:
+            try:
+                # Phase 7c-1: name change (validated for uniqueness)
+                old_name = s.get('name', '')
+                new_name = v_name.get().strip()
+                if new_name != old_name:
+                    if new_name and fc_state['stream'].name_in_use(new_name, exclude=s):
+                        import tkinter.messagebox as _mb
+                        _mb.showwarning("Duplicate name",
+                                        f"The name '{new_name}' is already in use.\n"
+                                        "Names must be unique within the program.",
+                                        parent=dlg)
+                        return
+                    s['name'] = new_name
                     _guic_push_undo({'kind': 'flow_prop_change', 'sym_id': s['id'],
-                                   'property': pname,
-                                   'old_value': old_v, 'new_value': new_v})
-                    _guic_set_prop_value(s, pname, new_v)
-            set_status(f"Updated {s['label']}")
-            _guic_sync_stream()
-            update_inspect(); redraw(); dlg.destroy()
+                                   'property': 'name',
+                                   'old_value': old_name, 'new_value': new_name})
+                old_label = s['label']
+                new_label = v_label.get().strip()
+                if new_label and new_label != old_label:
+                    # Update s FIRST so _guic_push_undo captures correct after-state
+                    s['label'] = new_label
+                    _guic_push_undo({'kind': 'flow_prop_change', 'sym_id': s['id'],
+                                   'property': 'label',
+                                   'old_value': old_label, 'new_value': new_label})
+                for pname, (pd, var) in extra_vars.items():
+                    raw_old = _guic_get_prop_value(s, pname)
+                    new_v = var.get()
+                    if pd['kind'] == 'bool':
+                        new_v = bool(new_v)
+                        old_v = bool(raw_old) if raw_old is not None else False
+                    elif pd['kind'] == 'int':
+                        try: new_v = int(new_v)
+                        except ValueError: new_v = int(raw_old or 0)
+                        old_v = int(raw_old) if raw_old is not None else 0
+                    else:
+                        new_v = str(new_v) if new_v is not None else ''
+                        old_v = str(raw_old) if raw_old is not None else ''
+                    if new_v != old_v:
+                        # Update s FIRST so _guic_push_undo captures correct after-state
+                        _guic_set_prop_value(s, pname, new_v)
+                        _guic_push_undo({'kind': 'flow_prop_change', 'sym_id': s['id'],
+                                       'property': pname,
+                                       'old_value': old_v, 'new_value': new_v})
+                set_status(f"Updated {s['label']}")
+                _guic_sync_stream()
+                update_inspect(); redraw(); dlg.destroy()
+            except Exception as _apply_err:
+                import traceback as _tb; _tb.print_exc()
+                import tkinter.messagebox as _mb
+                _mb.showerror("Apply Error",
+                              f"Could not apply changes:\n{_apply_err}",
+                              parent=dlg)
 
         btn_frm = tk.Frame(dlg, bg=C['bg']); btn_frm.pack(pady=8)
         tk.Button(btn_frm, text="Apply", command=_apply,
@@ -1716,7 +2123,7 @@ def run_gui():
                   cursor='hand2').pack(side='left', padx=6)
         dlg.bind('<Return>', lambda ev: _apply())
         dlg.bind('<Escape>', lambda ev: dlg.destroy())
-        dlg.update_idletasks(); dlg.grab_set(); dlg.focus_force()
+        dlg.update_idletasks(); dlg.grab_set(); dlg.lift(); dlg.focus_force()
 
     def _open_edge_props_fc(e):
         """Phase 6C: Modal dialog to edit flow edge condition."""
@@ -1730,6 +2137,7 @@ def run_gui():
         dlg.title(f"Edge Properties — {sl} → {dl}")
         dlg.configure(bg=C['bg'])
         dlg.resizable(False, False)
+        dlg.transient(root)   # always stay above parent window
 
         frm = tk.Frame(dlg, bg=C['bg']); frm.pack(padx=12, pady=8)
         tk.Label(frm, text=f"Edge  {sl} → {dl}",
@@ -1747,15 +2155,22 @@ def run_gui():
                  ).grid(row=1, column=1, padx=8, pady=4)
 
         def _apply():
-            new_cond = v_cond.get().strip()
-            e['condition'] = new_cond
-            if (state['selected_edge'] and
-                    state['selected_edge'].get('src') == e['src'] and
-                    state['selected_edge'].get('dst') == e['dst']):
-                state['selected_edge']['condition'] = new_cond
-            set_status(f"Edge {sl}→{dl}  condition='{new_cond}'")
-            _guic_sync_stream()
-            update_inspect(); redraw(); dlg.destroy()
+            try:
+                new_cond = v_cond.get().strip()
+                e['condition'] = new_cond
+                if (state['selected_edge'] and
+                        state['selected_edge'].get('src') == e['src'] and
+                        state['selected_edge'].get('dst') == e['dst']):
+                    state['selected_edge']['condition'] = new_cond
+                set_status(f"Edge {sl}→{dl}  condition='{new_cond}'")
+                _guic_sync_stream()
+                update_inspect(); redraw(); dlg.destroy()
+            except Exception as _apply_err:
+                import traceback as _tb; _tb.print_exc()
+                import tkinter.messagebox as _mb
+                _mb.showerror("Apply Error",
+                              f"Could not apply changes:\n{_apply_err}",
+                              parent=dlg)
 
         btn_frm = tk.Frame(dlg, bg=C['bg']); btn_frm.pack(pady=8)
         tk.Button(btn_frm, text="Apply", command=_apply,
@@ -1768,12 +2183,31 @@ def run_gui():
                   cursor='hand2').pack(side='left', padx=6)
         dlg.bind('<Return>', lambda ev: _apply())
         dlg.bind('<Escape>', lambda ev: dlg.destroy())
-        dlg.update_idletasks(); dlg.grab_set(); dlg.focus_force()
+        dlg.update_idletasks(); dlg.grab_set(); dlg.lift(); dlg.focus_force()
 
     def on_key(event):
         if notebook.index('current') != 0:
             return   # Let GHOST canvas handle its own keys
         k = event.keysym.lower()
+        # Bundle 18: Home key resets Flow canvas view
+        if k == 'home':
+            _fc_view['zoom'] = 1.0; _fc_view['sx'] = 0.0; _fc_view['sy'] = 0.0
+            _fc_update_scrollregion(); redraw(); _update_zoom_indicator(); return
+        # Bundle 21: arrow keys + Page Up/Down scroll the Flow canvas
+        if k in ('up', 'kp_up'):
+            _fc_view['sy'] -= GRID; _fc_update_scrollregion(); redraw(); return
+        if k in ('down', 'kp_down'):
+            _fc_view['sy'] += GRID; _fc_update_scrollregion(); redraw(); return
+        if k in ('left', 'kp_left'):
+            _fc_view['sx'] -= GRID; _fc_update_scrollregion(); redraw(); return
+        if k in ('right', 'kp_right'):
+            _fc_view['sx'] += GRID; _fc_update_scrollregion(); redraw(); return
+        if k == 'prior':    # Page Up
+            _fc_view['sy'] -= (tk_canvas.winfo_height() or 660) / _fc_view['zoom']
+            _fc_update_scrollregion(); redraw(); return
+        if k == 'next':     # Page Down
+            _fc_view['sy'] += (tk_canvas.winfo_height() or 660) / _fc_view['zoom']
+            _fc_update_scrollregion(); redraw(); return
         if k == 't': set_mode('place_terminator')
         elif k == 'r': set_mode('place_process')
         elif k == 'd': set_mode('place_decision')
@@ -1946,6 +2380,16 @@ def run_gui():
         'flow_next_id':  0,
         'flow_selected': None,
         'flow_multi_sel': set(),
+        # Stage 9-0: Shell tab — command widgets (cmd_*), own canvas/mode state
+        'cmd_widgets':    {},   # id → {id, kind, x, y, w, h, label, name, properties}
+        'cmd_next_id':    0,
+        'cmd_selected':   None,
+        'cmd_multi_sel':  set(),
+        'cmd_mode':       'select',  # 'select' | 'delete' | 'place'
+        'cmd_dragging':   False,
+        'cmd_drag_offset':(0, 0),
+        'cmd_drag_origin':None,  # (x, y) at drag-start for undo
+        'cmd_ghost':      None,  # (x, y) design-space placement ghost
         'selected':      None,  # int id of primary selected widget
         'multi_sel':     set(), # all selected ids (includes selected)
         'mode':          'select',
@@ -1979,10 +2423,12 @@ def run_gui():
     if fc_state.get('stream') is not None:
         fc_state['stream']._widget_meta = fc_state['widgets']
         fc_state['stream']._flow_meta   = fc_state['flow_symbols']  # Phase 6C
+        fc_state['stream']._cmd_meta    = fc_state['cmd_widgets']   # Stage 9-0
 
     # ── Ghost canvas layout ───────────────────────────────────────────────────
-    guic_pal   = tk.Frame(ghost_tab, bg=C['palette'], width=PALETTE_W)
-    guic_pal.pack(side='left', fill='y'); guic_pal.pack_propagate(False)
+    # guic_pal removed — sidebar is now the universal palette_frame (tab-aware).
+    # Kept as an unmanaged dummy so legacy refs compile; never packed.
+    guic_pal = tk.Frame(ghost_tab, bg=C['palette'])
 
     # Right-side property panel (packed before guic_right so it claims the right boundary)
     _guic_prop_visible = [True]
@@ -1992,13 +2438,79 @@ def run_gui():
 
     guic_right = tk.Frame(ghost_tab, bg=C['bg'])
     guic_right.pack(side='left', fill='both', expand=True)
-    guic     = tk.Canvas(guic_right, bg=C['canvas'], highlightthickness=0)
+    _gc_cv_frame = tk.Frame(guic_right, bg=C['canvas'])
+    _gc_cv_frame.pack(fill='both', expand=True)
+    _gc_vsb = tk.Scrollbar(_gc_cv_frame, orient='vertical',   bg=C['palette'])
+    _gc_hsb = tk.Scrollbar(_gc_cv_frame, orient='horizontal', bg=C['palette'])
+    _gc_hsb.pack(side='bottom', fill='x')
+    _gc_vsb.pack(side='right',  fill='y')
+    guic = tk.Canvas(_gc_cv_frame, bg=C['canvas'], highlightthickness=0)
     guic.pack(fill='both', expand=True)
-    guic_bar   = tk.Label(guic_right,
+    _gc_status_frame = tk.Frame(guic_right, bg=C['status'])
+    _gc_status_frame.pack(side='bottom', fill='x')
+    guic_bar   = tk.Label(_gc_status_frame,
                         text="GUI Canvas — pick a widget type from the palette",
                         bg=C['status'], fg=C['pal_border'],
                         font=('Monospace', 9), anchor='w', padx=8)
-    guic_bar.pack(side='bottom', fill='x', ipady=3)
+    guic_bar.pack(side='left', fill='x', expand=True, ipady=3)
+    _gc_zoom_lbl = tk.Label(_gc_status_frame, text='Zoom: 100%', anchor='e',
+                            bg=C['status'], fg=C['dim'],
+                            font=('Monospace', 8), padx=8)
+    _gc_zoom_lbl.pack(side='right', ipady=3)
+
+    # ── Bundle 18: GUI canvas viewport state + coord helpers ──────────────────
+    _gc_view = {'zoom': 1.0, 'sx': 0.0, 'sy': 0.0}
+    _gc_pan  = [None]   # [{'ox':, 'oy':, 'ex':, 'ey':}] during middle-drag, else None
+
+    def _gc_d2s(dx, dy):
+        """Design → screen coords for the GUI canvas."""
+        z = _gc_view['zoom']
+        return (dx - _gc_view['sx']) * z, (dy - _gc_view['sy']) * z
+
+    def _gc_s2d(ex, ey):
+        """Screen → design coords for the GUI canvas."""
+        z = _gc_view['zoom']
+        return ex / z + _gc_view['sx'], ey / z + _gc_view['sy']
+
+    def _gc_update_scrollregion():
+        """Update GUI canvas scrollregion and scrollbar thumb positions.
+        Bundle 21: scrollbar .set() added so thumbs reflect current view."""
+        wgts = fc_state.get('widgets', {})
+        cw   = guic.winfo_width()  or 860
+        ch   = guic.winfo_height() or 660
+        if not wgts:
+            guic.config(scrollregion=(0, 0, cw, ch))
+            _gc_vsb.set(0.0, 1.0)
+            _gc_hsb.set(0.0, 1.0)
+            return
+        z        = _gc_view['zoom']
+        pad      = 60
+        all_pos  = [guic_abs_pos(w) for w in wgts.values()]
+        wgts_lst = list(wgts.values())
+        d_min_x  = min(ax - w.get('w', GW) // 2
+                       for (ax, _), w in zip(all_pos, wgts_lst)) - pad / z
+        d_max_x  = max(ax + w.get('w', GW) // 2
+                       for (ax, _), w in zip(all_pos, wgts_lst)) + pad / z
+        d_min_y  = min(ay - w.get('h', GH) // 2
+                       for (_, ay), w in zip(all_pos, wgts_lst)) - pad / z
+        d_max_y  = max(ay + w.get('h', GH) // 2
+                       for (_, ay), w in zip(all_pos, wgts_lst)) + pad / z
+        d_rng_x  = max(d_max_x - d_min_x, 1.0)
+        d_rng_y  = max(d_max_y - d_min_y, 1.0)
+        # scrollregion in screen space (consistent with _gc_d2s)
+        guic.config(scrollregion=((d_min_x - _gc_view['sx']) * z,
+                                  (d_min_y - _gc_view['sy']) * z,
+                                  (d_max_x - _gc_view['sx']) * z,
+                                  (d_max_y - _gc_view['sy']) * z))
+        # Scrollbar thumb: fraction of design-space currently visible
+        vis_w = cw / z
+        vis_h = ch / z
+        f0x = (_gc_view['sx'] - d_min_x) / d_rng_x
+        f1x = f0x + vis_w / d_rng_x
+        f0y = (_gc_view['sy'] - d_min_y) / d_rng_y
+        f1y = f0y + vis_h / d_rng_y
+        _gc_hsb.set(max(0.0, f0x), min(1.0, max(f0x + 0.001, f1x)))
+        _gc_vsb.set(max(0.0, f0y), min(1.0, max(f0y + 0.001, f1y)))
 
     # ── Property panel interior ───────────────────────────────────────────────
     _guic_prop_chev = tk.Button(guic_prop_outer, text='›',
@@ -2055,14 +2567,7 @@ def run_gui():
         elif m == 'edge_dst': guic_set_status("Click the child (destination) widget")
         elif m == 'delete': guic_set_status("Click a widget or edge to delete it")
 
-    # ── Palette ───────────────────────────────────────────────────────────────
-    tk.Label(guic_pal, text="GUI", bg=C['palette'], fg=C['pal_border'],
-             font=('Monospace', 9, 'bold'), pady=6).pack(fill='x')
-    tk.Label(guic_pal, text="WIDGETS", bg=C['palette'], fg=C['pal_border'],
-             font=('Monospace', 9, 'bold')).pack(fill='x')
-    tk.Frame(guic_pal, bg=C['dim'], height=1).pack(fill='x', padx=6, pady=2)
-
-    # ── Action buttons ────────────────────────────────────────────────────────
+    # ── Action handlers (buttons now in tab-aware sidebar) ───────────────────
     def guic_do_connect(): guic_set_mode('edge_src')
     def guic_do_delete():  guic_set_mode('delete')
 
@@ -2085,6 +2590,7 @@ def run_gui():
             'id': nid, 'kind': best,
             'x': snap(sw['x'] + GW + 30), 'y': sw['y'],
             'label': best.replace('gui_', ''),
+            'name': _fc_make_default_name(best, nid),
             'w': _dw, 'h': _dh, 'parent_id': None,
             'layout_mode': _GC_LAYOUT_DEFAULTS.get(best, 'absolute'),
             'properties': [],
@@ -2102,58 +2608,135 @@ def run_gui():
         fc_state['selected'] = None; fc_state['next_id'] = 0
         guic_set_mode('select'); guic_redraw()
 
-    def guic_do_save():
-        # Phase 6C: save both GHOST + FlowCode tab content to .tgui v0.2
-        if not fc_state['widgets'] and not fc_state['flow_symbols']:
-            guic_set_status("Nothing to save"); return
-        path = filedialog.asksaveasfilename(
-            parent=root, title='Save TernOO design',
-            initialdir=_FC_DIR,
-            defaultextension='.ternoo',
-            filetypes=[('TernOO design', '*.ternoo'), ('All files', '*.*')])
-        if not path: return
-        syms  = [{'id': w['id'], 'kind': w['kind'], 'label': w['label'],
-                  'gtk_class': '', 'x': w['x'], 'y': w['y'], 'depth': 0,
-                  'w': w.get('w', GW), 'h': w.get('h', GH),
-                  'parent_id': w.get('parent_id'),
-                  'layout_mode': w.get('layout_mode',
-                                       _GC_LAYOUT_DEFAULTS.get(w['kind'], 'absolute')),
-                  'properties': list(w.get('properties', [])), 'signals': [],
-                  'signal_ids': {str(k): dict(v)
-                                 for k, v in (w.get('signal_ids') or {}).items()}}
-                 # Bundle 12: 'bindings' key retired; signal_ids uses int signal IDs
-                 for w in fc_state['widgets'].values()]
-        edges = [{'src': e['src'], 'dst': e['dst'],
-                  'privilege': 0, 'call_style': 0, 'return_type': 1,
-                  'seg_idx': 0, 'offset': 0, 'waypoints': [], 'condition': ''}
-                 for e in fc_state['edges']]
+    def _save_to_path(path):
+        """Phase 7c-0: Write fc_state to `path`.
+        Handles .fc / .flow / .gui / .ternoo extensions, partial-save warning
+        dialogs, and titlebar update. Called by do_save() and guic_do_save()."""
+        ext      = os.path.splitext(path)[1].lower()
+        has_gui  = bool(fc_state['widgets'])
+        has_flow = bool(fc_state['flow_symbols'])
+
+        # ── Partial-save warnings ─────────────────────────────────────────
+        if ext == '.gui' and has_flow:
+            ans = messagebox.askyesnocancel(
+                "Save as .gui?",
+                "Your program contains flowchart symbols that won't be saved "
+                "in a .gui file.\n\n"
+                "  Yes    → save as .fc instead (keeps everything)\n"
+                "  No     → save anyway as .gui  (flow content lost)\n"
+                "  Cancel → don't save",
+                icon='warning')
+            if ans is None: return
+            if ans:
+                path = os.path.splitext(path)[0] + '.fc'
+                ext  = '.fc'
+        elif ext == '.flow' and has_gui:
+            ans = messagebox.askyesnocancel(
+                "Save as .flow?",
+                "Your program contains GUI widgets that won't be saved "
+                "in a .flow file.\n\n"
+                "  Yes    → save as .fc instead (keeps everything)\n"
+                "  No     → save anyway as .flow (GUI content lost)\n"
+                "  Cancel → don't save",
+                icon='warning')
+            if ans is None: return
+            if ans:
+                path = os.path.splitext(path)[0] + '.fc'
+                ext  = '.fc'
+
+        # ── Build payload filtered by extension ───────────────────────────
+        if ext == '.flow':
+            # Flow-only partial save — no GUI content
+            save_syms  = []
+            save_edges = []
+        else:
+            save_syms = [
+                {'id': w['id'], 'kind': w['kind'], 'label': w['label'],
+                 'name': w.get('name', ''),
+                 'gtk_class': '', 'x': w['x'], 'y': w['y'], 'depth': 0,
+                 'w': w.get('w', GW), 'h': w.get('h', GH),
+                 'parent_id': w.get('parent_id'),
+                 'layout_mode': w.get('layout_mode',
+                                      _GC_LAYOUT_DEFAULTS.get(w['kind'], 'absolute')),
+                 'properties': list(w.get('properties', [])), 'signals': [],
+                 'signal_ids': {str(k): dict(v)
+                                for k, v in (w.get('signal_ids') or {}).items()}}
+                # Bundle 12: 'bindings' key retired; signal_ids uses int signal IDs
+                for w in fc_state['widgets'].values()]
+            save_edges = [
+                {'src': e['src'], 'dst': e['dst'],
+                 'privilege': 0, 'call_style': 0, 'return_type': 1,
+                 'seg_idx': 0, 'offset': 0, 'waypoints': [], 'condition': ''}
+                for e in fc_state['edges']]
+
+        if ext == '.gui':
+            # GUI-only partial save — no flow content
+            save_flow_syms  = []
+            save_flow_edges = []
+        else:
+            save_flow_syms  = [dict(s) for s in fc_state['flow_symbols'].values()]
+            save_flow_edges = [dict(e) for e in fc_state['flow_edges']]
+
+        # Stage 9-0: Shell command widgets — saved in full programs only.
+        # .gui / .flow partials carry their own surface; a dedicated .shell
+        # partial is reserved by the file-extension policy but not yet emitted.
+        if ext in ('.gui', '.flow'):
+            save_cmd_syms = []
+        else:
+            save_cmd_syms = [dict(c) for c in fc_state['cmd_widgets'].values()]
+
         _stream_words = (list(fc_state['stream'].words)
                          if fc_state.get('stream') is not None else [])
-        # Phase 6C: include flow symbols and edges
-        flow_syms  = [dict(s) for s in fc_state['flow_symbols'].values()]
-        flow_edges = [dict(e) for e in fc_state['flow_edges']]
-        tgui  = {
+
+        payload = {
             'ternoo_version': '0.3',
-            'source_file':  os.path.basename(path),
-            'source_type':  'ternoo_design',
-            'word_stream':  _stream_words,
-            'symbols':      syms,
-            'edges':        edges,
-            'flow_symbols': flow_syms,           # Phase 6C: FlowCode tab symbols
-            'flow_edges':   flow_edges,          # Phase 6C: FlowCode tab edges
-            'sequence':     [w['id'] for w in fc_state['widgets'].values()],
+            'source_file':   os.path.basename(path),
+            'source_type':   'ternoo_design',
+            'word_stream':   _stream_words,
+            'symbols':       save_syms,
+            'edges':         save_edges,
+            'flow_symbols':  save_flow_syms,
+            'flow_edges':    save_flow_edges,
+            'cmd_symbols':   save_cmd_syms,   # Stage 9-0: Shell command widgets
+            'sequence':      ([w['id'] for w in fc_state['widgets'].values()]
+                              if ext != '.flow' else []),
             'tgui_meta': {
-                'widget_count':      len(syms),
-                'edge_count':        len(edges),
-                'flow_symbol_count': len(flow_syms),
-                'flow_edge_count':   len(flow_edges),
-                'mmoe_types_used': list({w['kind'] for w in fc_state['widgets'].values()}),
+                'widget_count':      len(save_syms),
+                'edge_count':        len(save_edges),
+                'flow_symbol_count': len(save_flow_syms),
+                'flow_edge_count':   len(save_flow_edges),
+                'cmd_widget_count':  len(save_cmd_syms),
+                'mmoe_types_used':   (list({w['kind']
+                                           for w in fc_state['widgets'].values()})
+                                      if ext != '.flow' else []),
             },
         }
         with open(path, 'w') as _sf:
-            json.dump(tgui, _sf, indent=2)
-        _current_design_path[0] = path  # Phase 7b-1: track for compiler header
-        guic_set_status(f"Saved: {os.path.basename(path)}")
+            json.dump(payload, _sf, indent=2)
+        _current_design_path[0] = path   # Phase 7b-1: track for compiler header
+        _name = os.path.basename(path)
+        root.title(f"FlowCode v0.6.0 — TernOO-5500FP Visual IDE  [{_name}]")
+        guic_set_status(f"Saved: {_name}")
+
+    def guic_do_save():
+        """Phase 7c-0 Save As — always prompts for filename + extension."""
+        if not fc_state['widgets'] and not fc_state['flow_symbols']:
+            guic_set_status("Nothing to save"); return
+        init_path = _current_design_path[0] or ''
+        path = filedialog.asksaveasfilename(
+            parent=root, title='Save FlowCode program',
+            initialdir=_FC_DIR,
+            initialfile=os.path.basename(init_path) if init_path else 'untitled.fc',
+            defaultextension='.fc',
+            filetypes=[
+                ('FlowCode program',     '*.fc'),
+                ('Flow-only partial',    '*.flow'),
+                ('GUI-only partial',     '*.gui'),
+                ('Legacy TernOO design', '*.ternoo'),
+                ('All files',            '*.*'),
+            ])
+        if not path: return
+        _save_to_path(path)
 
     # Directory where FlowCode saves/opens files (same dir as flowcode.py)
     _FC_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -2233,10 +2816,18 @@ def run_gui():
         return _mod2
 
     def guic_do_open():
+        # Phase 7c-0: updated title + extension filters
         path = filedialog.askopenfilename(
-            parent=root, title='Open TernOO design',
+            parent=root, title='Open FlowCode program',
             initialdir=_FC_DIR,
-            filetypes=[('TernOO design', '*.ternoo'), ('All files', '*.*')])
+            filetypes=[
+                ('FlowCode files',       '*.fc *.flow *.gui *.ternoo'),
+                ('FlowCode program',     '*.fc'),
+                ('Flow-only partial',    '*.flow'),
+                ('GUI-only partial',     '*.gui'),
+                ('Legacy TernOO design', '*.ternoo'),
+                ('All files',            '*.*'),
+            ])
         if not path: return
         try:
             with open(path) as _of:
@@ -2269,6 +2860,10 @@ def run_gui():
                     'properties':  list(sym.get('properties', [])),
                     'signal_ids':  _migrate_bindings_to_signal_ids(sym),  # Bundle 12
                 }
+                # Phase 7c-1: preserve explicit name (incl. empty); legacy files
+                # without a name key get a default assigned by ensure_unique_names.
+                if 'name' in sym:
+                    fc_state['widgets'][wid]['name'] = sym['name']
                 fc_state['next_id'] = max(fc_state['next_id'], wid + 1)
             # Rebuild child_order from parent_id links (preserve file order)
             for wid, w in fc_state['widgets'].items():
@@ -2295,6 +2890,8 @@ def run_gui():
                     'label':      sym.get('label', ''),
                     'properties': list(sym.get('properties', [])),
                 }
+                if 'name' in sym:   # Phase 7c-1: preserve explicit name
+                    fc_state['flow_symbols'][sid]['name'] = sym['name']
                 fc_state['flow_next_id'] = max(fc_state['flow_next_id'], sid + 1)
             for e in tgui.get('flow_edges', []):
                 fc_state['flow_edges'].append({
@@ -2305,15 +2902,176 @@ def run_gui():
                 })
             fc_state['flow_selected'] = None
             fc_state['flow_multi_sel'].clear()
+            # Stage 9-0: load Shell command widgets
+            fc_state['cmd_widgets'].clear()
+            fc_state['cmd_next_id'] = 0
+            for cmd in tgui.get('cmd_symbols', []):
+                cid = cmd['id']
+                fc_state['cmd_widgets'][cid] = {
+                    'id':         cid,
+                    'kind':       cmd.get('kind', 'cmd_placeholder'),
+                    'x':          cmd.get('x', 0),
+                    'y':          cmd.get('y', 0),
+                    'w':          cmd.get('w', CMD_W),
+                    'h':          cmd.get('h', CMD_H),
+                    'label':      cmd.get('label', ''),
+                    'properties': list(cmd.get('properties', [])),
+                }
+                if 'name' in cmd:   # Phase 7c-1: preserve explicit name
+                    fc_state['cmd_widgets'][cid]['name'] = cmd['name']
+                fc_state['cmd_next_id'] = max(fc_state['cmd_next_id'], cid + 1)
+            fc_state['cmd_selected'] = None
+            fc_state['cmd_multi_sel'].clear()
+            # Phase 7c-1: assign default names to legacy widgets/symbols that
+            # lack one, and disambiguate any duplicate non-empty names.
+            fc_state['stream'].ensure_unique_names()
             # Phase 6B/6C: sync stream from widgets+flow content
             _guic_sync_stream()
             guic_set_mode('select')
-            _current_design_path[0] = path  # Phase 7b-1: track for compiler header
-            guic_set_status(f"Opened: {os.path.basename(path)}")
+            _current_design_path[0] = path   # Phase 7b-1: track for compiler header
+            _name = os.path.basename(path)
+            root.title(f"FlowCode v0.6.0 — TernOO-5500FP Visual IDE  [{_name}]")
+            guic_set_status(f"Opened: {_name}")
             guic_layout_all()
             guic_redraw()
+            _sh_redraw()   # Stage 9-0: refresh Shell canvas
         except Exception as _oe:
             guic_set_status(f"Open failed: {_oe}")
+
+    def guic_do_import():
+        """Phase 7c-0: Import/merge a FlowCode file into the current session.
+        Widget and symbol IDs are remapped to avoid collision with existing
+        content; cross-references within the imported content are renumbered
+        to match.  Cross-subsystem bindings are not restored (partial saves
+        don't carry them)."""
+        path = filedialog.askopenfilename(
+            parent=root, title='Import FlowCode content',
+            initialdir=_FC_DIR,
+            filetypes=[
+                ('FlowCode files',       '*.fc *.flow *.gui *.ternoo'),
+                ('FlowCode program',     '*.fc'),
+                ('Flow-only partial',    '*.flow'),
+                ('GUI-only partial',     '*.gui'),
+                ('Legacy TernOO design', '*.ternoo'),
+                ('All files',            '*.*'),
+            ])
+        if not path: return
+        try:
+            with open(path) as _if:
+                data = json.load(_if)
+            if ('ternoo_version' not in data and 'tgui_version' not in data):
+                guic_set_status("Not a FlowCode file — import cancelled"); return
+
+            # ── Remap GUI widget IDs ──────────────────────────────────────
+            next_wid = fc_state.get('next_id', 0)
+            wid_map  = {}   # old_id → new_id
+            for sym in data.get('symbols', []):
+                old_id = sym['id']
+                new_id = next_wid;  next_wid += 1
+                wid_map[old_id] = new_id
+                kind = sym.get('kind', 'gui_button')
+                _dw, _dh = _GC_DEFAULT_SIZE.get(kind, (GW, GH))
+                fc_state['widgets'][new_id] = {
+                    'id':          new_id,
+                    'kind':        kind,
+                    'label':       sym.get('label', ''),
+                    'x':           sym.get('x', 0),
+                    'y':           sym.get('y', 0),
+                    'w':           sym.get('w', _dw),
+                    'h':           sym.get('h', _dh),
+                    'parent_id':   wid_map.get(sym.get('parent_id')),
+                    'layout_mode': sym.get('layout_mode',
+                                          _GC_LAYOUT_DEFAULTS.get(kind, 'absolute')),
+                    'properties':  list(sym.get('properties', [])),
+                    'signal_ids':  _migrate_bindings_to_signal_ids(sym),
+                }
+                if 'name' in sym:   # Phase 7c-1: preserve name; deduped below
+                    fc_state['widgets'][new_id]['name'] = sym['name']
+            fc_state['next_id'] = next_wid
+
+            # GUI edges — remap src/dst through wid_map
+            for e in data.get('edges', []):
+                ns = wid_map.get(e['src'])
+                nd = wid_map.get(e['dst'])
+                if ns is not None and nd is not None:
+                    fc_state['edges'].append({'src': ns, 'dst': nd})
+
+            # Rebuild child_order for newly imported widgets
+            for wid, w in fc_state['widgets'].items():
+                pid = w.get('parent_id')
+                if pid is not None:
+                    fc_state['child_order'].setdefault(pid, [])
+                    if wid not in fc_state['child_order'][pid]:
+                        fc_state['child_order'][pid].append(wid)
+
+            # ── Remap flow symbol IDs ─────────────────────────────────────
+            next_fsid = fc_state.get('flow_next_id', 0)
+            fsid_map  = {}   # old_id → new_id
+            for sym in data.get('flow_symbols', []):
+                old_id = sym['id']
+                new_id = next_fsid;  next_fsid += 1
+                fsid_map[old_id] = new_id
+                fc_state['flow_symbols'][new_id] = {
+                    'id':         new_id,
+                    'kind':       sym.get('kind', 'flow_process'),
+                    'x':          sym.get('x', 0),
+                    'y':          sym.get('y', 0),
+                    'w':          sym.get('w', SYMBOL_W),
+                    'h':          sym.get('h', SYMBOL_H),
+                    'label':      sym.get('label', ''),
+                    'properties': list(sym.get('properties', [])),
+                }
+                if 'name' in sym:   # Phase 7c-1: preserve name; deduped below
+                    fc_state['flow_symbols'][new_id]['name'] = sym['name']
+            fc_state['flow_next_id'] = next_fsid
+
+            # Flow edges — remap src/dst through fsid_map
+            for e in data.get('flow_edges', []):
+                ns = fsid_map.get(e['src'])
+                nd = fsid_map.get(e['dst'])
+                if ns is not None and nd is not None:
+                    fc_state['flow_edges'].append({
+                        'src':       ns,
+                        'dst':       nd,
+                        'waypoints': [tuple(wp) for wp in e.get('waypoints', [])],
+                        'condition': e.get('condition', ''),
+                    })
+
+            # ── Stage 9-0: Remap Shell command-widget IDs ─────────────────
+            next_cid = fc_state.get('cmd_next_id', 0)
+            for cmd in data.get('cmd_symbols', []):
+                new_id = next_cid;  next_cid += 1
+                fc_state['cmd_widgets'][new_id] = {
+                    'id':         new_id,
+                    'kind':       cmd.get('kind', 'cmd_placeholder'),
+                    'x':          cmd.get('x', 0),
+                    'y':          cmd.get('y', 0),
+                    'w':          cmd.get('w', CMD_W),
+                    'h':          cmd.get('h', CMD_H),
+                    'label':      cmd.get('label', ''),
+                    'properties': list(cmd.get('properties', [])),
+                }
+                if 'name' in cmd:   # Phase 7c-1: preserve name; deduped below
+                    fc_state['cmd_widgets'][new_id]['name'] = cmd['name']
+            fc_state['cmd_next_id'] = next_cid
+
+            # Phase 7c-1: fill defaults for unnamed imports and disambiguate
+            # any names that collide with existing session content.
+            fc_state['stream'].ensure_unique_names()
+            _guic_sync_stream()
+            guic_redraw()
+            redraw()
+            _sh_redraw()   # Stage 9-0: refresh Shell canvas
+            n_gui  = len(data.get('symbols', []))
+            n_flow = len(data.get('flow_symbols', []))
+            n_cmd  = len(data.get('cmd_symbols', []))
+            guic_set_status(
+                f"Imported {n_gui} GUI widget{'s' if n_gui != 1 else ''}, "
+                f"{n_flow} flow symbol{'s' if n_flow != 1 else ''}, "
+                f"{n_cmd} command{'s' if n_cmd != 1 else ''} "
+                f"from {os.path.basename(path)}")
+        except Exception as _ie:
+            guic_set_status(f"Import failed: {_ie}")
 
     # ── Undo / redo (D10 + Phase 6A word-level layer) ────────────────────────
     _guic_undo_stack      = []   # semantic: list of inverse action dicts, newest last
@@ -2321,8 +3079,8 @@ def run_gui():
     _guic_word_undo_stack = []   # Phase 6A: word-level WordStreamEdit list (Alt+Z)
     _guic_word_redo_stack = []   # Phase 6A: word-level redo (Alt+Y)
     _GC_UNDO_LIMIT      = 100
-    _guic_undo_btn_ref    = [None]   # mutable ref set when UI is built
-    _guic_redo_btn_ref    = [None]   # mutable ref set when UI is built
+    _guic_undo_btn_ref    = _pal_undo_btn_ref   # palette Actions section (universal)
+    _guic_redo_btn_ref    = _pal_redo_btn_ref   # palette Actions section (universal)
     # Phase 6A dev-mode assertion removed (D8): no parallel representation to assert.
 
     def _guic_action_label(action):
@@ -2643,7 +3401,7 @@ def run_gui():
     # ── Property helpers (read/write from widget dict or properties list) ─────
     def _guic_get_prop_value(w, name):
         """Get property value from widget dict (common) or properties list."""
-        if name in ('x', 'y', 'w', 'h', 'label', 'layout_mode'):
+        if name in ('name', 'x', 'y', 'w', 'h', 'label', 'layout_mode'):
             return w.get(name)
         for p in w.get('properties', []):
             if p['name'] == name:
@@ -2652,7 +3410,7 @@ def run_gui():
 
     def _guic_set_prop_value(w, name, value):
         """Set property value in widget dict (common) or properties list."""
-        if name in ('x', 'y', 'w', 'h', 'label', 'layout_mode'):
+        if name in ('name', 'x', 'y', 'w', 'h', 'label', 'layout_mode'):
             w[name] = value
         else:
             for p in w.get('properties', []):
@@ -2762,98 +3520,28 @@ def run_gui():
         widget.bind('<Enter>', _show)
         widget.bind('<Leave>', _hide)
 
-    # Select / pointer tool — returns to neutral select mode
-    _guic_sel_btn = _guic_action_btn(guic_pal, '☞ Select', lambda: guic_set_mode('select'), '#aaaaff')
-    _guic_tooltip(_guic_sel_btn, 'Select / pointer (Esc)')
-    tk.Frame(guic_pal, bg=C['dim'], height=1).pack(fill='x', padx=6, pady=2)
-
-    for _lbl, _cmd, _fg in [
-        ('⬡ Connect', guic_do_connect, '#7aff7a'),
-        ('✕ Delete',  guic_do_delete,  '#ff8888'),
-        ('💡 Suggest', guic_do_suggest, '#ffcc44'),
-        ('🗑 Clear',  guic_do_clear,   '#ff8888'),
-    ]:
-        _guic_action_btn(guic_pal, _lbl, _cmd, _fg)
-
-    # Undo / Redo — above Save/Open; grey out when stack is empty
-    # Tooltips are managed dynamically by guic_update_undo_btns() (Phase 6A).
-    _guic_undo_btn_ref[0] = _guic_action_btn(guic_pal, '↩ Undo', guic_undo, C['dim'])
-    _guic_redo_btn_ref[0] = _guic_action_btn(guic_pal, '↪ Redo', guic_redo, C['dim'])
-    guic_update_undo_btns()   # initialise disabled state + tooltips
-
-    for _lbl, _cmd, _fg in [
-        ('💾 Save',   guic_do_save,    '#7ab4ff'),
-        ('📂 Open',   guic_do_open,    '#ffcc88'),
-    ]:
-        _guic_action_btn(guic_pal, _lbl, _cmd, _fg)
-
-    tk.Frame(guic_pal, bg=C['dim'], height=1).pack(fill='x', padx=6, pady=4)
-
-    # ── Widget palette sections ───────────────────────────────────────────────
-    _guic_pal_inner = tk.Frame(guic_pal, bg=C['palette'])
-    _guic_pal_inner.pack(fill='x')
-
-    # ── Collapsible section builder ───────────────────────────────────────────
-    # _guic_pal_inner uses grid so that grid_remove() + grid() can re-show a
-    # collapsed section in its original position (pack_forget/pack would
-    # re-insert at the end, scrambling section order on re-expand).
-    _guic_grp_names = {
-        5: 'CONTAINERS', 4: 'CONTROLS', 3: 'INPUTS',
-        2: 'DISPLAY', 1: 'DIALOGS', 0: 'MENUS',
-    }
-    _guic_sections: dict = {}   # grp_key → {'open': [bool], 'frame': Frame, 'btn': Button}
-    _guic_pal_inner.columnconfigure(0, weight=1)
-    _guic_row = [0]
-
-    def _guic_make_toggle(hdr_ref, sec_frame, open_state, name):
-        def _toggle():
-            open_state[0] = not open_state[0]
-            if open_state[0]:
-                sec_frame.grid()        # restores remembered row/column
-                hdr_ref[0].config(text=f'▾ {name}')
-            else:
-                sec_frame.grid_remove() # hides but remembers position
-                hdr_ref[0].config(text=f'▸ {name}')
-        return _toggle
-
-    for wtype, y_lo in _ghost_palette_types:
-        grp_key = y_lo // 100
-        if grp_key not in _guic_sections:
-            name       = _guic_grp_names.get(grp_key, f'GROUP_{grp_key}')
-            open_state = [True]
-            sec_frame  = tk.Frame(_guic_pal_inner, bg=C['palette'])
-            hdr_ref    = [None]
-            toggle_fn  = _guic_make_toggle(hdr_ref, sec_frame, open_state, name)
-            hdr_btn    = tk.Button(_guic_pal_inner, text=f'▾ {name}',
-                                   bg=C['palette'], fg=C['dim'],
-                                   font=('Monospace', 7, 'bold'), relief='flat', bd=0,
-                                   pady=2, padx=4, anchor='w', cursor='hand2',
-                                   command=toggle_fn)
-            hdr_btn.grid(row=_guic_row[0], column=0, sticky='ew', padx=2, pady=(4, 0))
-            _guic_row[0] += 1
-            hdr_ref[0] = hdr_btn
-            sec_frame.grid(row=_guic_row[0], column=0, sticky='ew')
-            _guic_row[0] += 1
-            _guic_sections[grp_key] = {'open': open_state, 'frame': sec_frame, 'btn': hdr_btn}
-        col   = _guic_color.get(wtype, C['pal_btn'])
-        short = wtype.replace('gui_', '')
-        tk.Button(_guic_sections[grp_key]['frame'], text=short,
-                  bg=col, fg=C['text'],
-                  font=('Monospace', 8), relief='flat', bd=0,
-                  padx=4, pady=2, cursor='hand2', anchor='w',
-                  command=lambda k=wtype: guic_set_mode('place', k)
-                  ).pack(fill='x', padx=4, pady=1)
-
-    tk.Label(guic_pal, text="GUI Canvas\nv0.6.0",
-             bg=C['palette'], fg=C['dim'],
-             font=('Monospace', 7), pady=4
-             ).pack(side='bottom', fill='x')
+    # ── Bundle 17 A7: guic_pal buttons removed — now in universal sidebar ───────
+    # Select/Connect/Delete → _build_gui_tools() in tab-aware tools section
+    # Suggest/Clear/Undo/Redo → universal Actions section in palette_frame
+    # Widget palette → _build_gui_tools() scrollable section in tools frame
+    guic_update_undo_btns()   # initialise disabled/enabled state on palette buttons
 
     # ── Drawing ───────────────────────────────────────────────────────────────
     def guic_draw_grid():
-        w = guic.winfo_width() or 860; h = guic.winfo_height() or 660
-        for x in range(0, w, GRID): guic.create_line(x, 0, x, h, fill=C['grid'])
-        for y in range(0, h, GRID): guic.create_line(0, y, w, y, fill=C['grid'])
+        cw = guic.winfo_width() or 860; ch = guic.winfo_height() or 660
+        z  = _gc_view['zoom']
+        gstep = GRID * z
+        if gstep < 4: return   # skip grid when too zoomed out
+        ox = (-_gc_view['sx'] * z) % gstep
+        oy = (-_gc_view['sy'] * z) % gstep
+        x = ox
+        while x <= cw:
+            guic.create_line(int(x), 0, int(x), ch, fill=C['grid'])
+            x += gstep
+        y = oy
+        while y <= ch:
+            guic.create_line(0, int(y), cw, int(y), fill=C['grid'])
+            y += gstep
 
     def _guic_render_words(words, L, T, R, B, col, bor, txt, dim):
         # ── CC-09 geometry word interpreter ───────────────────────────────────
@@ -3006,6 +3694,17 @@ def run_gui():
         kind = w['kind']
         txt  = C['text']; dim = C['dim']
 
+        # ── Bundle 18: viewport transform (design → screen) ───────────────────
+        _xs2, _ys2 = _gc_d2s(x, y)
+        z    = _gc_view['zoom']
+        x, y = int(_xs2), int(_ys2)
+        hw   = int(hw * z);  hh   = int(hh * z)
+        L    = x - hw;       R    = x + hw
+        T    = y - hh;       B    = y + hh
+        _gft = max(5, int(8 * z))   # main widget font size
+        _gfs = max(4, int(7 * z))   # sub/type label font size
+        # ─────────────────────────────────────────────────────────────────────
+
         # Container/layout types get a dashed background before geometry
         if kind in ('gui_box', 'gui_grid', 'gui_canvas', 'gui_stack',
                     'gui_overlay', 'gui_revealer'):
@@ -3025,7 +3724,7 @@ def run_gui():
         _label_text = w.get('label', '')
         if _label_text:
             guic.create_text(x, y, text=str(_label_text)[:20],
-                           fill=txt, font=('Monospace', 8), anchor='center')
+                           fill=txt, font=('Monospace', _gft), anchor='center')
 
         # Kind-specific string properties overlay (title, placeholder, etc.)
         for _kp in w.get('properties', []):
@@ -3034,16 +3733,16 @@ def run_gui():
             if not _kpval: continue
             if _kpname == 'title':
                 # Title bar text — top strip of the widget tile
-                guic.create_text(x, T + 7, text=_kpval[:22],
-                               fill=txt, font=('Monospace', 7, 'bold'), anchor='center')
+                guic.create_text(x, T + max(3, int(7 * z)), text=_kpval[:22],
+                               fill=txt, font=('Monospace', _gfs, 'bold'), anchor='center')
             elif _kpname == 'placeholder':
                 # Placeholder — dimmed italic centred (only visible when label absent)
                 guic.create_text(x, y, text=_kpval[:20],
-                               fill=dim, font=('Monospace', 7, 'italic'), anchor='center')
+                               fill=dim, font=('Monospace', _gfs, 'italic'), anchor='center')
 
         # Type label below tile
-        guic.create_text(x, B + 9, text=kind.replace('gui_', ''),
-                       fill=dim, font=('Monospace', 7))
+        guic.create_text(x, B + max(4, int(9 * z)), text=kind.replace('gui_', ''),
+                       fill=dim, font=('Monospace', _gfs))
 
         # Drop-target highlight (thick dashed border when this widget is the drop target)
         if fc_state.get('drop_target') == w['id']:
@@ -3052,9 +3751,11 @@ def run_gui():
 
         # Resize handles — 8 small squares, only for single-selected widget (D3)
         if sel and len(fc_state['multi_sel']) <= 1:
-            _hs = 3  # half of 6×6 px square
-            for hx, hy in guic_handle_positions(w).values():
-                guic.create_rectangle(hx - _hs, hy - _hs, hx + _hs, hy + _hs,
+            _hs = max(2, int(3 * z))   # handle half-size, scales with zoom
+            for hx_d, hy_d in guic_handle_positions(w).values():
+                hxs, hys = _gc_d2s(hx_d, hy_d)
+                guic.create_rectangle(int(hxs) - _hs, int(hys) - _hs,
+                                    int(hxs) + _hs, int(hys) + _hs,
                                     fill=C['selected'], outline=C['canvas'], width=1)
 
         # ── sea monkeys removed CC-09 — geometry renderer above is the renderer ──
@@ -3351,19 +4052,25 @@ def run_gui():
     def guic_draw_edge(e):
         src = fc_state['widgets'].get(e['src']); dst = fc_state['widgets'].get(e['dst'])
         if not src or not dst: return
-        sx, sy = guic_abs_pos(src); dx, dy = guic_abs_pos(dst)
-        x1, y1 = sx, sy + src.get('h', GH) // 2
-        x2, y2 = dx, dy - dst.get('h', GH) // 2
+        # Design-space positions
+        sdx, sdy = guic_abs_pos(src); ddx, ddy = guic_abs_pos(dst)
+        dx1_d, dy1_d = sdx, sdy + src.get('h', GH) // 2
+        dx2_d, dy2_d = ddx, ddy - dst.get('h', GH) // 2
+        # Convert to screen space
+        x1, y1 = _gc_d2s(dx1_d, dy1_d)
+        x2, y2 = _gc_d2s(dx2_d, dy2_d)
+        z  = _gc_view['zoom']
+        _asz = (int(12 * z), int(16 * z), int(5 * z))
         # If same row, draw a horizontal arc
-        if abs(y1 - dy) < GH:
-            mx = (x1 + x2) // 2; my = y1 + 30
+        if abs(dy1_d - ddy) < GH:
+            mx = (x1 + x2) // 2; my = y1 + int(30 * z)
             guic.create_line(x1, y1, mx, my, x2, y2,
                            fill=C['edge'], width=2,
-                           arrow='last', arrowshape=(12, 16, 5), smooth=True)
+                           arrow='last', arrowshape=_asz, smooth=True)
         else:
             guic.create_line(x1, y1, x2, y2,
                            fill=C['edge'], width=2,
-                           arrow='last', arrowshape=(12, 16, 5))
+                           arrow='last', arrowshape=_asz)
 
     def guic_redraw():
         guic.delete('all'); guic_draw_grid()
@@ -3400,7 +4107,10 @@ def run_gui():
                     else:
                         ref = guic_abs_pos(siblings[-1])
                         lx = ref[0] + siblings[-1].get('w', GW)//2 + 2
-                    guic.create_line(lx, pay - ph//2, lx, pay + ph//2,
+                    # Bundle 18: transform insertion line to screen space
+                    lxs, top_s = _gc_d2s(lx, pay - ph//2)
+                    _  , bot_s = _gc_d2s(lx, pay + ph//2)
+                    guic.create_line(int(lxs), int(top_s), int(lxs), int(bot_s),
                                    fill=C['selected'], width=2, dash=(4, 2))
                 elif mode == 'vbox' and siblings:
                     if insert_idx < len(siblings):
@@ -3409,16 +4119,23 @@ def run_gui():
                     else:
                         ref = guic_abs_pos(siblings[-1])
                         ly = ref[1] + siblings[-1].get('h', GH)//2 + 2
-                    guic.create_line(pax - pw//2, ly, pax + pw//2, ly,
+                    # Bundle 18: transform insertion line to screen space
+                    left_s, lys = _gc_d2s(pax - pw//2, ly)
+                    right_s, _  = _gc_d2s(pax + pw//2, ly)
+                    guic.create_line(int(left_s), int(lys), int(right_s), int(lys),
                                    fill=C['selected'], width=2, dash=(4, 2))
 
         # ── Lasso rubber band ─────────────────────────────────────────────────
+        # lasso_start / lasso_end stored in design space (set by guic_on_click/motion)
         if fc_state['lasso_start'] is not None and fc_state['lasso_end'] is not None:
             lx0 = min(fc_state['lasso_start'][0], fc_state['lasso_end'][0])
             ly0 = min(fc_state['lasso_start'][1], fc_state['lasso_end'][1])
             lx1 = max(fc_state['lasso_start'][0], fc_state['lasso_end'][0])
             ly1 = max(fc_state['lasso_start'][1], fc_state['lasso_end'][1])
-            guic.create_rectangle(lx0, ly0, lx1, ly1,
+            # Bundle 18: transform lasso corners to screen space
+            slx0, sly0 = _gc_d2s(lx0, ly0)
+            slx1, sly1 = _gc_d2s(lx1, ly1)
+            guic.create_rectangle(int(slx0), int(sly0), int(slx1), int(sly1),
                                 outline=C['selected'], fill='', dash=(4, 2), width=1)
 
     def guic_widget_at(x, y):
@@ -3545,6 +4262,37 @@ def run_gui():
                 row.pack(fill='x', padx=4, pady=1)
                 tk.Label(row, text=pname, bg=C['palette'], fg=C['dim'],
                          font=('Monospace', 7), width=12, anchor='w').pack(side='left')
+
+                if pname == 'name':
+                    # Phase 7c-1: programmatic identity. Unique across the stream,
+                    # so it is edited single-widget only; multi-select shows it as
+                    # read-only. Validation refuses duplicates and reverts.
+                    if is_multi:
+                        ne = tk.Entry(row, bg=C['canvas'], fg=C['dim'],
+                                      font=('Monospace', 8), relief='flat')
+                        ne.insert(0, '(unique per widget)')
+                        ne.config(state='readonly')
+                        ne.pack(side='left', fill='x', expand=True)
+                    else:
+                        nvar = tk.StringVar(value=cur_val or '')
+                        nentry = tk.Entry(row, textvariable=nvar,
+                                          bg=C['canvas'], fg=C['text'],
+                                          font=('Monospace', 8), relief='flat',
+                                          insertbackground=C['text'])
+                        nentry.pack(side='left', fill='x', expand=True)
+
+                        def _on_name_commit(event, _var=nvar, _wid=sel, _w=primary_w):
+                            new = _var.get().strip()
+                            if new and fc_state['stream'].name_in_use(new, exclude=_w):
+                                guic_set_status(
+                                    f"Name '{new}' already in use — reverted")
+                                _var.set(_w.get('name', ''))
+                                return
+                            guic_commit_property([_wid], 'name', new)
+
+                        nentry.bind('<Return>',   _on_name_commit)
+                        nentry.bind('<FocusOut>', _on_name_commit)
+                    continue
 
                 if pkind == 'string':
                     var = tk.StringVar(value='' if is_mixed else (cur_val or ''))
@@ -3831,7 +4579,8 @@ def run_gui():
 
     # ── Events ────────────────────────────────────────────────────────────────
     def guic_on_click(event):
-        x, y = event.x, event.y
+        # Bundle 18: convert click from screen to design space at input layer
+        x, y = _gc_s2d(event.x, event.y)
         mode = fc_state['mode']
         shift = bool(event.state & 0x0001)   # Shift key
 
@@ -3849,6 +4598,7 @@ def run_gui():
                 new_pid = drop_ct['id']
             new_w = {'id': nid, 'kind': kind, 'x': sx, 'y': sy,
                      'label': kind.replace('gui_', ''),
+                     'name': _fc_make_default_name(kind, nid),
                      'w': _dw, 'h': _dh, 'parent_id': new_pid,
                      'layout_mode': _GC_LAYOUT_DEFAULTS.get(kind, 'absolute'),
                      'properties': []}
@@ -3946,9 +4696,10 @@ def run_gui():
         guic_redraw()
 
     def guic_on_motion(event):
-        x, y = event.x, event.y
+        # Bundle 18: convert motion event to design space at input layer
+        x, y = _gc_s2d(event.x, event.y)
 
-        # ── Lasso drag ─────────────────────────────────────────────────────────
+        # ── Lasso drag (design-space coords stored) ────────────────────────────
         if fc_state['lasso_start'] is not None:
             fc_state['lasso_end'] = (x, y)
             guic_redraw(); return
@@ -3959,7 +4710,7 @@ def run_gui():
             if w:
                 ox, oy, ow, oh = fc_state['resize_origin']
                 h = fc_state['resize_handle']
-                # Each handle constrains different edges
+                # Each handle constrains different edges (all in design space)
                 nx, ny, nw, nh = ox, oy, ow, oh
                 if 'W' in h:
                     delta = x - (ox - ow // 2)
@@ -4006,7 +4757,7 @@ def run_gui():
                 parent_mode = (parent_w.get('layout_mode', 'absolute')
                                if parent_w else 'absolute')
                 if parent_mode in ('hbox', 'vbox') and len(fc_state['multi_sel']) == 1:
-                    # Compute insertion index based on cursor vs sibling centres
+                    # Compute insertion index based on cursor vs sibling centres (design space)
                     siblings = guic_children_of(pid)
                     pax, pay = guic_abs_pos(parent_w)
                     if parent_mode == 'hbox':
@@ -4137,6 +4888,27 @@ def run_gui():
         k = event.keysym.lower()
         ctrl = bool(event.state & 0x0004)
 
+        # Bundle 18: Home key resets GUI canvas view
+        if k == 'home':
+            _gc_view['zoom'] = 1.0; _gc_view['sx'] = 0.0; _gc_view['sy'] = 0.0
+            _gc_update_scrollregion(); guic_redraw()
+            _update_zoom_indicator(); return
+        # Bundle 21: arrow keys + Page Up/Down scroll the GUI canvas
+        if k in ('up', 'kp_up'):
+            _gc_view['sy'] -= GH; _gc_update_scrollregion(); guic_redraw(); return
+        if k in ('down', 'kp_down'):
+            _gc_view['sy'] += GH; _gc_update_scrollregion(); guic_redraw(); return
+        if k in ('left', 'kp_left'):
+            _gc_view['sx'] -= GW; _gc_update_scrollregion(); guic_redraw(); return
+        if k in ('right', 'kp_right'):
+            _gc_view['sx'] += GW; _gc_update_scrollregion(); guic_redraw(); return
+        if k == 'prior':    # Page Up
+            _gc_view['sy'] -= (guic.winfo_height() or 660) / _gc_view['zoom']
+            _gc_update_scrollregion(); guic_redraw(); return
+        if k == 'next':     # Page Down
+            _gc_view['sy'] += (guic.winfo_height() or 660) / _gc_view['zoom']
+            _gc_update_scrollregion(); guic_redraw(); return
+
         if k == 'escape':
             guic_set_mode('select')
         elif k == 'e' and not ctrl:
@@ -4203,15 +4975,571 @@ def run_gui():
     guic.bind('<Enter>',         lambda e: guic.focus_set())
     guic.bind('<Key>',           guic_on_key)
 
+    # ── Bundle 17 A: Tab-aware sidebar builders ───────────────────────────────
+
+    def _build_gui_tools():
+        """Rebuild tools frame for the GUI tab: Select/Connect/Delete + widget palette."""
+        for w in _pal_tools_frame.winfo_children(): w.destroy()
+        pal_btns.clear()
+
+        _pal_section("TOOLS")
+        for _lbl, _mode, _fg in [
+            ('☞ Select',  'select',   '#aaaaff'),
+            ('⬡ Connect', 'edge_src', '#7aff7a'),
+            ('✕ Delete',  'delete',   '#ff8888'),
+        ]:
+            tk.Button(_pal_tools_frame, text=_lbl,
+                      bg=C['pal_btn'], fg=_fg,
+                      font=('Monospace', 9), relief='flat',
+                      activebackground=C['pal_active'], activeforeground=C['text'],
+                      cursor='hand2', padx=4, pady=4,
+                      command=lambda m=_mode: guic_set_mode(m)
+                      ).pack(fill='x', padx=6, pady=2)
+
+        tk.Frame(_pal_tools_frame, bg=C['dim'], height=1).pack(fill='x', padx=6, pady=2)
+        _pal_section("WIDGETS")
+
+        # Scrollable canvas to hold collapsible widget categories
+        _pal_wgt_cvs = tk.Canvas(_pal_tools_frame, bg=C['palette'], highlightthickness=0)
+        _pal_wgt_sb  = tk.Scrollbar(_pal_tools_frame, orient='vertical',
+                                    command=_pal_wgt_cvs.yview)
+        _pal_wgt_sb.pack(side='right', fill='y')
+        _pal_wgt_cvs.pack(fill='both', expand=True)
+        _pal_wgt_cvs.configure(yscrollcommand=_pal_wgt_sb.set)
+
+        _pal_wgt_inner = tk.Frame(_pal_wgt_cvs, bg=C['palette'])
+        _pal_wgt_win   = _pal_wgt_cvs.create_window((0, 0), window=_pal_wgt_inner, anchor='nw')
+
+        def _on_inner_cfg(e):
+            _pal_wgt_cvs.configure(scrollregion=_pal_wgt_cvs.bbox('all'))
+        _pal_wgt_inner.bind('<Configure>', _on_inner_cfg)
+
+        def _on_cvs_cfg(e):
+            _pal_wgt_cvs.itemconfig(_pal_wgt_win, width=e.width)
+        _pal_wgt_cvs.bind('<Configure>', _on_cvs_cfg)
+
+        _grp_names = {5: 'CONTAINERS', 4: 'CONTROLS', 3: 'INPUTS',
+                      2: 'DISPLAY', 1: 'DIALOGS', 0: 'MENUS'}
+        _sections  = {}
+        _pal_wgt_inner.columnconfigure(0, weight=1)
+        _row = [0]
+
+        def _make_sec_toggle(hdr_ref, sec_frame, open_state, name):
+            def _toggle():
+                open_state[0] = not open_state[0]
+                if open_state[0]:
+                    sec_frame.grid()
+                    hdr_ref[0].config(text=f'▾ {name}')
+                else:
+                    sec_frame.grid_remove()
+                    hdr_ref[0].config(text=f'▸ {name}')
+            return _toggle
+
+        for wtype, y_lo in _ghost_palette_types:
+            grp_key = y_lo // 100
+            if grp_key not in _sections:
+                name       = _grp_names.get(grp_key, f'GROUP_{grp_key}')
+                open_state = [True]
+                sec_frame  = tk.Frame(_pal_wgt_inner, bg=C['palette'])
+                hdr_ref    = [None]
+                toggle_fn  = _make_sec_toggle(hdr_ref, sec_frame, open_state, name)
+                hdr_btn    = tk.Button(_pal_wgt_inner, text=f'▾ {name}',
+                                       bg=C['palette'], fg=C['dim'],
+                                       font=('Monospace', 7, 'bold'), relief='flat', bd=0,
+                                       pady=2, padx=4, anchor='w', cursor='hand2',
+                                       command=toggle_fn)
+                hdr_btn.grid(row=_row[0], column=0, sticky='ew', padx=2, pady=(4, 0))
+                _row[0] += 1
+                hdr_ref[0] = hdr_btn
+                sec_frame.grid(row=_row[0], column=0, sticky='ew')
+                _row[0] += 1
+                _sections[grp_key] = {'open': open_state, 'frame': sec_frame, 'btn': hdr_btn}
+            col   = _guic_color.get(wtype, C['pal_btn'])
+            short = wtype.replace('gui_', '')
+            tk.Button(_sections[grp_key]['frame'], text=short,
+                      bg=col, fg=C['text'],
+                      font=('Monospace', 8), relief='flat', bd=0,
+                      padx=4, pady=2, cursor='hand2', anchor='w',
+                      command=lambda k=wtype: guic_set_mode('place', k)
+                      ).pack(fill='x', padx=4, pady=1)
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Stage 9-0: Shell tab — command-composition canvas (scaffolding)
+    #
+    # Command widgets (cmd_*) are flow-symbol-shaped tiles with a header
+    # (name + kind) and a body (placeholder input/output sockets + a pocket
+    # indicator). This bundle is scaffolding only: placement, selection, drag,
+    # delete, scroll/zoom/pan, and .fc persistence. Pipes (edges) and the real
+    # command vocabulary arrive in Stages 9-1 / 9-2. The canvas mirrors the
+    # Flow canvas machinery (viewport transform, scrollbars, Home reset).
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # ── Shell canvas widgets ──────────────────────────────────────────────────
+    _sh_cv_frame = tk.Frame(sh_tab, bg=C['canvas'])
+    _sh_cv_frame.pack(side='top', fill='both', expand=True)
+    _sh_vsb = tk.Scrollbar(_sh_cv_frame, orient='vertical',   bg=C['palette'])
+    _sh_hsb = tk.Scrollbar(_sh_cv_frame, orient='horizontal', bg=C['palette'])
+    _sh_hsb.pack(side='bottom', fill='x')
+    _sh_vsb.pack(side='right',  fill='y')
+    sh_canvas = tk.Canvas(_sh_cv_frame, bg=C['canvas'], highlightthickness=0)
+    sh_canvas.pack(fill='both', expand=True)
+    sh_inspect = tk.Label(sh_tab, text="Lingo (canvas view) — Add Command, then click the canvas",
+                          bg=C['inspect'], fg=C['inspect_fg'],
+                          font=('Monospace', 9), anchor='nw', justify='left',
+                          padx=8, pady=4, height=3)
+    sh_inspect.pack(side='top', fill='x')
+    _sh_status_frame = tk.Frame(sh_tab, bg=C['status'])
+    _sh_status_frame.pack(side='bottom', fill='x')
+    sh_status = tk.Label(_sh_status_frame, text="Ready", anchor='w',
+                         bg=C['status'], fg=C['pal_border'],
+                         font=('Monospace', 9), padx=8)
+    sh_status.pack(side='left', fill='x', expand=True, ipady=3)
+    _sh_zoom_lbl = tk.Label(_sh_status_frame, text='Zoom: 100%', anchor='e',
+                            bg=C['status'], fg=C['dim'],
+                            font=('Monospace', 8), padx=8)
+    _sh_zoom_lbl.pack(side='right', ipady=3)
+
+    def _sh_set_status(m): sh_status.config(text=m)
+    def _sh_set_inspect(m): sh_inspect.config(text=m)
+
+    # ── Shell viewport state + coord helpers (mirrors Flow canvas) ────────────
+    _sh_view = {'zoom': 1.0, 'sx': 0.0, 'sy': 0.0}
+    _sh_pan  = [None]
+    sh_pal_btns = {}
+
+    def _sh_d2s(dx, dy):
+        z = _sh_view['zoom']
+        return (dx - _sh_view['sx']) * z, (dy - _sh_view['sy']) * z
+
+    def _sh_s2d(ex, ey):
+        z = _sh_view['zoom']
+        return ex / z + _sh_view['sx'], ey / z + _sh_view['sy']
+
+    def _sh_update_scrollregion():
+        cmds = fc_state.get('cmd_widgets', {})
+        cw   = sh_canvas.winfo_width()  or 860
+        ch   = sh_canvas.winfo_height() or 660
+        if not cmds:
+            sh_canvas.config(scrollregion=(0, 0, cw, ch))
+            _sh_vsb.set(0.0, 1.0); _sh_hsb.set(0.0, 1.0)
+            return
+        z = _sh_view['zoom']; pad = 60
+        d_min_x = min(c['x'] - CMD_W // 2 for c in cmds.values()) - pad / z
+        d_max_x = max(c['x'] + CMD_W // 2 for c in cmds.values()) + pad / z
+        d_min_y = min(c['y'] - CMD_H // 2 for c in cmds.values()) - pad / z
+        d_max_y = max(c['y'] + CMD_H // 2 for c in cmds.values()) + pad / z
+        d_rng_x = max(d_max_x - d_min_x, 1.0)
+        d_rng_y = max(d_max_y - d_min_y, 1.0)
+        sh_canvas.config(scrollregion=(d_min_x * z, d_min_y * z,
+                                       d_max_x * z, d_max_y * z))
+        vis_w = cw / z; vis_h = ch / z
+        f0x = (_sh_view['sx'] - d_min_x) / d_rng_x
+        f0y = (_sh_view['sy'] - d_min_y) / d_rng_y
+        _sh_hsb.set(max(0.0, f0x), min(1.0, max(f0x + 0.001, f0x + vis_w / d_rng_x)))
+        _sh_vsb.set(max(0.0, f0y), min(1.0, max(f0y + 0.001, f0y + vis_h / d_rng_y)))
+
+    def _sh_vsb_command(*args):
+        cmds = fc_state.get('cmd_widgets', {}); z = _sh_view['zoom']; pad = 60
+        if cmds:
+            d_min_y = min(c['y'] - CMD_H // 2 for c in cmds.values()) - pad / z
+            d_max_y = max(c['y'] + CMD_H // 2 for c in cmds.values()) + pad / z
+        else:
+            d_min_y, d_max_y = 0.0, (sh_canvas.winfo_height() or 660) / z
+        d_rng_y = max(d_max_y - d_min_y, 1.0)
+        if args[0] == 'moveto':
+            _sh_view['sy'] = d_min_y + float(args[1]) * d_rng_y
+        elif args[0] == 'scroll':
+            n = int(args[1])
+            _sh_view['sy'] += (n * GRID if args[2] == 'units'
+                               else n * (sh_canvas.winfo_height() or 660) / z)
+        _sh_update_scrollregion(); _sh_redraw()
+
+    def _sh_hsb_command(*args):
+        cmds = fc_state.get('cmd_widgets', {}); z = _sh_view['zoom']; pad = 60
+        if cmds:
+            d_min_x = min(c['x'] - CMD_W // 2 for c in cmds.values()) - pad / z
+            d_max_x = max(c['x'] + CMD_W // 2 for c in cmds.values()) + pad / z
+        else:
+            d_min_x, d_max_x = 0.0, (sh_canvas.winfo_width() or 860) / z
+        d_rng_x = max(d_max_x - d_min_x, 1.0)
+        if args[0] == 'moveto':
+            _sh_view['sx'] = d_min_x + float(args[1]) * d_rng_x
+        elif args[0] == 'scroll':
+            n = int(args[1])
+            _sh_view['sx'] += (n * GRID if args[2] == 'units'
+                               else n * (sh_canvas.winfo_width() or 860) / z)
+        _sh_update_scrollregion(); _sh_redraw()
+
+    def _sh_on_scroll_v(event):
+        _sh_view['sy'] += -3 * GRID if event.num == 4 else 3 * GRID
+        _sh_update_scrollregion(); _sh_redraw()
+
+    def _sh_on_scroll_h(event):
+        _sh_view['sx'] += -3 * GRID if event.num == 4 else 3 * GRID
+        _sh_update_scrollregion(); _sh_redraw()
+
+    # ── Shell model helpers ───────────────────────────────────────────────────
+    def _sh_cmd_at(x, y):
+        """Hit test: return command-widget dict at design coords (x,y) or None."""
+        hw, hh = CMD_W // 2, CMD_H // 2
+        for c in reversed(list(fc_state['cmd_widgets'].values())):
+            if abs(c['x'] - x) <= hw and abs(c['y'] - y) <= hh:
+                return c
+        return None
+
+    def _sh_add_cmd(kind, x, y, label=''):
+        """Add a command-widget dict to fc_state. Returns the cmd dict."""
+        cid = fc_state['cmd_next_id']
+        fc_state['cmd_next_id'] += 1
+        lbl = label or kind.replace('cmd_', '')
+        cmd = {'id': cid, 'kind': kind,
+               'x': snap(x), 'y': snap(y),
+               'w': CMD_W, 'h': CMD_H,
+               'label': lbl,
+               'name': _fc_make_default_name(kind, cid),  # Phase 7c-1 default
+               'properties': []}
+        fc_state['cmd_widgets'][cid] = cmd
+        return cmd
+
+    def _sh_remove_cmd(cid):
+        """Remove a command widget from fc_state."""
+        cmd = fc_state['cmd_widgets'].pop(cid, None)
+        if cmd is None: return
+        if fc_state['cmd_selected'] == cid:
+            fc_state['cmd_selected'] = None
+        fc_state['cmd_multi_sel'].discard(cid)
+
+    # ── Shell drawing ─────────────────────────────────────────────────────────
+    def _sh_draw_grid():
+        cw = sh_canvas.winfo_width() or 860
+        ch = sh_canvas.winfo_height() or 660
+        z  = _sh_view['zoom']; gstep = GRID * z
+        if gstep < 4: return
+        ox = (-_sh_view['sx'] * z) % gstep
+        oy = (-_sh_view['sy'] * z) % gstep
+        x = ox
+        while x <= cw:
+            sh_canvas.create_line(int(x), 0, int(x), ch, fill=C['grid']); x += gstep
+        y = oy
+        while y <= ch:
+            sh_canvas.create_line(0, int(y), cw, int(y), fill=C['grid']); y += gstep
+
+    def _sh_draw_cmd(c):
+        """Draw one command widget: header (name + kind) + body (sockets + pocket)."""
+        cid = c['id']
+        sel = (cid == fc_state['cmd_selected'] or cid in fc_state['cmd_multi_sel'])
+        _xs, _ys = _sh_d2s(c['x'], c['y'])
+        x, y = int(_xs), int(_ys)
+        z  = _sh_view['zoom']
+        hw = int(CMD_W // 2 * z); hh = int(CMD_H // 2 * z)
+        L, T, R, B = x - hw, y - hh, x + hw, y + hh
+        hdr_h = int(22 * z)
+        body_fill = C['selected'] if sel else C['process']
+        hdr_fill  = C['selected'] if sel else C['pal_active']
+        bor = C['selected'] if sel else C['border']
+        lw  = 3 if sel else 2
+        _f1 = max(6, int(9 * z))   # header name font
+        _f2 = max(5, int(7 * z))   # kind / type font
+        # Body + header (header drawn as a band across the top)
+        sh_canvas.create_rectangle(L, T, R, B, fill=body_fill, outline=bor, width=lw)
+        sh_canvas.create_rectangle(L, T, R, T + hdr_h, fill=hdr_fill, outline=bor, width=lw)
+        sh_canvas.create_text((L + R) // 2, T + hdr_h // 2,
+                              text=c.get('name') or c['label'],
+                              fill=C['text'], font=('Monospace', _f1, 'bold'))
+        sh_canvas.create_text((L + R) // 2, T + hdr_h + max(6, int(9 * z)),
+                              text=c['kind'].replace('cmd_', ''),
+                              fill=C['dim'], font=('Monospace', _f2))
+        # Placeholder sockets: inputs on the left edge, outputs on the right edge
+        _sr = max(2, int(4 * z))
+        body_mid = T + hdr_h + (B - (T + hdr_h)) // 2
+        for sy in (body_mid - int(12 * z), body_mid + int(12 * z)):
+            sh_canvas.create_oval(L - _sr, sy - _sr, L + _sr, sy + _sr,
+                                  fill=C['io'], outline=bor, width=1)   # inputs
+            sh_canvas.create_oval(R - _sr, sy - _sr, R + _sr, sy + _sr,
+                                  fill=C['pal_border'], outline=bor, width=1)  # outputs
+        # Pocket indicator
+        sh_canvas.create_text((L + R) // 2, B - max(6, int(10 * z)),
+                              text='\U0001F4E6', font=('Monospace', max(6, int(11 * z))))
+        if sel:
+            sh_canvas.create_text((L + R) // 2, T - max(4, int(9 * z)),
+                                  text=f"({c['x']},{c['y']})",
+                                  fill=C['selected'], font=('Monospace', _f2))
+
+    def _sh_draw_ghost(x, y):
+        x, y = snap(x), snap(y)
+        sx, sy = _sh_d2s(x, y); sx, sy = int(sx), int(sy)
+        z = _sh_view['zoom']
+        hw = int(CMD_W // 2 * z); hh = int(CMD_H // 2 * z)
+        sh_canvas.create_rectangle(sx - hw, sy - hh, sx + hw, sy + hh,
+                                   fill='#161b30', outline='#3a4060',
+                                   width=1, dash=(4, 4))
+        sh_canvas.create_text(sx, sy + hh + max(4, int(10 * z)),
+                              text=f"snap ({x},{y})", fill='#2a3050',
+                              font=('Monospace', max(5, int(7 * z))))
+
+    def _sh_redraw():
+        sh_canvas.delete('all')
+        _sh_draw_grid()
+        for c in fc_state['cmd_widgets'].values():
+            _sh_draw_cmd(c)
+        if fc_state['cmd_mode'] == 'place' and fc_state.get('cmd_ghost'):
+            _sh_draw_ghost(*fc_state['cmd_ghost'])
+
+    def _sh_update_inspect():
+        cid = fc_state['cmd_selected']
+        if cid is not None and cid in fc_state['cmd_widgets']:
+            c = fc_state['cmd_widgets'][cid]
+            _sh_set_inspect(
+                f"Command #{c['id']}  {c['kind']}\n"
+                f"  name: {c.get('name','')}   label: {c['label']}\n"
+                f"  pos: ({c['x']}, {c['y']})  size: {c['w']}×{c['h']}")
+        else:
+            _sh_set_inspect("Lingo (canvas view) — Add Command, then click the canvas")
+
+    # ── Shell mode / palette ──────────────────────────────────────────────────
+    def _sh_set_mode(mode):
+        fc_state['cmd_mode'] = mode
+        for m, b in sh_pal_btns.items():
+            b.config(bg=C['pal_active'] if m == mode else C['pal_btn'],
+                     relief='sunken' if m == mode else 'flat')
+        hints = {
+            'select': 'Click to select · Drag to move · Dbl-click to rename',
+            'place':  'Click canvas to place a command  (Esc to cancel)',
+            'delete': 'Click a command to delete',
+        }
+        _sh_set_status(hints.get(mode, ''))
+        _sh_redraw()
+
+    # ── Shell event handlers ──────────────────────────────────────────────────
+    def _sh_on_motion(event):
+        ddx, ddy = _sh_s2d(event.x, event.y)
+        fc_state['cmd_ghost'] = (ddx, ddy)
+        if fc_state['cmd_dragging'] and not (event.state & 0x0100):
+            fc_state['cmd_dragging'] = False
+        if fc_state['cmd_dragging'] and fc_state['cmd_selected'] is not None:
+            c = fc_state['cmd_widgets'].get(fc_state['cmd_selected'])
+            if c:
+                offx, offy = fc_state['cmd_drag_offset']
+                c['x'] = snap(ddx - offx); c['y'] = snap(ddy - offy)
+        _sh_redraw()
+
+    def _sh_on_click(event):
+        x, y = _sh_s2d(event.x, event.y)
+        mode = fc_state['cmd_mode']
+        if mode == 'place':
+            c = _sh_add_cmd('cmd_placeholder', x, y)
+            fc_state['cmd_selected'] = c['id']
+            _sh_set_status(f"Placed {c['name']}")
+            _sh_update_inspect(); _sh_set_mode('select'); return
+        if mode == 'delete':
+            hit = _sh_cmd_at(x, y)
+            if hit:
+                lbl = hit.get('name') or hit['label']
+                _sh_remove_cmd(hit['id'])
+                _sh_set_status(f"Deleted {lbl}")
+                _sh_update_inspect()
+            _sh_redraw(); return
+        # Select mode
+        hit = _sh_cmd_at(x, y)
+        if hit:
+            fc_state['cmd_selected']   = hit['id']
+            fc_state['cmd_multi_sel']  = {hit['id']}
+            fc_state['cmd_drag_offset']= (x - hit['x'], y - hit['y'])
+            fc_state['cmd_dragging']   = True
+            fc_state['cmd_drag_origin']= (hit['x'], hit['y'])
+        else:
+            fc_state['cmd_selected']  = None
+            fc_state['cmd_multi_sel'] = set()
+            fc_state['cmd_dragging']  = False
+        _sh_update_inspect(); _sh_redraw()
+
+    def _sh_on_release(event):
+        if fc_state['cmd_dragging'] and fc_state['cmd_selected'] is not None:
+            c = fc_state['cmd_widgets'].get(fc_state['cmd_selected'])
+            if c:
+                _sh_set_status(f"Moved {c.get('name') or c['label']} → ({c['x']},{c['y']})")
+                _sh_update_inspect()
+        fc_state['cmd_dragging']    = False
+        fc_state['cmd_drag_origin'] = None
+
+    def _sh_on_double_click(event):
+        ddx, ddy = _sh_s2d(event.x, event.y)
+        hit = _sh_cmd_at(ddx, ddy)
+        if hit:
+            _sh_open_cmd_props(hit)
+
+    def _sh_open_cmd_props(c):
+        """Stage 9-0: minimal dialog to edit a command's name and label, with
+        WordStream-level name-uniqueness validation (Phase 7c-1)."""
+        dlg = tk.Toplevel(root)
+        dlg.title(f"Command #{c['id']}")
+        dlg.configure(bg=C['palette']); dlg.transient(root); dlg.resizable(False, False)
+        stream = fc_state.get('stream')
+
+        tk.Label(dlg, text='Name (unique):', bg=C['palette'], fg=C['text'],
+                 font=('Monospace', 9), anchor='w').grid(row=0, column=0,
+                 sticky='w', padx=8, pady=(10, 2))
+        name_var = tk.StringVar(value=c.get('name', ''))
+        tk.Entry(dlg, textvariable=name_var, bg=C['inspect'], fg=C['text'],
+                 insertbackground=C['text'], font=('Monospace', 9), width=24
+                 ).grid(row=0, column=1, padx=8, pady=(10, 2))
+        tk.Label(dlg, text='Label:', bg=C['palette'], fg=C['text'],
+                 font=('Monospace', 9), anchor='w').grid(row=1, column=0,
+                 sticky='w', padx=8, pady=2)
+        label_var = tk.StringVar(value=c.get('label', ''))
+        tk.Entry(dlg, textvariable=label_var, bg=C['inspect'], fg=C['text'],
+                 insertbackground=C['text'], font=('Monospace', 9), width=24
+                 ).grid(row=1, column=1, padx=8, pady=2)
+        warn = tk.Label(dlg, text='', bg=C['palette'], fg='#ff8888',
+                        font=('Monospace', 8))
+        warn.grid(row=2, column=0, columnspan=2, sticky='w', padx=8)
+
+        def _commit():
+            new_name = name_var.get().strip()
+            # Phase 7c-1: empty is legal; non-empty must be unique (excluding self)
+            if (stream is not None and new_name
+                    and stream.name_in_use(new_name, exclude=c)):
+                warn.config(text=f"Name '{new_name}' already in use")
+                return
+            c['name']  = new_name
+            c['label'] = label_var.get().strip()
+            _sh_update_inspect(); _sh_redraw(); dlg.destroy()
+
+        btns = tk.Frame(dlg, bg=C['palette']); btns.grid(row=3, column=0,
+                        columnspan=2, pady=8)
+        tk.Button(btns, text='OK', command=_commit, bg=C['pal_btn'], fg=C['text'],
+                  font=('Monospace', 9), relief='flat', padx=10).pack(side='left', padx=4)
+        tk.Button(btns, text='Cancel', command=dlg.destroy, bg=C['pal_btn'],
+                  fg=C['text'], font=('Monospace', 9), relief='flat',
+                  padx=10).pack(side='left', padx=4)
+
+    def _sh_on_key(event):
+        k = event.keysym.lower()
+        if k == 'home':
+            _sh_view['zoom'] = 1.0; _sh_view['sx'] = 0.0; _sh_view['sy'] = 0.0
+            _sh_update_scrollregion(); _sh_redraw(); _update_zoom_indicator(); return
+        if k in ('up', 'kp_up'):
+            _sh_view['sy'] -= GRID; _sh_update_scrollregion(); _sh_redraw(); return
+        if k in ('down', 'kp_down'):
+            _sh_view['sy'] += GRID; _sh_update_scrollregion(); _sh_redraw(); return
+        if k in ('left', 'kp_left'):
+            _sh_view['sx'] -= GRID; _sh_update_scrollregion(); _sh_redraw(); return
+        if k in ('right', 'kp_right'):
+            _sh_view['sx'] += GRID; _sh_update_scrollregion(); _sh_redraw(); return
+        if k == 'prior':
+            _sh_view['sy'] -= (sh_canvas.winfo_height() or 660) / _sh_view['zoom']
+            _sh_update_scrollregion(); _sh_redraw(); return
+        if k == 'next':
+            _sh_view['sy'] += (sh_canvas.winfo_height() or 660) / _sh_view['zoom']
+            _sh_update_scrollregion(); _sh_redraw(); return
+        if k == 'escape': _sh_set_mode('select')
+        elif k == 'delete':
+            if fc_state['cmd_selected'] is not None:
+                c = fc_state['cmd_widgets'].get(fc_state['cmd_selected'])
+                if c:
+                    lbl = c.get('name') or c['label']
+                    _sh_remove_cmd(fc_state['cmd_selected'])
+                    _sh_set_status(f"Deleted {lbl}"); _sh_update_inspect(); _sh_redraw()
+
+    def _sh_on_zoom(event):
+        factor = 1.2 if event.num == 4 else (1 / 1.2)
+        new_z = max(0.25, min(4.0, _sh_view['zoom'] * factor))
+        if new_z == _sh_view['zoom']: return
+        dx_b, dy_b = _sh_s2d(event.x, event.y)
+        _sh_view['zoom'] = new_z
+        _sh_view['sx'] = dx_b - event.x / new_z
+        _sh_view['sy'] = dy_b - event.y / new_z
+        _sh_update_scrollregion(); _sh_redraw(); _update_zoom_indicator()
+
+    def _sh_pan_start(event):
+        _sh_pan[0] = {'ox': _sh_view['sx'], 'oy': _sh_view['sy'],
+                      'ex': event.x, 'ey': event.y}
+        sh_canvas.config(cursor='fleur')
+
+    def _sh_pan_motion(event):
+        if _sh_pan[0] is None: return
+        z = _sh_view['zoom']
+        _sh_view['sx'] = _sh_pan[0]['ox'] - (event.x - _sh_pan[0]['ex']) / z
+        _sh_view['sy'] = _sh_pan[0]['oy'] - (event.y - _sh_pan[0]['ey']) / z
+        _sh_update_scrollregion(); _sh_redraw()
+
+    def _sh_pan_end(event):
+        _sh_pan[0] = None; sh_canvas.config(cursor='')
+
+    # ── Shell bindings ────────────────────────────────────────────────────────
+    _sh_vsb.config(command=_sh_vsb_command)
+    _sh_hsb.config(command=_sh_hsb_command)
+    sh_canvas.bind('<Enter>',            lambda e: sh_canvas.focus_set())
+    sh_canvas.bind('<Button-1>',         _sh_on_click)
+    sh_canvas.bind('<B1-Motion>',        _sh_on_motion)
+    sh_canvas.bind('<Motion>',           _sh_on_motion)
+    sh_canvas.bind('<ButtonRelease-1>',  _sh_on_release)
+    sh_canvas.bind('<Double-Button-1>',  _sh_on_double_click)
+    sh_canvas.bind('<Key>',              _sh_on_key)
+    sh_canvas.bind('<Button-4>',         _sh_on_scroll_v)
+    sh_canvas.bind('<Button-5>',         _sh_on_scroll_v)
+    sh_canvas.bind('<Shift-Button-4>',   _sh_on_scroll_h)
+    sh_canvas.bind('<Shift-Button-5>',   _sh_on_scroll_h)
+    sh_canvas.bind('<Control-Button-4>', _sh_on_zoom)
+    sh_canvas.bind('<Control-Button-5>', _sh_on_zoom)
+    sh_canvas.bind('<Button-2>',         _sh_pan_start)
+    sh_canvas.bind('<B2-Motion>',        _sh_pan_motion)
+    sh_canvas.bind('<ButtonRelease-2>',  _sh_pan_end)
+
+    def _build_shell_tools():
+        """Stage 9-0: Rebuild the tools frame for the Shell tab."""
+        for w in _pal_tools_frame.winfo_children(): w.destroy()
+        pal_btns.clear(); sh_pal_btns.clear()
+        _pal_section("TOOLS")
+        for _lbl, _mode, _fg in [
+            ('☞ Select',      'select', '#aaaaff'),
+            ('➕ Add Command', 'place',  '#7aff7a'),
+            ('✕ Delete',      'delete', '#ff8888'),
+        ]:
+            b = tk.Button(_pal_tools_frame, text=_lbl,
+                          bg=C['pal_btn'], fg=_fg,
+                          font=('Monospace', 9), relief='flat',
+                          activebackground=C['pal_active'], activeforeground=C['text'],
+                          cursor='hand2', padx=4, pady=4,
+                          command=lambda m=_mode: _sh_set_mode(m))
+            b.pack(fill='x', padx=6, pady=2)
+            sh_pal_btns[_mode] = b
+        _sh_set_mode(fc_state['cmd_mode'])
+
+    root.after(220, _sh_redraw)
+
+    def _build_gristmill_tools():
+        """Rebuild tools frame for the GristMill tab (read-only — Select only)."""
+        for w in _pal_tools_frame.winfo_children(): w.destroy()
+        pal_btns.clear()
+        _pal_section("TOOLS")
+        tk.Label(_pal_tools_frame, text='(read-only)', bg=C['palette'], fg=C['dim'],
+                 font=('Monospace', 7), pady=2).pack(fill='x', padx=4)
+
+    def _rebuild_sidebar_tools():
+        """Rebuild the tab-aware tools section for the currently active tab."""
+        idx = notebook.index('current')
+        if idx == 0:
+            _build_flow_tools()
+        elif idx == 1:
+            _build_gui_tools()
+        elif idx == 2:
+            _build_shell_tools()       # Stage 9-0
+        else:
+            _build_gristmill_tools()
+
     def _on_tab_change(event):
         idx = notebook.index('current')
+        _rebuild_sidebar_tools()   # ← Bundle 17 A8: rebuild tools per tab
+        _update_zoom_indicator()   # ← Bundle 18: refresh zoom % for active canvas
         # Destroy any GHOST-panel tooltip that survived the tab switch
         if _guic_active_tip[0]:
             try: _guic_active_tip[0].destroy()
             except Exception: pass
             _guic_active_tip[0] = None
         if idx == 1: guic_redraw()
-        elif idx == 2:
+        elif idx == 2: _sh_redraw()    # Stage 9-0: Shell tab
+        elif idx == 3:
             # GristMill tab — subscriber keeps Program current; force refresh on switch
             try: _gristmill_view._rebuild_program()
             except Exception: pass
@@ -4261,21 +5589,171 @@ def run_gui():
             traceback.print_exc()
             print(f'[FlowCode] GristMill tab failed to load: {_gmtv_err}')
 
-    tk_canvas.bind('<Button-1>',on_click)
-    tk_canvas.bind('<B1-Motion>',on_motion)
-    tk_canvas.bind('<Motion>',on_motion)
+    # ── Bundle 18: zoom indicator update helper ───────────────────────────────
+    def _update_zoom_indicator():
+        """Refresh zoom % labels for the active canvas."""
+        _fc_zoom_lbl.config(text=f"Zoom: {int(_fc_view['zoom'] * 100)}%")
+        _gc_zoom_lbl.config(text=f"Zoom: {int(_gc_view['zoom'] * 100)}%")
+        _sh_zoom_lbl.config(text=f"Zoom: {int(_sh_view['zoom'] * 100)}%")  # Stage 9-0
+
+    # ── Bundle 18: Flow canvas zoom / pan bindings ────────────────────────────
+    def _fc_on_zoom(event):
+        factor = 1.2 if event.num == 4 else (1 / 1.2)
+        new_z = max(0.25, min(4.0, _fc_view['zoom'] * factor))
+        if new_z == _fc_view['zoom']: return
+        # Keep design coord under cursor fixed after zoom (D7)
+        dx_b, dy_b = _fc_s2d(event.x, event.y)
+        _fc_view['zoom'] = new_z
+        _fc_view['sx'] = dx_b - event.x / new_z
+        _fc_view['sy'] = dy_b - event.y / new_z
+        _fc_update_scrollregion(); redraw(); _update_zoom_indicator()
+
+    def _fc_pan_start(event):
+        _fc_pan[0] = {'ox': _fc_view['sx'], 'oy': _fc_view['sy'],
+                      'ex': event.x, 'ey': event.y}
+        tk_canvas.config(cursor='fleur')
+
+    def _fc_pan_motion(event):
+        if _fc_pan[0] is None: return
+        z = _fc_view['zoom']
+        _fc_view['sx'] = _fc_pan[0]['ox'] - (event.x - _fc_pan[0]['ex']) / z
+        _fc_view['sy'] = _fc_pan[0]['oy'] - (event.y - _fc_pan[0]['ey']) / z
+        _fc_update_scrollregion(); redraw()
+
+    def _fc_pan_end(event):
+        _fc_pan[0] = None
+        tk_canvas.config(cursor='')
+
+    # Bundle 21: wire scrollbar commands and touchpad/keyboard scroll
+    _fc_vsb.config(command=_fc_vsb_command)
+    _fc_hsb.config(command=_fc_hsb_command)
+    tk_canvas.bind('<Button-4>',       _fc_on_scroll_v)   # touchpad / wheel up
+    tk_canvas.bind('<Button-5>',       _fc_on_scroll_v)   # touchpad / wheel down
+    tk_canvas.bind('<Shift-Button-4>', _fc_on_scroll_h)   # shift+wheel left
+    tk_canvas.bind('<Shift-Button-5>', _fc_on_scroll_h)   # shift+wheel right
+    # Ctrl+Wheel = zoom (Bundle 18)
+    tk_canvas.bind('<Control-Button-4>', _fc_on_zoom)
+    tk_canvas.bind('<Control-Button-5>', _fc_on_zoom)
+    tk_canvas.bind('<Button-2>',     _fc_pan_start)
+    tk_canvas.bind('<B2-Motion>',    _fc_pan_motion)
+    tk_canvas.bind('<ButtonRelease-2>', _fc_pan_end)
+
+    # ── Bundle 18: GUI canvas zoom / pan bindings ─────────────────────────────
+    def _gc_on_zoom(event):
+        factor = 1.2 if event.num == 4 else (1 / 1.2)
+        new_z = max(0.25, min(4.0, _gc_view['zoom'] * factor))
+        if new_z == _gc_view['zoom']: return
+        dx_b, dy_b = _gc_s2d(event.x, event.y)
+        _gc_view['zoom'] = new_z
+        _gc_view['sx'] = dx_b - event.x / new_z
+        _gc_view['sy'] = dy_b - event.y / new_z
+        _gc_update_scrollregion(); guic_redraw(); _update_zoom_indicator()
+
+    def _gc_pan_start(event):
+        _gc_pan[0] = {'ox': _gc_view['sx'], 'oy': _gc_view['sy'],
+                      'ex': event.x, 'ey': event.y}
+        guic.config(cursor='fleur')
+
+    def _gc_pan_motion(event):
+        if _gc_pan[0] is None: return
+        z = _gc_view['zoom']
+        _gc_view['sx'] = _gc_pan[0]['ox'] - (event.x - _gc_pan[0]['ex']) / z
+        _gc_view['sy'] = _gc_pan[0]['oy'] - (event.y - _gc_pan[0]['ey']) / z
+        _gc_update_scrollregion(); guic_redraw()
+
+    def _gc_pan_end(event):
+        _gc_pan[0] = None
+        guic.config(cursor='')
+
+    # ── Bundle 21: GUI canvas scrollbar command callbacks ─────────────────────
+
+    def _gc_vsb_command(*args):
+        """Drive _gc_view['sy'] from vertical scrollbar (moveto / scroll)."""
+        wgts = fc_state.get('widgets', {})
+        z    = _gc_view['zoom']
+        pad  = 60
+        if wgts:
+            all_pos = [guic_abs_pos(w) for w in wgts.values()]
+            wgts_l  = list(wgts.values())
+            d_min_y = min(ay - w.get('h', GH) // 2
+                          for (_, ay), w in zip(all_pos, wgts_l)) - pad / z
+            d_max_y = max(ay + w.get('h', GH) // 2
+                          for (_, ay), w in zip(all_pos, wgts_l)) + pad / z
+        else:
+            d_min_y, d_max_y = 0.0, (guic.winfo_height() or 660) / z
+        d_rng_y = max(d_max_y - d_min_y, 1.0)
+        if args[0] == 'moveto':
+            _gc_view['sy'] = d_min_y + float(args[1]) * d_rng_y
+        elif args[0] == 'scroll':
+            n = int(args[1])
+            _gc_view['sy'] += (n * GH if args[2] == 'units'
+                               else n * (guic.winfo_height() or 660) / z)
+        _gc_update_scrollregion(); guic_redraw()
+
+    def _gc_hsb_command(*args):
+        """Drive _gc_view['sx'] from horizontal scrollbar (moveto / scroll)."""
+        wgts = fc_state.get('widgets', {})
+        z    = _gc_view['zoom']
+        pad  = 60
+        if wgts:
+            all_pos = [guic_abs_pos(w) for w in wgts.values()]
+            wgts_l  = list(wgts.values())
+            d_min_x = min(ax - w.get('w', GW) // 2
+                          for (ax, _), w in zip(all_pos, wgts_l)) - pad / z
+            d_max_x = max(ax + w.get('w', GW) // 2
+                          for (ax, _), w in zip(all_pos, wgts_l)) + pad / z
+        else:
+            d_min_x, d_max_x = 0.0, (guic.winfo_width() or 860) / z
+        d_rng_x = max(d_max_x - d_min_x, 1.0)
+        if args[0] == 'moveto':
+            _gc_view['sx'] = d_min_x + float(args[1]) * d_rng_x
+        elif args[0] == 'scroll':
+            n = int(args[1])
+            _gc_view['sx'] += (n * GW if args[2] == 'units'
+                               else n * (guic.winfo_width() or 860) / z)
+        _gc_update_scrollregion(); guic_redraw()
+
+    def _gc_on_scroll_v(event):
+        """Touchpad / mouse-wheel vertical scroll on GUI canvas."""
+        _gc_view['sy'] += -3 * GH if event.num == 4 else 3 * GH
+        _gc_update_scrollregion(); guic_redraw()
+
+    def _gc_on_scroll_h(event):
+        """Touchpad / mouse-wheel horizontal scroll on GUI canvas."""
+        _gc_view['sx'] += -3 * GW if event.num == 4 else 3 * GW
+        _gc_update_scrollregion(); guic_redraw()
+
+    # Bundle 21: wire GUI scrollbar commands and touchpad scroll
+    _gc_vsb.config(command=_gc_vsb_command)
+    _gc_hsb.config(command=_gc_hsb_command)
+    guic.bind('<Button-4>',       _gc_on_scroll_v)
+    guic.bind('<Button-5>',       _gc_on_scroll_v)
+    guic.bind('<Shift-Button-4>', _gc_on_scroll_h)
+    guic.bind('<Shift-Button-5>', _gc_on_scroll_h)
+    # Ctrl+Wheel = zoom (Bundle 18)
+    guic.bind('<Control-Button-4>', _gc_on_zoom)
+    guic.bind('<Control-Button-5>', _gc_on_zoom)
+    guic.bind('<Button-2>',         _gc_pan_start)
+    guic.bind('<B2-Motion>',        _gc_pan_motion)
+    guic.bind('<ButtonRelease-2>',  _gc_pan_end)
+
+    # ── Bundle 18: Flow canvas bindings ───────────────────────────────────────
+    tk_canvas.bind('<Enter>',          lambda e: tk_canvas.focus_set())
+    tk_canvas.bind('<Button-1>',       on_click)
+    tk_canvas.bind('<B1-Motion>',      on_motion)
+    tk_canvas.bind('<Motion>',         on_motion)
     tk_canvas.bind('<ButtonRelease-1>',on_release)
     tk_canvas.bind('<Double-Button-1>',on_double_click)
-    tk_canvas.bind('<Leave>', lambda e: _hide_tooltip())
+    tk_canvas.bind('<Leave>',          lambda e: _hide_tooltip())
     root.bind('<Key>',on_key)
 
     def on_close():
-        # Phase 6C: unified save for both tabs
+        # Phase 7c-0: use smart do_save (current path or Save As dialog)
         if fc_state['flow_symbols'] or fc_state['widgets']:
             ans = messagebox.askyesnocancel('Quit FlowCode',
                     'Save before closing?')
             if ans is None: return
-            if ans: guic_do_save()
+            if ans: do_save()
         root.destroy()
     root.protocol('WM_DELETE_WINDOW', on_close)
     set_mode('select')
