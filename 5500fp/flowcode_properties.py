@@ -23,6 +23,12 @@ Spec: CWC-Bundle-7-Stages-4-5.md §2.4
 from __future__ import annotations
 
 COMMON_PROPERTIES: list[dict] = [
+    # Phase 7c-1: 'name' is the programmatic identity used for cross-subsystem
+    # references — distinct from 'label' (the visible text). Listed first so
+    # the property panel renders the Identity section at the top. Uniqueness is
+    # enforced at the WordStream level (see WordStream.name_in_use); empty is
+    # legal and means "no programmatic name".
+    {'name': 'name',  'kind': 'string', 'section': 'Identity'},
     {'name': 'x',     'kind': 'int',    'section': 'Geometry'},
     {'name': 'y',     'kind': 'int',    'section': 'Geometry'},
     {'name': 'w',     'kind': 'int',    'section': 'Geometry', 'min': 20},
@@ -82,6 +88,16 @@ WIDGET_PROPERTIES.update({
         {'name': 'target',    'kind': 'string', 'section': 'Flow'},
     ],
     'flow_connector':  [],
+})
+
+
+# ── Stage 9-0: Shell tab command-widget properties ───────────────────────────
+# Command widgets (cmd_*) share COMMON_PROPERTIES (name, x, y, w, h, label).
+# For the 9-0 scaffold the only command kind is the generic 'cmd_placeholder',
+# which carries no kind-specific properties — the real command vocabulary
+# (socket signatures, parameter widgets) arrives in Stage 9-1.
+WIDGET_PROPERTIES.update({
+    'cmd_placeholder': [],
 })
 
 

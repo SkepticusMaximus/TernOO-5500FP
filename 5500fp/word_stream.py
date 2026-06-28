@@ -56,6 +56,8 @@ class WordStream:
         self._word_map: dict = {}      # widget_id → (start, end) half-open word indices
         # Phase 6C: flow symbol metadata
         self._flow_meta: dict = {}     # same object as fc_state['flow_symbols'] (alias Phase 6C)
+        # Stage 9-0: Shell command-widget metadata
+        self._cmd_meta: dict = {}      # same object as fc_state['cmd_widgets'] (alias Stage 9-0)
         self._rebuild_indices()
 
     # ── External sync ────────────────────────────────────────────────────────
@@ -245,6 +247,76 @@ class WordStream:
         entries.sort(key=lambda t: t[1])
         yield from entries
 
+    # ── Phase 7c-1: Widget name (programmatic identity) ──────────────────────
+
+    @staticmethod
+    def default_name(entry: dict) -> str:
+        """Canonical default name for a widget/flow-symbol dict: <kind>_<id>.
+
+        e.g. {'kind': 'gui_button', 'id': 5} → 'gui_button_5'. Unique by
+        construction within a namespace (ids are unique) and across namespaces
+        (kind prefixes differ: gui_* vs flow_*).
+        """
+        return f"{entry.get('kind', 'widget')}_{entry.get('id', 0)}"
+
+    def name_in_use(self, name: str, exclude=None) -> bool:
+        """True if a non-empty `name` is already used by another widget or
+        flow symbol in this stream.
+
+        Names are a single global namespace spanning _widget_meta, _flow_meta
+        and _cmd_meta (Stage 9-0) — two entries anywhere in the same WordStream
+        may not share a non-empty name. The empty string is legal and never
+        collides ("no programmatic name"), so it always returns False.
+
+        Args:
+            name:    the candidate name to test.
+            exclude: a widget/symbol dict to skip (compared by identity), so a
+                     widget can keep its own name on edit without self-collision.
+        """
+        if not name:
+            return False
+        for coll in (self._widget_meta, self._flow_meta, self._cmd_meta):
+            for entry in coll.values():
+                if entry is exclude:
+                    continue
+                if entry.get('name') == name:
+                    return True
+        return False
+
+    def ensure_unique_names(self) -> int:
+        """Backward-compat + integrity pass over all widgets and flow symbols.
+
+        - Any entry missing the 'name' key (legacy files predating Phase 7c-1)
+          is assigned the default <kind>_<id>.
+        - An entry whose 'name' is explicitly '' is left empty (empty is legal).
+        - Duplicate non-empty names are disambiguated with a numeric suffix,
+          keeping the first occurrence in iteration order (widgets, then flow
+          symbols, then Shell command widgets).
+
+        Operates in place on _widget_meta / _flow_meta / _cmd_meta (which are
+        aliased to the editor's live widget/flow/command dicts). Returns the
+        count of names assigned or changed.
+        """
+        changed = 0
+        seen: set = set()
+        for coll in (self._widget_meta, self._flow_meta, self._cmd_meta):
+            for entry in coll.values():
+                if 'name' not in entry:
+                    entry['name'] = self.default_name(entry)
+                    changed += 1
+                nm = entry['name']
+                if not nm:
+                    continue  # empty is legal and not deduped
+                if nm in seen:
+                    base, n = nm, 1
+                    while f"{base}_{n}" in seen:
+                        n += 1
+                    nm = f"{base}_{n}"
+                    entry['name'] = nm
+                    changed += 1
+                seen.add(nm)
+        return changed
+
     # ── Phase 7b-3: Compiler helpers ─────────────────────────────────────────
 
     def iter_widgets(self, kind_prefix: str = ''):
@@ -268,6 +340,7 @@ class WordStream:
             yield SimpleNamespace(
                 id          = wid,
                 kind        = k,
+                name        = w.get('name', ''),
                 x           = w.get('x', 0),
                 y           = w.get('y', 0),
                 w           = w.get('w', 0),
@@ -299,7 +372,9 @@ class WordStream:
         if w is None:
             return None
         sig_ids = w.get('signal_ids') or {}
-        binfo   = sig_ids.get(signal_id)
+        # signal_ids keys may be int (in-memory) or str (JSON-round-tripped);
+        # try both so lookups survive a save/load cycle.
+        binfo = sig_ids.get(signal_id) or sig_ids.get(str(signal_id))
         if binfo is None:
             return None
         dst_x = binfo.get('dst_x', 0)
