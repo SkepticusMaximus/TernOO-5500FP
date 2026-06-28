@@ -26,6 +26,8 @@ If something seems wider than the spec described, flag it rather than silently e
 
 **Brief over verbose**: I'd rather have a tight summary that captures the essentials than a comprehensive dump. If I want more detail I'll ask.
 
+**ALL flags and notes go INSIDE the report block — no exceptions.** The report is the *one* thing I copy-paste forward to CAI. If something is worth flagging, it is worth putting in the report so CAI sees it. Do NOT put caveats, "worth noting" asides, follow-up observations, or next-step flags in the chat *outside* the code block. If I have to scroll back here to retrieve a note you left out of the report, that's a failure — it makes me play copy-paste ping-pong with the mouse. One report. Everything in it. Chat text outside the block should be at most a one-line "done" — never carry information I'd need to forward.
+
 ## Project context — TernOO-5500FP
 
 - **Repo**: `~/dev/SkepticusMaximus/TernOO-5500FP`
