@@ -218,5 +218,53 @@ class TestShellTabWiring(unittest.TestCase):
         self.assertIn("_cmd_meta", self.src)
 
 
+class TestLingoInterface(unittest.TestCase):
+    """Bundle 23 Piece 3 — source-level smoke checks for the Lingo three-pane
+    command-builder. Behaviour is verified live offscreen; these guard the
+    wiring against accidental removal."""
+
+    @classmethod
+    def setUpClass(cls):
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            '..', 'FlowCode', 'flowcode.py')
+        with open(path) as f:
+            cls.src = f.read()
+
+    def test_stub_command_registry(self):
+        self.assertIn('LINGO_COMMANDS', self.src)
+        for name in ('text_upper', 'text_lower', 'text_replace',
+                     'math_add', 'math_multiply', 'list_count'):
+            self.assertIn(name, self.src, f"stub command {name} missing")
+
+    def test_three_panes(self):
+        self.assertIn('_lg_panes', self.src)          # PanedWindow
+        self.assertIn('_lg_listbox', self.src)        # left: command list
+        self.assertIn('_lg_form', self.src)           # center: param form
+        self.assertIn('_lg_out', self.src)            # right: output preview
+
+    def test_builder_actions(self):
+        for fn in ('_lingo_generate', '_lingo_update_preview', '_lingo_add_pipeline',
+                   '_lingo_copy', '_lingo_activate'):
+            self.assertIn(fn, self.src)
+
+    def test_search_filter(self):
+        self.assertIn('_lingo_refresh_list', self.src)
+        self.assertIn('_lg_search_var', self.src)
+
+    def test_pipeline_tab(self):
+        self.assertIn('_lg_pipe', self.src)
+        self.assertIn("'pipeline'", self.src)
+
+    def test_copy_uses_clipboard(self):
+        self.assertIn('clipboard_clear', self.src)
+        self.assertIn('clipboard_append', self.src)
+
+    def test_canvas_preserved_via_toggle(self):
+        # Stage 9-0 canvas kept dormant, reachable via the Connectors toggle.
+        self.assertIn('_lingo_show_canvas', self.src)
+        self.assertIn('Connectors', self.src)
+        self.assertIn('Builder', self.src)
+
+
 if __name__ == '__main__':
     unittest.main()

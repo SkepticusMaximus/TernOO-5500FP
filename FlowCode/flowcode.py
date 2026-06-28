@@ -5490,26 +5490,311 @@ def run_gui():
     sh_canvas.bind('<B2-Motion>',        _sh_pan_motion)
     sh_canvas.bind('<ButtonRelease-2>',  _sh_pan_end)
 
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Bundle 23 Piece 3 — Lingo three-pane command-builder interface
+    #
+    # Native-tkinter IDE chrome (same approach as the GMill tab and the palette).
+    # This REPLACES the Stage 9-0 canvas as the active Lingo view. The canvas is
+    # kept dormant and reachable from the sidebar "Connectors" toggle — it will be
+    # reframed later as a connection-graph view of named bindings across the
+    # trinity. Commands here are cosmetic stubs until native TernOO commands land.
+    # ═══════════════════════════════════════════════════════════════════════════
+    LINGO_COMMANDS = [
+        {'name': 'text_upper',    'desc': 'Uppercase a string',
+         'flags': [], 'params': [{'name': 'text'}]},
+        {'name': 'text_lower',    'desc': 'Lowercase a string',
+         'flags': [], 'params': [{'name': 'text'}]},
+        {'name': 'text_replace',  'desc': 'Replace text in a string',
+         'flags': [{'short': '-i', 'desc': 'case insensitive'}],
+         'params': [{'name': 'find'}, {'name': 'with'}]},
+        {'name': 'math_add',      'desc': 'Add two numbers',
+         'flags': [], 'params': [{'name': 'a'}, {'name': 'b'}]},
+        {'name': 'math_multiply', 'desc': 'Multiply two numbers',
+         'flags': [], 'params': [{'name': 'a'}, {'name': 'b'}]},
+        {'name': 'list_count',    'desc': 'Count items in a list',
+         'flags': [], 'params': [{'name': 'list'}]},
+    ]
+    _lingo = {'active': None, 'filtered': list(LINGO_COMMANDS),
+              'flag_vars': {}, 'param_vars': {}, 'pipeline': []}
+    _lingo_canvas_active = [False]
+
+    _lingo_view = tk.Frame(sh_tab, bg=C['bg'])
+
+    # ── Title bar ─────────────────────────────────────────────────────────────
+    _lg_title = tk.Frame(_lingo_view, bg=C['palette'])
+    _lg_title.pack(side='top', fill='x')
+    tk.Label(_lg_title, text='Lingo', bg=C['palette'], fg=C['pal_border'],
+             font=('Monospace', 11, 'bold'), padx=8, pady=4).pack(side='left')
+    tk.Label(_lg_title, text='— visual command builder', bg=C['palette'],
+             fg=C['dim'], font=('Monospace', 8)).pack(side='left')
+
+    _lg_panes = tk.PanedWindow(_lingo_view, orient='horizontal', bg=C['bg'],
+                               sashwidth=5, sashrelief='flat', bd=0)
+    _lg_panes.pack(side='top', fill='both', expand=True)
+
+    # ── LEFT PANE — command list + search ─────────────────────────────────────
+    _lg_left = tk.Frame(_lg_panes, bg=C['palette'])
+    _lg_panes.add(_lg_left, minsize=150, width=210)
+    tk.Label(_lg_left, text='Commands', bg=C['palette'], fg=C['pal_border'],
+             font=('Monospace', 9, 'bold'), anchor='w', padx=6, pady=3).pack(fill='x')
+    _lg_search_var = tk.StringVar()
+    tk.Entry(_lg_left, textvariable=_lg_search_var, bg=C['inspect'], fg=C['text'],
+             insertbackground=C['text'], font=('Monospace', 9),
+             relief='flat').pack(fill='x', padx=6, pady=(0, 4), ipady=2)
+    _lg_list_wrap = tk.Frame(_lg_left, bg=C['palette'])
+    _lg_list_wrap.pack(fill='both', expand=True, padx=6, pady=(0, 6))
+    _lg_list_sb = tk.Scrollbar(_lg_list_wrap, orient='vertical')
+    _lg_list_sb.pack(side='right', fill='y')
+    _lg_listbox = tk.Listbox(_lg_list_wrap, bg=C['inspect'], fg=C['text'],
+                             font=('Monospace', 9), relief='flat',
+                             selectbackground=C['pal_active'],
+                             selectforeground=C['text'], activestyle='none',
+                             highlightthickness=0, yscrollcommand=_lg_list_sb.set)
+    _lg_listbox.pack(side='left', fill='both', expand=True)
+    _lg_list_sb.config(command=_lg_listbox.yview)
+
+    def _lingo_refresh_list():
+        q = _lg_search_var.get().lower().strip()
+        _lg_listbox.delete(0, 'end')
+        _lingo['filtered'] = []
+        for c in LINGO_COMMANDS:
+            if q in c['name'].lower() or q in c['desc'].lower():
+                _lg_listbox.insert('end', f" {c['name']}")
+                _lingo['filtered'].append(c)
+    _lg_search_var.trace_add('write', lambda *a: _lingo_refresh_list())
+
+    def _lingo_on_select(_e=None):
+        sel = _lg_listbox.curselection()
+        if sel and sel[0] < len(_lingo['filtered']):
+            _lingo_activate(_lingo['filtered'][sel[0]])
+    _lg_listbox.bind('<<ListboxSelect>>', _lingo_on_select)
+
+    # ── CENTER PANE — parameter form ──────────────────────────────────────────
+    _lg_center = tk.Frame(_lg_panes, bg=C['bg'])
+    _lg_panes.add(_lg_center, minsize=240, width=330)
+    _lg_name = tk.Label(_lg_center, text='Select a command', bg=C['bg'],
+                        fg=C['pal_border'], font=('Monospace', 12, 'bold'),
+                        anchor='w', padx=10, pady=4)
+    _lg_name.pack(fill='x', pady=(6, 0))
+    _lg_desc = tk.Label(_lg_center, text='Pick a command from the left to '
+                        'configure it.', bg=C['bg'], fg=C['dim'],
+                        font=('Monospace', 9), anchor='w', justify='left',
+                        wraplength=300, padx=10)
+    _lg_desc.pack(fill='x')
+    tk.Frame(_lg_center, bg=C['dim'], height=1).pack(fill='x', padx=10, pady=6)
+    _lg_form = tk.Frame(_lg_center, bg=C['bg'])   # rebuilt per command
+    _lg_form.pack(fill='both', expand=True, padx=10)
+    _lg_actions = tk.Frame(_lg_center, bg=C['bg'])
+    _lg_actions.pack(side='bottom', fill='x', padx=10, pady=8)
+
+    # ── RIGHT PANE — output / pipeline ────────────────────────────────────────
+    _lg_right = tk.Frame(_lg_panes, bg=C['palette'])
+    _lg_panes.add(_lg_right, minsize=170, width=250)
+    _lg_tabbar = tk.Frame(_lg_right, bg=C['palette'])
+    _lg_tabbar.pack(side='top', fill='x')
+    _lg_out_frame  = tk.Frame(_lg_right, bg=C['palette'])
+    _lg_pipe_frame = tk.Frame(_lg_right, bg=C['palette'])
+
+    _lg_out = tk.Text(_lg_out_frame, bg=C['inspect'], fg='#7aff7a',
+                      font=('Monospace', 10), relief='flat', wrap='word',
+                      height=8, padx=8, pady=6, state='disabled',
+                      highlightthickness=0)
+    _lg_out.pack(fill='both', expand=True, padx=6, pady=6)
+    _lg_pipe_sb = tk.Scrollbar(_lg_pipe_frame, orient='vertical')
+    _lg_pipe_sb.pack(side='right', fill='y')
+    _lg_pipe = tk.Listbox(_lg_pipe_frame, bg=C['inspect'], fg=C['text'],
+                          font=('Monospace', 9), relief='flat', activestyle='none',
+                          highlightthickness=0, yscrollcommand=_lg_pipe_sb.set)
+    _lg_pipe.pack(side='left', fill='both', expand=True, padx=(6, 0), pady=6)
+    _lg_pipe_sb.config(command=_lg_pipe.yview)
+
+    def _lingo_show_out(mode):
+        _lingo['out_mode'] = mode
+        _lg_out_frame.pack_forget(); _lg_pipe_frame.pack_forget()
+        (_lg_out_frame if mode == 'output' else _lg_pipe_frame).pack(
+            fill='both', expand=True)
+        for key, b in _lg_tab_btns.items():
+            b.config(fg=C['pal_border'] if key == mode else C['dim'])
+
+    _lg_tab_btns = {}
+    for _key, _lbl in (('output', 'Output'), ('pipeline', 'Pipeline')):
+        b = tk.Button(_lg_tabbar, text=_lbl, bg=C['palette'], fg=C['dim'],
+                      font=('Monospace', 9, 'bold'), relief='flat', bd=0,
+                      activebackground=C['palette'], cursor='hand2', padx=10, pady=3,
+                      command=lambda k=_key: _lingo_show_out(k))
+        b.pack(side='left')
+        _lg_tab_btns[_key] = b
+
+    _lg_btnrow = tk.Frame(_lg_right, bg=C['palette'])
+    _lg_btnrow.pack(side='bottom', fill='x', padx=6, pady=6)
+
+    # ── Generation + actions ──────────────────────────────────────────────────
+    def _lingo_generate():
+        cmd = _lingo['active']
+        if not cmd:
+            return ''
+        parts = [cmd['name']]
+        for f in cmd['flags']:
+            v = _lingo['flag_vars'].get(f['short'])
+            if v is not None and v.get():
+                parts.append(f['short'])
+        for p in cmd['params']:
+            v = _lingo['param_vars'].get(p['name'])
+            val = v.get().strip() if v is not None else ''
+            if val:
+                parts.append(f'{p["name"]}="{val}"')
+            elif not p.get('optional'):
+                parts.append(f'{p["name"]}=<?>')
+        return ' '.join(parts)
+
+    def _lingo_update_preview(*_a):
+        txt = _lingo_generate()
+        _lg_out.config(state='normal')
+        _lg_out.delete('1.0', 'end')
+        _lg_out.insert('1.0', txt)
+        _lg_out.config(state='disabled')
+
+    def _lingo_activate(cmd):
+        _lingo['active'] = cmd
+        _lingo['flag_vars'] = {}
+        _lingo['param_vars'] = {}
+        _lg_name.config(text=cmd['name'])
+        _lg_desc.config(text=cmd['desc'])
+        for w in _lg_form.winfo_children():
+            w.destroy()
+        if cmd['flags']:
+            tk.Label(_lg_form, text='Flags', bg=C['bg'], fg=C['dim'],
+                     font=('Monospace', 8, 'bold'), anchor='w').pack(fill='x', pady=(4, 2))
+            for f in cmd['flags']:
+                var = tk.BooleanVar(value=False)
+                _lingo['flag_vars'][f['short']] = var
+                tk.Checkbutton(_lg_form,
+                               text=f"{f['short']}   {f['desc']}",
+                               variable=var, command=_lingo_update_preview,
+                               bg=C['bg'], fg=C['text'], selectcolor=C['inspect'],
+                               activebackground=C['bg'], activeforeground=C['text'],
+                               font=('Monospace', 9), anchor='w',
+                               highlightthickness=0).pack(fill='x')
+        if cmd['params']:
+            tk.Label(_lg_form, text='Parameters', bg=C['bg'], fg=C['dim'],
+                     font=('Monospace', 8, 'bold'), anchor='w').pack(fill='x', pady=(8, 2))
+            for p in cmd['params']:
+                row = tk.Frame(_lg_form, bg=C['bg']); row.pack(fill='x', pady=2)
+                lbl = p['name'] + ('  (optional)' if p.get('optional') else '')
+                tk.Label(row, text=lbl, bg=C['bg'], fg=C['text'],
+                         font=('Monospace', 9), width=14, anchor='w').pack(side='left')
+                var = tk.StringVar()
+                _lingo['param_vars'][p['name']] = var
+                tk.Entry(row, textvariable=var, bg=C['inspect'], fg=C['text'],
+                         insertbackground=C['text'], font=('Monospace', 9),
+                         relief='flat').pack(side='left', fill='x', expand=True, ipady=2)
+                var.trace_add('write', _lingo_update_preview)
+        _lingo_update_preview()
+
+    def _lingo_add_pipeline():
+        txt = _lingo_generate()
+        if not txt:
+            return
+        _lingo['pipeline'].append(txt)
+        _lg_pipe.insert('end', f"{len(_lingo['pipeline'])}. {txt}")
+        _lingo_show_out('pipeline')
+
+    def _lingo_clear_form():
+        if _lingo['active']:
+            _lingo_activate(_lingo['active'])   # re-create vars empty
+
+    def _lingo_copy():
+        txt = _lg_out.get('1.0', 'end').strip()
+        if txt:
+            root.clipboard_clear(); root.clipboard_append(txt)
+            try: guic_set_status(f"Copied to clipboard: {txt[:40]}")
+            except Exception: pass
+
+    def _lingo_save():
+        # Stub — real .fc partial save lands with native commands (file-ext policy
+        # reserves a .shell/.lingo partial). For now, surface what would be saved.
+        n = len(_lingo['pipeline'])
+        try:
+            guic_set_status(f"Save (stub): {n} pipeline step(s) — "
+                            f".fc partial save arrives with native commands")
+        except Exception:
+            pass
+
+    tk.Button(_lg_actions, text='Add to Pipeline', command=_lingo_add_pipeline,
+              bg=C['pal_btn'], fg='#7aff7a', font=('Monospace', 9), relief='flat',
+              activebackground=C['pal_active'], cursor='hand2', padx=8, pady=4
+              ).pack(side='left', padx=(0, 6))
+    tk.Button(_lg_actions, text='Clear', command=_lingo_clear_form,
+              bg=C['pal_btn'], fg='#ff8888', font=('Monospace', 9), relief='flat',
+              activebackground=C['pal_active'], cursor='hand2', padx=8, pady=4
+              ).pack(side='left')
+    tk.Button(_lg_btnrow, text='Copy', command=_lingo_copy,
+              bg=C['pal_btn'], fg=C['text'], font=('Monospace', 9), relief='flat',
+              activebackground=C['pal_active'], cursor='hand2', padx=10, pady=3
+              ).pack(side='left', padx=(0, 6))
+    tk.Button(_lg_btnrow, text='Save', command=_lingo_save,
+              bg=C['pal_btn'], fg=C['text'], font=('Monospace', 9), relief='flat',
+              activebackground=C['pal_active'], cursor='hand2', padx=10, pady=3
+              ).pack(side='left')
+
+    _lingo_refresh_list()
+    _lingo_show_out('output')
+
+    # ── View toggle: three-pane builder  ⇄  dormant canvas (Connectors) ────────
+    def _lingo_show_canvas(show):
+        _lingo_canvas_active[0] = show
+        if show:
+            _lingo_view.pack_forget()
+            _sh_cv_frame.pack(side='top', fill='both', expand=True)
+            sh_inspect.pack(side='top', fill='x')
+            _sh_status_frame.pack(side='bottom', fill='x')
+            _sh_redraw()
+        else:
+            _sh_cv_frame.pack_forget()
+            sh_inspect.pack_forget()
+            _sh_status_frame.pack_forget()
+            _lingo_view.pack(fill='both', expand=True)
+        if notebook.index('current') == 2:
+            _rebuild_sidebar_tools()
+
     def _build_shell_tools():
-        """Stage 9-0: Rebuild the tools frame for the Shell tab."""
+        """Bundle 23 P3: Lingo sidebar — view toggle, plus canvas tools when the
+        dormant Connectors canvas is the active view."""
         for w in _pal_tools_frame.winfo_children(): w.destroy()
         pal_btns.clear(); sh_pal_btns.clear()
-        _pal_section("TOOLS")
-        for _lbl, _mode, _fg in [
-            ('☞ Select',      'select', '#aaaaff'),
-            ('➕ Add Command', 'place',  '#7aff7a'),
-            ('✕ Delete',      'delete', '#ff8888'),
+        _pal_section("VIEW")
+        for _lbl, _is_canvas, _fg in [
+            ('▤ Builder',    False, '#aaaaff'),
+            ('⬡ Connectors', True,  '#7aff7a'),
         ]:
-            b = tk.Button(_pal_tools_frame, text=_lbl,
-                          bg=C['pal_btn'], fg=_fg,
-                          font=('Monospace', 9), relief='flat',
-                          activebackground=C['pal_active'], activeforeground=C['text'],
-                          cursor='hand2', padx=4, pady=4,
-                          command=lambda m=_mode: _sh_set_mode(m))
-            b.pack(fill='x', padx=6, pady=2)
-            sh_pal_btns[_mode] = b
-        _sh_set_mode(fc_state['cmd_mode'])
+            active = (_lingo_canvas_active[0] == _is_canvas)
+            tk.Button(_pal_tools_frame, text=_lbl,
+                      bg=C['pal_active'] if active else C['pal_btn'], fg=_fg,
+                      font=('Monospace', 9), relief='sunken' if active else 'flat',
+                      activebackground=C['pal_active'], activeforeground=C['text'],
+                      cursor='hand2', padx=4, pady=4,
+                      command=lambda v=_is_canvas: _lingo_show_canvas(v)
+                      ).pack(fill='x', padx=6, pady=2)
+        if _lingo_canvas_active[0]:
+            tk.Frame(_pal_tools_frame, bg=C['dim'], height=1).pack(fill='x', padx=6, pady=3)
+            _pal_section("TOOLS  (Connectors)")
+            for _lbl, _mode, _fg in [
+                ('☞ Select',      'select', '#aaaaff'),
+                ('➕ Add Command', 'place',  '#7aff7a'),
+                ('✕ Delete',      'delete', '#ff8888'),
+            ]:
+                b = tk.Button(_pal_tools_frame, text=_lbl,
+                              bg=C['pal_btn'], fg=_fg,
+                              font=('Monospace', 9), relief='flat',
+                              activebackground=C['pal_active'], activeforeground=C['text'],
+                              cursor='hand2', padx=4, pady=4,
+                              command=lambda m=_mode: _sh_set_mode(m))
+                b.pack(fill='x', padx=6, pady=2)
+                sh_pal_btns[_mode] = b
+            _sh_set_mode(fc_state['cmd_mode'])
 
+    # Default the Lingo tab to the three-pane builder; canvas stays dormant.
+    _lingo_show_canvas(False)
     root.after(220, _sh_redraw)
 
     def _build_gristmill_tools():
