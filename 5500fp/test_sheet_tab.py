@@ -145,5 +145,24 @@ class TestSheetWiring(unittest.TestCase):
         self.assertIn("def _build_sheet_tools", _FC_TEXT)
 
 
+class TestStage82Wiring(unittest.TestCase):
+    """Stage 8-2: formula kind auto-detect, formula bar, per-kind rendering."""
+
+    def test_formula_autodetect(self):
+        # leading '=' routes to cell_formula in the detect helper.
+        self.assertIn("startswith('=')", _FC_TEXT)
+        self.assertIn("'cell_formula'", _FC_TEXT)
+
+    def test_formula_bar_wired(self):
+        self.assertIn("_sheet_fbar_var", _FC_TEXT)
+        self.assertIn("def _sheet_fbar_commit", _FC_TEXT)
+        self.assertIn("def _sheet_sync_fbar", _FC_TEXT)
+
+    def test_per_kind_rendering(self):
+        # numbers right-aligned (anchor='e'), formula in accent colour.
+        self.assertIn("anchor='e'", _FC_TEXT)
+        self.assertIn("elif k == 'cell_formula'", _FC_TEXT)
+
+
 if __name__ == '__main__':
     unittest.main()

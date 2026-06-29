@@ -5946,8 +5946,11 @@ def run_gui():
         return nm
 
     def _sheet_detect_kind(text):
-        """Stage 8-1: number/bool → cell_value, else cell_text. (Formula = 8-2.)"""
+        """Stage 8-2 auto-detect: leading '=' → cell_formula; number/bool →
+        cell_value; otherwise cell_text."""
         t = text.strip()
+        if t.startswith('='):
+            return 'cell_formula'
         try:
             int(t); return 'cell_value'
         except ValueError:
@@ -5961,7 +5964,8 @@ def run_gui():
         return 'cell_text'
 
     def _sheet_display(cell):
-        """Visible text for a cell (Stage 8-1: the literal value)."""
+        """Visible text for a cell. Stage 8-2 stores formulas but doesn't
+        evaluate them (that's 8-3), so a formula renders its source string."""
         return str(cell.get('value', ''))
 
     def _sheet_set_cell(row, col, text):
@@ -6031,10 +6035,22 @@ def run_gui():
                                               outline=grid_col)
                 cell = fc_state['cells'].get((row, col))
                 if cell:
-                    sheet_canvas.create_text(sx + 4, (sy + ey) / 2,
-                                             text=_sheet_display(cell), anchor='w',
-                                             fill=C['text'],
-                                             font=('Monospace', max(6, int(9 * z))))
+                    # Stage 8-2: per-kind rendering — numbers right-aligned, text
+                    # left-aligned, formulas left-aligned in an accent colour.
+                    k = cell.get('kind')
+                    fnt = ('Monospace', max(6, int(9 * z)))
+                    if k == 'cell_value':
+                        sheet_canvas.create_text(ex - 4, (sy + ey) / 2,
+                                                 text=_sheet_display(cell), anchor='e',
+                                                 fill=C['text'], font=fnt)
+                    elif k == 'cell_formula':
+                        sheet_canvas.create_text(sx + 4, (sy + ey) / 2,
+                                                 text=_sheet_display(cell), anchor='w',
+                                                 fill=C['pal_border'], font=fnt)
+                    else:   # cell_text
+                        sheet_canvas.create_text(sx + 4, (sy + ey) / 2,
+                                                 text=_sheet_display(cell), anchor='w',
+                                                 fill=C['text'], font=fnt)
         # Selection highlight
         srow, scol = fc_state['cell_sel']
         L, T, R, B = _sheet_cell_rect(srow, scol)
