@@ -164,3 +164,216 @@ def build_handler_bindings(widgets: dict, flow_symbols: dict) -> list:
             dst_mc = (dx // _GC_SCALE, dy // _GC_SCALE)
             words.extend(_build_redge_handler(src_mc, dst_mc, int(signal_id)))
     return words
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Phase 7c-2 — Name-based auto-wiring
+#
+# A GUI widget's signal binds to a flow_terminator *by name agreement*: for a
+# widget named `submit_button` emitting `clicked`, the canonical handler name is
+# `submit_button_clicked`. If an entry flow_terminator with that exact name
+# exists, an implicit binding is materialised into the widget's `signal_ids`
+# dict (the Bundle-12 data model) and marked `auto_wired = True`.
+#
+# These functions operate on a WordStream via its `_widget_meta` (widgets) and
+# `_flow_meta` (flow symbols) aliases — headless, no tkinter. `materialize_*`
+# recomputes the entire canonical set from current names, so a single call after
+# any name/create/delete/move change is the whole "rename cascade" (L4).
+# ═════════════════════════════════════════════════════════════════════════════
+
+def canonical_handler_name(widget_name: str, signal_name: str) -> str:
+    """Canonical handler name for a (widget, signal): `<widget_name>_<signal>`.
+
+    The signal name is normalised to an identifier (hyphens → underscores), so
+    `value-changed` on `slider` → `slider_value_changed`. An empty widget name
+    yields '' (a nameless widget cannot be wired by name).
+    """
+    if not widget_name:
+        return ''
+    return f"{widget_name}_{signal_name.replace('-', '_')}"
+
+
+def auto_handler_names_for_widget(widget: dict) -> list:
+    """List of (signal_id, signal_name, handler_name) for every signal a widget
+    emits. Used by the property panel's read-only handler-name display."""
+    name = widget.get('name', '')
+    return [(s['id'], s['name'], canonical_handler_name(name, s['name']))
+            for s in signals_for(widget.get('kind', ''))]
+
+
+def all_handler_names(stream) -> set:
+    """Every canonical handler name implied by the widgets in `stream`.
+
+    Drives autocompletion of the flow_terminator name field — type `button1_`
+    and the available handlers surface.
+    """
+    out = set()
+    for w in getattr(stream, '_widget_meta', {}).values():
+        nm = w.get('name', '')
+        if not nm:
+            continue
+        for s in signals_for(w.get('kind', '')):
+            out.add(canonical_handler_name(nm, s['name']))
+    return out
+
+
+def _flow_is_entry(sym: dict) -> bool:
+    """True if a flow symbol dict has its is_entry property set."""
+    for p in sym.get('properties', []):
+        if p.get('name') == 'is_entry':
+            return bool(p.get('value'))
+    return False
+
+
+def _entry_terminators_by_name(stream) -> dict:
+    """Map name → flow_terminator dict for entry terminators with a non-empty
+    name. Names are globally unique (Phase 7c-1), so the map is unambiguous."""
+    out = {}
+    for sym in getattr(stream, '_flow_meta', {}).values():
+        if sym.get('kind') == 'flow_terminator' and _flow_is_entry(sym):
+            nm = sym.get('name', '')
+            if nm:
+                out[nm] = sym
+    return out
+
+
+def compute_auto_wired_bindings(stream) -> dict:
+    """Pure function: the canonical set of auto-wired bindings implied by the
+    current name agreements.
+
+    Returns {widget_id: {signal_id: {'dst_x': int, 'dst_y': int}}}, where the
+    dst is the matched entry terminator's canvas position.
+    """
+    terms = _entry_terminators_by_name(stream)
+    result: dict = {}
+    for wid, w in getattr(stream, '_widget_meta', {}).items():
+        wname = w.get('name', '')
+        if not wname:
+            continue
+        for s in signals_for(w.get('kind', '')):
+            term = terms.get(canonical_handler_name(wname, s['name']))
+            if term is not None:
+                result.setdefault(wid, {})[s['id']] = {
+                    'dst_x': term.get('x', 0), 'dst_y': term.get('y', 0)}
+    return result
+
+
+def _norm_sig_ids(raw: dict) -> dict:
+    """Normalise a signal_ids dict's keys to int (JSON round-trips them to str),
+    dropping falsy entries."""
+    out = {}
+    for k, v in (raw or {}).items():
+        if not v:
+            continue
+        try:
+            ik = int(k)
+        except (ValueError, TypeError):
+            ik = k
+        out[ik] = v
+    return out
+
+
+def materialize_auto_wired_bindings(stream) -> int:
+    """Update every widget's `signal_ids` to match the canonical auto-wired set.
+
+    - Manual bindings (no/false `auto_wired`) are preserved and win per-signal.
+    - Auto-wired entries are (re)generated to match current names/positions;
+      stale ones (name agreement broken, terminator moved/deleted) are dropped.
+    Operates in place on stream._widget_meta. Returns the number of widgets whose
+    signal_ids changed.
+    """
+    desired = compute_auto_wired_bindings(stream)
+    changed = 0
+    for wid, w in getattr(stream, '_widget_meta', {}).items():
+        norm = _norm_sig_ids(w.get('signal_ids'))
+        want = desired.get(wid, {})
+        new_sig = {}
+        # Manual bindings preserved verbatim; they take precedence per-signal.
+        for sid, binfo in norm.items():
+            if not binfo.get('auto_wired'):
+                new_sig[sid] = binfo
+        # Auto-wired bindings for any signal not manually bound.
+        for sid, dst in want.items():
+            if sid in new_sig:
+                continue
+            new_sig[sid] = {'dst_x': dst['dst_x'], 'dst_y': dst['dst_y'],
+                            'auto_wired': True}
+        if new_sig != norm:
+            changed += 1
+            w['signal_ids'] = new_sig
+        elif 'signal_ids' in w:
+            w['signal_ids'] = norm   # keep normalised (int keys)
+    return changed
+
+
+def find_nonconforming_manual_bindings(stream) -> list:
+    """Manual signal_ids entries that do NOT match the naming convention.
+
+    A manual binding conforms when the terminator it points to is an entry
+    terminator whose name equals the widget's canonical handler name for that
+    signal. Non-conforming manual bindings are the legacy edges the load path
+    prompts about. Returns a list of
+    {widget_id, signal_id, handler, bound_terminator, term}.
+    """
+    pos2term = {}
+    for sym in getattr(stream, '_flow_meta', {}).values():
+        if sym.get('kind') == 'flow_terminator':
+            pos2term[(sym.get('x', 0), sym.get('y', 0))] = sym
+    out = []
+    for wid, w in getattr(stream, '_widget_meta', {}).items():
+        for sid, binfo in _norm_sig_ids(w.get('signal_ids')).items():
+            if binfo.get('auto_wired'):
+                continue   # only manual edges
+            sname = signal_id_to_name(sid)
+            if sname is None:
+                continue
+            canon = canonical_handler_name(w.get('name', ''), sname)
+            term = pos2term.get((binfo.get('dst_x', 0), binfo.get('dst_y', 0)))
+            conforms = (term is not None and _flow_is_entry(term)
+                        and term.get('name', '') == canon and canon != '')
+            if not conforms:
+                out.append({'widget_id': wid, 'signal_id': sid,
+                            'handler': canon,
+                            'bound_terminator': term.get('name', '') if term else '',
+                            'term': term})
+    return out
+
+
+def reconcile_loaded_bindings(stream) -> list:
+    """Load-path reconciliation. Drops manual bindings that already conform to
+    the naming convention (they're regenerated as auto-wired), then materialises.
+    Returns the list of remaining non-conforming manual bindings so the caller
+    can show the one-time legacy prompt.
+    """
+    nonconf = find_nonconforming_manual_bindings(stream)
+    nonconf_keys = {(it['widget_id'], it['signal_id']) for it in nonconf}
+    for wid, w in getattr(stream, '_widget_meta', {}).items():
+        raw = w.get('signal_ids') or {}
+        for k in list(raw.keys()):
+            binfo = raw[k]
+            if not binfo or binfo.get('auto_wired'):
+                continue
+            try:
+                sid = int(k)
+            except (ValueError, TypeError):
+                sid = k
+            if (wid, sid) not in nonconf_keys:
+                del raw[k]   # conforming manual → regenerated as auto below
+    materialize_auto_wired_bindings(stream)
+    return nonconf
+
+
+def conform_manual_bindings(stream) -> int:
+    """'Update names' action: rename each non-conforming manual binding's target
+    terminator to the widget's canonical handler name, so the binding survives as
+    an auto-wired one. Returns the number of terminators renamed."""
+    n = 0
+    for item in find_nonconforming_manual_bindings(stream):
+        term, canon = item['term'], item['handler']
+        if term is not None and canon:
+            term['name'] = canon
+            n += 1
+    # Renamed terminators now match the convention; reconcile drops the (now
+    # conforming) manual entries and regenerates them as auto-wired.
+    reconcile_loaded_bindings(stream)
+    return n
