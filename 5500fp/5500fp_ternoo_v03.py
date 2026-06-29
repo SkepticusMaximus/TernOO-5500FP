@@ -1673,36 +1673,14 @@ def run_pure_ternoo_ai_workbench():
 
             print(f" TernOO-Assistant-Native> {' '.join(generated_sequence) if generated_sequence else '[eos]'}\n")
 
+            # ── Security review (29 June 2026) ─────────────────────────────
+            # REMOVED: two unconditional host-clipboard reads (`xclip`) that ran
+            # here on EVERY loop iteration — silent, unconsented harvesting of
+            # the user's clipboard with no command and no opt-in. Clipboard
+            # ingestion now happens ONLY on the explicit `!learn_clipbd` command,
+            # and ONLY when the user has opted in via TERNOO_ALLOW_CLIPBOARD.
             # ═══════════════════════════════════════════════════════════════
-            # HOST HARDWARE PLATFORM BUS BRIDGE (SANDBOXED MMIO REPLICATOR)
-            # ═══════════════════════════════════════════════════════════════
-            try:
-                import subprocess
-                # Directly grab the global primary text selection from the window server
-                host_text = subprocess.check_output(['xclip', '-selection', 'clipboard', '-o'], stderr=subprocess.DEVNULL).decode('utf-8').strip().lower()
-
-                for offset, char in enumerate(host_text[:200]):
-                    cpu.mem_write(MMIO_CLIPBOARD_REG + offset, build_int_word(ord(char)))
-                cpu.mem_write(MMIO_CLIPBOARD_REG + len(host_text[:200]), build_int_word(0))
-            except Exception:
-                cpu.mem_write(MMIO_CLIPBOARD_REG, build_int_word(0))
-
-            # ═══════════════════════════════════════════════════════════════
-            # HOST HARDWARE PLATFORM BUS BRIDGE (SANDBOXED MMIO REPLICATOR)
-            # ═══════════════════════════════════════════════════════════════
-            try:
-                import subprocess
-                # Directly grab the global primary text selection from the window server
-                host_text = subprocess.check_output(['xclip', '-selection', 'clipboard', '-o'], stderr=subprocess.DEVNULL).decode('utf-8').strip().lower()
-
-
-                for offset, char in enumerate(host_text[:200]):
-                    cpu.mem_write(MMIO_CLIPBOARD_REG + offset, build_int_word(ord(char)))
-                cpu.mem_write(MMIO_CLIPBOARD_REG + len(host_text[:200]), build_int_word(0))
-            except Exception:
-                cpu.mem_write(MMIO_CLIPBOARD_REG, build_int_word(0))
-            # ═══════════════════════════════════════════════════════════════
-            # THE !LEARN_ SENSOR INGESTION MATRIX
+            # THE !learn_clipbd INGESTION COMMAND (opt-in only)
             # ═══════════════════════════════════════════════════════════════
             teach = input("Train Output Sequence? (type target word or 'no'): ").strip().lower()
 
@@ -1712,62 +1690,39 @@ def run_pure_ternoo_ai_workbench():
                 arg = cmd_parts[1].strip() if len(cmd_parts) > 1 else ""
 
                 if sensor_cmd == "!learn_clipbd":
-                    print(" [Hardware Bus] Querying Memory-Mapped I/O Lane 0x6000 (Peripheral Buffer Data Drop)...")
+                    # ── Security review (29 June 2026): opt-in clipboard ingest ──
+                    # Off by default. TernOO does not read your clipboard unless
+                    # you explicitly opt in for the session. When enabled, ONLY
+                    # the clipboard selection is read (never the primary/highlight
+                    # selection), and the read is announced on screen.
+                    import os
+                    if os.environ.get("TERNOO_ALLOW_CLIPBOARD", "").strip().lower() \
+                            not in ("1", "true", "yes", "on"):
+                        print(" [privacy] Clipboard ingestion is OFF by default — TernOO will")
+                        print(" [privacy] not read your clipboard without explicit consent.")
+                        print(" [privacy] To enable for this session only:")
+                        print(" [privacy]     export TERNOO_ALLOW_CLIPBOARD=1")
+                        print(" [privacy] Only the CLIPBOARD selection is read (never your")
+                        print(" [privacy] primary/highlight selection), and only on this command.\n")
+                        continue
 
+                    print(" [clipboard] Reading the system CLIPBOARD now"
+                          " (opted in via TERNOO_ALLOW_CLIPBOARD).")
                     host_text = ""
                     import subprocess
-                    import os
-
-                    # Ensure DISPLAY variable is explicitly targeted for headless or multiplexed environments
-                    env = os.environ.copy()
-                    if "DISPLAY" not in env:
-                        env["DISPLAY"] = ":0"
-
-                    # Channel 1: xclip Clipboard Selection
-                    if not host_text:
+                    # Clipboard selection only — xclip, with xsel -b fallback.
+                    try:
+                        res = subprocess.check_output(['xclip', '-selection', 'clipboard', '-o'],
+                                                      stderr=subprocess.DEVNULL)
+                        host_text = res.decode('utf-8', errors='ignore').strip().lower()
+                    except Exception:
                         try:
-                            res = subprocess.check_output(['xclip', '-selection', 'clipboard', '-o'], stderr=subprocess.PIPE, env=env)
+                            res = subprocess.check_output(['xsel', '-b', '-o'],
+                                                          stderr=subprocess.DEVNULL)
                             host_text = res.decode('utf-8', errors='ignore').strip().lower()
                         except Exception:
-                            pass
-
-                    # Channel 2: xclip Primary Selection
-                    if not host_text:
-                        try:
-                            res = subprocess.check_output(['xclip', '-selection', 'primary', '-o'], stderr=subprocess.PIPE, env=env)
-                            host_text = res.decode('utf-8', errors='ignore').strip().lower()
-                        except Exception:
-                            pass
-
-                    # Channel 3: xsel Clipboard Selection
-                    if not host_text:
-                        try:
-                            res = subprocess.check_output(['xsel', '-b', '-o'], stderr=subprocess.PIPE, env=env)
-                            host_text = res.decode('utf-8', errors='ignore').strip().lower()
-                        except Exception:
-                            pass
-
-                    # Channel 4: xsel Primary Selection
-                    if not host_text:
-                        try:
-                            res = subprocess.check_output(['xsel', '-p', '-o'], stderr=subprocess.PIPE, env=env)
-                            host_text = res.decode('utf-8', errors='ignore').strip().lower()
-                        except Exception:
-                            pass
-
-                    # Channel 5: Native Python Tkinter Clipboard Fallback
-                    if not host_text:
-                        try:
-                            import tkinter as tk
-                            root = tk.Tk()
-                            root.withdraw()
-                            host_text = root.clipboard_get().strip().lower()
-                            root.destroy()
-                        except Exception:
-                            pass
-
-                    # SYSTEM TELEMETRY MONITOR
-                    print(f" [Hardware Bus] Telemetry Check ── Captured String: '{host_text}'")
+                            host_text = ""
+                    print(f" [clipboard] Captured {len(host_text)} character(s) from the clipboard.")
 
                     # Direct Memory Access emulation: Write host text values straight into address 0x6000
                     if host_text:
