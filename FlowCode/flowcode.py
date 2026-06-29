@@ -2378,6 +2378,19 @@ def run_gui():
         _aw_names_for_widget = lambda widget: []
         _aw_canonical        = lambda wn, sn: ''
 
+    # ── Load sheet_formula (Stage 8-3 formula engine) ────────────────────────
+    _sf_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            '../5500fp/sheet_formula.py')
+    _sheet_formula = None
+    if os.path.exists(_sf_path):
+        try:
+            import importlib.util as _sf_u
+            _sf_spec = _sf_u.spec_from_file_location('sheet_formula', _sf_path)
+            _sheet_formula = _sf_u.module_from_spec(_sf_spec)
+            _sf_spec.loader.exec_module(_sheet_formula)
+        except Exception as _sf_err:
+            print(f'[FlowCode] sheet_formula failed to load: {_sf_err}')
+
     # ── Load ghost_meccano for incremental word-stream updates (Phase 6E) ───────
     # flowcode_bridge.py deleted; functions now live in ghost_meccano.py
     # (GHOST+flow bridges) and flowcode_signals.py (handler binding emitter).
@@ -3044,6 +3057,7 @@ def run_gui():
             guic_layout_all()
             guic_redraw()
             _sh_redraw()   # Stage 9-0: refresh Shell canvas
+            _sheet_recompute()   # Stage 8-3: evaluate loaded formulas
             _sheet_redraw()   # Stage 8-1: refresh Sheet grid
         except Exception as _oe:
             guic_set_status(f"Open failed: {_oe}")
@@ -3193,6 +3207,7 @@ def run_gui():
             guic_redraw()
             redraw()
             _sh_redraw()   # Stage 9-0: refresh Shell canvas
+            _sheet_recompute()   # Stage 8-3: evaluate loaded formulas
             _sheet_redraw()   # Stage 8-1: refresh Sheet grid
             n_gui  = len(data.get('symbols', []))
             n_flow = len(data.get('flow_symbols', []))
@@ -5832,6 +5847,9 @@ def run_gui():
                                font=('Monospace', 9), width=6, anchor='w')
     _sheet_addr_lbl.pack(side='left', padx=(0, 4))
     _sheet_fbar_var = tk.StringVar()
+    _sheet_fbar_result = tk.Label(_sheet_fbar, text='', bg=C['palette'],
+                                  fg='#7aff7a', font=('Monospace', 9), anchor='e')
+    _sheet_fbar_result.pack(side='right', padx=6)
     _sheet_fbar_entry = tk.Entry(_sheet_fbar, textvariable=_sheet_fbar_var,
                                  bg=C['inspect'], fg=C['text'], insertbackground=C['text'],
                                  font=('Monospace', 9), relief='flat')
@@ -5963,9 +5981,33 @@ def run_gui():
             return 'cell_value'
         return 'cell_text'
 
+    def _sheet_recompute():
+        """Stage 8-3: evaluate every formula cell; store result/error on the
+        cell as '_result' / '_error'. Re-run after any cell change."""
+        if _sheet_formula is None:
+            return
+        results, errors = _sheet_formula.evaluate_sheet(fc_state['cells'])
+        for rc, cell in fc_state['cells'].items():
+            cell.pop('_result', None); cell.pop('_error', None)
+            if cell.get('kind') == 'cell_formula':
+                if rc in errors:
+                    cell['_error'] = errors[rc]
+                elif rc in results:
+                    cell['_result'] = _sheet_formula.format_result(results[rc])
+        if errors:
+            _sheet_set_status(f"{len(errors)} formula error(s): "
+                              + ", ".join(f"{_sheet_a1(*rc)} {e}"
+                                          for rc, e in list(errors.items())[:3]))
+
     def _sheet_display(cell):
-        """Visible text for a cell. Stage 8-2 stores formulas but doesn't
-        evaluate them (that's 8-3), so a formula renders its source string."""
+        """Visible text for a cell. Stage 8-3: formula cells render their
+        evaluated result (or error); value/text render their literal."""
+        if cell.get('kind') == 'cell_formula':
+            if '_error' in cell:
+                return cell['_error']
+            if '_result' in cell:
+                return cell['_result']
+            return str(cell.get('value', ''))   # not yet computed
         return str(cell.get('value', ''))
 
     def _sheet_set_cell(row, col, text):
@@ -6095,6 +6137,7 @@ def run_gui():
         _sheet_cancel_edit()
         if fc_state.get('stream') is not None:
             fc_state['stream'].ensure_unique_names()
+        _sheet_recompute()       # Stage 8-3: re-evaluate dependents
         _sheet_move_sel(*advance)
         _sheet_redraw()
 
@@ -6113,6 +6156,12 @@ def run_gui():
         _sheet_addr_lbl.config(text=_sheet_a1(r, c))
         cell = fc_state['cells'].get((r, c))
         _sheet_fbar_var.set(cell.get('value', '') if cell else '')
+        # Stage 8-3: show the evaluated result of a formula cell (=A1+B1 → 42)
+        if cell and cell.get('kind') == 'cell_formula':
+            res = cell.get('_error') or cell.get('_result', '')
+            _sheet_fbar_result.config(text=f"→ {res}" if res != '' else '')
+        else:
+            _sheet_fbar_result.config(text='')
 
     # ── Event handlers ────────────────────────────────────────────────────────
     def _sheet_on_click(event):
@@ -6159,7 +6208,8 @@ def run_gui():
             _sheet_move_sel(dr, dc); _sheet_redraw(); return 'break'
         if k == 'BackSpace' or k == 'Delete':
             r, c = fc_state['cell_sel']
-            fc_state['cells'].pop((r, c), None); _sheet_sync_fbar(); _sheet_redraw(); return
+            fc_state['cells'].pop((r, c), None)
+            _sheet_recompute(); _sheet_sync_fbar(); _sheet_redraw(); return
         if k == 'F2':
             _sheet_begin_edit(); return
         # Typing a printable char starts an edit pre-filled with that char
@@ -6171,6 +6221,7 @@ def run_gui():
         _sheet_set_cell(r, c, _sheet_fbar_var.get())
         if fc_state.get('stream') is not None:
             fc_state['stream'].ensure_unique_names()
+        _sheet_recompute()       # Stage 8-3
         _sheet_redraw()
 
     def _sheet_on_zoom(event):
