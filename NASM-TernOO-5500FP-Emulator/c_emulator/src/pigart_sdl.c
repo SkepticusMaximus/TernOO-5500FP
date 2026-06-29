@@ -187,6 +187,10 @@ static int sdl_open_window(int w, int h, const char *title) {
         return 0;
     }
     SDL_SetRenderDrawBlendMode(g_renderer, SDL_BLENDMODE_BLEND);
+    /* Raise and focus window immediately so WM close-button clicks register
+     * on the first click rather than first focusing then closing. */
+    SDL_RaiseWindow(g_window);
+    SDL_SetWindowInputFocus(g_window);
     g_open_tick = SDL_GetTicks();
     g_open = 1;
     return 1;
@@ -281,6 +285,16 @@ static int sdl_poll_event(int64_t *out_buf4) {
                 out_buf4[0] = PIGART_EVENT_CLOSE;
                 out_buf4[1] = 0; out_buf4[2] = 0; out_buf4[3] = 0;
                 return 1;
+            case SDL_WINDOWEVENT:
+                /* On Linux/X11 the WM sends WINDOWEVENT_CLOSE when the user
+                 * clicks the title-bar X; SDL_QUIT may or may not follow.
+                 * Treat WINDOWEVENT_CLOSE identically to SDL_QUIT. */
+                if (ev.window.event == SDL_WINDOWEVENT_CLOSE) {
+                    out_buf4[0] = PIGART_EVENT_CLOSE;
+                    out_buf4[1] = 0; out_buf4[2] = 0; out_buf4[3] = 0;
+                    return 1;
+                }
+                continue;
             case SDL_KEYDOWN:
                 out_buf4[0] = PIGART_EVENT_KEY_DOWN;
                 out_buf4[1] = ev.key.keysym.sym;
@@ -327,18 +341,11 @@ static void sdl_sleep_ms(int ms) {
         int chunk = (remaining > 16) ? 16 : remaining;
         SDL_Delay(chunk);
         remaining -= chunk;
-        /* Drain the event queue during sleep */
-        SDL_Event ev;
-        while (SDL_PollEvent(&ev)) {
-            /* We could buffer events here, but for simplicity we discard
-             * them during sleep. Programs polling PIGART_POLL_EVENT after
-             * SLEEP_MS will see close events on next poll. */
-            if (ev.type == SDL_QUIT) {
-                /* Signal close by pushing it back */
-                SDL_PushEvent(&ev);
-                return;
-            }
-        }
+        /* Pump OS messages so the WM sees a responsive window, but do NOT
+         * consume events from the queue.  Any mouse clicks or close events
+         * that arrive during sleep must survive to be picked up by the
+         * next sdl_poll_event call — SDL_PollEvent would discard them. */
+        SDL_PumpEvents();
     }
 }
 

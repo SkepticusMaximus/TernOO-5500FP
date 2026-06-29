@@ -321,6 +321,9 @@ static void handle_syscall(cpu_t *cpu) {
             break;
         case SYS_PRINT_NL:
             putchar('\n');
+            /* stdout is fully buffered when piped — flush so the IDE sees
+             * output immediately rather than waiting for process exit. */
+            fflush(stdout);
             break;
         /* ---- PIGART rendering syscalls 100-111 ---- */
         case PIGART_OPEN_WINDOW:
