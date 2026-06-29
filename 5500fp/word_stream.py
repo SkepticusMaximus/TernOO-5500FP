@@ -58,6 +58,8 @@ class WordStream:
         self._flow_meta: dict = {}     # same object as fc_state['flow_symbols'] (alias Phase 6C)
         # Stage 9-0: Shell command-widget metadata
         self._cmd_meta: dict = {}      # same object as fc_state['cmd_widgets'] (alias Stage 9-0)
+        # Stage 8-1: Sheet cell metadata
+        self._cell_meta: dict = {}     # same object as fc_state['cells'] (alias Stage 8-1)
         self._rebuild_indices()
 
     # ── External sync ────────────────────────────────────────────────────────
@@ -275,7 +277,8 @@ class WordStream:
         """
         if not name:
             return False
-        for coll in (self._widget_meta, self._flow_meta, self._cmd_meta):
+        for coll in (self._widget_meta, self._flow_meta, self._cmd_meta,
+                     self._cell_meta):
             for entry in coll.values():
                 if entry is exclude:
                     continue
@@ -299,7 +302,8 @@ class WordStream:
         """
         changed = 0
         seen: set = set()
-        for coll in (self._widget_meta, self._flow_meta, self._cmd_meta):
+        for coll in (self._widget_meta, self._flow_meta, self._cmd_meta,
+                     self._cell_meta):
             for entry in coll.values():
                 if 'name' not in entry:
                     entry['name'] = self.default_name(entry)

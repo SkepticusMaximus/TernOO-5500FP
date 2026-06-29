@@ -91,6 +91,23 @@ WIDGET_PROPERTIES.update({
 })
 
 
+# ── Stage 8-1/8-2: Sheet tab cell properties ─────────────────────────────────
+# Cells (cell_*) share COMMON_PROPERTIES (name, x, y, w, h, label) and carry a
+# grid position (row, col) plus content. `value` holds the literal/formula source
+# string; `cell_kind` is implicit in the kind. Formatting props (8-7) added later.
+WIDGET_PROPERTIES.update({
+    'cell_value':   [{'name': 'value',   'kind': 'string', 'section': 'Cell'},
+                     {'name': 'row',     'kind': 'int',    'section': 'Cell'},
+                     {'name': 'col',     'kind': 'int',    'section': 'Cell'}],
+    'cell_text':    [{'name': 'value',   'kind': 'string', 'section': 'Cell'},
+                     {'name': 'row',     'kind': 'int',    'section': 'Cell'},
+                     {'name': 'col',     'kind': 'int',    'section': 'Cell'}],
+    'cell_formula': [{'name': 'value',   'kind': 'string', 'section': 'Cell'},
+                     {'name': 'row',     'kind': 'int',    'section': 'Cell'},
+                     {'name': 'col',     'kind': 'int',    'section': 'Cell'}],
+})
+
+
 # ── Stage 9-0: Shell tab command-widget properties ───────────────────────────
 # Command widgets (cmd_*) share COMMON_PROPERTIES (name, x, y, w, h, label).
 # For the 9-0 scaffold the only command kind is the generic 'cmd_placeholder',

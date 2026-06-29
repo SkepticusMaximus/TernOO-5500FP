@@ -239,6 +239,24 @@ SYMBOL_SUBCLASS = {
 }
 SYMBOL_W, SYMBOL_H, GRID = 120, 60, 40
 CMD_W, CMD_H = 160, 80   # Stage 9-0: command-widget block size on Shell canvas
+# Stage 8-1: Sheet grid geometry (design-space pixels at zoom 1.0)
+CELL_W, CELL_H = 80, 24          # column width, row height
+SHEET_ROW_HDR_W = 40             # row-number gutter width
+SHEET_COL_HDR_H = 22             # column-letter header height
+SHEET_ROWS, SHEET_COLS = 20, 8   # default visible grid
+
+def _sheet_col_label(col):
+    """0→A, 25→Z, 26→AA, … (spreadsheet column letters)."""
+    s = ''
+    col += 1
+    while col > 0:
+        col, r = divmod(col - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+def _sheet_a1(row, col):
+    """(row, col) zero-based → A1-style address, e.g. (0,0)→'A1'."""
+    return f"{_sheet_col_label(col)}{row + 1}"
 
 def snap(v): return round(v/GRID)*GRID
 
@@ -786,7 +804,12 @@ def run_gui():
     ghost_tab = tk.Frame(notebook,bg=C['bg'])
     notebook.add(ghost_tab, text='  GUI  ')
 
-    # ── Tab 3: Shell — three-pane command builder (Bundle 24). Internal symbol
+    # ── Tab 3: Sheet — spreadsheet grid (Stage 8-1, built below). Internal
+    # symbol sheet_tab; the third leg of the trinity. ─────────────────────────
+    sheet_tab = tk.Frame(notebook,bg=C['bg'])
+    notebook.add(sheet_tab, text='  Sheet  ')
+
+    # ── Tab 4: Shell — three-pane command builder (Bundle 24). Internal symbol
     # stays sh_tab; the three-pane _lingo_view lives here. ────────────────────
     sh_tab = tk.Frame(notebook,bg=C['bg'])
     notebook.add(sh_tab, text='  Shell  ')
@@ -1160,15 +1183,24 @@ def run_gui():
         _sh_redraw()
 
     def do_clear():
-        # Tab-aware clear (Bundle 24 order: Flow | GUI | Shell | Connectors | Lingo)
+        # Tab-aware clear (Stage 8-1 order: Flow|GUI|Sheet|Shell|Connectors|Lingo)
         idx      = notebook.index('current')
         has_flow = bool(fc_state.get('flow_symbols'))
         has_gui  = bool(fc_state.get('widgets'))
 
-        if idx == 4:       # Lingo (vocabulary explorer) — read-only
+        if idx == 5:       # Lingo (vocabulary explorer) — read-only
             return
 
-        if idx == 3:       # Connectors tab — clears cmd_* canvas widgets only
+        if idx == 2:       # Sheet tab — clears cells only
+            if not fc_state.get('cells'):
+                _sheet_set_status('Sheet already empty'); return
+            if not messagebox.askyesno('Clear Sheet',
+                    'Clear all cells? Unsaved changes will be lost.'):
+                return
+            _clear_sheet()
+            return
+
+        if idx == 4:       # Connectors tab — clears cmd_* canvas widgets only
             if not fc_state.get('cmd_widgets'):
                 _sh_set_status('Connectors canvas already empty'); return
             if not messagebox.askyesno('Clear Connectors canvas',
@@ -1177,7 +1209,7 @@ def run_gui():
             _clear_shell()
             return
 
-        if idx == 2:       # Shell tab — clears the staged pipeline
+        if idx == 3:       # Shell tab — clears the staged pipeline
             if not _lingo.get('pipeline'):
                 set_status('Pipeline already empty'); return
             if not messagebox.askyesno('Clear pipeline',
@@ -2428,6 +2460,11 @@ def run_gui():
         'cmd_drag_offset':(0, 0),
         'cmd_drag_origin':None,  # (x, y) at drag-start for undo
         'cmd_ghost':      None,  # (x, y) design-space placement ghost
+        # Stage 8-1: Sheet tab — cells keyed by (row, col)
+        'cells':          {},    # (row,col) → {id, kind, row, col, name, value, properties}
+        'cell_next_id':   0,
+        'cell_sel':       (0, 0),  # (row, col) of the selected cell
+        'cell_editing':   False,
         'selected':      None,  # int id of primary selected widget
         'multi_sel':     set(), # all selected ids (includes selected)
         'mode':          'select',
@@ -2462,6 +2499,7 @@ def run_gui():
         fc_state['stream']._widget_meta = fc_state['widgets']
         fc_state['stream']._flow_meta   = fc_state['flow_symbols']  # Phase 6C
         fc_state['stream']._cmd_meta    = fc_state['cmd_widgets']   # Stage 9-0
+        fc_state['stream']._cell_meta   = fc_state['cells']         # Stage 8-1
 
     # ── Ghost canvas layout ───────────────────────────────────────────────────
     # guic_pal removed — sidebar is now the universal palette_frame (tab-aware).
@@ -2727,6 +2765,12 @@ def run_gui():
         else:
             save_cmd_syms = [dict(c) for c in fc_state['cmd_widgets'].values()]
 
+        # Stage 8-1: Sheet cells — saved in full programs only.
+        if ext in ('.gui', '.flow'):
+            save_cell_syms = []
+        else:
+            save_cell_syms = [dict(c) for c in fc_state['cells'].values()]
+
         _stream_words = (list(fc_state['stream'].words)
                          if fc_state.get('stream') is not None else [])
 
@@ -2740,6 +2784,7 @@ def run_gui():
             'flow_symbols':  save_flow_syms,
             'flow_edges':    save_flow_edges,
             'cmd_symbols':   save_cmd_syms,   # Stage 9-0: Shell command widgets
+            'cell_symbols':  save_cell_syms,  # Stage 8-1: Sheet cells
             'sequence':      ([w['id'] for w in fc_state['widgets'].values()]
                               if ext != '.flow' else []),
             'tgui_meta': {
@@ -2748,6 +2793,7 @@ def run_gui():
                 'flow_symbol_count': len(save_flow_syms),
                 'flow_edge_count':   len(save_flow_edges),
                 'cmd_widget_count':  len(save_cmd_syms),
+                'cell_count':        len(save_cell_syms),
                 'mmoe_types_used':   (list({w['kind']
                                            for w in fc_state['widgets'].values()})
                                       if ext != '.flow' else []),
@@ -2964,6 +3010,24 @@ def run_gui():
                 fc_state['cmd_next_id'] = max(fc_state['cmd_next_id'], cid + 1)
             fc_state['cmd_selected'] = None
             fc_state['cmd_multi_sel'].clear()
+            # Stage 8-1: load Sheet cells
+            fc_state['cells'].clear()
+            fc_state['cell_next_id'] = 0
+            for cell in tgui.get('cell_symbols', []):
+                r = cell.get('row', 0); c = cell.get('col', 0)
+                fc_state['cells'][(r, c)] = {
+                    'id':         cell.get('id', 0),
+                    'kind':       cell.get('kind', 'cell_text'),
+                    'row':        r, 'col': c,
+                    'label':      cell.get('label', _sheet_a1(r, c)),
+                    'value':      cell.get('value', ''),
+                    'properties': list(cell.get('properties', [])),
+                }
+                if 'name' in cell:
+                    fc_state['cells'][(r, c)]['name'] = cell['name']
+                fc_state['cell_next_id'] = max(fc_state['cell_next_id'],
+                                               cell.get('id', 0) + 1)
+            fc_state['cell_sel'] = (0, 0)
             # Phase 7c-1: assign default names to legacy widgets/symbols that
             # lack one, and disambiguate any duplicate non-empty names.
             fc_state['stream'].ensure_unique_names()
@@ -2980,6 +3044,7 @@ def run_gui():
             guic_layout_all()
             guic_redraw()
             _sh_redraw()   # Stage 9-0: refresh Shell canvas
+            _sheet_redraw()   # Stage 8-1: refresh Sheet grid
         except Exception as _oe:
             guic_set_status(f"Open failed: {_oe}")
 
@@ -3100,6 +3165,25 @@ def run_gui():
                     fc_state['cmd_widgets'][new_id]['name'] = cmd['name']
             fc_state['cmd_next_id'] = next_cid
 
+            # ── Stage 8-1: Import Sheet cells (skip cells already occupied) ──
+            next_cell_id = fc_state.get('cell_next_id', 0)
+            for cell in data.get('cell_symbols', []):
+                r = cell.get('row', 0); c = cell.get('col', 0)
+                if (r, c) in fc_state['cells']:
+                    continue
+                fc_state['cells'][(r, c)] = {
+                    'id':         next_cell_id,
+                    'kind':       cell.get('kind', 'cell_text'),
+                    'row':        r, 'col': c,
+                    'label':      cell.get('label', _sheet_a1(r, c)),
+                    'value':      cell.get('value', ''),
+                    'properties': list(cell.get('properties', [])),
+                }
+                if 'name' in cell:
+                    fc_state['cells'][(r, c)]['name'] = cell['name']
+                next_cell_id += 1
+            fc_state['cell_next_id'] = next_cell_id
+
             # Phase 7c-1: fill defaults for unnamed imports and disambiguate
             # any names that collide with existing session content.
             fc_state['stream'].ensure_unique_names()
@@ -3109,6 +3193,7 @@ def run_gui():
             guic_redraw()
             redraw()
             _sh_redraw()   # Stage 9-0: refresh Shell canvas
+            _sheet_redraw()   # Stage 8-1: refresh Sheet grid
             n_gui  = len(data.get('symbols', []))
             n_flow = len(data.get('flow_symbols', []))
             n_cmd  = len(data.get('cmd_symbols', []))
@@ -5730,6 +5815,404 @@ def run_gui():
 
     root.after(220, _sh_redraw)
 
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Stage 8-1 — Sheet tab: spreadsheet grid (third leg of the trinity)
+    #
+    # Cells are cell_* metadata dicts keyed by (row, col) in fc_state['cells'],
+    # aliased to WordStream._cell_meta so names join the global namespace.
+    # The grid uses the same viewport transform as the other canvases. Headers
+    # (row numbers / column letters) are drawn in design space (scroll with the
+    # grid) for scaffolding simplicity.
+    # ═══════════════════════════════════════════════════════════════════════════
+    _sheet_fbar = tk.Frame(sheet_tab, bg=C['palette'])   # formula bar (8-2 fills it)
+    _sheet_fbar.pack(side='top', fill='x')
+    tk.Label(_sheet_fbar, text=' fx ', bg=C['palette'], fg=C['pal_border'],
+             font=('Monospace', 9, 'bold')).pack(side='left')
+    _sheet_addr_lbl = tk.Label(_sheet_fbar, text='A1', bg=C['palette'], fg=C['dim'],
+                               font=('Monospace', 9), width=6, anchor='w')
+    _sheet_addr_lbl.pack(side='left', padx=(0, 4))
+    _sheet_fbar_var = tk.StringVar()
+    _sheet_fbar_entry = tk.Entry(_sheet_fbar, textvariable=_sheet_fbar_var,
+                                 bg=C['inspect'], fg=C['text'], insertbackground=C['text'],
+                                 font=('Monospace', 9), relief='flat')
+    _sheet_fbar_entry.pack(side='left', fill='x', expand=True, padx=4, ipady=2)
+
+    _sheet_cv_frame = tk.Frame(sheet_tab, bg=C['canvas'])
+    _sheet_cv_frame.pack(side='top', fill='both', expand=True)
+    _sht_vsb = tk.Scrollbar(_sheet_cv_frame, orient='vertical',   bg=C['palette'])
+    _sht_hsb = tk.Scrollbar(_sheet_cv_frame, orient='horizontal', bg=C['palette'])
+    _sht_hsb.pack(side='bottom', fill='x')
+    _sht_vsb.pack(side='right',  fill='y')
+    sheet_canvas = tk.Canvas(_sheet_cv_frame, bg=C['canvas'], highlightthickness=0)
+    sheet_canvas.pack(fill='both', expand=True)
+    _sheet_status_frame = tk.Frame(sheet_tab, bg=C['status'])
+    _sheet_status_frame.pack(side='bottom', fill='x')
+    sheet_status = tk.Label(_sheet_status_frame, text="Ready", anchor='w',
+                            bg=C['status'], fg=C['pal_border'],
+                            font=('Monospace', 9), padx=8)
+    sheet_status.pack(side='left', fill='x', expand=True, ipady=3)
+    _sht_zoom_lbl = tk.Label(_sheet_status_frame, text='Zoom: 100%', anchor='e',
+                             bg=C['status'], fg=C['dim'], font=('Monospace', 8), padx=8)
+    _sht_zoom_lbl.pack(side='right', ipady=3)
+
+    def _sheet_set_status(m): sheet_status.config(text=m)
+
+    # ── Viewport ──────────────────────────────────────────────────────────────
+    _sht_view = {'zoom': 1.0, 'sx': 0.0, 'sy': 0.0}
+    _sht_pan  = [None]
+
+    def _sht_d2s(dx, dy):
+        z = _sht_view['zoom']
+        return (dx - _sht_view['sx']) * z, (dy - _sht_view['sy']) * z
+
+    def _sht_s2d(ex, ey):
+        z = _sht_view['zoom']
+        return ex / z + _sht_view['sx'], ey / z + _sht_view['sy']
+
+    def _sheet_extent():
+        """Visible grid size: at least the default, expanding to include cells."""
+        nr, nc = SHEET_ROWS, SHEET_COLS
+        for (r, c) in fc_state['cells']:
+            nr = max(nr, r + 2); nc = max(nc, c + 2)
+        return nr, nc
+
+    def _sht_update_scrollregion():
+        nr, nc = _sheet_extent()
+        z = _sht_view['zoom']
+        w = (SHEET_ROW_HDR_W + nc * CELL_W) * z
+        h = (SHEET_COL_HDR_H + nr * CELL_H) * z
+        sheet_canvas.config(scrollregion=(-_sht_view['sx'] * z, -_sht_view['sy'] * z,
+                                          w - _sht_view['sx'] * z, h - _sht_view['sy'] * z))
+        cw = sheet_canvas.winfo_width()  or 860
+        ch = sheet_canvas.winfo_height() or 660
+        rng_x = max(w, 1.0); rng_y = max(h, 1.0)
+        f0x = (_sht_view['sx'] * z) / rng_x
+        f0y = (_sht_view['sy'] * z) / rng_y
+        _sht_hsb.set(max(0.0, f0x), min(1.0, max(f0x + 0.001, f0x + cw / rng_x)))
+        _sht_vsb.set(max(0.0, f0y), min(1.0, max(f0y + 0.001, f0y + ch / rng_y)))
+
+    def _sht_vsb_command(*args):
+        z = _sht_view['zoom']
+        if args[0] == 'moveto':
+            nr, _ = _sheet_extent()
+            _sht_view['sy'] = float(args[1]) * (SHEET_COL_HDR_H + nr * CELL_H)
+        elif args[0] == 'scroll':
+            _sht_view['sy'] += int(args[1]) * CELL_H
+        _sht_view['sy'] = max(0.0, _sht_view['sy'])
+        _sht_update_scrollregion(); _sheet_redraw()
+
+    def _sht_hsb_command(*args):
+        if args[0] == 'moveto':
+            _, nc = _sheet_extent()
+            _sht_view['sx'] = float(args[1]) * (SHEET_ROW_HDR_W + nc * CELL_W)
+        elif args[0] == 'scroll':
+            _sht_view['sx'] += int(args[1]) * CELL_W
+        _sht_view['sx'] = max(0.0, _sht_view['sx'])
+        _sht_update_scrollregion(); _sheet_redraw()
+
+    def _sht_on_scroll_v(event):
+        _sht_view['sy'] = max(0.0, _sht_view['sy'] + (-CELL_H if event.num == 4 else CELL_H) * 3)
+        _sht_update_scrollregion(); _sheet_redraw()
+
+    def _sht_on_scroll_h(event):
+        _sht_view['sx'] = max(0.0, _sht_view['sx'] + (-CELL_W if event.num == 4 else CELL_W) * 3)
+        _sht_update_scrollregion(); _sheet_redraw()
+
+    # ── Cell model helpers ────────────────────────────────────────────────────
+    def _sheet_cell_rect(row, col):
+        """Design-space rect (L, T, R, B) for cell (row, col)."""
+        L = SHEET_ROW_HDR_W + col * CELL_W
+        T = SHEET_COL_HDR_H + row * CELL_H
+        return L, T, L + CELL_W, T + CELL_H
+
+    def _sheet_cell_at(dx, dy):
+        """Design coords → (row, col) cell, or None if over a header."""
+        if dx < SHEET_ROW_HDR_W or dy < SHEET_COL_HDR_H:
+            return None
+        col = int((dx - SHEET_ROW_HDR_W) // CELL_W)
+        row = int((dy - SHEET_COL_HDR_H) // CELL_H)
+        if row < 0 or col < 0:
+            return None
+        return (row, col)
+
+    def _sheet_make_cell_name(row, col):
+        base = f"cell_{_sheet_a1(row, col)}"
+        stream = fc_state.get('stream')
+        if stream is None:
+            return base
+        nm, n = base, 1
+        while stream.name_in_use(nm):
+            nm = f"{base}_{n}"; n += 1
+        return nm
+
+    def _sheet_detect_kind(text):
+        """Stage 8-1: number/bool → cell_value, else cell_text. (Formula = 8-2.)"""
+        t = text.strip()
+        try:
+            int(t); return 'cell_value'
+        except ValueError:
+            pass
+        try:
+            float(t); return 'cell_value'
+        except ValueError:
+            pass
+        if t.lower() in ('true', 'false'):
+            return 'cell_value'
+        return 'cell_text'
+
+    def _sheet_display(cell):
+        """Visible text for a cell (Stage 8-1: the literal value)."""
+        return str(cell.get('value', ''))
+
+    def _sheet_set_cell(row, col, text):
+        """Create / update / delete the cell at (row, col) from `text`."""
+        cells = fc_state['cells']
+        if text == '':
+            cells.pop((row, col), None)   # empty clears the cell
+            return
+        existing = cells.get((row, col))
+        kind = _sheet_detect_kind(text)
+        if existing is None:
+            cid = fc_state['cell_next_id']; fc_state['cell_next_id'] += 1
+            cells[(row, col)] = {
+                'id': cid, 'kind': kind, 'row': row, 'col': col,
+                'name': _sheet_make_cell_name(row, col),
+                'label': _sheet_a1(row, col), 'value': text, 'properties': []}
+        else:
+            existing['kind'] = kind
+            existing['value'] = text
+
+    def _clear_sheet():
+        fc_state['cells'].clear()
+        fc_state['cell_next_id'] = 0
+        fc_state['cell_sel'] = (0, 0)
+        _sheet_cancel_edit()
+        _sheet_set_status('Sheet cleared'); _sheet_redraw()
+
+    # ── Drawing ───────────────────────────────────────────────────────────────
+    def _sheet_redraw():
+        sheet_canvas.delete('all')
+        z = _sht_view['zoom']
+        cw = sheet_canvas.winfo_width()  or 860
+        ch = sheet_canvas.winfo_height() or 660
+        nr, nc = _sheet_extent()
+        hdr_fill = C['pal_active']; grid_col = C['grid']
+        # Column header (letters) + row gutter (numbers)
+        for col in range(nc):
+            L, _, R, _ = _sheet_cell_rect(0, col)
+            sx, _sy = _sht_d2s(L, 0); ex, _ = _sht_d2s(R, 0)
+            sel_c = (fc_state['cell_sel'][1] == col)
+            sheet_canvas.create_rectangle(sx, 0, ex, SHEET_COL_HDR_H * z,
+                                          fill=C['selected'] if sel_c else hdr_fill,
+                                          outline=grid_col)
+            sheet_canvas.create_text((sx + ex) / 2, SHEET_COL_HDR_H * z / 2,
+                                     text=_sheet_col_label(col), fill=C['text'],
+                                     font=('Monospace', max(6, int(8 * z)), 'bold'))
+        for row in range(nr):
+            _, T, _, B = _sheet_cell_rect(row, 0)
+            _sx, sy = _sht_d2s(0, T); _, ey = _sht_d2s(0, B)
+            sel_r = (fc_state['cell_sel'][0] == row)
+            sheet_canvas.create_rectangle(0, sy, SHEET_ROW_HDR_W * z, ey,
+                                          fill=C['selected'] if sel_r else hdr_fill,
+                                          outline=grid_col)
+            sheet_canvas.create_text(SHEET_ROW_HDR_W * z / 2, (sy + ey) / 2,
+                                     text=str(row + 1), fill=C['text'],
+                                     font=('Monospace', max(6, int(8 * z))))
+        # Grid cells
+        for row in range(nr):
+            for col in range(nc):
+                L, T, R, B = _sheet_cell_rect(row, col)
+                sx, sy = _sht_d2s(L, T); ex, ey = _sht_d2s(R, B)
+                if ex < SHEET_ROW_HDR_W * z or ey < SHEET_COL_HDR_H * z:
+                    continue
+                if sx > cw or sy > ch:
+                    continue
+                sheet_canvas.create_rectangle(sx, sy, ex, ey, fill=C['canvas'],
+                                              outline=grid_col)
+                cell = fc_state['cells'].get((row, col))
+                if cell:
+                    sheet_canvas.create_text(sx + 4, (sy + ey) / 2,
+                                             text=_sheet_display(cell), anchor='w',
+                                             fill=C['text'],
+                                             font=('Monospace', max(6, int(9 * z))))
+        # Selection highlight
+        srow, scol = fc_state['cell_sel']
+        L, T, R, B = _sheet_cell_rect(srow, scol)
+        sx, sy = _sht_d2s(L, T); ex, ey = _sht_d2s(R, B)
+        sheet_canvas.create_rectangle(sx, sy, ex, ey, outline=C['selected'],
+                                      width=2)
+        # Reposition the in-place editor if active
+        if fc_state['cell_editing']:
+            _sheet_place_editor()
+
+    # ── In-place editor ───────────────────────────────────────────────────────
+    _sheet_edit = tk.Entry(sheet_canvas, bg='#ffffff', fg='#000000',
+                           insertbackground='#000000', font=('Monospace', 9),
+                           relief='solid', bd=1)
+    _sheet_edit_var = tk.StringVar()
+    _sheet_edit.config(textvariable=_sheet_edit_var)
+
+    def _sheet_place_editor():
+        srow, scol = fc_state['cell_sel']
+        L, T, R, B = _sheet_cell_rect(srow, scol)
+        sx, sy = _sht_d2s(L, T); ex, ey = _sht_d2s(R, B)
+        _sheet_edit.place(x=int(sx) + 1, y=int(sy) + 1,
+                          width=int(ex - sx) - 2, height=int(ey - sy) - 2)
+        _sheet_edit.focus_set()
+
+    def _sheet_begin_edit(initial=None):
+        srow, scol = fc_state['cell_sel']
+        cell = fc_state['cells'].get((srow, scol))
+        if initial is not None:
+            _sheet_edit_var.set(initial)
+        else:
+            _sheet_edit_var.set(cell.get('value', '') if cell else '')
+        fc_state['cell_editing'] = True
+        _sheet_place_editor()
+        _sheet_edit.icursor('end')
+
+    def _sheet_commit_edit(advance=(1, 0)):
+        if not fc_state['cell_editing']:
+            return
+        srow, scol = fc_state['cell_sel']
+        _sheet_set_cell(srow, scol, _sheet_edit_var.get())
+        _sheet_cancel_edit()
+        if fc_state.get('stream') is not None:
+            fc_state['stream'].ensure_unique_names()
+        _sheet_move_sel(*advance)
+        _sheet_redraw()
+
+    def _sheet_cancel_edit():
+        fc_state['cell_editing'] = False
+        _sheet_edit.place_forget()
+        sheet_canvas.focus_set()
+
+    def _sheet_move_sel(dr, dc):
+        r, c = fc_state['cell_sel']
+        fc_state['cell_sel'] = (max(0, r + dr), max(0, c + dc))
+        _sheet_sync_fbar()
+
+    def _sheet_sync_fbar():
+        r, c = fc_state['cell_sel']
+        _sheet_addr_lbl.config(text=_sheet_a1(r, c))
+        cell = fc_state['cells'].get((r, c))
+        _sheet_fbar_var.set(cell.get('value', '') if cell else '')
+
+    # ── Event handlers ────────────────────────────────────────────────────────
+    def _sheet_on_click(event):
+        if fc_state['cell_editing']:
+            _sheet_commit_edit(advance=(0, 0))
+        dx, dy = _sht_s2d(event.x, event.y)
+        hit = _sheet_cell_at(dx, dy)
+        if hit:
+            fc_state['cell_sel'] = hit
+            _sheet_sync_fbar()
+        _sheet_redraw()
+
+    def _sheet_on_double(event):
+        dx, dy = _sht_s2d(event.x, event.y)
+        hit = _sheet_cell_at(dx, dy)
+        if hit:
+            fc_state['cell_sel'] = hit; _sheet_sync_fbar()
+            _sheet_begin_edit()
+
+    def _sheet_edit_key(event):
+        k = event.keysym
+        if k == 'Return':
+            _sheet_commit_edit(advance=(-1, 0) if (event.state & 0x0001) else (1, 0)); return 'break'
+        if k == 'Tab':
+            _sheet_commit_edit(advance=(0, 1)); return 'break'
+        if k == 'ISO_Left_Tab':
+            _sheet_commit_edit(advance=(0, -1)); return 'break'
+        if k == 'Escape':
+            _sheet_cancel_edit(); _sheet_redraw(); return 'break'
+
+    def _sheet_on_key(event):
+        if fc_state['cell_editing']:
+            return
+        k = event.keysym
+        if k == 'Home':
+            _sht_view['zoom'] = 1.0; _sht_view['sx'] = 0.0; _sht_view['sy'] = 0.0
+            _sht_update_scrollregion(); _sheet_redraw(); _update_zoom_indicator(); return
+        nav = {'Up': (-1, 0), 'Down': (1, 0), 'Left': (0, -1), 'Right': (0, 1),
+               'Tab': (0, 1), 'Return': (1, 0)}
+        if k in nav:
+            dr, dc = nav[k]
+            if k == 'Tab' and (event.state & 0x0001): dc = -1
+            if k == 'Return' and (event.state & 0x0001): dr = -1
+            _sheet_move_sel(dr, dc); _sheet_redraw(); return 'break'
+        if k == 'BackSpace' or k == 'Delete':
+            r, c = fc_state['cell_sel']
+            fc_state['cells'].pop((r, c), None); _sheet_sync_fbar(); _sheet_redraw(); return
+        if k == 'F2':
+            _sheet_begin_edit(); return
+        # Typing a printable char starts an edit pre-filled with that char
+        if len(event.char) == 1 and event.char.isprintable():
+            _sheet_begin_edit(initial=event.char); return 'break'
+
+    def _sheet_fbar_commit(event=None):
+        r, c = fc_state['cell_sel']
+        _sheet_set_cell(r, c, _sheet_fbar_var.get())
+        if fc_state.get('stream') is not None:
+            fc_state['stream'].ensure_unique_names()
+        _sheet_redraw()
+
+    def _sheet_on_zoom(event):
+        factor = 1.2 if event.num == 4 else (1 / 1.2)
+        new_z = max(0.4, min(3.0, _sht_view['zoom'] * factor))
+        if new_z == _sht_view['zoom']: return
+        dx_b, dy_b = _sht_s2d(event.x, event.y)
+        _sht_view['zoom'] = new_z
+        _sht_view['sx'] = max(0.0, dx_b - event.x / new_z)
+        _sht_view['sy'] = max(0.0, dy_b - event.y / new_z)
+        _sht_update_scrollregion(); _sheet_redraw(); _update_zoom_indicator()
+
+    def _sht_pan_start(event):
+        _sht_pan[0] = {'ox': _sht_view['sx'], 'oy': _sht_view['sy'], 'ex': event.x, 'ey': event.y}
+        sheet_canvas.config(cursor='fleur')
+
+    def _sht_pan_motion(event):
+        if _sht_pan[0] is None: return
+        z = _sht_view['zoom']
+        _sht_view['sx'] = max(0.0, _sht_pan[0]['ox'] - (event.x - _sht_pan[0]['ex']) / z)
+        _sht_view['sy'] = max(0.0, _sht_pan[0]['oy'] - (event.y - _sht_pan[0]['ey']) / z)
+        _sht_update_scrollregion(); _sheet_redraw()
+
+    def _sht_pan_end(event):
+        _sht_pan[0] = None; sheet_canvas.config(cursor='')
+
+    _sht_vsb.config(command=_sht_vsb_command)
+    _sht_hsb.config(command=_sht_hsb_command)
+    sheet_canvas.bind('<Enter>',            lambda e: sheet_canvas.focus_set())
+    sheet_canvas.bind('<Button-1>',         _sheet_on_click)
+    sheet_canvas.bind('<Double-Button-1>',  _sheet_on_double)
+    sheet_canvas.bind('<Key>',              _sheet_on_key)
+    sheet_canvas.bind('<Button-4>',         _sht_on_scroll_v)
+    sheet_canvas.bind('<Button-5>',         _sht_on_scroll_v)
+    sheet_canvas.bind('<Shift-Button-4>',   _sht_on_scroll_h)
+    sheet_canvas.bind('<Shift-Button-5>',   _sht_on_scroll_h)
+    sheet_canvas.bind('<Control-Button-4>', _sheet_on_zoom)
+    sheet_canvas.bind('<Control-Button-5>', _sheet_on_zoom)
+    sheet_canvas.bind('<Button-2>',         _sht_pan_start)
+    sheet_canvas.bind('<B2-Motion>',        _sht_pan_motion)
+    sheet_canvas.bind('<ButtonRelease-2>',  _sht_pan_end)
+    _sheet_edit.bind('<Key>',               _sheet_edit_key)
+    _sheet_fbar_entry.bind('<Return>',      _sheet_fbar_commit)
+
+    def _build_sheet_tools():
+        """Sheet tab sidebar — info + the active cell address."""
+        for w in _pal_tools_frame.winfo_children(): w.destroy()
+        pal_btns.clear()
+        _pal_section("SHEET")
+        tk.Label(_pal_tools_frame,
+                 text='Click a cell to select.\nDouble-click or type to edit.\n'
+                      'Tab / Enter / arrows\nnavigate. The fx bar edits\n'
+                      'the active cell.',
+                 bg=C['palette'], fg=C['dim'], font=('Monospace', 8),
+                 anchor='w', justify='left').pack(fill='x', padx=6, pady=4)
+
+    root.after(230, _sheet_redraw)
+
     def _build_gristmill_tools():
         """Lingo tab (vocabulary explorer) sidebar — read-only."""
         for w in _pal_tools_frame.winfo_children(): w.destroy()
@@ -5740,12 +6223,13 @@ def run_gui():
 
     def _rebuild_sidebar_tools():
         """Rebuild the tab-aware tools section for the currently active tab.
-        Tab order (Bundle 24): Flow | GUI | Shell | Connectors | Lingo."""
+        Tab order (Stage 8-1): Flow | GUI | Sheet | Shell | Connectors | Lingo."""
         idx = notebook.index('current')
         if idx == 0:   _build_flow_tools()
         elif idx == 1: _build_gui_tools()
-        elif idx == 2: _build_shell_tools()        # three-pane builder
-        elif idx == 3: _build_connectors_tools()   # cmd_* canvas
+        elif idx == 2: _build_sheet_tools()        # spreadsheet grid
+        elif idx == 3: _build_shell_tools()        # three-pane builder
+        elif idx == 4: _build_connectors_tools()   # cmd_* canvas
         else:          _build_gristmill_tools()    # Lingo vocabulary explorer
 
     def _on_tab_change(event):
@@ -5758,8 +6242,9 @@ def run_gui():
             except Exception: pass
             _guic_active_tip[0] = None
         if idx == 1:   guic_redraw()
-        elif idx == 3: _sh_redraw()    # Connectors canvas
-        elif idx == 4:
+        elif idx == 2: _sheet_redraw()  # Sheet grid
+        elif idx == 4: _sh_redraw()    # Connectors canvas
+        elif idx == 5:
             # Lingo (vocabulary explorer) — force refresh on switch
             try: _gristmill_view._rebuild_program()
             except Exception: pass
@@ -5815,6 +6300,7 @@ def run_gui():
         _fc_zoom_lbl.config(text=f"Zoom: {int(_fc_view['zoom'] * 100)}%")
         _gc_zoom_lbl.config(text=f"Zoom: {int(_gc_view['zoom'] * 100)}%")
         _sh_zoom_lbl.config(text=f"Zoom: {int(_sh_view['zoom'] * 100)}%")  # Stage 9-0
+        _sht_zoom_lbl.config(text=f"Zoom: {int(_sht_view['zoom'] * 100)}%")  # Stage 8-1
 
     # ── Bundle 18: Flow canvas zoom / pan bindings ────────────────────────────
     def _fc_on_zoom(event):
