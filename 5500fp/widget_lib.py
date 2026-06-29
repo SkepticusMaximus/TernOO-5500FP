@@ -666,10 +666,17 @@ def build_rnode_shape_labeled(pos_xy: tuple, size_wh: tuple,
 
     Emits 4+N words: OPCODE(immediate=1, arity=3+N) + MAP + DATA-dims +
     DATA-SYMBOL-shape + N*DATA-STRING-label.
+
+    Label limit: arity is a 2-trit balanced field capped at 8.  With 3 fixed
+    operands that leaves room for at most 5 label words × 3 chars/word = 15
+    displayable characters.  Labels longer than 15 chars are silently truncated
+    in the stream representation; the canvas display is unaffected (it reads
+    s['label'] directly, not the encoded stream).
     """
+    _MAX_LABEL_CHARS = 15   # 5 words × 3 chars, keeps arity ≤ 8
     x, y = pos_xy
     w, h = size_wh
-    lw = _encode_label(label)
+    lw = _encode_label(label[:_MAX_LABEL_CHARS])
     return [
         build_opcode_word(OPF_PIGART, arity=3 + len(lw), op_index=OP_RNODE,
                           immediate=FORM_SHAPE),

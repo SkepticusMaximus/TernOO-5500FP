@@ -7,7 +7,7 @@ Run:
     cd ~/dev/SkepticusMaximus/TernOO-5500FP/5500fp
     python3 -m unittest test_compile_to_t5asm
 
-Date: 2026-06-22, Adelaide
+Date: 2026-06-23, Adelaide (Phase 7b-4 additions)
 Authors: Stevo (SkepticusMaximus) + Claude (Anthropic)
 """
 
@@ -20,8 +20,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from compile_to_t5asm import compile_wordstream_to_t5asm, CompileError
 from word_stream import WordStream
 
-# SIGNAL_CLICKED = 300 (from flowcode_signals / widget_lib)
+# Signal IDs (from widget_lib / flowcode_signals)
 _SIGNAL_CLICKED = 300
+_SIGNAL_TOGGLED = 301
+_SIGNAL_CHANGED = 302
 
 
 # ---------------------------------------------------------------------------
@@ -237,11 +239,11 @@ class TestCompileToT5Asm(unittest.TestCase):
         self.assertIn('skip_wid_2', out,
                       "Expected skip_wid_2 label in hit-test block")
 
-        # Jump to handler for terminator 10
+        # Dispatch to handler for terminator 10 (Phase 7b-4: CALL not JMP)
         self.assertIn('handler_term_10', out,
                       "Expected handler_term_10 label in output")
-        self.assertIn('JMP  handler_term_10', out,
-                      "Expected JMP to handler_term_10 in hit-test block")
+        self.assertIn('CALL handler_term_10', out,
+                      "Expected CALL to handler_term_10 in hit-test block")
 
         # Handler block emitted once
         self.assertGreaterEqual(out.count('handler_term_10:'), 1,
@@ -351,8 +353,272 @@ class TestCompileToT5Asm(unittest.TestCase):
         self.assertIn('LI   R2, 105', handler_section,
                       "Expected LI R2, 105 for 'i' in handler_term_5 block")
 
-        # Block ends with JMP back to event loop
-        self.assertIn('JMP  event_loop_top', handler_section)
+        # Block ends with RET (Phase 7b-4: handlers are CALLed, return to caller)
+        self.assertIn('RET', handler_section)
+
+
+    # =========================================================================
+    # Phase 7b-4 tests (T16–T26) — walk-up, TOGGLED/CHANGED, layout, state
+    # =========================================================================
+
+    # ── T16. Walk-up: binding on parent, child has none → child click fires ─
+
+    def test_16_walkup_binding_on_parent(self):
+        """Binding on window (not button) → click button fires handler via walk-up."""
+        term = _make_terminator(20, 'From parent', is_entry=True, x=700, y=100)
+        # Button has parent_id=1 (window), window has the binding
+        win = _make_widget(1, 'gui_window', 10, 10, 600, 300, 'W',
+                           signal_ids={_SIGNAL_CLICKED: {'dst_x': 700, 'dst_y': 100}})
+        btn = _make_widget(2, 'gui_button', 50, 50, 100, 40, 'Go')
+        btn['parent_id'] = 1  # button's parent is the window
+        stream = _stream_with_gui(widgets={1: win, 2: btn}, terminators=[term])
+        out = compile_wordstream_to_t5asm(stream)
+
+        # Button hit-test must be present (it has an action via walk-up)
+        self.assertIn('skip_wid_2', out,
+                      "Button (child) must have hit-test even when binding is on parent")
+        # Handler for terminator 20 must be emitted
+        self.assertIn('handler_term_20', out)
+        # Dispatch must be via CALL
+        self.assertIn('CALL handler_term_20', out)
+
+    # ── T17. Walk-up: child binding wins over parent binding ─────────────────
+
+    def test_17_walkup_child_wins_over_parent(self):
+        """Both parent and child have CLICKED binding → child's handler fires."""
+        term_parent = _make_terminator(30, 'Parent handler', is_entry=True, x=700, y=100)
+        term_child  = _make_terminator(31, 'Child handler',  is_entry=True, x=700, y=200)
+        win = _make_widget(1, 'gui_window', 10, 10, 600, 300, 'W',
+                           signal_ids={_SIGNAL_CLICKED: {'dst_x': 700, 'dst_y': 100}})
+        btn = _make_widget(2, 'gui_button', 50, 50, 100, 40, 'Go',
+                           signal_ids={_SIGNAL_CLICKED: {'dst_x': 700, 'dst_y': 200}})
+        btn['parent_id'] = 1
+        stream = _stream_with_gui(
+            widgets={1: win, 2: btn},
+            terminators=[term_parent, term_child])
+        out = compile_wordstream_to_t5asm(stream)
+
+        # Button dispatches to child's handler (31), not parent's (30)
+        self.assertIn('CALL handler_term_31', out,
+                      "Child binding wins: expected dispatch to handler_term_31")
+        # Parent handler may appear (window may have its own hit-test) but
+        # button's dispatch must NOT go to parent's term
+        btn_skip = 'skip_wid_2'
+        btn_idx  = out.index(btn_skip)
+        btn_block = out[:btn_idx]  # text before skip_wid_2 = the hit-test for widget 2
+        self.assertNotIn('CALL handler_term_30', btn_block,
+                         "Button block must not dispatch to parent's handler_term_30")
+
+    # ── T18. Walk-up: no binding anywhere → no dispatch, no handler block ──
+
+    def test_18_walkup_no_binding_no_dispatch(self):
+        """Widget with no binding in its entire parent chain → no hit-test entry."""
+        win = _make_widget(1, 'gui_window', 10, 10, 600, 300, 'W')
+        btn = _make_widget(2, 'gui_button', 50, 50, 100, 40, 'Go')
+        btn['parent_id'] = 1
+        stream = _stream_with_gui(widgets={1: win, 2: btn})
+        out = compile_wordstream_to_t5asm(stream)
+
+        self.assertNotIn('skip_wid_2', out,
+                         "Button with no binding must not get a hit-test entry")
+        self.assertNotIn('handler_term_', out)
+
+    # ── T19. TOGGLED signal — gui_check emits state flip + CALL TOGGLED handler
+
+    def test_19_toggled_dispatch_for_gui_check(self):
+        """gui_check with TOGGLED binding → hit-test includes state flip + CALL."""
+        term = _make_terminator(40, 'Toggled!', is_entry=True, x=700, y=100)
+        chk  = _make_widget(5, 'gui_check', 100, 100, 80, 30, 'Check me',
+                             signal_ids={_SIGNAL_TOGGLED: {'dst_x': 700, 'dst_y': 100}})
+        stream = _stream_with_gui(widgets={5: chk}, terminators=[term])
+        out = compile_wordstream_to_t5asm(stream)
+
+        # Hit-test for widget 5
+        self.assertIn('skip_wid_5', out, "Expected hit-test for gui_check")
+
+        # State flip present: SUB R15, R16, R15 (toggle 0↔1)
+        self.assertIn('SUB  R15, R16, R15', out, "Expected state flip (SUB)")
+
+        # Dispatch to handler 40
+        self.assertIn('CALL handler_term_40', out)
+
+        # Handler block ends with RET
+        self.assertIn('handler_term_40:', out)
+        idx = out.index('handler_term_40:')
+        self.assertIn('RET', out[idx:], "Handler must end with RET")
+
+    # ── T20. CHANGED signal — gui_entry emits key handler + CALL CHANGED ───
+
+    def test_20_changed_dispatch_for_gui_entry(self):
+        """gui_entry with CHANGED binding → key handler block + dispatch."""
+        term  = _make_terminator(50, 'Changed!', is_entry=True, x=700, y=100)
+        entry = _make_widget(6, 'gui_entry', 100, 100, 200, 30, '',
+                             signal_ids={_SIGNAL_CHANGED: {'dst_x': 700, 'dst_y': 100}})
+        stream = _stream_with_gui(widgets={6: entry}, terminators=[term])
+        out = compile_wordstream_to_t5asm(stream)
+
+        # Key handler entry point present
+        self.assertIn('handle_key_down', out)
+        self.assertIn('key_on_entry_6', out)
+
+        # Append logic: ADD R20, R20, R13 (dynamic address compute)
+        self.assertIn('ADD  R20, R20, R13', out)
+
+        # CALL to CHANGED handler
+        self.assertIn('CALL handler_term_50', out)
+
+        # Key-down event dispatch in event poll
+        self.assertIn('handle_key_down', out)
+
+    # ── T21. State region: toggleable widget gets checked word in data ──────
+
+    def test_21_state_region_toggleable(self):
+        """gui_check → state_checked_N label in data section."""
+        chk = _make_widget(7, 'gui_check', 50, 50, 80, 30, 'Opt')
+        stream = _stream_with_gui(widgets={7: chk})
+        out = compile_wordstream_to_t5asm(stream)
+
+        self.assertIn('state_checked_7:', out,
+                      "Expected state_checked_7 data label for gui_check #7")
+
+    # ── T22. State region: entry widget gets text buffer in data ────────────
+
+    def test_22_state_region_entry(self):
+        """gui_entry → state_text_N and state_textlen_N labels in data section."""
+        entry = _make_widget(8, 'gui_entry', 50, 50, 200, 30, 'hello')
+        stream = _stream_with_gui(widgets={8: entry})
+        out = compile_wordstream_to_t5asm(stream)
+
+        self.assertIn('state_text_8:', out,    "Expected state_text_8 data label")
+        self.assertIn('state_textlen_8:', out, "Expected state_textlen_8 data label")
+        # Initial text 'hello' (5 chars) initializes the buffer
+        self.assertIn('LI   R4, state_text_8', out,
+                      "Entry render must use state_text_8 as text pointer")
+
+    # ── T23. LAYOUT_VBOX positions children stacked vertically ──────────────
+
+    def test_23_layout_vbox_positions_children(self):
+        """Parent at (100,100) with layout_mode=vbox → children stacked vertically."""
+        # Parent window at (100,100), VBOX, h=300
+        win = _make_widget(1, 'gui_window', 100, 100, 400, 300, 'W')
+        win['layout_mode'] = 'vbox'
+        # Three buttons, h=40 each; effective positions should be:
+        # btn_A: (104, 104, 100, 40)   (parent.x+4, parent.y+4)
+        # btn_B: (104, 148, 100, 40)   (parent.x+4, parent.y+4+40+4)
+        # btn_C: (104, 192, 100, 40)   (parent.x+4, parent.y+4+40+4+40+4)
+        btn_a = _make_widget(2, 'gui_button', 0, 0, 100, 40, 'A')
+        btn_b = _make_widget(3, 'gui_button', 0, 0, 100, 40, 'B')
+        btn_c = _make_widget(4, 'gui_button', 0, 0, 100, 40, 'C')
+        btn_a['parent_id'] = btn_b['parent_id'] = btn_c['parent_id'] = 1
+        stream = _stream_with_gui(
+            widgets={1: win, 2: btn_a, 3: btn_b, 4: btn_c})
+        out = compile_wordstream_to_t5asm(stream)
+
+        # btn_A y should be 104 (parent.y + padding = 100 + 4)
+        self.assertIn('LI   R3, 104', out,
+                      "VBOX first child y should be parent.y + 4 = 104")
+        # btn_B y should be 148 (104 + 40 + 4)
+        self.assertIn('LI   R3, 148', out,
+                      "VBOX second child y should be 148")
+        # btn_C y should be 192 (148 + 40 + 4)
+        self.assertIn('LI   R3, 192', out,
+                      "VBOX third child y should be 192")
+
+    # ── T24. LAYOUT_HBOX positions children horizontally ────────────────────
+
+    def test_24_layout_hbox_positions_children(self):
+        """Parent at (50,50) with layout_mode=hbox → children stacked horizontally."""
+        win = _make_widget(1, 'gui_window', 50, 50, 400, 200, 'W')
+        win['layout_mode'] = 'hbox'
+        # Two buttons w=80 each:
+        # btn_A: (54, 54, 80, 40)   (parent.x+4, parent.y+4)
+        # btn_B: (138, 54, 80, 40)  (parent.x+4+80+4, parent.y+4)
+        btn_a = _make_widget(2, 'gui_button', 0, 0, 80, 40, 'X')
+        btn_b = _make_widget(3, 'gui_button', 0, 0, 80, 40, 'Y')
+        btn_a['parent_id'] = btn_b['parent_id'] = 1
+        stream = _stream_with_gui(
+            widgets={1: win, 2: btn_a, 3: btn_b})
+        out = compile_wordstream_to_t5asm(stream)
+
+        # btn_A x = 54 (parent.x + 4)
+        self.assertIn('LI   R2, 54', out,
+                      "HBOX first child x should be parent.x + 4 = 54")
+        # btn_B x = 138 (54 + 80 + 4)
+        self.assertIn('LI   R2, 138', out,
+                      "HBOX second child x should be 138")
+
+    # ── T25. LAYOUT_ABSOLUTE adds parent + child positions ──────────────────
+
+    def test_25_layout_absolute_adds_positions(self):
+        """Window at (100,100) absolute + button at (50,50) → button at (150,150)."""
+        win = _make_widget(1, 'gui_window', 100, 100, 400, 300, 'W')
+        # default layout_mode is 'absolute'
+        btn = _make_widget(2, 'gui_button', 50, 50, 100, 40, 'B',
+                           signal_ids={_SIGNAL_CLICKED: {'dst_x': 700, 'dst_y': 200}})
+        btn['parent_id'] = 1
+        term = _make_terminator(60, 'OK', is_entry=True, x=700, y=200)
+        stream = _stream_with_gui(widgets={1: win, 2: btn}, terminators=[term])
+        out = compile_wordstream_to_t5asm(stream)
+
+        # Effective x=150 and y=150 should appear in the output
+        # (in both render and hit-test)
+        self.assertIn('LI   R2, 150', out,
+                      "LAYOUT_ABSOLUTE: effective x = parent.x + child.x = 150")
+        self.assertIn('LI   R3, 150', out,
+                      "LAYOUT_ABSOLUTE: effective y = parent.y + child.y = 150")
+
+    # ── T26. Comprehensive fixture: VBOX window + check + entry + button ────
+
+    def test_26_comprehensive_vbox_fixture(self):
+        """Window/VBOX containing gui_check, gui_entry, gui_button all with bindings."""
+        term_chk = _make_terminator(70, 'Box toggled', is_entry=True, x=700, y=100)
+        term_ent = _make_terminator(71, 'Text changed', is_entry=True, x=700, y=200)
+        term_btn = _make_terminator(72, 'Button hit',  is_entry=True, x=700, y=300)
+
+        win = _make_widget(1, 'gui_window', 100, 100, 400, 300, 'Demo')
+        win['layout_mode'] = 'vbox'
+
+        chk = _make_widget(2, 'gui_check', 0, 0, 200, 30, 'Enable',
+                           signal_ids={_SIGNAL_TOGGLED: {'dst_x': 700, 'dst_y': 100}})
+        ent = _make_widget(3, 'gui_entry', 0, 0, 200, 30, '',
+                           signal_ids={_SIGNAL_CHANGED: {'dst_x': 700, 'dst_y': 200}})
+        btn = _make_widget(4, 'gui_button', 0, 0, 100, 40, 'Go',
+                           signal_ids={_SIGNAL_CLICKED: {'dst_x': 700, 'dst_y': 300}})
+        chk['parent_id'] = ent['parent_id'] = btn['parent_id'] = 1
+
+        stream = _stream_with_gui(
+            widgets={1: win, 2: chk, 3: ent, 4: btn},
+            terminators=[term_chk, term_ent, term_btn])
+        out = compile_wordstream_to_t5asm(stream)
+
+        # All three handlers emitted
+        self.assertIn('handler_term_70:', out)
+        self.assertIn('handler_term_71:', out)
+        self.assertIn('handler_term_72:', out)
+
+        # All three state allocations
+        self.assertIn('state_checked_2:', out)
+        self.assertIn('state_text_3:', out)
+        self.assertIn('state_textlen_3:', out)
+
+        # Key handler present (entry exists)
+        self.assertIn('handle_key_down', out)
+
+        # CALL dispatch for each
+        self.assertIn('CALL handler_term_70', out)
+        self.assertIn('CALL handler_term_71', out)
+        self.assertIn('CALL handler_term_72', out)
+
+        # VBOX: check (child 2) at y = parent.y + 4 = 104
+        self.assertIn('LI   R3, 104', out, "VBOX first child y = 104")
+
+        # All handlers end with RET (search from each handler label to end)
+        for tid in (70, 71, 72):
+            idx = out.index(f'handler_term_{tid}:')
+            next_handler = out.find('handler_term_', idx + 1)
+            segment = out[idx:next_handler] if next_handler != -1 else out[idx:]
+            self.assertIn('RET', segment,
+                          f"handler_term_{tid} must end with RET")
 
 
 if __name__ == '__main__':
