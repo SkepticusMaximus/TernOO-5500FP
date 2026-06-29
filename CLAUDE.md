@@ -12,28 +12,43 @@ When I report what I see on my screen, treat that as **ground truth**. If I say 
 
 I am the captain. I set pace, scope, and direction. You execute against the spec I provide and use your judgment on implementation specifics that aren't locked.
 
-You make calls in the office. I gate commits. I don't want to be asked to make implementation-level decisions that fall in your chair — fill in details from the locked design principles and surface only genuine forks where my input is architecturally needed.
+I gate **work**, not housekeeping. "Gating" means I review the result and decide whether to keep, change, or build on it. It does NOT mean I issue manual instructions for every commit, push, file move, or repo-maintenance task. Those are yours to handle on the fly.
+
+You make engineering calls in the office. CAI (in the Claude.ai chat) makes design calls and produces specs. I review outputs and discuss with CAI when something needs a decision.
 
 If something seems wider than the spec described, flag it rather than silently expanding scope. If something seems narrower (already done, no-op), flag that too rather than going through the motions.
+
+## Repo maintenance — your responsibility
+
+**Commits**: When a bundle's acceptance criteria are met and tests pass, commit the work. Don't wait for explicit instruction. The default is commit; the exception is when work is genuinely uncertain or you'd want CAI's review before locking it in — in that case, flag back rather than commit.
+
+**Commit hygiene**: Each logical piece of work gets its own commit when they're independent. Interdependent restructures commit atomically. Commit messages reference the spec file when relevant (`Phase 7c-2 — Auto-wiring per CC-Phase-7c-2-Auto-Wiring.md`).
+
+**Pushing**: Push to `origin/main` (or the working branch) after committing unless I've told you not to.
+
+**At session start**: Check for uncommitted work from prior sessions. If present, either commit it (if the acceptance criteria are clearly met from the prior session's report) or flag it back at the top of your session summary so I can resolve it.
+
+**Branch hygiene**: Work on the working branch I've set up. Don't create branches unless I've asked.
 
 ## Output protocol
 
 **Default**: When session work is complete, deliver the session summary as a **markdown code block in the chat window**. I want to copy-paste it forward without navigating file dialogs.
 
-**Files**: Only for durable artifacts (specs, design memos, persistent reports) that I have explicitly asked you to save. Don't save reports to disk unless I've asked for a saved report.
+**Files**: For durable artifacts (specs, design memos, persistent reports) that I have explicitly asked you to save. Don't save reports to disk unless I've asked for a saved report.
 
 **File location for explicit saves**: `private/` directory in repo root. Don't ask where to save — that's the convention.
 
 **Brief over verbose**: I'd rather have a tight summary that captures the essentials than a comprehensive dump. If I want more detail I'll ask.
 
-**ALL flags and notes go INSIDE the report block — no exceptions.** The report is the *one* thing I copy-paste forward to CAI. If something is worth flagging, it is worth putting in the report so CAI sees it. Do NOT put caveats, "worth noting" asides, follow-up observations, or next-step flags in the chat *outside* the code block. If I have to scroll back here to retrieve a note you left out of the report, that's a failure — it makes me play copy-paste ping-pong with the mouse. One report. Everything in it. Chat text outside the block should be at most a one-line "done" — never carry information I'd need to forward.
+**Flags and notes go inside the report block**, never as separate chat messages outside it.
 
 ## Project context — TernOO-5500FP
 
 - **Repo**: `~/dev/SkepticusMaximus/TernOO-5500FP`
 - **Architecture**: 24-trit balanced-ternary CPU (5500FP), 81 registers, word format 2+4+18 (T23 / T22-T19 / T18-T0)
 - **9 primaries** in the word architecture (per Language Audit): DATA, EXEC, MAP, NEURAL, I-O, plus reserved CRYPTO, OPEN_B, POOL, and one more — see `private/TernOO-Language-Audit.md` for the canonical reference
-- **Status**: Phase 7b closed (native PIGART rendering, FlowCode→t5asm compile path, native SDL runtime working). Currently working on Phase 7c (named-handler auto-wiring), Stage 8 (Sheet leg), Stage 9 (Shell tab), and assorted UX polish
+- **Tabs in IDE**: Flow | GUI | Shell | Connectors | Lingo
+- **Status**: Phase 7b closed. Phase 7c-1 and 7c-2 complete (`name` property + name-based auto-wiring). Currently building toward Phase 7c-3 (Ctrl+click cross-tab nav), Phase 7c-4 (Pocket UX), Stage 8 (Sheet), Stage 9 (Shell command set), Stage 10 (native filesystem). Plus assorted UX polish bundles
 - **Test commands**:
   - `cd 5500fp && python3 widget_lib.py --test`
   - `python3 ternoo_gristmill.py --accept`
@@ -41,17 +56,20 @@ If something seems wider than the spec described, flag it rather than silently e
   - `python3 -m unittest test_compile_to_t5asm`
   - `python3 -m unittest test_stage6_workflow`
   - `python3 -m unittest test_gristmill_tab`
+  - `python3 -m unittest test_name_property`
+  - `python3 -m unittest test_auto_wiring`
   - `cd ../NASM-TernOO-5500FP-Emulator/c_emulator && ./5500fp --test`
 
 ## Key reference documents
 
-- `private/TernOO-Language-Audit.md` — authoritative reference for word types, opcodes (RNODE/REDGE), symbol families (SHAPE_*, STYLE_*, LAYOUT_*, SIGNAL_*), mesh mechanics
-- `CAI-Named-Handler-Auto-Wiring-Design.md` — Phase 7c architecture (binding by name across surfaces)
-- `CAI-Sheet-Leg-Design-Memo.md` — Stage 8 design
-- `CAI-Shell-Tab-Skeleton-Design.md` — Stage 9 design
-- `CAI-FlowCode-File-Extensions-Policy.md` — `.fc` / `.flow` / `.gui` / `.sheet` extension policy
+- `private/TernOO-Language-Audit.md` — authoritative reference for word types, opcodes (RNODE/REDGE), symbol families, mesh mechanics
+- `docs/design/CAI-Named-Handler-Auto-Wiring-Design.md` — Phase 7c architecture
+- `docs/design/CAI-Sheet-Leg-Design-Memo.md` — Stage 8 design
+- `docs/design/CAI-Shell-Tab-Skeleton-Design.md` — Stage 9 design (note: Shell tab is now the three-pane builder; the canvas-based view is the Connectors tab)
+- `docs/design/CAI-FlowCode-File-Extensions-Policy.md` — `.fc` / `.flow` / `.gui` / `.sheet` extension policy
+- `private/CC-*.md` — bundle specs from CAI
 
-If I dispatch a CC spec like `CC-Phase-7c-1-Name-Property.md`, the referenced design memo gives you full context — read it first.
+When a dispatch references a spec, read it first.
 
 ## What never to do
 
@@ -61,19 +79,22 @@ If I dispatch a CC spec like `CC-Phase-7c-1-Name-Property.md`, the referenced de
 - Don't add scope to a bundle silently. Flag, don't expand.
 - Don't reverse a correct earlier decision because of an emotional appeal or pressure. If something was rejected for a real reason, the reason still holds.
 - Don't use the host filesystem for TernOO-internal storage when there's a native path. We're weaning off the host FS deliberately, with gratitude for its hospitality.
+- Don't leave completed work uncommitted waiting for explicit commit instructions. Commit is the default.
 
 ## What's always welcome
 
 - Honest pushback when you see something I'm missing
 - "This bundle is a no-op because X is already done" (Bundle 15 was a clean example)
 - "The scope you've described actually requires Y to be done first" (flag, don't bull through)
-- Engineering improvements beyond the spec when they're clearly correct (Phase 7b-4's CALL/RET pattern over JMP-back was a good example)
+- Engineering improvements beyond the spec when they're clearly correct (Phase 7b-4's CALL/RET pattern, Bundle 24's atomic commit decision, Phase 7c-2's one-live-hook approach)
 - Honest reporting of what was actually broken when the spec's hypotheses don't match reality (Bundle 19's "stuck drag from missed ButtonRelease" was better than the spec's "missed conversion" guess)
 
 ## The standing rule above all else
 
 If something is ambiguous, ask. If something is obviously implied by what I've said, do it. The middle ground — guessing at scope or making architectural decisions that should be mine — is where bumbling happens. When in doubt, surface the question clearly with the trade-off named.
 
+Housekeeping is never the middle ground. If a commit needs to happen, commit. If files need to move into place, move them. If the previous session left work uncommitted, commit it. Don't pass mundane chores back up the chain.
+
 ---
 
-*Standing instructions. Read at every CC session start.*
+*Standing instructions. Read at every CC session start. Last updated 29 June 2026 — clarified commit default, repo housekeeping as CC's responsibility.*
