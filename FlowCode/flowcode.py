@@ -5967,6 +5967,123 @@ def run_gui():
     tk_canvas.bind('<Leave>',          lambda e: _hide_tooltip())
     root.bind('<Key>',on_key)
 
+    # ── Phase 7c-3: Ctrl+click cross-tab navigation ───────────────────────────
+    # Ctrl+click a GUI widget → jump to its handler terminator (or offer to
+    # create it); Ctrl+click a flow_terminator → jump to the widget it handles.
+    def _nav_center_flow_on(sym_id):
+        s = fc_state['flow_symbols'].get(sym_id)
+        if not s:
+            return
+        cw = tk_canvas.winfo_width() or 860
+        ch = tk_canvas.winfo_height() or 660
+        z  = _fc_view['zoom']
+        _fc_view['sx'] = s['x'] - (cw / 2) / z
+        _fc_view['sy'] = s['y'] - (ch / 2) / z
+        state['selected_sym']     = sym_id
+        state['selected_edge']    = None
+        fc_state['flow_selected'] = sym_id
+        _fc_update_scrollregion(); redraw(); update_inspect()
+
+    def _nav_center_gui_on(wid):
+        w = fc_state['widgets'].get(wid)
+        if not w:
+            return
+        ax, ay = guic_abs_pos(w)
+        cw = guic.winfo_width() or 860
+        ch = guic.winfo_height() or 660
+        z  = _gc_view['zoom']
+        _gc_view['sx'] = ax - (cw / 2) / z
+        _gc_view['sy'] = ay - (ch / 2) / z
+        fc_state['selected']  = wid
+        fc_state['multi_sel'] = {wid}
+        _gc_update_scrollregion(); guic_redraw(); guic_rebuild_prop_panel()
+
+    def _nav_find_terminator_by_name(name):
+        if not name:
+            return None
+        for s in fc_state['flow_symbols'].values():
+            if s.get('kind') == 'flow_terminator' and s.get('name', '') == name:
+                return s
+        return None
+
+    def _nav_find_widget_for_handler(handler_name):
+        if not handler_name:
+            return None
+        for w in fc_state['widgets'].values():
+            for (_sid, _sname, hname) in _aw_names_for_widget(w):
+                if hname and hname == handler_name:
+                    return w
+        return None
+
+    def _nav_create_and_go(handler_name):
+        # Create an entry flow_terminator named to match, then jump to it.
+        cw = tk_canvas.winfo_width() or 860
+        ch = tk_canvas.winfo_height() or 660
+        z  = _fc_view['zoom']
+        cx = snap(_fc_view['sx'] + (cw / 2) / z)
+        cy = snap(_fc_view['sy'] + (ch / 2) / z)
+        s = _fc_add_symbol('flow_terminator', cx, cy, label=handler_name)
+        s['name'] = handler_name
+        _guic_set_prop_value(s, 'is_entry', True)
+        _guic_sync_stream()          # materialise the new auto-wired binding
+        notebook.select(0)
+        _nav_center_flow_on(s['id'])
+        set_status(f"Created handler '{handler_name}' and wired it")
+
+    def _nav_popup(event, actions):
+        menu = tk.Menu(root, tearoff=0, bg=C['palette'], fg=C['text'],
+                       activebackground=C['pal_active'], activeforeground=C['text'])
+        for lbl, fn in actions:
+            menu.add_command(label=lbl, command=fn)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _gui_ctrl_click(event):
+        x, y = _gc_s2d(event.x, event.y)
+        w = guic_widget_at(x, y)
+        if not w:
+            return 'break'
+        if not w.get('name'):
+            guic_set_status('Name the widget first to wire a handler'); return 'break'
+        triples = _aw_names_for_widget(w)
+        if not triples:
+            guic_set_status(f"{w['kind']} emits no signals"); return 'break'
+        actions = []
+        for (_sid, sname, hname) in triples:
+            term = _nav_find_terminator_by_name(hname)
+            if term is not None:
+                actions.append((f"Go to handler: {hname}",
+                                lambda t=term: (notebook.select(0),
+                                                _nav_center_flow_on(t['id']))))
+            else:
+                actions.append((f"Create handler: {hname}",
+                                lambda h=hname: _nav_create_and_go(h)))
+        if len(actions) == 1:
+            actions[0][1]()
+        else:
+            _nav_popup(event, actions)
+        return 'break'
+
+    def _flow_ctrl_click(event):
+        x, y = _fc_s2d(event.x, event.y)
+        s = _fc_sym_at(x, y)
+        if not s:
+            return 'break'
+        if s.get('kind') != 'flow_terminator':
+            set_status('Ctrl+click a terminator to find its widget'); return 'break'
+        w = _nav_find_widget_for_handler(s.get('name', ''))
+        if w is None:
+            set_status('No matching widget signal'); return 'break'
+        notebook.select(1)
+        _nav_center_gui_on(w['id'])
+        guic_set_status(f"→ {w.get('name') or w['kind']}  #{w['id']}")
+        return 'break'
+
+    guic.bind('<Control-Button-1>',      _gui_ctrl_click)
+    tk_canvas.bind('<Control-Button-1>', _flow_ctrl_click)
+
     def on_close():
         # Phase 7c-0: use smart do_save (current path or Save As dialog)
         if fc_state['flow_symbols'] or fc_state['widgets']:
