@@ -239,11 +239,13 @@ class TestLingoInterface(unittest.TestCase):
         with open(path) as f:
             cls.src = f.read()
 
-    def test_stub_command_registry(self):
+    def test_command_registry_driven(self):
+        # Stage 9-1A: the Shell command list is built from flowcode_commands
+        # (real registry), not hard-coded stubs.
         self.assertIn('LINGO_COMMANDS', self.src)
-        for name in ('text_upper', 'text_lower', 'text_replace',
-                     'math_add', 'math_multiply', 'list_count'):
-            self.assertIn(name, self.src, f"stub command {name} missing")
+        self.assertIn('_lingo_build_commands', self.src)
+        self.assertIn('flowcode_commands', self.src)
+        self.assertIn('run_command', self.src)
 
     def test_three_panes(self):
         self.assertIn('_lg_panes', self.src)          # PanedWindow
