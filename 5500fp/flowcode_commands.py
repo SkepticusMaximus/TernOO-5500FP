@@ -121,7 +121,51 @@ COMMAND_REGISTRY = {
                          'output': 'list_of_text',
                          'params': [_p('list', 'list_of_text')],
                          'fn': lambda a: _unique(_to_list(a.get('list')))},
+    # ── Env (in-program state, NOT host env) ─────────────────────────────────
+    'cmd_env_set':    {'desc': 'Set an in-program env var', 'output': 'none',
+                       'params': [_p('name', 'text'), _p('value', 'text')],
+                       'fn': lambda a: _env_set(a)},
+    'cmd_env_get':    {'desc': 'Read an in-program env var', 'output': 'text',
+                       'params': [_p('name', 'text')],
+                       'fn': lambda a: _ENV.get(str(a.get('name', '')), '')},
+    'cmd_env_exists': {'desc': 'Check an in-program env var', 'output': 'bool',
+                       'params': [_p('name', 'text')],
+                       'fn': lambda a: str(a.get('name', '')) in _ENV},
+    # ── Control flow (editor-side: if fully; repeat/while need sub-flows at
+    # runtime — see Stage 9-1B t5asm path) ───────────────────────────────────
+    'cmd_ctl_if':     {'desc': 'If/else value selector', 'output': 'any',
+                       'params': [_p('condition', 'text'),
+                                  _p('then_value', 'text'), _p('else_value', 'text')],
+                       'fn': lambda a: (a.get('then_value', '')
+                                        if _cond(a.get('condition'))
+                                        else a.get('else_value', ''))},
+    'cmd_ctl_repeat': {'desc': 'Repeat a value n times → list', 'output': 'list_of_text',
+                       'params': [_p('count', 'number'), _p('value', 'text')],
+                       'fn': lambda a: [a.get('value', '')] * max(0, int(_num(a.get('count'))))},
+    'cmd_ctl_while':  {'desc': 'Conditional loop (runtime sub-flows)',
+                       'output': 'none',
+                       'params': [_p('predicate', 'text'), _p('body', 'text')],
+                       'fn': lambda a: ''},   # editor-side no-op; runtime executes
 }
+
+# In-program environment store (editor-side preview). Runtime uses the program
+# state region (same mechanism as widget state) — this is NOT the host env.
+_ENV = {}
+
+
+def _env_set(a):
+    _ENV[str(a.get('name', ''))] = str(a.get('value', ''))
+    return ''
+
+
+def _cond(v):
+    s = str(v).strip().lower()
+    if s in ('', '0', 'false', 'no'):
+        return False
+    try:
+        return float(s) != 0
+    except ValueError:
+        return True
 
 
 def _text_replace(a):

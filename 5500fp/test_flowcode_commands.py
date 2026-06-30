@@ -16,8 +16,8 @@ _s = _ilu.spec_from_file_location('flowcode_commands', _p)
 fc = _ilu.module_from_spec(_s); _s.loader.exec_module(fc)
 
 
-def run(name, **args):
-    return fc.run_command(name, args)
+def run(_cmd, **args):
+    return fc.run_command(_cmd, args)
 
 
 class TestText(unittest.TestCase):
@@ -87,6 +87,28 @@ class TestRegistry(unittest.TestCase):
         self.assertEqual(sum(n.startswith('cmd_text_') for n in names), 8)
         self.assertEqual(sum(n.startswith('cmd_math_') for n in names), 8)
         self.assertEqual(sum(n.startswith('cmd_list_') for n in names), 6)
+        self.assertEqual(sum(n.startswith('cmd_env_') for n in names), 3)
+        self.assertEqual(sum(n.startswith('cmd_ctl_') for n in names), 3)
+
+
+class TestEnvControl(unittest.TestCase):
+    """Stage 9-1B: env (in-program) + control commands, editor-side."""
+
+    def test_env_roundtrip(self):
+        run('cmd_env_set', name='greeting', value='hi')
+        self.assertEqual(run('cmd_env_get', name='greeting'), 'hi')
+        self.assertTrue(run('cmd_env_exists', name='greeting'))
+        self.assertFalse(run('cmd_env_exists', name='nope'))
+
+    def test_ctl_if(self):
+        self.assertEqual(run('cmd_ctl_if', condition='1', then_value='Y',
+                             else_value='N'), 'Y')
+        self.assertEqual(run('cmd_ctl_if', condition='0', then_value='Y',
+                             else_value='N'), 'N')
+
+    def test_ctl_repeat(self):
+        self.assertEqual(run('cmd_ctl_repeat', count='3', value='x'),
+                         ['x', 'x', 'x'])
 
 
 if __name__ == '__main__':
