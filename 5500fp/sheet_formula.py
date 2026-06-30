@@ -354,11 +354,131 @@ def _eval_call(fname, args, lookup, ctx=None):
     if fname == 'WIDGET':
         # Bare WIDGET("x") with no .property is not directly usable.
         raise FormulaError("#ERROR! WIDGET needs .property")
+    # ── Stage 8-10: extended math ────────────────────────────────────────────
+    if fname == 'MOD':
+        b = _num(_eval(args[1], lookup, ctx))
+        if b == 0:
+            raise FormulaError("#DIV/0!")
+        return _num(_eval(args[0], lookup, ctx)) % b
+    if fname == 'POWER':
+        return _num(_eval(args[0], lookup, ctx)) ** _num(_eval(args[1], lookup, ctx))
+    if fname == 'SQRT':
+        v = _num(_eval(args[0], lookup, ctx))
+        if v < 0:
+            raise FormulaError("#NUM!")
+        return v ** 0.5
+    if fname == 'INT':
+        import math as _m
+        return _m.floor(_num(_eval(args[0], lookup, ctx)))
+    # ── Stage 8-10: string functions ─────────────────────────────────────────
+    if fname == 'CONCAT':
+        return ''.join(str(_eval(a, lookup, ctx)) for a in args)
+    if fname == 'LEN':
+        return len(str(_eval(args[0], lookup, ctx)))
+    if fname == 'UPPER':
+        return str(_eval(args[0], lookup, ctx)).upper()
+    if fname == 'LOWER':
+        return str(_eval(args[0], lookup, ctx)).lower()
+    if fname == 'TRIM':
+        return str(_eval(args[0], lookup, ctx)).strip()
+    if fname == 'LEFT':
+        s = str(_eval(args[0], lookup, ctx))
+        n = int(_num(_eval(args[1], lookup, ctx))) if len(args) > 1 else 1
+        return s[:n]
+    if fname == 'RIGHT':
+        s = str(_eval(args[0], lookup, ctx))
+        n = int(_num(_eval(args[1], lookup, ctx))) if len(args) > 1 else 1
+        return s[-n:] if n > 0 else ''
+    if fname == 'MID':
+        s = str(_eval(args[0], lookup, ctx))
+        start = int(_num(_eval(args[1], lookup, ctx)))
+        length = int(_num(_eval(args[2], lookup, ctx)))
+        return s[start - 1:start - 1 + length]
+    # ── Stage 8-10: date functions (numeric days since 1970-01-01) ───────────
+    if fname == 'TODAY' or fname == 'NOW':
+        return _date_to_days(_dt.date.today())
+    if fname == 'DATE':
+        y = int(_num(_eval(args[0], lookup, ctx)))
+        mo = int(_num(_eval(args[1], lookup, ctx)))
+        d = int(_num(_eval(args[2], lookup, ctx)))
+        return _date_to_days(_dt.date(y, mo, d))
+    if fname == 'YEAR':
+        return _days_to_date(_num(_eval(args[0], lookup, ctx))).year
+    if fname == 'MONTH':
+        return _days_to_date(_num(_eval(args[0], lookup, ctx))).month
+    if fname == 'DAY':
+        return _days_to_date(_num(_eval(args[0], lookup, ctx))).day
+    if fname == 'DATEDIF':
+        a = int(_num(_eval(args[0], lookup, ctx)))
+        b = int(_num(_eval(args[1], lookup, ctx)))
+        unit = str(_eval(args[2], lookup, ctx)).upper() if len(args) > 2 else 'D'
+        d0, d1 = _days_to_date(a), _days_to_date(b)
+        if unit == 'D': return b - a
+        if unit == 'Y': return d1.year - d0.year
+        if unit == 'M': return (d1.year - d0.year) * 12 + (d1.month - d0.month)
+        return b - a
+    # ── Stage 8-10: lookup functions ─────────────────────────────────────────
+    if fname in ('VLOOKUP', 'HLOOKUP'):
+        key = _eval(args[0], lookup, ctx)
+        if args[1][0] != 'range':
+            raise FormulaError("#REF!")
+        grid = _range_grid(args[1], lookup)
+        idx = int(_num(_eval(args[2], lookup, ctx)))
+        if fname == 'HLOOKUP':
+            grid = [list(r) for r in zip(*grid)]   # transpose → search by row 0
+        for row in grid:
+            if str(row[0]) == str(key) or row[0] == key:
+                if idx < 1 or idx > len(row):
+                    raise FormulaError("#REF!")
+                return row[idx - 1]
+        raise FormulaError("#N/A")
+    if fname == 'INDEX':
+        if args[0][0] != 'range':
+            raise FormulaError("#REF!")
+        grid = _range_grid(args[0], lookup)
+        ri = int(_num(_eval(args[1], lookup, ctx)))
+        ci = int(_num(_eval(args[2], lookup, ctx))) if len(args) > 2 else 1
+        if ri < 1 or ri > len(grid) or ci < 1 or ci > len(grid[0]):
+            raise FormulaError("#REF!")
+        return grid[ri - 1][ci - 1]
+    if fname == 'MATCH':
+        key = _eval(args[0], lookup, ctx)
+        if args[1][0] != 'range':
+            raise FormulaError("#REF!")
+        flat = [v for row in _range_grid(args[1], lookup) for v in row]
+        for i, v in enumerate(flat):
+            if str(v) == str(key) or v == key:
+                return i + 1
+        raise FormulaError("#N/A")
     raise FormulaError(f"#NAME? {fname}")
 
 
 def _truthy(v):
     return bool(v) if not isinstance(v, (int, float)) else _num(v) != 0
+
+
+# ── Stage 8-10 helpers: dates (days since 1970-01-01) + 2D ranges ────────────
+
+import datetime as _dt
+_EPOCH = _dt.date(1970, 1, 1)
+
+
+def _days_to_date(n):
+    return _EPOCH + _dt.timedelta(days=int(n))
+
+
+def _date_to_days(d):
+    return (d - _EPOCH).days
+
+
+def _range_grid(node, lookup):
+    """('range', a, b) → 2D list of values (row-major)."""
+    ra = a1_to_rc(node[1]); rb = a1_to_rc(node[2])
+    r0, c0 = ra; r1, c1 = rb
+    r0, r1 = min(r0, r1), max(r0, r1)
+    c0, c1 = min(c0, c1), max(c0, c1)
+    return [[lookup(rc_to_a1(r, c)) for c in range(c0, c1 + 1)]
+            for r in range(r0, r1 + 1)]
 
 
 # ── Whole-sheet evaluation ───────────────────────────────────────────────────

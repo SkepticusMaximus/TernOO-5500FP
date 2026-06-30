@@ -202,5 +202,84 @@ class TestNativeFunctions(unittest.TestCase):
         self.assertTrue(err.get((0, 0), '').startswith('#NAME?'))
 
 
+class TestExtendedMathString(unittest.TestCase):
+    """Stage 8-10: math + string functions."""
+
+    def test_math(self):
+        for f, exp in [('=MOD(7,3)', 1), ('=POWER(2,10)', 1024),
+                       ('=SQRT(16)', 4), ('=INT(3.9)', 3)]:
+            res, _ = _evalsheet({(0, 0): ('cell_formula', f)})
+            self.assertEqual(res[(0, 0)], exp, f)
+
+    def test_strings(self):
+        cases = [('=CONCAT("a","b","c")', 'abc'), ('=LEN("hello")', 5),
+                 ('=UPPER("hi")', 'HI'), ('=LOWER("HI")', 'hi'),
+                 ('=TRIM("  x  ")', 'x'), ('=LEFT("hello",2)', 'he'),
+                 ('=RIGHT("hello",2)', 'lo'), ('=MID("hello",2,3)', 'ell')]
+        for f, exp in cases:
+            res, _ = _evalsheet({(0, 0): ('cell_formula', f)})
+            self.assertEqual(res[(0, 0)], exp, f)
+
+
+class TestDates(unittest.TestCase):
+    """Stage 8-10: date functions (days since 1970-01-01)."""
+
+    def test_date_roundtrip(self):
+        res, _ = _evalsheet({(0, 0): ('cell_formula', '=DATE(2026,6,30)')})
+        days = res[(0, 0)]
+        res2, _ = _evalsheet({
+            (0, 0): ('cell_value', str(days)),
+            (1, 0): ('cell_formula', '=YEAR(A1)'),
+            (2, 0): ('cell_formula', '=MONTH(A1)'),
+            (3, 0): ('cell_formula', '=DAY(A1)')})
+        self.assertEqual((res2[(1, 0)], res2[(2, 0)], res2[(3, 0)]), (2026, 6, 30))
+
+    def test_datedif(self):
+        res, _ = _evalsheet({
+            (0, 0): ('cell_formula', '=DATE(2026,1,1)'),
+            (1, 0): ('cell_formula', '=DATE(2026,1,11)'),
+            (2, 0): ('cell_formula', '=DATEDIF(A1,A2,"D")')})
+        self.assertEqual(res[(2, 0)], 10)
+
+    def test_today_is_number(self):
+        res, _ = _evalsheet({(0, 0): ('cell_formula', '=TODAY()')})
+        self.assertIsInstance(res[(0, 0)], int)
+
+
+class TestLookup(unittest.TestCase):
+    """Stage 8-10: VLOOKUP / HLOOKUP / INDEX / MATCH."""
+
+    def _grid(self):
+        # A1:B3 = [[1,'one'],[2,'two'],[3,'three']]
+        return {(0, 0): ('cell_value', '1'), (0, 1): ('cell_text', 'one'),
+                (1, 0): ('cell_value', '2'), (1, 1): ('cell_text', 'two'),
+                (2, 0): ('cell_value', '3'), (2, 1): ('cell_text', 'three')}
+
+    def test_vlookup(self):
+        g = self._grid(); g[(4, 0)] = ('cell_formula', '=VLOOKUP(2, A1:B3, 2)')
+        res, err = _evalsheet(g)
+        self.assertEqual(res[(4, 0)], 'two')
+
+    def test_vlookup_miss(self):
+        g = self._grid(); g[(4, 0)] = ('cell_formula', '=VLOOKUP(9, A1:B3, 2)')
+        res, err = _evalsheet(g)
+        self.assertEqual(err.get((4, 0)), '#N/A')
+
+    def test_index(self):
+        g = self._grid(); g[(4, 0)] = ('cell_formula', '=INDEX(A1:B3, 3, 2)')
+        res, _ = _evalsheet(g)
+        self.assertEqual(res[(4, 0)], 'three')
+
+    def test_index_out_of_range(self):
+        g = self._grid(); g[(4, 0)] = ('cell_formula', '=INDEX(A1:B3, 9, 1)')
+        res, err = _evalsheet(g)
+        self.assertEqual(err.get((4, 0)), '#REF!')
+
+    def test_match(self):
+        g = self._grid(); g[(4, 0)] = ('cell_formula', '=MATCH(3, A1:A3, 0)')
+        res, _ = _evalsheet(g)
+        self.assertEqual(res[(4, 0)], 3)
+
+
 if __name__ == '__main__':
     unittest.main()
