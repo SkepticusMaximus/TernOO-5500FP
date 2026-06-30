@@ -3898,6 +3898,12 @@ def run_gui():
         # Label overlay — render w['label'] on the canvas tile (live-update path)
         # The geometry renderer draws shapes only; labels must be composited here.
         _label_text = w.get('label', '')
+        # Stage 8-4: a read-only cell binding overrides the displayed text.
+        _bind_cell = _guic_get_prop_value(w, 'bind_value_to')
+        if _bind_cell:
+            _bound_val = _sheet_value_by_name(_bind_cell)
+            if _bound_val is not None:
+                _label_text = _bound_val
         if _label_text:
             guic.create_text(x, y, text=str(_label_text)[:20],
                            fill=txt, font=('Monospace', _gft), anchor='center')
@@ -4617,6 +4623,27 @@ def run_gui():
                          bg=C['palette'], fg=C['dim'], font=('Monospace', 7),
                          anchor='w', justify='left', wraplength=_GC_PROP_W - 24,
                          padx=6, pady=2).pack(fill='x', pady=(2, 0))
+
+        # ── Stage 8-4: Cell binding (read-only) — single-select only ──────────
+        if not is_multi:
+            tk.Label(_guic_prop_inner, text='Cell binding',
+                     bg=C['pal_btn'], fg=C['pal_border'],
+                     font=('Monospace', 7, 'bold'),
+                     anchor='w', padx=6, pady=2).pack(fill='x', pady=(4, 0))
+            brow = tk.Frame(_guic_prop_inner, bg=C['palette']); brow.pack(fill='x', padx=4, pady=1)
+            tk.Label(brow, text='bind_value_to', bg=C['palette'], fg=C['dim'],
+                     font=('Monospace', 7), width=12, anchor='w').pack(side='left')
+            _bv_var = tk.StringVar(value=_guic_get_prop_value(primary_w, 'bind_value_to') or '')
+            _bv_cb = ttk.Combobox(brow, textvariable=_bv_var,
+                                  values=_sheet_all_cell_names(),
+                                  font=('Monospace', 7))
+            _bv_cb.pack(side='left', fill='x', expand=True)
+            def _bv_commit(_e=None, _w=primary_w, _v=_bv_var):
+                guic_commit_property([_w['id']], 'bind_value_to', _v.get().strip())
+                guic_redraw()
+            _bv_cb.bind('<Return>', _bv_commit)
+            _bv_cb.bind('<FocusOut>', _bv_commit)
+            _bv_cb.bind('<<ComboboxSelected>>', _bv_commit)
 
         # Scroll to top after rebuild
         _guic_prop_cvs.yview_moveto(0)
@@ -5998,6 +6025,29 @@ def run_gui():
             _sheet_set_status(f"{len(errors)} formula error(s): "
                               + ", ".join(f"{_sheet_a1(*rc)} {e}"
                                           for rc, e in list(errors.items())[:3]))
+        # Stage 8-4: bound GUI widgets read cell values — refresh them.
+        try: guic_redraw()
+        except Exception: pass
+
+    def _sheet_value_by_name(name):
+        """Stage 8-4: display value of the cell named `name`, or None."""
+        if not name:
+            return None
+        for cell in fc_state['cells'].values():
+            if cell.get('name') == name:
+                return _sheet_display(cell)
+        return None
+
+    def _sheet_cell_by_name(name):
+        """(row, col) of the cell named `name`, or None."""
+        for rc, cell in fc_state['cells'].items():
+            if cell.get('name') == name:
+                return rc
+        return None
+
+    def _sheet_all_cell_names():
+        return sorted(c.get('name', '') for c in fc_state['cells'].values()
+                      if c.get('name'))
 
     def _sheet_display(cell):
         """Visible text for a cell. Stage 8-3: formula cells render their
@@ -6551,6 +6601,12 @@ def run_gui():
         fc_state['multi_sel'] = {wid}
         _gc_update_scrollregion(); guic_redraw(); guic_rebuild_prop_panel()
 
+    def _nav_center_sheet_on(rc):
+        """Stage 8-4: jump to the Sheet tab and select cell (row, col)."""
+        notebook.select(2)
+        fc_state['cell_sel'] = rc
+        _sheet_sync_fbar(); _sheet_redraw()
+
     def _nav_find_terminator_by_name(name):
         if not name:
             return None
@@ -6598,21 +6654,27 @@ def run_gui():
         w = guic_widget_at(x, y)
         if not w:
             return 'break'
-        if not w.get('name'):
-            guic_set_status('Name the widget first to wire a handler'); return 'break'
-        triples = _aw_names_for_widget(w)
-        if not triples:
-            guic_set_status(f"{w['kind']} emits no signals"); return 'break'
         actions = []
-        for (_sid, sname, hname) in triples:
-            term = _nav_find_terminator_by_name(hname)
-            if term is not None:
-                actions.append((f"Go to handler: {hname}",
-                                lambda t=term: (notebook.select(0),
-                                                _nav_center_flow_on(t['id']))))
-            else:
-                actions.append((f"Create handler: {hname}",
-                                lambda h=hname: _nav_create_and_go(h)))
+        # Stage 8-4: cell binding navigation
+        _bv = _guic_get_prop_value(w, 'bind_value_to')
+        if _bv:
+            rc = _sheet_cell_by_name(_bv)
+            if rc is not None:
+                actions.append((f"Go to cell: {_bv}",
+                                lambda r=rc: _nav_center_sheet_on(r)))
+        # 7c-3: signal-handler navigation (named widgets only)
+        if w.get('name'):
+            for (_sid, sname, hname) in _aw_names_for_widget(w):
+                term = _nav_find_terminator_by_name(hname)
+                if term is not None:
+                    actions.append((f"Go to handler: {hname}",
+                                    lambda t=term: (notebook.select(0),
+                                                    _nav_center_flow_on(t['id']))))
+                else:
+                    actions.append((f"Create handler: {hname}",
+                                    lambda h=hname: _nav_create_and_go(h)))
+        if not actions:
+            guic_set_status('No handlers or cell binding on this widget'); return 'break'
         if len(actions) == 1:
             actions[0][1]()
         else:

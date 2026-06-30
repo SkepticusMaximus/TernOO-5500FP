@@ -164,5 +164,34 @@ class TestStage82Wiring(unittest.TestCase):
         self.assertIn("elif k == 'cell_formula'", _FC_TEXT)
 
 
+class TestStage83Wiring(unittest.TestCase):
+    """Stage 8-3: formula engine wired into the Sheet tab."""
+
+    def test_engine_loaded(self):
+        self.assertIn("sheet_formula", _FC_TEXT)
+        self.assertIn("def _sheet_recompute", _FC_TEXT)
+
+    def test_recompute_on_edit(self):
+        self.assertIn("_sheet_recompute()", _FC_TEXT)
+
+    def test_fbar_result(self):
+        self.assertIn("_sheet_fbar_result", _FC_TEXT)
+
+
+class TestStage84Wiring(unittest.TestCase):
+    """Stage 8-4: cell→widget binding (read-only)."""
+
+    def test_bind_property_panel(self):
+        self.assertIn("bind_value_to", _FC_TEXT)
+        self.assertIn("def _sheet_value_by_name", _FC_TEXT)
+
+    def test_binding_overrides_label(self):
+        self.assertIn("_bound_val = _sheet_value_by_name", _FC_TEXT)
+
+    def test_ctrl_click_to_cell(self):
+        self.assertIn("def _nav_center_sheet_on", _FC_TEXT)
+        self.assertIn("Go to cell:", _FC_TEXT)
+
+
 if __name__ == '__main__':
     unittest.main()
