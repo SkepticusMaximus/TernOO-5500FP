@@ -623,3 +623,47 @@ class TestCompileToT5Asm(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+class TestStage83RTStaticCells(unittest.TestCase):
+    """Stage 8-3-RT: static formula cells compile to state-region literals."""
+
+    def _stream(self, cells, with_gui=True):
+        s = WordStream()
+        if with_gui:
+            s._widget_meta = {0: _make_widget(0, 'gui_window', 0, 0, 400, 300, 'W')}
+        s._cell_meta = cells
+        return s
+
+    def test_static_formula_literals(self):
+        s = self._stream({
+            (0, 0): {'id': 1, 'kind': 'cell_formula', 'row': 0, 'col': 0,
+                     'name': 'cell_A1', 'value': '=2+3'},
+            (1, 0): {'id': 2, 'kind': 'cell_formula', 'row': 1, 'col': 0,
+                     'name': 'cell_A2', 'value': '=A1*10'}})
+        asm = compile_wordstream_to_t5asm(s, 'sheet.fc')
+        self.assertIn('state_cell_1:', asm)
+        self.assertRegex(asm, r'state_cell_1:\s*\n\s*\.word 5\b')
+        self.assertRegex(asm, r'state_cell_2:\s*\n\s*\.word 50\b')
+        self.assertIn('cellstr_1', asm)   # draw-text label
+        self.assertIn('cellstr_2', asm)
+
+    def test_dynamic_cell_placeholder(self):
+        s = self._stream({
+            (0, 0): {'id': 1, 'kind': 'cell_formula', 'row': 0, 'col': 0,
+                     'name': 'cell_A1', 'value': '=WIDGET("x").label'}})
+        asm = compile_wordstream_to_t5asm(s, 'sheet.fc')
+        # dynamic → placeholder 0 in the state region
+        self.assertRegex(asm, r'state_cell_1:\s*\n\s*\.word 0\b')
+        self.assertIn('dynamic(placeholder)', asm)
+
+    def test_cells_only_compiles(self):
+        s = self._stream({(0, 0): {'id': 1, 'kind': 'cell_value', 'row': 0,
+                                   'col': 0, 'name': 'cell_A1', 'value': '42'}},
+                         with_gui=False)
+        asm = compile_wordstream_to_t5asm(s, 'sheet.fc')
+        self.assertIn('state_cell_1:', asm)
+        self.assertRegex(asm, r'state_cell_1:\s*\n\s*\.word 42\b')
+        # Cells route to the full PIGART path (window-open syscall), not trivial.
+        self.assertIn('event_loop_top:', asm)
+        self.assertIn('LI   R1, 100', asm)   # PIGART_OPEN_WINDOW

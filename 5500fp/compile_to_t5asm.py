@@ -468,6 +468,106 @@ def _section_open_window(stream: 'WordStream') -> list:
     ]
 
 
+# ===========================================================================
+# Stage 8-3-RT: Sheet cell compilation (static formulas → literals)
+# ===========================================================================
+
+_CELL_W, _CELL_H = 80, 24          # grid geometry (mirrors the Sheet editor)
+_CELL_HDR_W, _CELL_HDR_H = 40, 22
+
+try:
+    import sheet_formula as _sheetf
+except Exception:                  # pragma: no cover
+    _sheetf = None
+
+
+def _ast_has_native(node) -> bool:
+    """True if a formula AST references WIDGET / SIGNAL_LAST (→ dynamic)."""
+    if not isinstance(node, tuple):
+        return False
+    t = node[0]
+    if t == 'call' and node[1] in ('WIDGET', 'SIGNAL_LAST'):
+        return True
+    if t == 'member':
+        return _ast_has_native(node[1])
+    if t == 'call':
+        return any(_ast_has_native(a) for a in node[2])
+    if t == 'bin':
+        return _ast_has_native(node[2]) or _ast_has_native(node[3])
+    if t == 'unary':
+        return _ast_has_native(node[2])
+    return False
+
+
+def _cell_render_info(stream: 'WordStream') -> list:
+    """[(cell_id, row, col, display_str, numeric, is_static)] for every cell.
+
+    Static formulas (constants / other static cells) are evaluated at compile
+    time and their result becomes a literal. Dynamic formulas (WIDGET / signal
+    refs) emit a placeholder 0 here — Stage 8-3-RT-dynamic (Step 4) emits their
+    recompute fragments. cell_value / cell_text emit their literal directly.
+    """
+    cells = getattr(stream, '_cell_meta', {}) or {}
+    if not cells or _sheetf is None:
+        return []
+    dynamic = set()
+    for rc, cell in cells.items():
+        if cell.get('kind') == 'cell_formula':
+            src = str(cell.get('value', ''))
+            expr = src[1:] if src.startswith('=') else src
+            try:
+                if _ast_has_native(_sheetf.parse(expr)):
+                    dynamic.add(rc)
+            except Exception:
+                dynamic.add(rc)        # unparseable → treat as non-static
+    results, errors = _sheetf.evaluate_sheet(cells)
+    out = []
+    for rc, cell in cells.items():
+        r, c = rc
+        is_static = rc not in dynamic
+        if cell.get('kind') == 'cell_formula':
+            if is_static and rc in results and rc not in errors:
+                disp = _sheetf.format_result(results[rc])
+            else:
+                disp, is_static = '0', False
+        else:
+            disp = str(cell.get('value', ''))
+        try:
+            numeric = int(float(disp))
+        except (ValueError, TypeError):
+            numeric = 0
+        out.append((cell.get('id', 0), r, c, disp, numeric, is_static))
+    return out
+
+
+def _emit_cell_render(stream: 'WordStream') -> list:
+    """DRAW_TEXT for each Sheet cell at its grid position (each frame)."""
+    lines = []
+    for cid, r, c, _disp, _num, _stat in _cell_render_info(stream):
+        cx = _CELL_HDR_W + c * _CELL_W + 4
+        cy = _CELL_HDR_H + r * _CELL_H + 6
+        lines.append(f'    ; Render cell ({r},{c}) #{cid}')
+        lines += _emit_draw_text(cx, cy, f'cellstr_{cid}', 'color_black')
+        lines.append('')
+    return lines
+
+
+def _emit_cell_data(stream: 'WordStream') -> list:
+    """Cell display strings + state-region literals (state_cell_<id>)."""
+    lines = []
+    info = _cell_render_info(stream)
+    if info:
+        lines.append('; ---- Sheet cells (Stage 8-3-RT) ----')
+    for cid, r, c, disp, num, stat in info:
+        lines.append(f'cellstr_{cid}:')
+        lines += _emit_string_words(disp)
+        lines.append(f'state_cell_{cid}:')
+        lines.append(f'    .word {num:<6}  ; cell ({r},{c}) '
+                     f'{"static" if stat else "dynamic(placeholder)"}')
+        lines.append('')
+    return lines
+
+
 def _section_render(stream: 'WordStream', wstr_labels: dict,
                     eff_pos: dict, state_map: dict) -> list:
     """CLEAR + render all gui_* widgets at their layout-resolved positions."""
@@ -484,6 +584,7 @@ def _section_render(stream: 'WordStream', wstr_labels: dict,
         ex, ey, ew, eh = eff_pos.get(w.id, (w.x, w.y, w.w, w.h))
         lines += _emit_widget_render(w, ex, ey, ew, eh, wstr_labels, state_map)
         lines.append('')
+    lines += _emit_cell_render(stream)   # Stage 8-3-RT: draw Sheet cells
     return lines
 
 
@@ -829,6 +930,7 @@ def _section_data(stream: 'WordStream', wstr_labels: dict,
                 lines.append('    .word 0')
             lines.append('')
 
+    lines += _emit_cell_data(stream)     # Stage 8-3-RT: cell strings + state
     return lines
 
 
@@ -910,6 +1012,8 @@ def compile_wordstream_to_t5asm(stream: 'WordStream',
       - Any gui_* widget → Phase 7b-4 full PIGART path
       - No gui_* widgets → Phase 7b-1 trivial print-and-halt path
     """
-    if any(w.kind.startswith('gui_') for w in stream.iter_widgets()):
+    has_gui   = any(w.kind.startswith('gui_') for w in stream.iter_widgets())
+    has_cells = bool(getattr(stream, '_cell_meta', {}))
+    if has_gui or has_cells:           # Stage 8-3-RT: cells also need the PIGART path
         return _compile_full_program(stream, source_path)
     return _compile_trivial(stream, source_path)
