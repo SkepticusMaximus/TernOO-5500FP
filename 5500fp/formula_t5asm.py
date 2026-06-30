@@ -196,6 +196,13 @@ def _emit_call(fname, args, dst, ctx) -> list:
         return _emit_power(args, dst, ctx)
     if fname in ('SUM', 'MIN', 'MAX', 'AVERAGE', 'COUNT'):
         return _emit_aggregate(fname, args, dst, ctx)
+    if fname == 'SIGNAL_LAST':
+        name = args[0][1] if args and args[0][0] == 'str' else ''
+        return _emit_load_slot(ctx.resolver(('signal', name)), dst,
+                               f'SIGNAL_LAST {name}')
+    if fname == 'CELL':
+        name = args[0][1] if args and args[0][0] == 'str' else ''
+        return _emit_load_slot(ctx.resolver(name), dst, f'CELL {name}')
     raise FormulaCompileError(f"#NAME? {fname}")
 
 

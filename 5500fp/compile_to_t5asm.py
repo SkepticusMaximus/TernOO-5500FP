@@ -565,7 +565,158 @@ def _emit_cell_data(stream: 'WordStream') -> list:
         lines.append(f'    .word {num:<6}  ; cell ({r},{c}) '
                      f'{"static" if stat else "dynamic(placeholder)"}')
         lines.append('')
+    # Stage 8-3-RT-dynamic / 8-8-RT: SIGNAL_LAST slots (handler writes = Part 6)
+    for sig in _signal_last_names(stream):
+        lines.append(f'state_signal_last_{sig}:')
+        lines.append('    .word 0')
+        lines.append('')
     return lines
+
+
+def _signal_last_names(stream) -> list:
+    """Distinct signal names referenced by SIGNAL_LAST in any dynamic cell."""
+    names = []
+    for _cid, _rc, ast in _dynamic_cells(stream):
+        _collect_signal_last(ast, names)
+    seen, out = set(), []
+    for n in names:
+        if n not in seen:
+            seen.add(n); out.append(n)
+    return out
+
+
+def _collect_signal_last(node, acc):
+    if not isinstance(node, tuple):
+        return
+    if node[0] == 'call' and node[1] == 'SIGNAL_LAST' and node[2] \
+            and node[2][0][0] == 'str':
+        acc.append(node[2][0][1])
+    if node[0] == 'call':
+        for a in node[2]:
+            _collect_signal_last(a, acc)
+    elif node[0] == 'bin':
+        _collect_signal_last(node[2], acc); _collect_signal_last(node[3], acc)
+    elif node[0] == 'unary':
+        _collect_signal_last(node[2], acc)
+    elif node[0] == 'member':
+        _collect_signal_last(node[1], acc)
+
+
+# ---------------------------------------------------------------------------
+# Stage 8-3-RT-dynamic (Part 3): recompute subroutines + per-frame trigger
+# ---------------------------------------------------------------------------
+
+try:
+    import formula_t5asm as _fxc
+except Exception:                  # pragma: no cover
+    _fxc = None
+
+
+def _dynamic_cells(stream):
+    """[(cid, rc, ast)] for each dynamic formula cell (references WIDGET /
+    SIGNAL_LAST), in a topological order (cells depending on other dynamic
+    cells come after them)."""
+    if _fxc is None:
+        return []
+    cells = getattr(stream, '_cell_meta', {}) or {}
+    dyn = {}      # rc -> (cid, ast)
+    for rc, cell in cells.items():
+        if cell.get('kind') != 'cell_formula':
+            continue
+        src = str(cell.get('value', ''))
+        expr = src[1:] if src.startswith('=') else src
+        try:
+            ast = _sheetf.parse(expr)
+        except Exception:
+            continue
+        if _ast_has_native(ast):
+            dyn[rc] = (cell.get('id'), ast)
+    # address/name → rc, to order cells that reference other dynamic cells
+    addr2rc, name2rc = {}, {}
+    for rc, cell in cells.items():
+        addr2rc[_sheetf.rc_to_a1(*rc)] = rc
+        if cell.get('name'):
+            name2rc[cell['name']] = rc
+    deps = {}
+    for rc, (_cid, ast) in dyn.items():
+        d = set()
+        for ref in _sheetf.extract_refs(ast):
+            t = addr2rc.get(ref) or name2rc.get(ref)
+            if t in dyn:
+                d.add(t)
+        deps[rc] = d
+    # simple topological sort (deps first)
+    order, seen = [], set()
+    def visit(rc):
+        if rc in seen:
+            return
+        seen.add(rc)
+        for d in deps.get(rc, ()):
+            visit(d)
+        order.append(rc)
+    for rc in dyn:
+        visit(rc)
+    return [(dyn[rc][0], rc, dyn[rc][1]) for rc in order]
+
+
+def _make_recompute_resolver(stream, state_map):
+    """ref → state-slot label for the AST compiler. Cells → state_cell_<id>;
+    numeric widget props (toggle checked) → the widget's state slot;
+    SIGNAL_LAST → state_signal_last_<name> (slot emitted in Part 6)."""
+    cells = getattr(stream, '_cell_meta', {}) or {}
+    addr2id, name2id = {}, {}
+    for rc, cell in cells.items():
+        addr2id[_sheetf.rc_to_a1(*rc)] = cell.get('id')
+        if cell.get('name'):
+            name2id[cell['name']] = cell.get('id')
+    wname2slot = {}
+    for w in stream.iter_widgets('gui_'):
+        s = state_map.get(w.id) or {}
+        if 'checked' in s and getattr(w, 'name', ''):
+            wname2slot[w.name] = s['checked']
+
+    def resolver(ref):
+        if isinstance(ref, tuple):
+            if ref[0] == 'widget':
+                return wname2slot.get(ref[1])
+            if ref[0] == 'signal':
+                return f'state_signal_last_{ref[1]}'
+            return None
+        cid = addr2id.get(ref)
+        if cid is None:
+            cid = name2id.get(ref)
+        return f'state_cell_{cid}' if cid is not None else None
+    return resolver
+
+
+def _section_recompute_blocks(stream, state_map) -> list:
+    """recompute_cell_<id> subroutine per dynamic cell + recompute_all (topo)."""
+    dyn = _dynamic_cells(stream)
+    if not dyn or _fxc is None:
+        return []
+    resolver = _make_recompute_resolver(stream, state_map)
+    base = _fxc._BASE_REG
+    lines = ['; ---- Dynamic cell recompute (Stage 8-3-RT-dynamic) ----']
+    for cid, rc, ast in dyn:
+        lines.append(f'recompute_cell_{cid}:')
+        try:
+            lines += _fxc.compile_ast(ast, base, resolver)
+            lines.append(f'    LI   R20, state_cell_{cid}')
+            lines.append(f'    STW  R{base}, R20, 0   ; store result')
+        except Exception as e:
+            lines.append(f'    ; (uncompilable: {e}) — leave prior value')
+        lines.append('    RET')
+        lines.append('')
+    lines.append('recompute_all_cells:')
+    for cid, _rc, _ast in dyn:
+        lines.append(f'    CALL recompute_cell_{cid}')
+    lines.append('    RET')
+    lines.append('')
+    return lines
+
+
+def _has_dynamic_cells(stream) -> bool:
+    return bool(_dynamic_cells(stream))
 
 
 def _section_render(stream: 'WordStream', wstr_labels: dict,
@@ -584,6 +735,8 @@ def _section_render(stream: 'WordStream', wstr_labels: dict,
         ex, ey, ew, eh = eff_pos.get(w.id, (w.x, w.y, w.w, w.h))
         lines += _emit_widget_render(w, ex, ey, ew, eh, wstr_labels, state_map)
         lines.append('')
+    if _has_dynamic_cells(stream):       # Stage 8-3-RT-dynamic: refresh each frame
+        lines.append('    CALL recompute_all_cells   ; recompute dynamic cells')
     lines += _emit_cell_render(stream)   # Stage 8-3-RT: draw Sheet cells
     return lines
 
@@ -955,6 +1108,7 @@ def _compile_full_program(stream: 'WordStream', source_path: str) -> str:
     if has_entries:
         parts += _section_key_handler(stream, state_map)
     parts += _section_handler_blocks(stream)
+    parts += _section_recompute_blocks(stream, state_map)  # Stage 8-3-RT-dynamic
     parts += _section_data(stream, wstr_labels, state_map)
 
     return '\n'.join(parts) + '\n'

@@ -667,3 +667,39 @@ class TestStage83RTStaticCells(unittest.TestCase):
         # Cells route to the full PIGART path (window-open syscall), not trivial.
         self.assertIn('event_loop_top:', asm)
         self.assertIn('LI   R1, 100', asm)   # PIGART_OPEN_WINDOW
+
+
+class TestStage83RTDynamicCells(unittest.TestCase):
+    """Stage 8-3-RT-dynamic (Part 3): recompute subroutines + per-frame trigger."""
+
+    def _stream(self):
+        s = WordStream()
+        s._widget_meta = {
+            0: _make_widget(0, 'gui_window', 0, 0, 400, 300, 'W'),
+            1: dict(_make_widget(1, 'gui_toggle', 20, 40, 80, 30, 'T'),
+                    name='t1', properties=[{'name': 'checked', 'value': False}]),
+        }
+        s._cell_meta = {
+            (0, 0): {'id': 5, 'kind': 'cell_formula', 'row': 0, 'col': 0,
+                     'name': 'cell_A1', 'value': '=WIDGET("t1").checked * 100'}}
+        return s
+
+    def test_recompute_subroutine_emitted(self):
+        asm = compile_wordstream_to_t5asm(self._stream(), 'd.fc')
+        self.assertIn('recompute_cell_5:', asm)
+        self.assertIn('recompute_all_cells:', asm)
+        self.assertIn('STW  R21, R20', asm)          # store result to state slot
+
+    def test_recompute_called_each_frame(self):
+        asm = compile_wordstream_to_t5asm(self._stream(), 'd.fc')
+        self.assertIn('CALL recompute_all_cells', asm)
+
+    def test_static_unaffected(self):
+        # A purely static formula stays a literal — no recompute subroutine.
+        s = WordStream()
+        s._widget_meta = {0: _make_widget(0, 'gui_window', 0, 0, 400, 300, 'W')}
+        s._cell_meta = {(0, 0): {'id': 9, 'kind': 'cell_formula', 'row': 0,
+                                 'col': 0, 'name': 'cell_A1', 'value': '=2+3'}}
+        asm = compile_wordstream_to_t5asm(s, 'd.fc')
+        self.assertNotIn('recompute_cell_9:', asm)
+        self.assertRegex(asm, r'state_cell_9:\s*\n\s*\.word 5\b')
