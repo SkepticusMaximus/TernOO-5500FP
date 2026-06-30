@@ -72,7 +72,7 @@ _TOKEN_RE = re.compile(r"""
     \s*(?:
       (?P<number>\d+\.\d+|\d+)
     | (?P<string>"[^"]*")
-    | (?P<op><=|>=|==|!=|[-+*/(),:<>=])
+    | (?P<op><=|>=|==|!=|[-+*/(),:<>=.])
     | (?P<name>[A-Za-z_][A-Za-z0-9_]*)
     )
 """, re.VERBOSE)
@@ -155,6 +155,17 @@ class _Parser:
         return self.parse_primary()
 
     def parse_primary(self):
+        node = self._parse_atom()
+        # Stage 8-8: member access, e.g. WIDGET("x").label
+        while self.peek()[1] == '.':
+            self.next()
+            k, v = self.next()
+            if k != 'name':
+                raise FormulaError(f"expected property name after '.', got {v!r}")
+            node = ('member', node, v)
+        return node
+
+    def _parse_atom(self):
         kind, val = self.peek()
         if kind == 'number':
             self.next()
@@ -250,7 +261,7 @@ def _num(v):
     return 0
 
 
-def _eval(node, lookup):
+def _eval(node, lookup, ctx=None):
     t = node[0]
     if t == 'num':  return node[1]
     if t == 'str':  return node[1]
@@ -258,12 +269,24 @@ def _eval(node, lookup):
     if t == 'ref':  return lookup(node[1])
     if t == 'range':
         return [lookup(a) for a in _expand_range(node[1], node[2])]
+    if t == 'member':
+        # Stage 8-8: WIDGET("name").property
+        base = node[1]
+        if base[0] == 'call' and base[1] == 'WIDGET':
+            wname = _eval(base[2][0], lookup, ctx) if base[2] else ''
+            if ctx and ctx.get('widget_prop'):
+                v = ctx['widget_prop'](str(wname), node[2])
+                if v is None:
+                    raise FormulaError(f"#NAME? {wname}")
+                return v
+            raise FormulaError(f"#NAME? {wname}")
+        raise FormulaError("#ERROR!")
     if t == 'unary':
-        v = _num(_eval(node[2], lookup))
+        v = _num(_eval(node[2], lookup, ctx))
         return -v if node[1] == '-' else v
     if t == 'bin':
         op = node[1]
-        a = _eval(node[2], lookup); b = _eval(node[3], lookup)
+        a = _eval(node[2], lookup, ctx); b = _eval(node[3], lookup, ctx)
         if op in ('=', '=='): return a == b
         if op == '!=': return a != b
         if op == '<':  return _num(a) < _num(b)
@@ -279,14 +302,14 @@ def _eval(node, lookup):
                 raise FormulaError("#DIV/0!")
             return x / y
     if t == 'call':
-        return _eval_call(node[1], node[2], lookup)
+        return _eval_call(node[1], node[2], lookup, ctx)
     raise FormulaError("bad node")
 
 
-def _flat_nums(args, lookup):
+def _flat_nums(args, lookup, ctx=None):
     out = []
     for a in args:
-        v = _eval(a, lookup)
+        v = _eval(a, lookup, ctx)
         if isinstance(v, list):
             out.extend(_num(x) for x in v)
         else:
@@ -294,31 +317,43 @@ def _flat_nums(args, lookup):
     return out
 
 
-def _eval_call(fname, args, lookup):
-    if fname == 'SUM':     return sum(_flat_nums(args, lookup))
+def _eval_call(fname, args, lookup, ctx=None):
+    if fname == 'SUM':     return sum(_flat_nums(args, lookup, ctx))
     if fname == 'AVERAGE':
-        nums = _flat_nums(args, lookup)
+        nums = _flat_nums(args, lookup, ctx)
         return sum(nums) / len(nums) if nums else 0
-    if fname == 'MIN':     return min(_flat_nums(args, lookup) or [0])
-    if fname == 'MAX':     return max(_flat_nums(args, lookup) or [0])
-    if fname == 'COUNT':   return len(_flat_nums(args, lookup))
-    if fname == 'ABS':     return abs(_num(_eval(args[0], lookup)))
+    if fname == 'MIN':     return min(_flat_nums(args, lookup, ctx) or [0])
+    if fname == 'MAX':     return max(_flat_nums(args, lookup, ctx) or [0])
+    if fname == 'COUNT':   return len(_flat_nums(args, lookup, ctx))
+    if fname == 'ABS':     return abs(_num(_eval(args[0], lookup, ctx)))
     if fname == 'ROUND':
-        v = _num(_eval(args[0], lookup))
-        nd = int(_num(_eval(args[1], lookup))) if len(args) > 1 else 0
+        v = _num(_eval(args[0], lookup, ctx))
+        nd = int(_num(_eval(args[1], lookup, ctx))) if len(args) > 1 else 0
         return round(v, nd)
     if fname == 'IF':
-        cond = _eval(args[0], lookup)
+        cond = _eval(args[0], lookup, ctx)
         cond = bool(cond) if not isinstance(cond, (int, float)) else _num(cond) != 0
-        return _eval(args[1], lookup) if cond else (
-            _eval(args[2], lookup) if len(args) > 2 else False)
+        return _eval(args[1], lookup, ctx) if cond else (
+            _eval(args[2], lookup, ctx) if len(args) > 2 else False)
     if fname == 'NOT':
-        v = _eval(args[0], lookup)
+        v = _eval(args[0], lookup, ctx)
         return not (bool(v) if not isinstance(v, (int, float)) else _num(v) != 0)
     if fname == 'AND':
-        return all(_truthy(_eval(a, lookup)) for a in args)
+        return all(_truthy(_eval(a, lookup, ctx)) for a in args)
     if fname == 'OR':
-        return any(_truthy(_eval(a, lookup)) for a in args)
+        return any(_truthy(_eval(a, lookup, ctx)) for a in args)
+    # ── Stage 8-8: TernOO-native functions (all dynamic) ─────────────────────
+    if fname == 'CELL':
+        name = str(_eval(args[0], lookup, ctx)) if args else ''
+        return lookup(name)
+    if fname == 'SIGNAL_LAST':
+        name = str(_eval(args[0], lookup, ctx)) if args else ''
+        if ctx and ctx.get('signal_last'):
+            return ctx['signal_last'](name)
+        return 0          # no signal has fired (editor / never-fired)
+    if fname == 'WIDGET':
+        # Bare WIDGET("x") with no .property is not directly usable.
+        raise FormulaError("#ERROR! WIDGET needs .property")
     raise FormulaError(f"#NAME? {fname}")
 
 
@@ -328,10 +363,12 @@ def _truthy(v):
 
 # ── Whole-sheet evaluation ───────────────────────────────────────────────────
 
-def evaluate_sheet(cells):
+def evaluate_sheet(cells, ctx=None):
     """Evaluate every cell in a sheet.
 
     `cells`: dict {(row, col): {'kind', 'value', 'name'(optional)}}.
+    `ctx`:   optional {'widget_prop': fn(name, prop), 'signal_last': fn(name)}
+             for the Stage 8-8 native functions (WIDGET/SIGNAL_LAST).
     Returns (results, errors):
       results: {(row, col): evaluated python value}
       errors:  {(row, col): error string, e.g. '#CYCLE!', '#NAME?'}
@@ -420,7 +457,7 @@ def evaluate_sheet(cells):
                 raise FormulaError(f"#NAME? {ref}")
             return visit(tgt)
         try:
-            val = _eval(ast, lookup)
+            val = _eval(ast, lookup, ctx)
             results[rc] = val
         except _Cycle:
             raise

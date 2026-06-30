@@ -165,5 +165,42 @@ class TestNameError(unittest.TestCase):
         self.assertEqual(err.get((0, 0)), '#NAME? BOGUS')
 
 
+class TestNativeFunctions(unittest.TestCase):
+    """Stage 8-8: WIDGET, SIGNAL_LAST, CELL."""
+
+    def _eval_with_ctx(self, grid, ctx):
+        cells = {rc: _cell(*spec) for rc, spec in grid.items()}
+        return sf.evaluate_sheet(cells, ctx)
+
+    def test_cell_function(self):
+        res, err = self._eval_with_ctx({
+            (0, 0): ('cell_value', '7', 'total'),
+            (1, 0): ('cell_formula', '=CELL("total")+3')}, {})
+        self.assertEqual(res[(1, 0)], 10)
+
+    def test_widget_property(self):
+        ctx = {'widget_prop': lambda n, p: 'Submit' if (n, p) == ('btn', 'label') else None}
+        res, err = self._eval_with_ctx({
+            (0, 0): ('cell_formula', '=WIDGET("btn").label')}, ctx)
+        self.assertEqual(res[(0, 0)], 'Submit')
+
+    def test_widget_not_found(self):
+        ctx = {'widget_prop': lambda n, p: None}
+        res, err = self._eval_with_ctx({
+            (0, 0): ('cell_formula', '=WIDGET("nope").label')}, ctx)
+        self.assertTrue(err.get((0, 0), '').startswith('#NAME?'))
+
+    def test_signal_last_default(self):
+        ctx = {'signal_last': lambda n: 0}
+        res, err = self._eval_with_ctx({
+            (0, 0): ('cell_formula', '=SIGNAL_LAST("x")+1')}, ctx)
+        self.assertEqual(res[(0, 0)], 1)
+
+    def test_cell_name_not_found(self):
+        res, err = self._eval_with_ctx({
+            (0, 0): ('cell_formula', '=CELL("ghost")')}, {})
+        self.assertTrue(err.get((0, 0), '').startswith('#NAME?'))
+
+
 if __name__ == '__main__':
     unittest.main()

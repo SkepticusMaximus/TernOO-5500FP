@@ -6036,7 +6036,16 @@ def run_gui():
         cell as '_result' / '_error'. Re-run after any cell change."""
         if _sheet_formula is None:
             return
-        results, errors = _sheet_formula.evaluate_sheet(fc_state['cells'])
+        # Stage 8-8: context for WIDGET(...).prop and SIGNAL_LAST(...).
+        def _ctx_widget_prop(name, prop):
+            for w in fc_state['widgets'].values():
+                if w.get('name') == name:
+                    v = _guic_get_prop_value(w, prop)
+                    return v if v is not None else w.get(prop)
+            return None
+        # No runtime signal state in the editor → last value is 0 (never fired).
+        _ctx = {'widget_prop': _ctx_widget_prop, 'signal_last': lambda nm: 0}
+        results, errors = _sheet_formula.evaluate_sheet(fc_state['cells'], _ctx)
         for rc, cell in fc_state['cells'].items():
             cell.pop('_result', None); cell.pop('_error', None)
             if cell.get('kind') == 'cell_formula':
