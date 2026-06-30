@@ -703,3 +703,25 @@ class TestStage83RTDynamicCells(unittest.TestCase):
         asm = compile_wordstream_to_t5asm(s, 'd.fc')
         self.assertNotIn('recompute_cell_9:', asm)
         self.assertRegex(asm, r'state_cell_9:\s*\n\s*\.word 5\b')
+
+
+class TestStage88RTSignalLast(unittest.TestCase):
+    """Stage 8-8-RT (Part 6): SIGNAL_LAST live signal slots."""
+
+    def _stream(self):
+        s = WordStream()
+        s._widget_meta = {
+            0: _make_widget(0, 'gui_window', 0, 0, 400, 300, 'W'),
+            1: dict(_make_widget(1, 'gui_button', 20, 40, 80, 30, 'B'), name='btn1'),
+        }
+        s._cell_meta = {(0, 0): {'id': 5, 'kind': 'cell_formula', 'row': 0,
+                                 'col': 0, 'name': 'cell_A1',
+                                 'value': '=SIGNAL_LAST("btn1_clicked")'}}
+        return s
+
+    def test_signal_slot_and_counter(self):
+        asm = compile_wordstream_to_t5asm(self._stream(), 'd.fc')
+        self.assertIn('state_signal_last_btn1_clicked:', asm)
+        self.assertIn('fire counter', asm)                  # incremented on click
+        self.assertIn('recompute_cell_5:', asm)             # cell reads the slot
+        self.assertIn('state_signal_last_btn1_clicked', asm)

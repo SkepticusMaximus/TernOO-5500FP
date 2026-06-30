@@ -868,6 +868,7 @@ def _section_hit_test(stream: 'WordStream', eff_pos: dict,
     """
     lines = []
     all_widgets = list(stream.iter_widgets())
+    sigset = set(_signal_last_names(stream))   # Part 6: SIGNAL_LAST targets
 
     for widget in reversed(all_widgets):
         if not widget.kind.startswith('gui_'):
@@ -880,7 +881,12 @@ def _section_hit_test(stream: 'WordStream', eff_pos: dict,
         clicked_term = _resolve_handler(stream, widget.id, _SIGNAL_CLICKED)
         toggled_term = _resolve_handler(stream, widget.id, _SIGNAL_TOGGLED)
 
-        has_action = is_toggleable or is_entry or clicked_term or toggled_term
+        wname = getattr(widget, 'name', '') or ''
+        sl_clicked = f"{wname}_clicked" if wname and f"{wname}_clicked" in sigset else None
+        sl_toggled = f"{wname}_toggled" if wname and f"{wname}_toggled" in sigset else None
+
+        has_action = (is_toggleable or is_entry or clicked_term or toggled_term
+                      or sl_clicked or sl_toggled)   # Part 6: SIGNAL_LAST-only widgets
         if not has_action:
             continue
 
@@ -910,6 +916,11 @@ def _section_hit_test(stream: 'WordStream', eff_pos: dict,
                     f'    SUB  R15, R16, R15   ; toggle: 1 - R15',
                     f'    STW  R15, R20, 0',
                 ]
+                if sl_toggled:   # Part 6: SIGNAL_LAST payload = new checked value
+                    lines += [
+                        f'    LI   R20, state_signal_last_{sl_toggled}',
+                        f'    STW  R15, R20, 0   ; SIGNAL_LAST({sl_toggled})',
+                    ]
 
         # Set keyboard focus for entry widgets (focus was already cleared above)
         if is_entry:
@@ -917,6 +928,15 @@ def _section_hit_test(stream: 'WordStream', eff_pos: dict,
                 f'    ; Set focus to entry #{widget.id}',
                 f'    LI   R20, state_focused_entry',
                 f'    LI   R15, {widget.id}',
+                f'    STW  R15, R20, 0',
+            ]
+
+        # Part 6: SIGNAL_LAST for CLICKED (payload-less) → increment a fire counter
+        if sl_clicked:
+            lines += [
+                f'    LI   R20, state_signal_last_{sl_clicked}',
+                f'    LDW  R15, R20, 0',
+                f'    ADDI R15, R15, 1   ; SIGNAL_LAST({sl_clicked}) fire counter',
                 f'    STW  R15, R20, 0',
             ]
 
