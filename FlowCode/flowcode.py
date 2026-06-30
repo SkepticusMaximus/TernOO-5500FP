@@ -4645,6 +4645,29 @@ def run_gui():
             _bv_cb.bind('<FocusOut>', _bv_commit)
             _bv_cb.bind('<<ComboboxSelected>>', _bv_commit)
 
+            # Stage 8-5: write-back — push a value into the bound cell. (In the
+            # editor there is no live widget input; this is the editor-side
+            # expression of the bidirectional binding. Runtime write-back from a
+            # running widget is the compiler-runtime follow-on.)
+            if (_guic_get_prop_value(primary_w, 'bind_value_to') or '').strip():
+                wrow = tk.Frame(_guic_prop_inner, bg=C['palette']); wrow.pack(fill='x', padx=4, pady=1)
+                tk.Label(wrow, text='push value', bg=C['palette'], fg=C['dim'],
+                         font=('Monospace', 7), width=12, anchor='w').pack(side='left')
+                _wb_var = tk.StringVar()
+                _wb_e = tk.Entry(wrow, textvariable=_wb_var, bg=C['canvas'], fg=C['text'],
+                                 insertbackground=C['text'], font=('Monospace', 7), relief='flat')
+                _wb_e.pack(side='left', fill='x', expand=True)
+                def _wb_commit(_e=None, _w=primary_w, _v=_wb_var):
+                    name = (_guic_get_prop_value(_w, 'bind_value_to') or '').strip()
+                    rc = _sheet_cell_by_name(name)
+                    if rc is not None:
+                        _sheet_set_cell(rc[0], rc[1], _v.get())
+                        if fc_state.get('stream') is not None:
+                            fc_state['stream'].ensure_unique_names()
+                        _sheet_recompute(); _sheet_redraw(); guic_redraw()
+                        guic_set_status(f"Wrote '{_v.get()}' → {name}")
+                _wb_e.bind('<Return>', _wb_commit)
+
         # Scroll to top after rebuild
         _guic_prop_cvs.yview_moveto(0)
 
@@ -6049,15 +6072,36 @@ def run_gui():
         return sorted(c.get('name', '') for c in fc_state['cells'].values()
                       if c.get('name'))
 
+    def _sheet_fmt_number(cell, text):
+        """Stage 8-7: apply number formatting (decimals/currency/percent) to a
+        numeric display string; non-numeric text passes through unchanged."""
+        try:
+            v = float(text)
+        except (ValueError, TypeError):
+            return text
+        if cell.get('fmt_percent'):
+            v *= 100.0
+        dec = cell.get('fmt_decimals')
+        s = (f"{v:.{int(dec)}f}" if dec not in (None, '') else
+             (f"{int(v)}" if v == int(v) else f"{v:g}"))
+        if cell.get('fmt_currency'):
+            s = '$' + s
+        if cell.get('fmt_percent'):
+            s = s + '%'
+        return s
+
     def _sheet_display(cell):
         """Visible text for a cell. Stage 8-3: formula cells render their
-        evaluated result (or error); value/text render their literal."""
+        evaluated result (or error); value/text render their literal.
+        Stage 8-7: numeric content honours the cell's number format."""
         if cell.get('kind') == 'cell_formula':
             if '_error' in cell:
                 return cell['_error']
             if '_result' in cell:
-                return cell['_result']
+                return _sheet_fmt_number(cell, cell['_result'])
             return str(cell.get('value', ''))   # not yet computed
+        if cell.get('kind') == 'cell_value':
+            return _sheet_fmt_number(cell, str(cell.get('value', '')))
         return str(cell.get('value', ''))
 
     def _sheet_set_cell(row, col, text):
@@ -6123,26 +6167,36 @@ def run_gui():
                     continue
                 if sx > cw or sy > ch:
                     continue
-                sheet_canvas.create_rectangle(sx, sy, ex, ey, fill=C['canvas'],
-                                              outline=grid_col)
                 cell = fc_state['cells'].get((row, col))
+                # Stage 8-7: per-cell background colour
+                bgfill = (cell.get('fmt_bg') if cell and cell.get('fmt_bg')
+                          else C['canvas'])
+                sheet_canvas.create_rectangle(sx, sy, ex, ey, fill=bgfill,
+                                              outline=grid_col)
                 if cell:
-                    # Stage 8-2: per-kind rendering — numbers right-aligned, text
-                    # left-aligned, formulas left-aligned in an accent colour.
+                    # Stage 8-2 per-kind defaults: numbers right, text/formula
+                    # left, formula in accent colour. Stage 8-7 format overrides.
                     k = cell.get('kind')
-                    fnt = ('Monospace', max(6, int(9 * z)))
-                    if k == 'cell_value':
-                        sheet_canvas.create_text(ex - 4, (sy + ey) / 2,
-                                                 text=_sheet_display(cell), anchor='e',
-                                                 fill=C['text'], font=fnt)
+                    fsz = max(6, int(9 * z))
+                    fnt = (('Monospace', fsz, 'bold') if cell.get('fmt_bold')
+                           else ('Monospace', fsz))
+                    align = cell.get('fmt_align') or (
+                        'right' if k == 'cell_value' else 'left')
+                    if cell.get('fmt_fg'):
+                        col_fill = cell['fmt_fg']
                     elif k == 'cell_formula':
-                        sheet_canvas.create_text(sx + 4, (sy + ey) / 2,
-                                                 text=_sheet_display(cell), anchor='w',
-                                                 fill=C['pal_border'], font=fnt)
-                    else:   # cell_text
-                        sheet_canvas.create_text(sx + 4, (sy + ey) / 2,
-                                                 text=_sheet_display(cell), anchor='w',
-                                                 fill=C['text'], font=fnt)
+                        col_fill = C['pal_border']
+                    else:
+                        col_fill = C['text']
+                    if align == 'right':
+                        tx, anc = ex - 4, 'e'
+                    elif align == 'center':
+                        tx, anc = (sx + ex) / 2, 'center'
+                    else:
+                        tx, anc = sx + 4, 'w'
+                    sheet_canvas.create_text(tx, (sy + ey) / 2,
+                                             text=_sheet_display(cell), anchor=anc,
+                                             fill=col_fill, font=fnt)
         # Selection highlight
         srow, scol = fc_state['cell_sel']
         L, T, R, B = _sheet_cell_rect(srow, scol)
@@ -6231,6 +6285,80 @@ def run_gui():
             fc_state['cell_sel'] = hit; _sheet_sync_fbar()
             _sheet_begin_edit()
 
+    def _sheet_on_rclick(event):
+        """Stage 8-7: right-click a cell → Format cell dialog."""
+        dx, dy = _sht_s2d(event.x, event.y)
+        hit = _sheet_cell_at(dx, dy)
+        if hit:
+            fc_state['cell_sel'] = hit; _sheet_sync_fbar(); _sheet_redraw()
+            _sheet_format_dialog(*hit)
+
+    def _sheet_format_dialog(row, col):
+        cell = fc_state['cells'].get((row, col))
+        if cell is None:   # format an empty cell → create a blank text cell
+            cid = fc_state['cell_next_id']; fc_state['cell_next_id'] += 1
+            cell = {'id': cid, 'kind': 'cell_text', 'row': row, 'col': col,
+                    'name': _sheet_make_cell_name(row, col),
+                    'label': _sheet_a1(row, col), 'value': '', 'properties': []}
+            fc_state['cells'][(row, col)] = cell
+        dlg = tk.Toplevel(root); dlg.title(f"Format {_sheet_a1(row, col)}")
+        dlg.configure(bg=C['palette']); dlg.transient(root); dlg.resizable(False, False)
+        r = [0]
+        def addrow(lbl):
+            tk.Label(dlg, text=lbl, bg=C['palette'], fg=C['text'],
+                     font=('Monospace', 9), anchor='e', width=12
+                     ).grid(row=r[0], column=0, padx=8, pady=3, sticky='e')
+        addrow('Align:')
+        align_var = tk.StringVar(value=cell.get('fmt_align', ''))
+        ttk.Combobox(dlg, textvariable=align_var, width=10,
+                     values=['', 'left', 'center', 'right']
+                     ).grid(row=r[0], column=1, padx=8, pady=3, sticky='w'); r[0] += 1
+        addrow('Bold:')
+        bold_var = tk.BooleanVar(value=bool(cell.get('fmt_bold')))
+        tk.Checkbutton(dlg, variable=bold_var, bg=C['palette'], selectcolor=C['canvas'],
+                       activebackground=C['palette']).grid(row=r[0], column=1, sticky='w', padx=8); r[0] += 1
+        addrow('Decimals:')
+        dec_var = tk.StringVar(value=str(cell.get('fmt_decimals', '')))
+        tk.Entry(dlg, textvariable=dec_var, width=6, bg=C['canvas'], fg=C['text'],
+                 insertbackground=C['text']).grid(row=r[0], column=1, sticky='w', padx=8); r[0] += 1
+        addrow('Currency $:')
+        cur_var = tk.BooleanVar(value=bool(cell.get('fmt_currency')))
+        tk.Checkbutton(dlg, variable=cur_var, bg=C['palette'], selectcolor=C['canvas'],
+                       activebackground=C['palette']).grid(row=r[0], column=1, sticky='w', padx=8); r[0] += 1
+        addrow('Percent %:')
+        pct_var = tk.BooleanVar(value=bool(cell.get('fmt_percent')))
+        tk.Checkbutton(dlg, variable=pct_var, bg=C['palette'], selectcolor=C['canvas'],
+                       activebackground=C['palette']).grid(row=r[0], column=1, sticky='w', padx=8); r[0] += 1
+        addrow('Text colour:')
+        fg_var = tk.StringVar(value=cell.get('fmt_fg', ''))
+        tk.Entry(dlg, textvariable=fg_var, width=10, bg=C['canvas'], fg=C['text'],
+                 insertbackground=C['text']).grid(row=r[0], column=1, sticky='w', padx=8); r[0] += 1
+        addrow('Cell colour:')
+        bg_var = tk.StringVar(value=cell.get('fmt_bg', ''))
+        tk.Entry(dlg, textvariable=bg_var, width=10, bg=C['canvas'], fg=C['text'],
+                 insertbackground=C['text']).grid(row=r[0], column=1, sticky='w', padx=8); r[0] += 1
+
+        def _apply():
+            def setf(key, val):
+                if val in ('', None, False):
+                    cell.pop(key, None)
+                else:
+                    cell[key] = val
+            setf('fmt_align', align_var.get().strip())
+            setf('fmt_bold', bool(bold_var.get()))
+            d = dec_var.get().strip()
+            setf('fmt_decimals', int(d) if d.isdigit() else '')
+            setf('fmt_currency', bool(cur_var.get()))
+            setf('fmt_percent', bool(pct_var.get()))
+            setf('fmt_fg', fg_var.get().strip())
+            setf('fmt_bg', bg_var.get().strip())
+            _sheet_redraw(); dlg.destroy()
+        btns = tk.Frame(dlg, bg=C['palette']); btns.grid(row=r[0], column=0, columnspan=2, pady=8)
+        tk.Button(btns, text='Apply', command=_apply, bg=C['pal_btn'], fg=C['text'],
+                  relief='flat', padx=10).pack(side='left', padx=4)
+        tk.Button(btns, text='Cancel', command=dlg.destroy, bg=C['pal_btn'], fg=C['text'],
+                  relief='flat', padx=10).pack(side='left', padx=4)
+
     def _sheet_edit_key(event):
         k = event.keysym
         if k == 'Return':
@@ -6303,6 +6431,7 @@ def run_gui():
     sheet_canvas.bind('<Enter>',            lambda e: sheet_canvas.focus_set())
     sheet_canvas.bind('<Button-1>',         _sheet_on_click)
     sheet_canvas.bind('<Double-Button-1>',  _sheet_on_double)
+    sheet_canvas.bind('<Button-3>',         _sheet_on_rclick)
     sheet_canvas.bind('<Key>',              _sheet_on_key)
     sheet_canvas.bind('<Button-4>',         _sht_on_scroll_v)
     sheet_canvas.bind('<Button-5>',         _sht_on_scroll_v)

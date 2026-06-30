@@ -193,5 +193,25 @@ class TestStage84Wiring(unittest.TestCase):
         self.assertIn("Go to cell:", _FC_TEXT)
 
 
+class TestStage85And87Wiring(unittest.TestCase):
+    """Stage 8-5 write-back + 8-7 cell formatting."""
+
+    def test_writeback_field(self):
+        self.assertIn("push value", _FC_TEXT)        # write-back affordance
+
+    def test_format_dialog(self):
+        self.assertIn("def _sheet_format_dialog", _FC_TEXT)
+        self.assertIn("_sheet_on_rclick", _FC_TEXT)
+        self.assertIn("<Button-3>", _FC_TEXT)
+
+    def test_number_formatting(self):
+        for key in ('fmt_decimals', 'fmt_currency', 'fmt_percent'):
+            self.assertIn(key, _FC_TEXT)
+
+    def test_format_rendering(self):
+        for key in ('fmt_bold', 'fmt_fg', 'fmt_bg', 'fmt_align'):
+            self.assertIn(key, _FC_TEXT)
+
+
 if __name__ == '__main__':
     unittest.main()
