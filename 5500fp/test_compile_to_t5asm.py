@@ -725,3 +725,32 @@ class TestStage88RTSignalLast(unittest.TestCase):
         self.assertIn('fire counter', asm)                  # incremented on click
         self.assertIn('recompute_cell_5:', asm)             # cell reads the slot
         self.assertIn('state_signal_last_btn1_clicked', asm)
+
+
+class TestStage85RTWriteBack(unittest.TestCase):
+    """Stage 8-5-RT (Part 5): runtime cell↔widget write-back."""
+
+    def test_toggle_writes_bound_cell(self):
+        s = WordStream()
+        s._widget_meta = {
+            0: _make_widget(0, 'gui_window', 0, 0, 400, 300, 'W'),
+            1: dict(_make_widget(1, 'gui_toggle', 20, 40, 80, 30, 'T'), name='tog',
+                    properties=[{'name': 'checked', 'value': False},
+                                {'name': 'bind_value_to', 'value': 'cell_input'}]),
+        }
+        s._cell_meta = {(0, 0): {'id': 5, 'kind': 'cell_value', 'row': 0,
+                                 'col': 0, 'name': 'cell_input', 'value': '0'}}
+        asm = compile_wordstream_to_t5asm(s, 'd.fc')
+        self.assertIn('write-back to cell_input', asm)
+        self.assertIn('state_cell_5', asm)
+
+    def test_no_quotes_or_unicode_in_emitted_comments(self):
+        # Assembler tokenizer mis-handles quotes/unicode in comments — keep ASCII.
+        s = WordStream()
+        s._widget_meta = {0: _make_widget(0, 'gui_window', 0, 0, 400, 300, 'W')}
+        s._cell_meta = {(0, 0): {'id': 5, 'kind': 'cell_formula', 'row': 0,
+                                 'col': 0, 'name': 'cell_A1',
+                                 'value': '=WIDGET("x").checked'}}
+        asm = compile_wordstream_to_t5asm(s, 'd.fc')
+        self.assertNotIn('"', asm.split('; ============ Data')[0])  # no quotes in code
+        self.assertNotIn('→', asm)

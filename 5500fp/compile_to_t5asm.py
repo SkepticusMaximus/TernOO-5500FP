@@ -689,13 +689,13 @@ def _emit_int_to_str_routine() -> list:
         '    BLTZ R21, _its_neg',
         '    JMP  _its_signdone',
         '_its_neg:',
-        '    LI   R24, 45           ; "-"',
+        '    LI   R24, 45           ; minus sign',
         '    STW  R24, R23, 0',
         '    ADDI R23, R23, 1',
         '    SUB  R21, R0, R21      ; abs',
         '_its_signdone:',
         '    BNEZ R21, _its_digits',
-        '    LI   R24, 48           ; "0"',
+        '    LI   R24, 48           ; digit zero',
         '    STW  R24, R23, 0',
         '    ADDI R23, R23, 1',
         '    JMP  _its_term',
@@ -705,8 +705,8 @@ def _emit_int_to_str_routine() -> list:
         '    MOV  R29, R28          ; scratch ptr (LSD first)',
         '_its_dloop:',
         '    BEQZ R21, _its_copy',
-        '    MOD  R24, R21, R27     ; digit',
-        '    ADDI R24, R24, 48      ; → ASCII',
+        '    MOD  R24, R21, R27     ; digit value',
+        '    ADDI R24, R24, 48      ; to ASCII',
         '    STW  R24, R29, 0',
         '    ADDI R29, R29, 1',
         '    DIV  R21, R21, R27',
@@ -869,6 +869,9 @@ def _section_hit_test(stream: 'WordStream', eff_pos: dict,
     lines = []
     all_widgets = list(stream.iter_widgets())
     sigset = set(_signal_last_names(stream))   # Part 6: SIGNAL_LAST targets
+    # Part 5: cell name → state slot, for bind_value_to write-back.
+    _cells = getattr(stream, '_cell_meta', {}) or {}
+    cellname2id = {c['name']: c['id'] for c in _cells.values() if c.get('name')}
 
     for widget in reversed(all_widgets):
         if not widget.kind.startswith('gui_'):
@@ -919,7 +922,17 @@ def _section_hit_test(stream: 'WordStream', eff_pos: dict,
                 if sl_toggled:   # Part 6: SIGNAL_LAST payload = new checked value
                     lines += [
                         f'    LI   R20, state_signal_last_{sl_toggled}',
-                        f'    STW  R15, R20, 0   ; SIGNAL_LAST({sl_toggled})',
+                        f'    STW  R15, R20, 0   ; signal_last {sl_toggled}',
+                    ]
+                # Part 5: cell↔widget write-back — bound cell gets the new value.
+                _bv = None
+                for p in getattr(widget, 'properties', []):
+                    if p.get('name') == 'bind_value_to':
+                        _bv = p.get('value'); break
+                if _bv and _bv in cellname2id:
+                    lines += [
+                        f'    LI   R20, state_cell_{cellname2id[_bv]}',
+                        f'    STW  R15, R20, 0   ; write-back to {_bv}',
                     ]
 
         # Set keyboard focus for entry widgets (focus was already cleared above)
@@ -936,7 +949,7 @@ def _section_hit_test(stream: 'WordStream', eff_pos: dict,
             lines += [
                 f'    LI   R20, state_signal_last_{sl_clicked}',
                 f'    LDW  R15, R20, 0',
-                f'    ADDI R15, R15, 1   ; SIGNAL_LAST({sl_clicked}) fire counter',
+                f'    ADDI R15, R15, 1   ; signal_last {sl_clicked} fire counter',
                 f'    STW  R15, R20, 0',
             ]
 
