@@ -543,11 +543,20 @@ def _cell_render_info(stream: 'WordStream') -> list:
 def _emit_cell_render(stream: 'WordStream') -> list:
     """DRAW_TEXT for each Sheet cell at its grid position (each frame)."""
     lines = []
-    for cid, r, c, _disp, _num, _stat in _cell_render_info(stream):
+    for cid, r, c, _disp, _num, stat in _cell_render_info(stream):
         cx = _CELL_HDR_W + c * _CELL_W + 4
         cy = _CELL_HDR_H + r * _CELL_H + 6
         lines.append(f'    ; Render cell ({r},{c}) #{cid}')
-        lines += _emit_draw_text(cx, cy, f'cellstr_{cid}', 'color_black')
+        if stat:
+            lines += _emit_draw_text(cx, cy, f'cellstr_{cid}', 'color_black')
+        else:
+            # Stage 8-3-RT-dynamic: convert the live state value to a string
+            # and draw it (recompute_all already ran this frame).
+            lines.append(f'    LI   R21, state_cell_{cid}')
+            lines.append(f'    LDW  R21, R21, 0')
+            lines.append(f'    LI   R22, cellbuf_{cid}')
+            lines.append('    CALL int_to_str')
+            lines += _emit_draw_text(cx, cy, f'cellbuf_{cid}', 'color_black')
         lines.append('')
     return lines
 
@@ -570,6 +579,16 @@ def _emit_cell_data(stream: 'WordStream') -> list:
         lines.append(f'state_signal_last_{sig}:')
         lines.append('    .word 0')
         lines.append('')
+    # Stage 8-3-RT-dynamic: per-cell render buffers + int_to_str scratch
+    dyn = _dynamic_cells(stream)
+    if dyn:
+        lines.append('_its_scratch:')
+        lines += ['    .word 0'] * 16
+        lines.append('')
+        for cid, _rc, _ast in dyn:
+            lines.append(f'cellbuf_{cid}:')
+            lines += ['    .word 0'] * 16
+            lines.append('')
     return lines
 
 
@@ -659,6 +678,56 @@ def _dynamic_cells(stream):
     return [(dyn[rc][0], rc, dyn[rc][1]) for rc in order]
 
 
+def _emit_int_to_str_routine() -> list:
+    """Reusable subroutine: int_to_str converts the integer in R21 to a
+    null-terminated decimal word-string at the buffer address in R22.
+    Uses R23..R30 + a shared scratch buffer (_its_scratch). Non-reentrant
+    (called sequentially per cell each frame). Handles sign and zero."""
+    return [
+        'int_to_str:                ; R21=value, R22=out buffer',
+        '    MOV  R23, R22          ; write pointer',
+        '    BLTZ R21, _its_neg',
+        '    JMP  _its_signdone',
+        '_its_neg:',
+        '    LI   R24, 45           ; "-"',
+        '    STW  R24, R23, 0',
+        '    ADDI R23, R23, 1',
+        '    SUB  R21, R0, R21      ; abs',
+        '_its_signdone:',
+        '    BNEZ R21, _its_digits',
+        '    LI   R24, 48           ; "0"',
+        '    STW  R24, R23, 0',
+        '    ADDI R23, R23, 1',
+        '    JMP  _its_term',
+        '_its_digits:',
+        '    LI   R27, 10',
+        '    LI   R28, _its_scratch',
+        '    MOV  R29, R28          ; scratch ptr (LSD first)',
+        '_its_dloop:',
+        '    BEQZ R21, _its_copy',
+        '    MOD  R24, R21, R27     ; digit',
+        '    ADDI R24, R24, 48      ; → ASCII',
+        '    STW  R24, R29, 0',
+        '    ADDI R29, R29, 1',
+        '    DIV  R21, R21, R27',
+        '    JMP  _its_dloop',
+        '_its_copy:                 ; copy scratch reversed → out',
+        '_its_cloop:',
+        '    SUBI R29, R29, 1',
+        '    CMP  R30, R29, R28',
+        '    BLTZ R30, _its_term    ; ptr < base → done',
+        '    LDW  R24, R29, 0',
+        '    STW  R24, R23, 0',
+        '    ADDI R23, R23, 1',
+        '    JMP  _its_cloop',
+        '_its_term:',
+        '    LI   R24, 0',
+        '    STW  R24, R23, 0       ; null terminator',
+        '    RET',
+        '',
+    ]
+
+
 def _make_recompute_resolver(stream, state_map):
     """ref → state-slot label for the AST compiler. Cells → state_cell_<id>;
     numeric widget props (toggle checked) → the widget's state slot;
@@ -697,6 +766,7 @@ def _section_recompute_blocks(stream, state_map) -> list:
     resolver = _make_recompute_resolver(stream, state_map)
     base = _fxc._BASE_REG
     lines = ['; ---- Dynamic cell recompute (Stage 8-3-RT-dynamic) ----']
+    lines += _emit_int_to_str_routine()   # runtime int→string for dynamic render
     for cid, rc, ast in dyn:
         lines.append(f'recompute_cell_{cid}:')
         try:
