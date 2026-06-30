@@ -776,6 +776,10 @@ def run_gui():
     fc_tab = tk.Frame(notebook,bg=C['bg'])
     notebook.add(fc_tab, text='  Flow  ')
 
+    # Phase 7c-4: breadcrumb bar (pocket scope path) above the Flow canvas
+    _fc_breadcrumb = tk.Frame(fc_tab, bg=C['palette'])
+    _fc_breadcrumb.pack(side='top', fill='x')
+
     _fc_cv_frame = tk.Frame(fc_tab, bg=C['canvas'])
     _fc_cv_frame.pack(side='top', fill='both', expand=True)
     _fc_vsb = tk.Scrollbar(_fc_cv_frame, orient='vertical',   bg=C['palette'])
@@ -1469,12 +1473,79 @@ def run_gui():
     # ── Phase 6C: FlowCode dict helpers ──────────────────────────────────────
 
     def _fc_sym_at(x, y):
-        """Hit test: return flow symbol dict at (x,y) or None."""
+        """Hit test: return flow symbol dict at (x,y) or None — current scope only."""
         hw, hh = SYMBOL_W // 2, SYMBOL_H // 2
+        scope = fc_state.get('flow_scope')
         for s in reversed(list(fc_state['flow_symbols'].values())):
+            if s.get('parent_scope') != scope:
+                continue   # Phase 7c-4: only symbols in the current pocket scope
             if abs(s['x'] - x) <= hw and abs(s['y'] - y) <= hh:
                 return s
         return None
+
+    # ── Phase 7c-4: pocket scope helpers ──────────────────────────────────────
+    _FC_CONTAINER_KINDS = {'flow_process', 'flow_subroutine'}
+
+    def _fc_children_of(scope_name):
+        """All flow symbols whose parent_scope == scope_name."""
+        return [s for s in fc_state['flow_symbols'].values()
+                if s.get('parent_scope') == scope_name]
+
+    def _fc_pocket_contents(sym):
+        """(name, kind) for each child of `sym` (by its name)."""
+        return [(c.get('name', ''), c.get('kind', ''))
+                for c in _fc_children_of(sym.get('name'))]
+
+    def _fc_has_pocket(sym):
+        """True if `sym` has any children (renders the 📦 affordance)."""
+        nm = sym.get('name')
+        return bool(nm) and any(s.get('parent_scope') == nm
+                                for s in fc_state['flow_symbols'].values())
+
+    def _fc_sym_by_name(name):
+        for s in fc_state['flow_symbols'].values():
+            if s.get('name') == name:
+                return s
+        return None
+
+    def _fc_scope_path():
+        """Breadcrumb segments from top-level to current scope: list of names
+        ([] at top level)."""
+        path = []
+        cur = fc_state.get('flow_scope')
+        seen = set()
+        while cur and cur not in seen:
+            seen.add(cur)
+            path.append(cur)
+            sym = _fc_sym_by_name(cur)
+            cur = sym.get('parent_scope') if sym else None
+        return list(reversed(path))
+
+    def _fc_set_scope(scope_name):
+        """Drill into / out to a pocket scope and refresh breadcrumb + canvas."""
+        fc_state['flow_scope'] = scope_name
+        state['selected_sym'] = None
+        fc_state['flow_selected'] = None
+        _fc_build_breadcrumb()
+        redraw()
+
+    def _fc_build_breadcrumb():
+        """Render the pocket scope path: MainFlow > Process > Validate."""
+        for w in _fc_breadcrumb.winfo_children():
+            w.destroy()
+        segments = [('MainFlow', None)] + [(nm, nm) for nm in _fc_scope_path()]
+        for i, (label, scope) in enumerate(segments):
+            if i:
+                tk.Label(_fc_breadcrumb, text='›', bg=C['palette'], fg=C['dim'],
+                         font=('Monospace', 9)).pack(side='left')
+            is_last = (i == len(segments) - 1)
+            lbl = tk.Label(_fc_breadcrumb, text=f' {label} ', bg=C['palette'],
+                           fg=C['pal_border'] if is_last else C['text'],
+                           font=('Monospace', 9, 'bold' if is_last else 'normal'),
+                           cursor='hand2', padx=2, pady=2)
+            lbl.pack(side='left')
+            if not is_last:
+                lbl.bind('<Button-1>', lambda e, s=scope: _fc_set_scope(s))
 
     def _fc_edge_points(e):
         """Point list for edge dict, trimmed to dst boundary."""
@@ -1545,7 +1616,8 @@ def run_gui():
         return nm
 
     def _fc_add_symbol(kind, x, y, label=''):
-        """Add flow symbol dict to fc_state, push undo. Returns sym dict."""
+        """Add flow symbol dict to fc_state, push undo. Returns sym dict.
+        Phase 7c-4: the new symbol belongs to the current pocket scope."""
         sid = fc_state['flow_next_id']
         fc_state['flow_next_id'] += 1
         lbl = label or f"{kind.split('_', 1)[-1][0].upper()}{sid}"
@@ -1553,7 +1625,13 @@ def run_gui():
                'x': snap(x), 'y': snap(y),
                'w': SYMBOL_W, 'h': SYMBOL_H,
                'label': lbl, 'name': _fc_make_default_name(kind, sid),
+               'parent_scope': fc_state.get('flow_scope'),  # Phase 7c-4
                'properties': []}
+        # Phase 7c-4: container kinds carry (stubbed) named entry/exit points for
+        # the future cross-scope-connection mechanism (built in a later bundle).
+        if kind in _FC_CONTAINER_KINDS:
+            sym['entry_points'] = []
+            sym['exit_points'] = []
         fc_state['flow_symbols'][sid] = sym
         _guic_push_undo({'kind': 'flow_remove', 'sym': dict(sym)})  # undo = remove
         return sym
@@ -1571,8 +1649,14 @@ def run_gui():
 
     def _fc_add_edge(src_id, dst_id, waypoints=(), condition=''):
         """Add flow edge dict to fc_state, push undo. Returns edge dict or None."""
-        if src_id not in fc_state['flow_symbols']: return None
-        if dst_id not in fc_state['flow_symbols']: return None
+        src = fc_state['flow_symbols'].get(src_id)
+        dst = fc_state['flow_symbols'].get(dst_id)
+        if src is None or dst is None: return None
+        # Phase 7c-4 (L3): flow edges are strictly scope-local. Cross-scope
+        # connections use named entry/exit points (a later bundle); reject here.
+        if src.get('parent_scope') != dst.get('parent_scope'):
+            set_status("Can't connect across pocket scopes — edges are scope-local")
+            return None
         for e in fc_state['flow_edges']:
             if e['src'] == src_id and e['dst'] == dst_id: return None
         edge = {'src': src_id, 'dst': dst_id,
@@ -1700,6 +1784,11 @@ def run_gui():
             tk_canvas.create_text(x, y-hh-_ofs, text=f"({s['x']},{s['y']})",
                                   fill=C['selected'], font=('Monospace', _fs))
 
+        # Phase 7c-4: 📦 pocket affordance on symbols that have children
+        if _fc_has_pocket(s):
+            tk_canvas.create_text(x+hw-_cp*2, y-hh+_cp*2, text='\U0001F4E6',
+                                  font=('Monospace', max(7, int(11*z))))
+
         # Connection points in edge mode
         if state['mode'] in ('edge_src', 'edge_dst_pending'):
             for cx, cy in [(x, y-hh), (x, y+hh), (x+hw, y), (x-hw, y)]:
@@ -1778,8 +1867,13 @@ def run_gui():
     def redraw():
         tk_canvas.delete('all')
         draw_grid()
+        # Phase 7c-4: only render the current pocket scope's symbols + their edges.
+        _scope = fc_state.get('flow_scope')
+        _in_scope = {sid for sid, s in fc_state['flow_symbols'].items()
+                     if s.get('parent_scope') == _scope}
         for e in fc_state['flow_edges']:            # Phase 6C: draw from fc_state
-            draw_edge(e)
+            if e['src'] in _in_scope and e['dst'] in _in_scope:
+                draw_edge(e)
         # Bundle 12: build set of bound target positions for visual annotation
         # Reads from 'signal_ids' (Bundle 12 format; 'bindings' retired)
         _bound_targets: set = set()
@@ -1789,7 +1883,8 @@ def run_gui():
                     _bound_targets.add((_bi.get('dst_x', 0), _bi.get('dst_y', 0)))
         fc_state['_bound_targets'] = _bound_targets
         for s in fc_state['flow_symbols'].values():  # Phase 6C: draw from fc_state
-            draw_symbol(s)
+            if s.get('parent_scope') == _scope:      # Phase 7c-4: scope filter
+                draw_symbol(s)
         draw_edge_in_progress()
         if (state['ghost'] and
                 state['mode'] in ('place_terminator','place_process',
@@ -1929,6 +2024,19 @@ def run_gui():
         # Bundle 18: convert click from screen to design space at input layer
         x, y = _fc_s2d(event.x, event.y)
         mode = state['mode']
+
+        # Phase 7c-4: 📦 pocket affordance — click near a symbol's top-right
+        # corner (when it has children) drills into its scope.
+        if mode == 'select':
+            hw, hh = SYMBOL_W // 2, SYMBOL_H // 2
+            for s in _fc_children_of(fc_state.get('flow_scope')):
+                if not _fc_has_pocket(s):
+                    continue
+                bx, by = s['x'] + hw, s['y'] - hh   # top-right corner (design)
+                if abs(x - bx) <= 14 and abs(y - by) <= 14:
+                    _fc_set_scope(s['name'])
+                    set_status(f"Opened pocket: {s['name']}")
+                    return
 
         # Placement modes
         if mode in ('place_terminator', 'place_process', 'place_decision', 'place_io'):
@@ -2167,6 +2275,29 @@ def run_gui():
                               f"Could not apply changes:\n{_apply_err}",
                               parent=dlg)
 
+        # ── Phase 7c-4: Pocket section (container kinds only) ─────────────────
+        if s.get('kind') in _FC_CONTAINER_KINDS:
+            pk = tk.Frame(dlg, bg=C['bg']); pk.pack(fill='x', padx=12, pady=(0, 4))
+            tk.Label(pk, text='Pocket', bg=C['bg'], fg=C['pal_border'],
+                     font=('Monospace', 9, 'bold'), anchor='w').pack(fill='x')
+            contents = _fc_pocket_contents(s)
+            if contents:
+                for nm, knd in contents:
+                    tk.Label(pk, text=f"  • {nm}  ({knd.replace('flow_','')})",
+                             bg=C['bg'], fg=C['text'], font=('Monospace', 8),
+                             anchor='w').pack(fill='x')
+            else:
+                tk.Label(pk, text='  (empty)', bg=C['bg'], fg=C['dim'],
+                         font=('Monospace', 8), anchor='w').pack(fill='x')
+            def _open_pocket():
+                dlg.destroy()
+                _fc_set_scope(s['name'])
+                set_status(f"Opened pocket: {s['name']}")
+            tk.Button(pk, text='Open pocket →', command=_open_pocket,
+                      bg=C['pal_btn'], fg=C['text'], font=('Monospace', 9),
+                      relief='flat', padx=10, pady=3, cursor='hand2'
+                      ).pack(anchor='w', pady=(4, 0))
+
         btn_frm = tk.Frame(dlg, bg=C['bg']); btn_frm.pack(pady=8)
         tk.Button(btn_frm, text="Apply", command=_apply,
                   bg=C['pal_active'], fg=C['text'],
@@ -2268,7 +2399,14 @@ def run_gui():
         elif k == 'd': set_mode('place_decision')
         elif k == 'i': set_mode('place_io')
         elif k == 'e': set_mode('edge_src')
-        elif k == 'escape': set_mode('select')
+        elif k == 'escape':
+            # Phase 7c-4: Escape closes the current pocket (out one scope level)
+            if fc_state.get('flow_scope') is not None:
+                cur = _fc_sym_by_name(fc_state['flow_scope'])
+                _fc_set_scope(cur.get('parent_scope') if cur else None)
+                set_status('Closed pocket')
+            else:
+                set_mode('select')
         elif k == 'w':
             _fc_sync_canvas_model(); do_dump()
         elif k == 'l':
@@ -2476,6 +2614,7 @@ def run_gui():
         'flow_next_id':  0,
         'flow_selected': None,
         'flow_multi_sel': set(),
+        'flow_scope':     None,    # Phase 7c-4: current pocket scope (symbol name)
         # Stage 9-0: Shell tab — command widgets (cmd_*), own canvas/mode state
         'cmd_widgets':    {},   # id → {id, kind, x, y, w, h, label, name, properties}
         'cmd_next_id':    0,
@@ -3014,10 +3153,16 @@ def run_gui():
                     'h':          sym.get('h', SYMBOL_H),
                     'label':      sym.get('label', ''),
                     'properties': list(sym.get('properties', [])),
+                    # Phase 7c-4: nesting (legacy files lack it → null = top level)
+                    'parent_scope': sym.get('parent_scope'),
                 }
                 if 'name' in sym:   # Phase 7c-1: preserve explicit name
                     fc_state['flow_symbols'][sid]['name'] = sym['name']
+                for _hook in ('entry_points', 'exit_points'):   # Phase 7c-4 stubs
+                    if _hook in sym:
+                        fc_state['flow_symbols'][sid][_hook] = list(sym[_hook])
                 fc_state['flow_next_id'] = max(fc_state['flow_next_id'], sid + 1)
+            fc_state['flow_scope'] = None   # Phase 7c-4: reset to top-level on load
             for e in tgui.get('flow_edges', []):
                 fc_state['flow_edges'].append({
                     'src':       e['src'],
@@ -3179,9 +3324,13 @@ def run_gui():
                     'h':          sym.get('h', SYMBOL_H),
                     'label':      sym.get('label', ''),
                     'properties': list(sym.get('properties', [])),
+                    'parent_scope': sym.get('parent_scope'),   # Phase 7c-4
                 }
                 if 'name' in sym:   # Phase 7c-1: preserve name; deduped below
                     fc_state['flow_symbols'][new_id]['name'] = sym['name']
+                for _hook in ('entry_points', 'exit_points'):
+                    if _hook in sym:
+                        fc_state['flow_symbols'][new_id][_hook] = list(sym[_hook])
             fc_state['flow_next_id'] = next_fsid
 
             # Flow edges — remap src/dst through fsid_map
@@ -6888,6 +7037,10 @@ def run_gui():
         s = fc_state['flow_symbols'].get(sym_id)
         if not s:
             return
+        # Phase 7c-4: drill into the target's pocket scope if it lives in one.
+        if fc_state.get('flow_scope') != s.get('parent_scope'):
+            fc_state['flow_scope'] = s.get('parent_scope')
+            _fc_build_breadcrumb()
         cw = tk_canvas.winfo_width() or 860
         ch = tk_canvas.winfo_height() or 660
         z  = _fc_view['zoom']
@@ -7020,6 +7173,7 @@ def run_gui():
         root.destroy()
     root.protocol('WM_DELETE_WINDOW', on_close)
     set_mode('select')
+    _fc_build_breadcrumb()   # Phase 7c-4: initial top-level breadcrumb
     root.after(100,redraw)
     root.mainloop()
 
