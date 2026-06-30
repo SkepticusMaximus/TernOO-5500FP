@@ -2391,6 +2391,19 @@ def run_gui():
         except Exception as _sf_err:
             print(f'[FlowCode] sheet_formula failed to load: {_sf_err}')
 
+    # ── Load flowcode_commands (Stage 9-1A Shell command registry) ───────────
+    _fcmd_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              '../5500fp/flowcode_commands.py')
+    _flowcode_commands = None
+    if os.path.exists(_fcmd_path):
+        try:
+            import importlib.util as _fcmd_u
+            _fcmd_spec = _fcmd_u.spec_from_file_location('flowcode_commands', _fcmd_path)
+            _flowcode_commands = _fcmd_u.module_from_spec(_fcmd_spec)
+            _fcmd_spec.loader.exec_module(_flowcode_commands)
+        except Exception as _fcmd_err:
+            print(f'[FlowCode] flowcode_commands failed to load: {_fcmd_err}')
+
     # ── Load ghost_meccano for incremental word-stream updates (Phase 6E) ───────
     # flowcode_bridge.py deleted; functions now live in ghost_meccano.py
     # (GHOST+flow bridges) and flowcode_signals.py (handler binding emitter).
@@ -5595,21 +5608,25 @@ def run_gui():
     # reframed later as a connection-graph view of named bindings across the
     # trinity. Commands here are cosmetic stubs until native TernOO commands land.
     # ═══════════════════════════════════════════════════════════════════════════
-    LINGO_COMMANDS = [
-        {'name': 'text_upper',    'desc': 'Uppercase a string',
-         'flags': [], 'params': [{'name': 'text'}]},
-        {'name': 'text_lower',    'desc': 'Lowercase a string',
-         'flags': [], 'params': [{'name': 'text'}]},
-        {'name': 'text_replace',  'desc': 'Replace text in a string',
-         'flags': [{'short': '-i', 'desc': 'case insensitive'}],
-         'params': [{'name': 'find'}, {'name': 'with'}]},
-        {'name': 'math_add',      'desc': 'Add two numbers',
-         'flags': [], 'params': [{'name': 'a'}, {'name': 'b'}]},
-        {'name': 'math_multiply', 'desc': 'Multiply two numbers',
-         'flags': [], 'params': [{'name': 'a'}, {'name': 'b'}]},
-        {'name': 'list_count',    'desc': 'Count items in a list',
-         'flags': [], 'params': [{'name': 'list'}]},
-    ]
+    # Stage 9-1A: build the Shell command list from the real registry. Bool
+    # params render as flags (checkboxes); other params as labelled entries.
+    def _lingo_build_commands():
+        out = []
+        if _flowcode_commands is None:
+            return out
+        for full, spec in _flowcode_commands.COMMAND_REGISTRY.items():
+            flags, params = [], []
+            for p in spec['params']:
+                if p['type'] == 'bool':
+                    flags.append({'short': p['name'], 'desc': p['name'],
+                                  'pname': p['name']})
+                else:
+                    params.append({'name': p['name'],
+                                   'optional': p.get('optional', False)})
+            out.append({'name': full[4:], 'full': full, 'desc': spec['desc'],
+                        'flags': flags, 'params': params})
+        return out
+    LINGO_COMMANDS = _lingo_build_commands()
     _lingo = {'active': None, 'filtered': list(LINGO_COMMANDS),
               'flag_vars': {}, 'param_vars': {}, 'pipeline': []}
 
@@ -5726,23 +5743,32 @@ def run_gui():
     _lg_btnrow.pack(side='bottom', fill='x', padx=6, pady=6)
 
     # ── Generation + actions ──────────────────────────────────────────────────
+    def _lingo_collect_args():
+        """Gather the current form values into an args dict for the registry."""
+        cmd = _lingo['active']
+        args = {}
+        if not cmd:
+            return args
+        for f in cmd['flags']:
+            v = _lingo['flag_vars'].get(f['short'])
+            args[f.get('pname', f['short'])] = bool(v.get()) if v is not None else False
+        for p in cmd['params']:
+            v = _lingo['param_vars'].get(p['name'])
+            args[p['name']] = v.get() if v is not None else ''
+        return args
+
     def _lingo_generate():
+        """Stage 9-1A: run the active command for real and show its result."""
         cmd = _lingo['active']
         if not cmd:
             return ''
-        parts = [cmd['name']]
-        for f in cmd['flags']:
-            v = _lingo['flag_vars'].get(f['short'])
-            if v is not None and v.get():
-                parts.append(f['short'])
-        for p in cmd['params']:
-            v = _lingo['param_vars'].get(p['name'])
-            val = v.get().strip() if v is not None else ''
-            if val:
-                parts.append(f'{p["name"]}="{val}"')
-            elif not p.get('optional'):
-                parts.append(f'{p["name"]}=<?>')
-        return ' '.join(parts)
+        full = cmd.get('full', 'cmd_' + cmd['name'])
+        if _flowcode_commands is not None:
+            result = _flowcode_commands.run_command(full, _lingo_collect_args())
+            if isinstance(result, list):
+                result = ', '.join(str(x) for x in result)
+            return f"{cmd['name']} → {result}"
+        return cmd['name']
 
     def _lingo_update_preview(*_a):
         txt = _lingo_generate()
