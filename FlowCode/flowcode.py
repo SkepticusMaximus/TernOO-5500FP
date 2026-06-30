@@ -2491,6 +2491,11 @@ def run_gui():
         'cell_next_id':   0,
         'cell_sel':       (0, 0),  # (row, col) of the selected cell
         'cell_editing':   False,
+        # Stage 8-9: free-form regions on the Sheet canvas
+        'sheet_regions':  {},      # id → {id, kind:'sheet_region', x, y, w, h, name, label}
+        'free_cells':     {},      # id → free cell {id, kind, region_id, px, py, name, value}
+        'region_next_id': 0,
+        'sheet_mode':     'select',  # 'select' | 'place_region'
         'selected':      None,  # int id of primary selected widget
         'multi_sel':     set(), # all selected ids (includes selected)
         'mode':          'select',
@@ -2794,8 +2799,12 @@ def run_gui():
         # Stage 8-1: Sheet cells — saved in full programs only.
         if ext in ('.gui', '.flow'):
             save_cell_syms = []
+            save_regions = []
+            save_free = []
         else:
             save_cell_syms = [dict(c) for c in fc_state['cells'].values()]
+            save_regions = [dict(r) for r in fc_state['sheet_regions'].values()]
+            save_free = [dict(c) for c in fc_state['free_cells'].values()]
 
         _stream_words = (list(fc_state['stream'].words)
                          if fc_state.get('stream') is not None else [])
@@ -2811,6 +2820,8 @@ def run_gui():
             'flow_edges':    save_flow_edges,
             'cmd_symbols':   save_cmd_syms,   # Stage 9-0: Shell command widgets
             'cell_symbols':  save_cell_syms,  # Stage 8-1: Sheet cells
+            'sheet_regions': save_regions,    # Stage 8-9: free-form regions
+            'free_cells':    save_free,       # Stage 8-9: absolutely-positioned cells
             'sequence':      ([w['id'] for w in fc_state['widgets'].values()]
                               if ext != '.flow' else []),
             'tgui_meta': {
@@ -3054,6 +3065,17 @@ def run_gui():
                 fc_state['cell_next_id'] = max(fc_state['cell_next_id'],
                                                cell.get('id', 0) + 1)
             fc_state['cell_sel'] = (0, 0)
+            # Stage 8-9: load free-form regions + free cells
+            fc_state['sheet_regions'].clear(); fc_state['free_cells'].clear()
+            fc_state['region_next_id'] = 0
+            for reg in tgui.get('sheet_regions', []):
+                rid = reg.get('id', 0)
+                fc_state['sheet_regions'][rid] = dict(reg)
+                fc_state['region_next_id'] = max(fc_state['region_next_id'], rid + 1)
+            for cell in tgui.get('free_cells', []):
+                cid = cell.get('id', 0)
+                fc_state['free_cells'][cid] = dict(cell)
+                fc_state['cell_next_id'] = max(fc_state['cell_next_id'], cid + 1)
             # Phase 7c-1: assign default names to legacy widgets/symbols that
             # lack one, and disambiguate any duplicate non-empty names.
             fc_state['stream'].ensure_unique_names()
@@ -6160,9 +6182,60 @@ def run_gui():
     def _clear_sheet():
         fc_state['cells'].clear()
         fc_state['cell_next_id'] = 0
+        fc_state['sheet_regions'].clear()
+        fc_state['free_cells'].clear()
+        fc_state['region_next_id'] = 0
         fc_state['cell_sel'] = (0, 0)
         _sheet_cancel_edit()
         _sheet_set_status('Sheet cleared'); _sheet_redraw()
+
+    # ── Stage 8-9: free-form regions ──────────────────────────────────────────
+    def _sheet_add_region(dx, dy):
+        rid = fc_state['region_next_id']; fc_state['region_next_id'] += 1
+        reg = {'id': rid, 'kind': 'sheet_region',
+               'x': int(dx), 'y': int(dy), 'w': 240, 'h': 120,
+               'name': _sheet_make_region_name(rid),
+               'label': f'region_{rid}'}
+        fc_state['sheet_regions'][rid] = reg
+        return reg
+
+    def _sheet_make_region_name(rid):
+        base = f"region_{rid}"
+        stream = fc_state.get('stream')
+        if stream is None:
+            return base
+        nm, n = base, 1
+        while stream.name_in_use(nm):
+            nm = f"{base}_{n}"; n += 1
+        return nm
+
+    def _sheet_region_at(dx, dy):
+        """Topmost region containing design point (dx, dy), or None."""
+        for reg in reversed(list(fc_state['sheet_regions'].values())):
+            if (reg['x'] <= dx <= reg['x'] + reg['w'] and
+                    reg['y'] <= dy <= reg['y'] + reg['h']):
+                return reg
+        return None
+
+    def _sheet_add_free_cell(reg, dx, dy):
+        """Create a free (absolutely-positioned) cell inside a region."""
+        cid = fc_state['cell_next_id']; fc_state['cell_next_id'] += 1
+        cell = {'id': cid, 'kind': 'cell_text', 'region_id': reg['id'],
+                'px': int(dx - reg['x']), 'py': int(dy - reg['y']),
+                'name': _sheet_make_cell_name(0, 0).replace('cell_A1', f'cell_f{cid}'),
+                'label': f'f{cid}', 'value': '', 'properties': []}
+        # ensure a clean unique name
+        cell['name'] = f"cell_free_{cid}"
+        fc_state['free_cells'][cid] = cell
+        return cell
+
+    def _sheet_free_cell_rect(cell):
+        """Design-space rect of a free cell (positioned within its region)."""
+        reg = fc_state['sheet_regions'].get(cell.get('region_id'))
+        bx = reg['x'] if reg else 0
+        by = reg['y'] if reg else 0
+        L = bx + cell.get('px', 0); T = by + cell.get('py', 0)
+        return L, T, L + CELL_W, T + CELL_H
 
     # ── Drawing ───────────────────────────────────────────────────────────────
     def _sheet_redraw():
@@ -6232,7 +6305,25 @@ def run_gui():
                     sheet_canvas.create_text(tx, (sy + ey) / 2,
                                              text=_sheet_display(cell), anchor=anc,
                                              fill=col_fill, font=fnt)
-        # Selection highlight
+        # Stage 8-9: free-form regions (dashed boundary) + their free cells
+        for reg in fc_state['sheet_regions'].values():
+            rx, ry = _sht_d2s(reg['x'], reg['y'])
+            rex, rey = _sht_d2s(reg['x'] + reg['w'], reg['y'] + reg['h'])
+            sheet_canvas.create_rectangle(rx, ry, rex, rey, outline=C['pal_border'],
+                                          width=2, dash=(6, 4))
+            sheet_canvas.create_text(rx + 4, ry + max(7, int(8 * z)),
+                                     text=reg.get('label', ''), anchor='w',
+                                     fill=C['pal_border'],
+                                     font=('Monospace', max(6, int(7 * z))))
+        for cell in fc_state['free_cells'].values():
+            L, T, R, B = _sheet_free_cell_rect(cell)
+            sx, sy = _sht_d2s(L, T); ex, ey = _sht_d2s(R, B)
+            sheet_canvas.create_rectangle(sx, sy, ex, ey, fill=C['canvas'],
+                                          outline=C['dim'])
+            sheet_canvas.create_text(sx + 4, (sy + ey) / 2, text=_sheet_display(cell),
+                                     anchor='w', fill=C['text'],
+                                     font=('Monospace', max(6, int(9 * z))))
+        # Selection highlight (grid cell)
         srow, scol = fc_state['cell_sel']
         L, T, R, B = _sheet_cell_rect(srow, scol)
         sx, sy = _sht_d2s(L, T); ex, ey = _sht_d2s(R, B)
@@ -6249,9 +6340,15 @@ def run_gui():
     _sheet_edit_var = tk.StringVar()
     _sheet_edit.config(textvariable=_sheet_edit_var)
 
+    _free_edit = [None]   # Stage 8-9: id of the free cell being edited, or None
+
     def _sheet_place_editor():
-        srow, scol = fc_state['cell_sel']
-        L, T, R, B = _sheet_cell_rect(srow, scol)
+        if _free_edit[0] is not None:
+            cell = fc_state['free_cells'].get(_free_edit[0])
+            L, T, R, B = _sheet_free_cell_rect(cell)
+        else:
+            srow, scol = fc_state['cell_sel']
+            L, T, R, B = _sheet_cell_rect(srow, scol)
         sx, sy = _sht_d2s(L, T); ex, ey = _sht_d2s(R, B)
         _sheet_edit.place(x=int(sx) + 1, y=int(sy) + 1,
                           width=int(ex - sx) - 2, height=int(ey - sy) - 2)
@@ -6268,8 +6365,26 @@ def run_gui():
         _sheet_place_editor()
         _sheet_edit.icursor('end')
 
+    def _sheet_begin_free_edit(cell):
+        _free_edit[0] = cell['id']
+        _sheet_edit_var.set(cell.get('value', ''))
+        fc_state['cell_editing'] = True
+        _sheet_place_editor()
+        _sheet_edit.icursor('end')
+
     def _sheet_commit_edit(advance=(1, 0)):
         if not fc_state['cell_editing']:
+            return
+        if _free_edit[0] is not None:          # Stage 8-9: free cell
+            cell = fc_state['free_cells'].get(_free_edit[0])
+            if cell is not None:
+                txt = _sheet_edit_var.get()
+                if txt == '':
+                    fc_state['free_cells'].pop(_free_edit[0], None)
+                else:
+                    cell['value'] = txt
+                    cell['kind'] = _sheet_detect_kind(txt)
+            _sheet_cancel_edit(); _sheet_recompute(); _sheet_redraw()
             return
         srow, scol = fc_state['cell_sel']
         _sheet_set_cell(srow, scol, _sheet_edit_var.get())
@@ -6282,6 +6397,7 @@ def run_gui():
 
     def _sheet_cancel_edit():
         fc_state['cell_editing'] = False
+        _free_edit[0] = None
         _sheet_edit.place_forget()
         sheet_canvas.focus_set()
 
@@ -6307,6 +6423,11 @@ def run_gui():
         if fc_state['cell_editing']:
             _sheet_commit_edit(advance=(0, 0))
         dx, dy = _sht_s2d(event.x, event.y)
+        if fc_state['sheet_mode'] == 'place_region':   # Stage 8-9
+            reg = _sheet_add_region(snap(dx), snap(dy))
+            fc_state['sheet_mode'] = 'select'
+            _sheet_set_status(f"Placed {reg['label']} — double-click inside to add a cell")
+            _build_sheet_tools(); _sheet_redraw(); return
         hit = _sheet_cell_at(dx, dy)
         if hit:
             fc_state['cell_sel'] = hit
@@ -6315,6 +6436,16 @@ def run_gui():
 
     def _sheet_on_double(event):
         dx, dy = _sht_s2d(event.x, event.y)
+        # Stage 8-9: double-click inside a region → free (absolutely-positioned)
+        # cell; double-click a free cell edits it.
+        for cell in reversed(list(fc_state['free_cells'].values())):
+            L, T, R, B = _sheet_free_cell_rect(cell)
+            if L <= dx <= R and T <= dy <= B:
+                _sheet_begin_free_edit(cell); return
+        reg = _sheet_region_at(dx, dy)
+        if reg is not None:
+            cell = _sheet_add_free_cell(reg, dx, dy)
+            _sheet_redraw(); _sheet_begin_free_edit(cell); return
         hit = _sheet_cell_at(dx, dy)
         if hit:
             fc_state['cell_sel'] = hit; _sheet_sync_fbar()
@@ -6481,14 +6612,30 @@ def run_gui():
     _sheet_fbar_entry.bind('<Return>',      _sheet_fbar_commit)
 
     def _build_sheet_tools():
-        """Sheet tab sidebar — info + the active cell address."""
+        """Sheet tab sidebar — tools + info."""
         for w in _pal_tools_frame.winfo_children(): w.destroy()
         pal_btns.clear()
-        _pal_section("SHEET")
+        _pal_section("TOOLS")
+        def _set_region_mode():
+            fc_state['sheet_mode'] = 'place_region'
+            _sheet_set_status('Click the grid to place a free-form region')
+            _build_sheet_tools()
+        for _lbl, _active, _fg, _cmd in [
+            ('☞ Select', fc_state['sheet_mode'] == 'select', '#aaaaff',
+             lambda: (fc_state.update(sheet_mode='select'), _build_sheet_tools())),
+            ('▦ Add Region', fc_state['sheet_mode'] == 'place_region', '#7aff7a',
+             _set_region_mode),
+        ]:
+            tk.Button(_pal_tools_frame, text=_lbl,
+                      bg=C['pal_active'] if _active else C['pal_btn'], fg=_fg,
+                      font=('Monospace', 9), relief='sunken' if _active else 'flat',
+                      activebackground=C['pal_active'], cursor='hand2', padx=4, pady=4,
+                      command=_cmd).pack(fill='x', padx=6, pady=2)
+        tk.Frame(_pal_tools_frame, bg=C['dim'], height=1).pack(fill='x', padx=6, pady=3)
         tk.Label(_pal_tools_frame,
                  text='Click a cell to select.\nDouble-click or type to edit.\n'
-                      'Tab / Enter / arrows\nnavigate. The fx bar edits\n'
-                      'the active cell.',
+                      'Tab/Enter/arrows navigate.\nAdd Region → free-form area;\n'
+                      'double-click inside it to\nplace a free cell.',
                  bg=C['palette'], fg=C['dim'], font=('Monospace', 8),
                  anchor='w', justify='left').pack(fill='x', padx=6, pady=4)
 

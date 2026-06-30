@@ -213,5 +213,25 @@ class TestStage85And87Wiring(unittest.TestCase):
             self.assertIn(key, _FC_TEXT)
 
 
+class TestStage89Wiring(unittest.TestCase):
+    """Stage 8-9: free-form cell regions."""
+
+    def test_region_kind_registered(self):
+        self.assertIn('sheet_region', _fp.WIDGET_PROPERTIES)
+
+    def test_region_state_and_tools(self):
+        self.assertIn("'sheet_regions'", _FC_TEXT)
+        self.assertIn("'free_cells'", _FC_TEXT)
+        self.assertIn('Add Region', _FC_TEXT)
+        self.assertIn('place_region', _FC_TEXT)
+
+    def test_free_positioning(self):
+        self.assertIn('def _sheet_add_free_cell', _FC_TEXT)
+        self.assertIn('def _sheet_free_cell_rect', _FC_TEXT)
+
+    def test_region_persisted(self):
+        self.assertIn("'sheet_regions': save_regions", _FC_TEXT)
+
+
 if __name__ == '__main__':
     unittest.main()

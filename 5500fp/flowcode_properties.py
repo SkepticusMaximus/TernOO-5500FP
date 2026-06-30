@@ -105,6 +105,12 @@ WIDGET_PROPERTIES.update({
     'cell_formula': [{'name': 'value',   'kind': 'string', 'section': 'Cell'},
                      {'name': 'row',     'kind': 'int',    'section': 'Cell'},
                      {'name': 'col',     'kind': 'int',    'section': 'Cell'}],
+    # Stage 8-9: free-form region — a bounded area where cells are absolutely
+    # positioned (not grid-snapped). Like gui_window but for the Sheet tab.
+    'sheet_region': [{'name': 'x', 'kind': 'int', 'section': 'Region'},
+                     {'name': 'y', 'kind': 'int', 'section': 'Region'},
+                     {'name': 'w', 'kind': 'int', 'section': 'Region', 'min': 40},
+                     {'name': 'h', 'kind': 'int', 'section': 'Region', 'min': 40}],
 })
 
 
