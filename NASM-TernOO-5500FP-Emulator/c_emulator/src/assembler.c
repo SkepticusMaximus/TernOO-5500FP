@@ -269,8 +269,14 @@ int assemble(const char *source, int64_t *program, int max_words,
     while (line && word_count < max_words) {
         char *p = skip_ws(line);
 
+        /* Strip inline comment FIRST, so a ';' comment containing ':' or
+         * instruction-like words (e.g. "; checked: gui_toggle #3") can never be
+         * mis-parsed as a label boundary or a mnemonic. */
+        char *cmt = strchr(p, ';');
+        if (cmt) *cmt = '\0';
+
         /* Skip empty lines and comments */
-        if (*p == '\0' || *p == ';') { line = strtok(NULL, "\n"); continue; }
+        if (*p == '\0') { line = strtok(NULL, "\n"); continue; }
 
         /* Check for label */
         char *colon = strchr(p, ':');
@@ -305,9 +311,7 @@ int assemble(const char *source, int64_t *program, int max_words,
             continue;
         }
 
-        /* Strip inline comment from line before tokenizing */
-        char *semi_pos = strchr(p, ';');
-        if (semi_pos) *semi_pos = '\0';
+        /* (inline comment already stripped above) */
         p = skip_ws(p);
         if (*p == '\0') { line = strtok(NULL, "\n"); continue; }
 
