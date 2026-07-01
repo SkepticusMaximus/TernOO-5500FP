@@ -7565,6 +7565,14 @@ def run_gui():
 
     def _flow_ctrl_click(event):
         x, y = _fc_s2d(event.x, event.y)
+        # Phase 7c-4b: Ctrl+click a container's port dot traverses into its
+        # pocket interior (where the port's data flow is authored).
+        ph = _fc_port_at(x, y)
+        if ph:
+            csym, edge, port = ph
+            _fc_set_scope(csym['name'])
+            set_status(f"→ pocket {csym['name']}  ({edge} port {port['name']})")
+            return 'break'
         s = _fc_sym_at(x, y)
         if not s:
             return 'break'

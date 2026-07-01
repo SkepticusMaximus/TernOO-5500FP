@@ -129,6 +129,11 @@ class TestPortsUISourceWiring(unittest.TestCase):
         # exit-port expr field (interior computation)
         self.assertIn("Expr (= interior formula)", self.src)
 
+    def test_ctrl_click_port_navigation(self):
+        # Ctrl+click a port dot drills into the container's pocket
+        self.assertIn('ph = _fc_port_at(x, y)', self.src)
+        self.assertIn("_fc_set_scope(csym['name'])", self.src)
+
 
 import subprocess
 import tempfile
