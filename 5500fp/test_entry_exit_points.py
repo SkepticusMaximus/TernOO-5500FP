@@ -305,6 +305,53 @@ class TestCellPortCompilation(unittest.TestCase):
             self.assertEqual(digits[-1:], [exp])
 
 
+class TestChainedContainers(unittest.TestCase):
+    """Multiple containers compose (7c-4b Flag 4): distinct name-based slots, and
+    one container's exit can feed another's entry. Ordering within
+    recompute_all_ports is declaration order — fine for the steady state (every
+    frame recomputes), and correct in one pass when declared upstream-first."""
+
+    def _chain(self):
+        s = WordStream()
+        s._cell_meta = {(0, 0): {'id': 1, 'kind': 'cell_value', 'row': 0, 'col': 0,
+                                 'name': 'input_cell', 'value': 5, 'properties': []}}
+        s._flow_meta = {
+            10: {'id': 10, 'kind': 'flow_process', 'name': 'doubler',
+                 'x': 0, 'y': 0, 'w': 1, 'h': 1, 'label': 'A',
+                 'entry_points': [{'name': 'x', 'type': 'number', 'expr': 'input_cell'}],
+                 'exit_points': [{'name': 'out', 'type': 'number', 'expr': 'x * 2'}]},
+            11: {'id': 11, 'kind': 'flow_process', 'name': 'adder',
+                 'x': 0, 'y': 0, 'w': 1, 'h': 1, 'label': 'B',
+                 'entry_points': [{'name': 'y', 'type': 'number', 'expr': 'doubler_out'}],
+                 'exit_points': [{'name': 'total', 'type': 'number', 'expr': 'y + 1'}]}}
+        return s
+
+    def test_distinct_slots_no_collision(self):
+        asm = C.compile_wordstream_to_t5asm(self._chain(), 'chain.fc')
+        self.assertIn('state_exit_doubler_out', asm)
+        self.assertIn('state_exit_adder_total', asm)
+        self.assertNotIn('uncompilable', asm)
+
+    @unittest.skipUnless(_HAVE_EMU, 'C emulator binary not built')
+    def test_chain_runs(self):
+        asm = C.compile_wordstream_to_t5asm(self._chain(), 'chain.fc')
+        tail = asm[asm.index('; ---- Container entry/exit ports'):]
+        driver = ['main:', '    CALL recompute_all_ports',
+                  '    LI R20, state_exit_adder_total', '    LDW R2, R20, 0',
+                  '    LI R1, 1', '    SYSCALL', '    LI R1, 6', '    SYSCALL',
+                  '    HALT', '']
+        with tempfile.NamedTemporaryFile('w', suffix='.t5asm', delete=False) as f:
+            f.write('\n'.join(driver) + '\n' + tail)
+            path = f.name
+        try:
+            r = subprocess.run([_EMU, '--run', path], capture_output=True,
+                               text=True, timeout=10)
+        finally:
+            os.unlink(path)
+        digits = [x for x in r.stdout.splitlines() if x.strip().lstrip('-').isdigit()]
+        self.assertEqual(digits[-1:], ['11'])   # (5*2) + 1
+
+
 _DEMO = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                      '..', 'FlowCode', 'entry_exit_demo.fc')
 
