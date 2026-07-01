@@ -80,5 +80,28 @@ class TestPortDataModel(unittest.TestCase):
         self.assertEqual(loaded['exit_points'][0]['description'], 'the output')
 
 
+class TestPortsUISourceWiring(unittest.TestCase):
+    """Source-level checks that the properties dialog wires the ports UI (the
+    tkinter dialog itself is screen-only — verified on-screen by Stevo)."""
+
+    @classmethod
+    def setUpClass(cls):
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            '..', 'FlowCode', 'flowcode.py')
+        with open(path) as f:
+            cls.src = f.read()
+
+    def test_ports_module_loaded(self):
+        self.assertIn('flowcode_ports', self.src)
+        self.assertIn('_flowcode_ports', self.src)
+
+    def test_properties_dialog_has_port_sections(self):
+        self.assertIn('Entry Points', self.src)
+        self.assertIn('Exit Points', self.src)
+        self.assertIn('_ports_section', self.src)
+        self.assertIn('_port_add_edit', self.src)
+        self.assertIn('validate_new_port', self.src)
+
+
 if __name__ == '__main__':
     unittest.main()

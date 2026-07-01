@@ -2300,6 +2300,96 @@ def run_gui():
                       relief='flat', padx=10, pady=3, cursor='hand2'
                       ).pack(anchor='w', pady=(4, 0))
 
+            # ── Phase 7c-4b: Entry / Exit Points ─────────────────────────────
+            if _flowcode_ports is not None:
+                s.setdefault('entry_points', [])
+                s.setdefault('exit_points', [])
+                _fp = _flowcode_ports
+
+                def _port_add_edit(pkind, existing=None):
+                    """Modal to add or edit one port (name/type/description)."""
+                    pd = tk.Toplevel(dlg); pd.configure(bg=C['palette'])
+                    pd.title(('Edit' if existing else 'Add') + f' {pkind} point')
+                    pd.transient(dlg); pd.grab_set()
+                    nv = tk.StringVar(value=(existing or {}).get('name', ''))
+                    tv = tk.StringVar(value=(existing or {}).get('type', 'number'))
+                    dv = tk.StringVar(value=(existing or {}).get('description', ''))
+                    for r, (lbl, var, opts) in enumerate((
+                            ('Name', nv, None), ('Type', tv, _fp.PORT_TYPES),
+                            ('Description', dv, None))):
+                        tk.Label(pd, text=lbl + ':', bg=C['palette'], fg=C['text'],
+                                 font=('Monospace', 9), anchor='w').grid(
+                                     row=r, column=0, sticky='w', padx=8, pady=2)
+                        if opts:
+                            tk.OptionMenu(pd, var, *opts).grid(
+                                row=r, column=1, sticky='w', padx=8, pady=2)
+                        else:
+                            tk.Entry(pd, textvariable=var, bg=C['inspect'],
+                                     fg=C['text'], insertbackground=C['text'],
+                                     font=('Monospace', 9), width=22).grid(
+                                         row=r, column=1, padx=8, pady=2)
+                    warn = tk.Label(pd, text='', bg=C['palette'], fg='#ff8888',
+                                    font=('Monospace', 8))
+                    warn.grid(row=3, column=0, columnspan=2, sticky='w', padx=8)
+
+                    def _commit_port():
+                        ok, msg = _fp.validate_new_port(s, nv.get(), tv.get(),
+                                                        exclude=existing)
+                        if not ok:
+                            warn.config(text=msg); return
+                        port = _fp.make_port(nv.get(), tv.get(), dv.get())
+                        lst = s['entry_points'] if pkind == 'entry' else s['exit_points']
+                        if existing is not None:
+                            lst[lst.index(existing)] = port
+                        else:
+                            lst.append(port)
+                        pd.destroy(); dlg.destroy()
+                        _guic_sync_stream(); redraw()
+                        _open_flow_props_fc(s)   # reopen to show the update
+
+                    bf = tk.Frame(pd, bg=C['palette']); bf.grid(row=4, column=0,
+                                                                columnspan=2, pady=8)
+                    tk.Button(bf, text='OK', command=_commit_port, bg=C['pal_btn'],
+                              fg=C['text'], font=('Monospace', 9), relief='flat',
+                              padx=10).pack(side='left', padx=4)
+                    tk.Button(bf, text='Cancel', command=pd.destroy, bg=C['pal_btn'],
+                              fg=C['text'], font=('Monospace', 9), relief='flat',
+                              padx=10).pack(side='left', padx=4)
+
+                def _port_remove(pkind, port):
+                    lst = s['entry_points'] if pkind == 'entry' else s['exit_points']
+                    if port in lst:
+                        lst.remove(port)
+                    dlg.destroy(); _guic_sync_stream(); redraw()
+                    _open_flow_props_fc(s)
+
+                def _ports_section(title, pkind, ports):
+                    fr = tk.Frame(dlg, bg=C['bg']); fr.pack(fill='x', padx=12, pady=(6, 0))
+                    tk.Label(fr, text=title, bg=C['bg'], fg=C['pal_border'],
+                             font=('Monospace', 9, 'bold'), anchor='w').pack(fill='x')
+                    for p in ports:
+                        row = tk.Frame(fr, bg=C['bg']); row.pack(fill='x')
+                        tk.Label(row, text=f"  • {p['name']} : {p['type']}",
+                                 bg=C['bg'], fg=C['text'], font=('Monospace', 8),
+                                 anchor='w').pack(side='left')
+                        tk.Button(row, text='✕', command=lambda pp=p: _port_remove(pkind, pp),
+                                  bg=C['bg'], fg='#ff8888', font=('Monospace', 8),
+                                  relief='flat', cursor='hand2').pack(side='right')
+                        tk.Button(row, text='edit',
+                                  command=lambda pp=p: _port_add_edit(pkind, pp),
+                                  bg=C['bg'], fg=C['dim'], font=('Monospace', 8),
+                                  relief='flat', cursor='hand2').pack(side='right')
+                    if not ports:
+                        tk.Label(fr, text='  (none)', bg=C['bg'], fg=C['dim'],
+                                 font=('Monospace', 8), anchor='w').pack(fill='x')
+                    tk.Button(fr, text=f'+ Add {pkind} point',
+                              command=lambda: _port_add_edit(pkind),
+                              bg=C['pal_btn'], fg=C['text'], font=('Monospace', 8),
+                              relief='flat', padx=8, cursor='hand2').pack(anchor='w', pady=(2, 0))
+
+                _ports_section('Entry Points', 'entry', s['entry_points'])
+                _ports_section('Exit Points', 'exit', s['exit_points'])
+
         btn_frm = tk.Frame(dlg, bg=C['bg']); btn_frm.pack(pady=8)
         tk.Button(btn_frm, text="Apply", command=_apply,
                   bg=C['pal_active'], fg=C['text'],
@@ -2543,6 +2633,19 @@ def run_gui():
             _fcmd_spec.loader.exec_module(_flowcode_commands)
         except Exception as _fcmd_err:
             print(f'[FlowCode] flowcode_commands failed to load: {_fcmd_err}')
+
+    # ── Load flowcode_ports (Phase 7c-4b entry/exit points) ──────────────────
+    _fport_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               '../5500fp/flowcode_ports.py')
+    _flowcode_ports = None
+    if os.path.exists(_fport_path):
+        try:
+            import importlib.util as _fport_u
+            _fport_spec = _fport_u.spec_from_file_location('flowcode_ports', _fport_path)
+            _flowcode_ports = _fport_u.module_from_spec(_fport_spec)
+            _fport_spec.loader.exec_module(_flowcode_ports)
+        except Exception as _fport_err:
+            print(f'[FlowCode] flowcode_ports failed to load: {_fport_err}')
 
     # ── Load ghost_meccano for incremental word-stream updates (Phase 6E) ───────
     # flowcode_bridge.py deleted; functions now live in ghost_meccano.py
