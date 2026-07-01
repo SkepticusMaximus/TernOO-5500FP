@@ -180,6 +180,12 @@ class TestPortsUISourceWiring(unittest.TestCase):
         self.assertIn('cell_bound_port(cell)', self.src)      # indicator dot
         self.assertIn("cell['bound_to_port']", self.src)
 
+    def test_cell_port_navigation(self):
+        # Stage 8-6: Ctrl+click both directions
+        self.assertIn('_sheet_ctrl_click', self.src)          # cell → container
+        self.assertIn('_find_cell_bound_to', self.src)        # port → cell
+        self.assertIn("notebook.select(2)", self.src)         # jump to Sheet tab
+
 
 import subprocess
 import tempfile

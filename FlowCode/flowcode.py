@@ -7267,6 +7267,27 @@ def run_gui():
     sheet_canvas.bind('<Shift-Button-5>',   _sht_on_scroll_h)
     sheet_canvas.bind('<Control-Button-4>', _sheet_on_zoom)
     sheet_canvas.bind('<Control-Button-5>', _sheet_on_zoom)
+
+    def _sheet_ctrl_click(event):
+        """Stage 8-6: Ctrl+click a port-bound cell → jump to its container."""
+        dx, dy = _sht_s2d(event.x, event.y)
+        hit = _sheet_cell_at(dx, dy)
+        cell = fc_state['cells'].get(hit) if hit else None
+        b = (_flowcode_ports.cell_bound_port(cell)
+             if (cell and _flowcode_ports is not None) else None)
+        if not b:
+            _sheet_set_status('Ctrl+click a port-bound cell to jump to its container')
+            return 'break'
+        csym = _fc_sym_by_name(b['container_name'])
+        if csym is None:
+            _sheet_set_status(f"Container {b['container_name']} not found")
+            return 'break'
+        notebook.select(0)                       # Flow tab
+        _nav_center_flow_on(csym['id'])
+        set_status(f"→ {b['container_name']}.{b['port_name']} ({b['direction']})")
+        return 'break'
+    sheet_canvas.bind('<Control-Button-1>', _sheet_ctrl_click)
+
     sheet_canvas.bind('<Button-2>',         _sht_pan_start)
     sheet_canvas.bind('<B2-Motion>',        _sht_pan_motion)
     sheet_canvas.bind('<ButtonRelease-2>',  _sht_pan_end)
@@ -7658,13 +7679,33 @@ def run_gui():
             _nav_popup(event, actions)
         return 'break'
 
+    def _find_cell_bound_to(cname, pname):
+        """Stage 8-6: (row, col, cell) of a cell bound to <cname>.<pname>, or None."""
+        if _flowcode_ports is None:
+            return None
+        for (r, c), cell in fc_state['cells'].items():
+            b = _flowcode_ports.cell_bound_port(cell)
+            if b and b['container_name'] == cname and b['port_name'] == pname:
+                return r, c, cell
+        return None
+
     def _flow_ctrl_click(event):
         x, y = _fc_s2d(event.x, event.y)
-        # Phase 7c-4b: Ctrl+click a container's port dot traverses into its
-        # pocket interior (where the port's data flow is authored).
+        # Phase 7c-4b / Stage 8-6: Ctrl+click a container's port dot. If a Sheet
+        # cell is bound to that port, jump to the cell; otherwise drill into the
+        # container's pocket interior.
         ph = _fc_port_at(x, y)
         if ph:
             csym, edge, port = ph
+            hit = _find_cell_bound_to(csym['name'], port['name'])
+            if hit:
+                r, c, cell = hit
+                notebook.select(2)               # Sheet tab
+                fc_state['cell_sel'] = (r, c)
+                _sheet_sync_fbar(); _sheet_redraw()
+                _sheet_set_status(f"→ cell {cell.get('name') or _sheet_a1(r, c)} "
+                                  f"(bound {edge} {port['name']})")
+                return 'break'
             _fc_set_scope(csym['name'])
             set_status(f"→ pocket {csym['name']}  ({edge} port {port['name']})")
             return 'break'
