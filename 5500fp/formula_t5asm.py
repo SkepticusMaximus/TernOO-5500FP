@@ -36,6 +36,13 @@ _sf_spec.loader.exec_module(sheet_formula)
 # the clear high window R21..R40 (depth up to 19) — no clobber, no overflow.
 _BASE_REG = 21
 _MAX_REG = 40
+# Part 7: shared error-code register. Recompute inits it to 0; div-by-zero sets
+# 1 (#DIV/0!), unknown name sets 2 (#NAME?). Below _BASE_REG so expression
+# evaluation (R21..R40) never clobbers it. The render path reads the per-cell
+# error slot the recompute stores from this register.
+_ERR_REG = 19
+_ERR_DIV0 = 1
+_ERR_NAME = 2
 
 
 class FormulaCompileError(Exception):
@@ -95,7 +102,8 @@ def _compile(node, dst, ctx) -> list:
 
 def _emit_load_slot(slot, dst, why) -> list:
     if slot is None:
-        return [f"    LI   R{dst}, 0   ; #NAME? ({why})"]
+        return [f"    LI   R{dst}, 0   ; #NAME? ({why})",
+                f"    LI   R{_ERR_REG}, {_ERR_NAME}   ; #NAME?"]
     return [f"    LI   R{dst}, {slot}",
             f"    LDW  R{dst}, R{dst}, 0   ; {why}"]
 
@@ -121,11 +129,12 @@ def _emit_div(dst, ctx) -> list:
     for clarity / future #DIV/0! sentinel)."""
     skip = ctx.label('div0')
     return [
-        f"    BEQZ R{dst + 1}, {skip}   ; divisor==0 → leave 0",
+        f"    BEQZ R{dst + 1}, {skip}   ; divisor==0 -> DIV/0 error",
         f"    DIV  R{dst}, R{dst}, R{dst + 1}",
         f"    JMP  {skip}_done",
         f"{skip}:",
         f"    LI   R{dst}, 0",
+        f"    LI   R{_ERR_REG}, {_ERR_DIV0}   ; #DIV/0!",
         f"{skip}_done:",
     ]
 

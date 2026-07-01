@@ -777,3 +777,32 @@ class TestEntryInteractivity(unittest.TestCase):
         asm = self._asm()
         self.assertIn('handle_key_down:', asm)     # keyboard routed to entry
         self.assertIn('state_text_1', asm)         # text buffer rendered from state
+
+
+class TestPart7ErrorDisplay(unittest.TestCase):
+    """Piece 5 / AST bundle Part 7: runtime + static error display."""
+
+    def _asm(self):
+        s = WordStream()
+        s._widget_meta = {
+            0: _make_widget(0, 'gui_window', 0, 0, 400, 300, 'W'),
+            1: dict(_make_widget(1, 'gui_toggle', 20, 40, 80, 30, 'T'), name='t'),
+        }
+        s._cell_meta = {
+            (0, 0): {'id': 5, 'kind': 'cell_formula', 'row': 0, 'col': 0,
+                     'name': 'cell_stat', 'value': '=1/0'},                # static
+            (1, 0): {'id': 6, 'kind': 'cell_formula', 'row': 1, 'col': 0,
+                     'name': 'cell_dyn', 'value': '=100 / WIDGET("t").checked'},
+        }
+        return compile_wordstream_to_t5asm(s, 'e.fc')
+
+    def test_static_error_string(self):
+        self.assertIn('#DIV/0!', self._asm())            # static cell shows error
+
+    def test_runtime_error_infra(self):
+        asm = self._asm()
+        self.assertIn('errstr_div0:', asm)
+        self.assertIn('errstr_name:', asm)
+        self.assertIn('state_cell_6_err:', asm)          # per-cell error flag
+        self.assertIn('LI   R19, 1', asm)                # div-by-zero sets code 1
+        self.assertIn('BEQZ R19', asm)                   # render checks the flag

@@ -538,10 +538,16 @@ def _cell_render_info(stream: 'WordStream') -> list:
         r, c = rc
         is_static = rc not in dynamic
         if cell.get('kind') == 'cell_formula':
-            if is_static and rc in results and rc not in errors:
-                disp = _sheetf.format_result(results[rc])
+            if is_static:
+                # Static cell: compile-time value, or its error string (Part 7).
+                if rc in errors:
+                    disp = errors[rc]            # e.g. '#DIV/0!' / '#NAME?'
+                elif rc in results:
+                    disp = _sheetf.format_result(results[rc])
+                else:
+                    disp = '0'
             else:
-                disp, is_static = '0', False
+                disp = '0'   # dynamic: recompute fills value/err slots at runtime
         else:
             disp = str(cell.get('value', ''))
         try:
@@ -562,13 +568,27 @@ def _emit_cell_render(stream: 'WordStream') -> list:
         if stat:
             lines += _emit_draw_text(cx, cy, f'cellstr_{cid}', 'color_black')
         else:
-            # Stage 8-3-RT-dynamic: convert the live state value to a string
-            # and draw it (recompute_all already ran this frame).
+            # Stage 8-3-RT-dynamic + Part 7: if the cell's error slot is set,
+            # draw the Excel-style error string; else convert the live value.
+            ok = f'cellok_{cid}'; done = f'celldone_{cid}'; nm = f'cellerrnm_{cid}'
+            lines += [
+                f'    LI   R20, state_cell_{cid}_err',
+                f'    LDW  R19, R20, 0',
+                f'    BEQZ R19, {ok}',
+                f'    LI   R16, 1',
+                f'    SUB  R17, R19, R16',
+                f'    BNEZ R17, {nm}',       # err != 1 -> not DIV/0
+            ]
+            lines += _emit_draw_text(cx, cy, 'errstr_div0', 'color_black')
+            lines += [f'    JMP  {done}', f'{nm}:']
+            lines += _emit_draw_text(cx, cy, 'errstr_name', 'color_black')
+            lines += [f'    JMP  {done}', f'{ok}:']
             lines.append(f'    LI   R21, state_cell_{cid}')
             lines.append(f'    LDW  R21, R21, 0')
             lines.append(f'    LI   R22, cellbuf_{cid}')
             lines.append('    CALL int_to_str')
             lines += _emit_draw_text(cx, cy, f'cellbuf_{cid}', 'color_black')
+            lines.append(f'{done}:')
         lines.append('')
     return lines
 
@@ -597,9 +617,14 @@ def _emit_cell_data(stream: 'WordStream') -> list:
         lines.append('_its_scratch:')
         lines += ['    .word 0'] * 16
         lines.append('')
+        # Part 7: runtime error strings (drawn when a cell's err slot is set)
+        lines.append('errstr_div0:'); lines += _emit_string_words('#DIV/0!'); lines.append('')
+        lines.append('errstr_name:'); lines += _emit_string_words('#NAME?'); lines.append('')
         for cid, _rc, _ast in dyn:
             lines.append(f'cellbuf_{cid}:')
             lines += ['    .word 0'] * 16
+            lines.append(f'state_cell_{cid}_err:')
+            lines.append('    .word 0')
             lines.append('')
     return lines
 
@@ -782,11 +807,14 @@ def _section_recompute_blocks(stream, state_map) -> list:
     for cid, rc, ast in dyn:
         lines.append(f'recompute_cell_{cid}:')
         try:
+            lines.append(f'    LI   R{_fxc._ERR_REG}, 0   ; clear error code')
             lines += _fxc.compile_ast(ast, base, resolver)
             lines.append(f'    LI   R20, state_cell_{cid}')
             lines.append(f'    STW  R{base}, R20, 0   ; store result')
+            lines.append(f'    LI   R20, state_cell_{cid}_err')
+            lines.append(f'    STW  R{_fxc._ERR_REG}, R20, 0   ; store error code (Part 7)')
         except Exception as e:
-            lines.append(f'    ; (uncompilable: {e}) — leave prior value')
+            lines.append(f'    ; (uncompilable: {e}) - leave prior value')
         lines.append('    RET')
         lines.append('')
     lines.append('recompute_all_cells:')
