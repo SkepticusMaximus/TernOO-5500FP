@@ -573,5 +573,37 @@ class TestListCommandsRuntime(unittest.TestCase):
         self.assertIn('no runtime yet', asm)
 
 
+class TestAllRegistryCommandsCompile(unittest.TestCase):
+    """Every registry command compiles to either a real runtime block or a
+    documented stub — no command crashes the compiler. After the substrate
+    bundle only ctl_while remains stubbed (needs the sub-flow substrate)."""
+
+    def _single(self, kind):
+        import flowcode_commands as reg
+        spec = reg.commands()[kind]
+        # give every param a plausible literal so the plan resolves
+        props = []
+        for p in spec.get('params', []):
+            t = p.get('type')
+            v = 2 if t == 'number' else (True if t == 'bool' else 'a,b')
+            props.append({'name': p['name'], 'value': v})
+        return {'id': 1, 'kind': kind, 'x': 0, 'y': 0, 'w': 1, 'h': 1,
+                'label': '', 'name': f'{kind}_1', 'properties': props}
+
+    def test_every_command_compiles(self):
+        import flowcode_commands as reg
+        live, stubbed = [], []
+        for kind in reg.command_names():
+            s = WordStream()
+            s._cmd_meta = {1: self._single(kind)}
+            asm = C.compile_wordstream_to_t5asm(s, 't.fc')
+            self.assertIn('command_1:', asm)
+            (stubbed if 'no runtime yet' in asm else live).append(kind)
+        # 28 registry commands; only ctl_while stays stubbed (sub-flows)
+        self.assertEqual(stubbed, ['cmd_ctl_while'],
+                         f'unexpected stubs: {stubbed}')
+        self.assertEqual(len(live), len(reg.command_names()) - 1)
+
+
 if __name__ == '__main__':
     unittest.main()
