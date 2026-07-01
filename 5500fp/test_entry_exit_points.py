@@ -172,6 +172,14 @@ class TestPortsUISourceWiring(unittest.TestCase):
         self.assertIn('ph = _fc_port_at(x, y)', self.src)
         self.assertIn("_fc_set_scope(csym['name'])", self.src)
 
+    def test_cell_port_binding_ui(self):
+        # Stage 8-6: bind dialog + unbind + indicator dot, and save/load
+        self.assertIn('Bind to port', self.src)
+        self.assertIn('validate_cell_binding', self.src)
+        self.assertIn('make_cell_binding', self.src)
+        self.assertIn('cell_bound_port(cell)', self.src)      # indicator dot
+        self.assertIn("cell['bound_to_port']", self.src)
+
 
 import subprocess
 import tempfile

@@ -6851,6 +6851,15 @@ def run_gui():
                           else C['canvas'])
                 sheet_canvas.create_rectangle(sx, sy, ex, ey, fill=bgfill,
                                               outline=grid_col)
+                # Stage 8-6: port-binding indicator dot (cyan entry / amber exit)
+                _pb = (_flowcode_ports.cell_bound_port(cell)
+                       if (cell and _flowcode_ports is not None) else None)
+                if _pb:
+                    _dr = max(2, int(3 * z))
+                    _dc = '#00e5ff' if _pb['direction'] == 'entry' else '#ffb000'
+                    sheet_canvas.create_oval(ex - _dr * 2 - 2, sy + 2,
+                                             ex - 2, sy + _dr * 2 + 2,
+                                             fill=_dc, outline='')
                 if cell:
                     # Stage 8-2 per-kind defaults: numbers right, text/formula
                     # left, formula in accent colour. Stage 8-7 format overrides.
@@ -7073,6 +7082,89 @@ def run_gui():
         bg_var = tk.StringVar(value=cell.get('fmt_bg', ''))
         tk.Entry(dlg, textvariable=bg_var, width=10, bg=C['canvas'], fg=C['text'],
                  insertbackground=C['text']).grid(row=r[0], column=1, sticky='w', padx=8); r[0] += 1
+
+        # ── Stage 8-6: cell ↔ port binding ───────────────────────────────────
+        if _flowcode_ports is not None:
+            _fp = _flowcode_ports
+            addrow('Port binding:')
+            b = _fp.cell_bound_port(cell)
+            bind_lbl = tk.Label(dlg, bg=C['palette'], fg=C['text'],
+                                font=('Monospace', 8), anchor='w',
+                                text=(f"{b['container_name']}.{b['port_name']} "
+                                      f"({b['direction']})" if b else '(none)'))
+            bind_lbl.grid(row=r[0], column=1, sticky='w', padx=8); r[0] += 1
+
+            def _do_bind():
+                conts = {s['name']: s for s in fc_state['flow_symbols'].values()
+                         if _fp.is_container(s.get('kind', ''))
+                         and (s.get('entry_points') or s.get('exit_points'))}
+                if not conts:
+                    _sheet_set_status('No containers with ports to bind to')
+                    return
+                bd = tk.Toplevel(dlg); bd.configure(bg=C['palette'])
+                bd.title('Bind cell to port'); bd.transient(dlg); bd.grab_set()
+                cvar = tk.StringVar(value=sorted(conts)[0])
+                pvar = tk.StringVar()
+                tk.Label(bd, text='Container:', bg=C['palette'], fg=C['text'],
+                         font=('Monospace', 9)).grid(row=0, column=0, padx=8, pady=4, sticky='e')
+                tk.Label(bd, text='Port:', bg=C['palette'], fg=C['text'],
+                         font=('Monospace', 9)).grid(row=1, column=0, padx=8, pady=4, sticky='e')
+                cmenu = ttk.Combobox(bd, textvariable=cvar, width=18,
+                                     values=sorted(conts), state='readonly')
+                cmenu.grid(row=0, column=1, padx=8, pady=4, sticky='w')
+                pmenu = ttk.Combobox(bd, textvariable=pvar, width=18, state='readonly')
+                pmenu.grid(row=1, column=1, padx=8, pady=4, sticky='w')
+                warn = tk.Label(bd, text='', bg=C['palette'], fg='#ff8888',
+                                font=('Monospace', 8))
+                warn.grid(row=2, column=0, columnspan=2, sticky='w', padx=8)
+
+                def _refresh_ports(*_a):
+                    sym = conts.get(cvar.get(), {})
+                    opts = ([f"{p['name']} (entry)" for p in _fp.entry_points(sym)]
+                            + [f"{p['name']} (exit)" for p in _fp.exit_points(sym)])
+                    pmenu['values'] = opts
+                    if opts:
+                        pvar.set(opts[0])
+                cmenu.bind('<<ComboboxSelected>>', _refresh_ports)
+                _refresh_ports()
+
+                def _commit_bind():
+                    sym = conts.get(cvar.get())
+                    sel = pvar.get()
+                    if not sel:
+                        return
+                    pname = sel.rsplit(' (', 1)[0]
+                    direction = 'entry' if sel.endswith('(entry)') else 'exit'
+                    ok, msg = _fp.validate_cell_binding(cell, sym, pname, direction)
+                    if not ok:
+                        warn.config(text=msg); return
+                    cell['bound_to_port'] = _fp.make_cell_binding(
+                        cvar.get(), pname, direction)
+                    bd.destroy(); _sheet_redraw(); dlg.destroy()
+                    _sheet_set_status(f"Bound {cell.get('name')} → "
+                                      f"{cvar.get()}.{pname} ({direction})")
+
+                bfr = tk.Frame(bd, bg=C['palette']); bfr.grid(row=3, column=0,
+                                                              columnspan=2, pady=8)
+                tk.Button(bfr, text='Bind', command=_commit_bind, bg=C['pal_btn'],
+                          fg=C['text'], relief='flat', padx=10).pack(side='left', padx=4)
+                tk.Button(bfr, text='Cancel', command=bd.destroy, bg=C['pal_btn'],
+                          fg=C['text'], relief='flat', padx=10).pack(side='left', padx=4)
+
+            def _do_unbind():
+                cell.pop('bound_to_port', None)
+                _sheet_redraw(); dlg.destroy()
+                _sheet_set_status('Port binding removed')
+
+            pbtns = tk.Frame(dlg, bg=C['palette'])
+            pbtns.grid(row=r[0], column=0, columnspan=2, pady=(0, 4)); r[0] += 1
+            tk.Button(pbtns, text='Bind to port…', command=_do_bind, bg=C['pal_btn'],
+                      fg=C['text'], relief='flat', padx=8,
+                      font=('Monospace', 8)).pack(side='left', padx=4)
+            if b:
+                tk.Button(pbtns, text='Unbind', command=_do_unbind, bg=C['pal_btn'],
+                          fg='#ff8888', relief='flat', padx=8,
+                          font=('Monospace', 8)).pack(side='left', padx=4)
 
         def _apply():
             def setf(key, val):
