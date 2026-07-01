@@ -189,6 +189,31 @@ int pigart_handle_syscall(int syscall_num,
             break;
         }
 
+        /* ---- 116: PIGART_DRAW_STRING (length-prefixed heap string) ----
+         * R2=x, R3=y, R4=handle, R5=size, R6=color. mem[handle]=length,
+         * chars at handle+1. Reuses the backend text renderer. */
+        case PIGART_DRAW_STRING: {
+            if (!b || !g_window_open) break;
+            int x = (int)regs[2], y = (int)regs[3];
+            int64_t h = regs[4];
+            int size = (int)regs[5];
+            uint32_t color = (uint32_t)(regs[6] & 0xFFFFFF);
+            char text[1025];
+            int n = 0;
+            if (h > 0 && (uint64_t)h < mem_size) {
+                int64_t len = mem[h];
+                if (len < 0) len = 0;
+                for (; n < len && n < (int)sizeof(text) - 1; n++) {
+                    int64_t ca = h + 1 + n;
+                    if ((uint64_t)ca >= mem_size) break;
+                    text[n] = (char)(mem[ca] & 0xFF);
+                }
+            }
+            text[n] = '\0';
+            b->draw_text(x, y, text, size, color);
+            break;
+        }
+
         /* ---- 106: PIGART_DRAW_LINE ---- */
         case PIGART_DRAW_LINE: {
             if (!b || !g_window_open) break;

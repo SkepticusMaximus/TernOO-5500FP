@@ -294,6 +294,51 @@ static void decode_instruction(int64_t raw, decoded_inst_t *d) {
 }
 
 /* -----------------------------------------------------------------------
+ * Runtime value heap — variable-length strings (Option A)
+ *
+ * String at handle H: mem[H]=length, mem[H+1..H+len]=chars, mem[H+1+len]=0.
+ * Handle 0 is the null sentinel. Immutable to callers; ops return new strings.
+ * --------------------------------------------------------------------- */
+
+/* Bump-allocate nwords on the value heap; returns base handle, or 0 on OOM. */
+static int64_t heap_alloc(cpu_t *cpu, int64_t nwords) {
+    if (nwords < 0) return 0;
+    int64_t base = cpu->heap_ptr;
+    if (base <= 0 || base + nwords >= (int64_t)cpu->mem_size) {
+        fprintf(stderr, "[5500FP] value heap exhausted (need %lld words)\n",
+                (long long)nwords);
+        return 0;
+    }
+    for (int64_t i = 0; i < nwords; i++) cpu->mem[base + i] = 0;
+    cpu->heap_ptr = base + nwords;
+    return base;
+}
+
+static int valid_handle(const cpu_t *cpu, int64_t h) {
+    return h > 0 && (uint64_t)h < cpu->mem_size;
+}
+
+static int64_t str_len(const cpu_t *cpu, int64_t h) {
+    if (!valid_handle(cpu, h)) return 0;
+    int64_t n = cpu->mem[h];
+    return (n < 0) ? 0 : n;
+}
+
+/* Allocate a length-`len` string (chars zeroed + NUL); returns handle. */
+static int64_t str_new(cpu_t *cpu, int64_t len) {
+    if (len < 0) len = 0;
+    int64_t h = heap_alloc(cpu, 1 + len + 1);   /* length + chars + NUL */
+    if (!h) return 0;
+    cpu->mem[h] = len;
+    return h;
+}
+
+static int64_t str_char(const cpu_t *cpu, int64_t h, int64_t i) {
+    if (i < 0 || i >= str_len(cpu, h)) return 0;
+    return cpu->mem[h + 1 + i] & 0xFF;
+}
+
+/* -----------------------------------------------------------------------
  * Syscall handler
  * --------------------------------------------------------------------- */
 static void handle_syscall(cpu_t *cpu) {
@@ -325,6 +370,83 @@ static void handle_syscall(cpu_t *cpu) {
              * output immediately rather than waiting for process exit. */
             fflush(stdout);
             break;
+
+        /* ---- Runtime value substrate: variable-length strings ---- */
+        case SYS_STR_ALLOC:
+            reg_write(cpu, 1, str_new(cpu, reg_read(cpu, 2)));
+            break;
+        case SYS_STR_FROMBUF: {
+            int64_t buf = reg_read(cpu, 2), n = 0;
+            while ((uint64_t)(buf + n) < cpu->mem_size &&
+                   (cpu->mem[buf + n] & 0xFF) != 0) n++;
+            int64_t h = str_new(cpu, n);
+            if (h) for (int64_t i = 0; i < n; i++)
+                cpu->mem[h + 1 + i] = cpu->mem[buf + i] & 0xFF;
+            reg_write(cpu, 1, h);
+            break;
+        }
+        case SYS_STR_LEN:
+            reg_write(cpu, 1, str_len(cpu, reg_read(cpu, 2)));
+            break;
+        case SYS_STR_CHAR:
+            reg_write(cpu, 1, str_char(cpu, reg_read(cpu, 2), reg_read(cpu, 3)));
+            break;
+        case SYS_STR_SETCHAR: {
+            int64_t h = reg_read(cpu, 2), i = reg_read(cpu, 3);
+            if (i >= 0 && i < str_len(cpu, h))
+                cpu->mem[h + 1 + i] = reg_read(cpu, 4) & 0xFF;
+            break;
+        }
+        case SYS_STR_CONCAT: {
+            int64_t a = reg_read(cpu, 2), b = reg_read(cpu, 3);
+            int64_t la = str_len(cpu, a), lb = str_len(cpu, b);
+            int64_t h = str_new(cpu, la + lb);
+            if (h) {
+                for (int64_t i = 0; i < la; i++) cpu->mem[h+1+i]    = str_char(cpu, a, i);
+                for (int64_t i = 0; i < lb; i++) cpu->mem[h+1+la+i] = str_char(cpu, b, i);
+            }
+            reg_write(cpu, 1, h);
+            break;
+        }
+        case SYS_STR_EQ: {
+            int64_t a = reg_read(cpu, 2), b = reg_read(cpu, 3);
+            int64_t la = str_len(cpu, a), lb = str_len(cpu, b);
+            int eq = (la == lb);
+            for (int64_t i = 0; eq && i < la; i++)
+                if (str_char(cpu, a, i) != str_char(cpu, b, i)) eq = 0;
+            reg_write(cpu, 1, eq ? 1 : 0);
+            break;
+        }
+        case SYS_STR_SUB: {
+            int64_t s = reg_read(cpu, 2), start = reg_read(cpu, 3), len = reg_read(cpu, 4);
+            int64_t n = str_len(cpu, s);
+            if (start < 0) start = 0;
+            if (start > n) start = n;
+            if (len < 0) len = 0;
+            if (start + len > n) len = n - start;
+            int64_t h = str_new(cpu, len);
+            if (h) for (int64_t i = 0; i < len; i++)
+                cpu->mem[h + 1 + i] = str_char(cpu, s, start + i);
+            reg_write(cpu, 1, h);
+            break;
+        }
+        case SYS_STR_INDEXOF: {
+            int64_t hay = reg_read(cpu, 2), needle = reg_read(cpu, 3), from = reg_read(cpu, 4);
+            int64_t nh = str_len(cpu, hay), nn = str_len(cpu, needle), found = -1;
+            if (from < 0) from = 0;
+            if (nn == 0) {
+                found = (from <= nh) ? from : -1;
+            } else {
+                for (int64_t i = from; i + nn <= nh; i++) {
+                    int match = 1;
+                    for (int64_t j = 0; j < nn; j++)
+                        if (str_char(cpu, hay, i + j) != str_char(cpu, needle, j)) { match = 0; break; }
+                    if (match) { found = i; break; }
+                }
+            }
+            reg_write(cpu, 1, found);
+            break;
+        }
         /* ---- PIGART rendering syscalls 100-111 ---- */
         case PIGART_OPEN_WINDOW:
         case PIGART_CLEAR:
@@ -342,6 +464,7 @@ static void handle_syscall(cpu_t *cpu) {
         case PIGART_DIALOG_DISPLAY:
         case PIGART_DIALOG_CONFIRM:
         case PIGART_DIALOG_CHOICE:
+        case PIGART_DRAW_STRING:
             pigart_handle_syscall((int)call, cpu->reg, cpu->mem, cpu->mem_size);
             break;
         default:

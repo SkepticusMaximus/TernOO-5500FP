@@ -335,6 +335,77 @@ static void run_tests(void) {
         cpu_destroy(cpu);
     }
 
+    /* Test 5c: Runtime value substrate — variable-length strings */
+    printf("\n-- String Runtime Tests --\n");
+    {
+        struct { const char *name; const char *src; int reg; int64_t exp; } st[] = {
+        { "STR_FROMBUF+LEN 'hello'=5",
+          "LI R1,41\nLI R2,sbuf\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,42\nMOV R2,R5\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "sbuf:\n.word 104\n.word 101\n.word 108\n.word 108\n.word 111\n.word 0\n",
+          3, 5 },
+        { "STR_CONCAT len 'ab'+'cd'=4",
+          "LI R1,41\nLI R2,b1\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,b2\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,45\nMOV R2,R5\nMOV R3,R6\nSYSCALL\nMOV R7,R1\n"
+          "LI R1,42\nMOV R2,R7\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "b1:\n.word 97\n.word 98\n.word 0\nb2:\n.word 99\n.word 100\n.word 0\n",
+          3, 4 },
+        { "STR_CONCAT char[2]='c'",
+          "LI R1,41\nLI R2,b1\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,b2\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,45\nMOV R2,R5\nMOV R3,R6\nSYSCALL\nMOV R7,R1\n"
+          "LI R1,43\nMOV R2,R7\nLI R3,2\nSYSCALL\nMOV R4,R1\nHALT\n"
+          "b1:\n.word 97\n.word 98\n.word 0\nb2:\n.word 99\n.word 100\n.word 0\n",
+          4, 99 },
+        { "STR_EQ equal=1",
+          "LI R1,41\nLI R2,b1\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,b2\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,46\nMOV R2,R5\nMOV R3,R6\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "b1:\n.word 97\n.word 98\n.word 0\nb2:\n.word 97\n.word 98\n.word 0\n",
+          3, 1 },
+        { "STR_EQ unequal=0",
+          "LI R1,41\nLI R2,b1\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,b2\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,46\nMOV R2,R5\nMOV R3,R6\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "b1:\n.word 97\n.word 98\n.word 0\nb2:\n.word 97\n.word 99\n.word 0\n",
+          3, 0 },
+        { "STR_SUB('hello',1,3) len=3",
+          "LI R1,41\nLI R2,sbuf\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,47\nMOV R2,R5\nLI R3,1\nLI R4,3\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,42\nMOV R2,R6\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "sbuf:\n.word 104\n.word 101\n.word 108\n.word 108\n.word 111\n.word 0\n",
+          3, 3 },
+        { "STR_SUB('hello',1,3) char[0]='e'",
+          "LI R1,41\nLI R2,sbuf\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,47\nMOV R2,R5\nLI R3,1\nLI R4,3\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,43\nMOV R2,R6\nLI R3,0\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "sbuf:\n.word 104\n.word 101\n.word 108\n.word 108\n.word 111\n.word 0\n",
+          3, 101 },
+        { "STR_INDEXOF('hello','ll')=2",
+          "LI R1,41\nLI R2,sbuf\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,nbuf\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,48\nMOV R2,R5\nMOV R3,R6\nLI R4,0\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "sbuf:\n.word 104\n.word 101\n.word 108\n.word 108\n.word 111\n.word 0\n"
+          "nbuf:\n.word 108\n.word 108\n.word 0\n",
+          3, 2 },
+        { "STR_ALLOC+SETCHAR+CHAR round-trips",
+          "LI R1,40\nLI R2,3\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,44\nMOV R2,R5\nLI R3,0\nLI R4,88\nSYSCALL\n"
+          "LI R1,43\nMOV R2,R5\nLI R3,0\nSYSCALL\nMOV R3,R1\nHALT\n",
+          3, 88 },
+        };
+        for (unsigned i = 0; i < sizeof(st)/sizeof(st[0]); i++) {
+            int64_t prog[128];
+            int len = assemble(st[i].src, prog, 128, 0);
+            cpu_t *cpu = cpu_create(65536);
+            cpu_load_program(cpu, prog, len, 0);
+            cpu_run_n(cpu, 100000);
+            test_assert(st[i].name, cpu->reg[st[i].reg], st[i].exp);
+            cpu_destroy(cpu);
+        }
+    }
+
     /* Test 6: Ternary trit operations */
     printf("\n-- Ternary Logic Tests --\n");
     {
@@ -395,6 +466,23 @@ static void run_tests(void) {
         test_assert("PIGART_DRAW_TEXT 'H' at grid(8,6)", (int64_t)ch, (int64_t)'H');
         char ci = pigart_ascii_cell(9, 6);
         test_assert("PIGART_DRAW_TEXT 'i' at grid(9,6)", (int64_t)ci, (int64_t)'i');
+    }
+
+    /* Test P3b: PIGART_DRAW_STRING renders a length-prefixed heap string.
+     * A string "Hi" at handle 100: mem[100]=2, mem[101]='H', mem[102]='i'. */
+    {
+        int64_t m[128];
+        for (int i = 0; i < 128; i++) m[i] = 0;
+        m[100] = 2; m[101] = 'H'; m[102] = 'i';
+        int64_t regs[NUM_REGISTERS];
+        for (int i = 0; i < NUM_REGISTERS; i++) regs[i] = 0;
+        regs[2] = 80; regs[3] = 150; regs[4] = 100; regs[5] = 16; regs[6] = 0xFFFFFF;
+        pigart_active_backend->clear(0);
+        pigart_handle_syscall(PIGART_DRAW_STRING, regs, m, 128);
+        test_assert("PIGART_DRAW_STRING 'H' at grid(8,6)",
+                    (int64_t)pigart_ascii_cell(8, 6), (int64_t)'H');
+        test_assert("PIGART_DRAW_STRING 'i' at grid(9,6)",
+                    (int64_t)pigart_ascii_cell(9, 6), (int64_t)'i');
     }
 
     /* Test P4: PIGART_DRAW_RECT filled region contains '#'

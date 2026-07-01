@@ -45,6 +45,9 @@
 #define PIGART_DIALOG_CONFIRM 114
 #define PIGART_DIALOG_CHOICE  115
 
+/* Runtime value substrate — render a length-prefixed heap string */
+#define PIGART_DRAW_STRING    116
+
 /* -----------------------------------------------------------------------
  * Event types (D8)
  * --------------------------------------------------------------------- */
