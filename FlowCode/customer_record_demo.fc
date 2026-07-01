@@ -1,0 +1,474 @@
+{
+  "ternoo_version": "0.3",
+  "source_file": "customer_record_demo.fc",
+  "source_type": "ternoo_design",
+  "word_stream": [
+    60458853929,
+    -80196415212,
+    -76709223256,
+    -62374698729,
+    -55786651213,
+    -55786750236,
+    -55788535723,
+    -62268410529,
+    60846274418,
+    -80196119951,
+    -76709242240,
+    -62374698729,
+    -55786651213,
+    -55786750236,
+    -55788011435,
+    -55786915390,
+    -62268410529,
+    59684012951,
+    -80196159313,
+    -76709239324,
+    -62374698729,
+    -55788550416,
+    -62268410529,
+    59684012951,
+    -80196021528,
+    -76709250259,
+    -62374698729,
+    -55787230266,
+    -62268410529,
+    59684012951,
+    -80196139621,
+    -76709240782,
+    -62374698729,
+    -55788550368,
+    -62268410529,
+    60071433440,
+    -80196041201,
+    -76709248071,
+    -62374698729,
+    -55786604605,
+    -55788550315,
+    -62268410529,
+    58887382888,
+    -80195962471,
+    -80195923119,
+    -62321554629,
+    58887382888,
+    -80195962471,
+    -80195923115,
+    -62321554629,
+    58887382888,
+    -80195962471,
+    -80195942794,
+    -62321554629,
+    58887382888,
+    -80195962471,
+    -80195923106,
+    -62321554629,
+    58887382888,
+    -80195962471,
+    -80195923100,
+    -62321554629,
+    57724589979,
+    60458853925,
+    -80195057064,
+    -76709248068,
+    -62374167288,
+    -55786604605,
+    -55786951851,
+    -55786768034,
+    -55788535723,
+    60071433436,
+    -80195057052,
+    -76709248068,
+    -62373635847,
+    -55786717120,
+    -55786653229,
+    -55788550301,
+    60071433436,
+    -80194978332,
+    -76709248068,
+    -62374167288,
+    -55786768442,
+    -55786948263,
+    -55788537372,
+    60458853925,
+    -80194663404,
+    -76709248068,
+    -62373635847,
+    -55786750285,
+    -55786634784,
+    -55786950315,
+    -55788550296,
+    57724589979,
+    59274803375,
+    -80195923101,
+    -80194938963,
+    -62321023188,
+    -62215266429
+  ],
+  "symbols": [
+    {
+      "id": 0,
+      "kind": "gui_window",
+      "label": "Customer",
+      "name": "customer_window",
+      "gtk_class": "",
+      "x": 40,
+      "y": 40,
+      "depth": 0,
+      "w": 460,
+      "h": 320,
+      "parent_id": null,
+      "layout_mode": "absolute",
+      "properties": [
+        {
+          "name": "title",
+          "value": "Customer Record"
+        }
+      ],
+      "signals": [],
+      "signal_ids": {}
+    },
+    {
+      "id": 1,
+      "kind": "gui_label",
+      "label": "Customer Rec",
+      "name": "heading",
+      "gtk_class": "",
+      "x": 60,
+      "y": 60,
+      "depth": 0,
+      "w": 200,
+      "h": 24,
+      "parent_id": 0,
+      "layout_mode": "absolute",
+      "properties": [],
+      "signals": [],
+      "signal_ids": {}
+    },
+    {
+      "id": 2,
+      "kind": "gui_entry",
+      "label": "",
+      "name": "cust_name",
+      "gtk_class": "",
+      "x": 60,
+      "y": 100,
+      "depth": 0,
+      "w": 240,
+      "h": 28,
+      "parent_id": 0,
+      "layout_mode": "absolute",
+      "properties": [
+        {
+          "name": "placeholder",
+          "value": "name"
+        }
+      ],
+      "signals": [],
+      "signal_ids": {}
+    },
+    {
+      "id": 3,
+      "kind": "gui_toggle",
+      "label": "VIP",
+      "name": "vip",
+      "gtk_class": "",
+      "x": 60,
+      "y": 140,
+      "depth": 0,
+      "w": 90,
+      "h": 28,
+      "parent_id": 0,
+      "layout_mode": "absolute",
+      "properties": [
+        {
+          "name": "checked",
+          "value": false
+        },
+        {
+          "name": "bind_value_to",
+          "value": "cell_vip"
+        }
+      ],
+      "signals": [],
+      "signal_ids": {}
+    },
+    {
+      "id": 4,
+      "kind": "gui_label",
+      "label": "0",
+      "name": "total_display",
+      "gtk_class": "",
+      "x": 60,
+      "y": 190,
+      "depth": 0,
+      "w": 220,
+      "h": 24,
+      "parent_id": 0,
+      "layout_mode": "absolute",
+      "properties": [
+        {
+          "name": "bind_value_to",
+          "value": "cell_total"
+        }
+      ],
+      "signals": [],
+      "signal_ids": {}
+    },
+    {
+      "id": 5,
+      "kind": "gui_button",
+      "label": "Save",
+      "name": "save_button",
+      "gtk_class": "",
+      "x": 60,
+      "y": 240,
+      "depth": 0,
+      "w": 120,
+      "h": 32,
+      "parent_id": 0,
+      "layout_mode": "absolute",
+      "properties": [],
+      "signals": [],
+      "signal_ids": {}
+    }
+  ],
+  "edges": [],
+  "flow_symbols": [
+    {
+      "id": 0,
+      "kind": "flow_terminator",
+      "name": "save_button_clicked",
+      "x": 560,
+      "y": 120,
+      "w": 120,
+      "h": 60,
+      "label": "SaveHandler",
+      "properties": [
+        {
+          "name": "is_entry",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "kind": "flow_process",
+      "name": "process_order",
+      "x": 560,
+      "y": 240,
+      "w": 120,
+      "h": 60,
+      "label": "Process",
+      "properties": []
+    },
+    {
+      "id": 2,
+      "kind": "flow_terminator",
+      "name": "validate_amount",
+      "x": 600,
+      "y": 120,
+      "w": 120,
+      "h": 60,
+      "label": "Validate",
+      "properties": [
+        {
+          "name": "is_entry",
+          "value": true
+        }
+      ],
+      "parent_scope": "process_order"
+    },
+    {
+      "id": 3,
+      "kind": "flow_process",
+      "name": "compute_tax",
+      "x": 760,
+      "y": 120,
+      "w": 120,
+      "h": 60,
+      "label": "ComputeTax",
+      "properties": [],
+      "parent_scope": "process_order"
+    }
+  ],
+  "flow_edges": [],
+  "cmd_symbols": [],
+  "cell_symbols": [
+    {
+      "id": 10,
+      "kind": "cell_value",
+      "row": 0,
+      "col": 0,
+      "name": "cell_qty",
+      "label": "",
+      "value": "3",
+      "properties": []
+    },
+    {
+      "id": 11,
+      "kind": "cell_value",
+      "row": 0,
+      "col": 1,
+      "name": "cell_price",
+      "label": "",
+      "value": "25",
+      "properties": [],
+      "fmt_currency": true,
+      "fmt_decimals": 2
+    },
+    {
+      "id": 12,
+      "kind": "cell_formula",
+      "row": 1,
+      "col": 0,
+      "name": "cell_subtotal",
+      "label": "",
+      "value": "=A1*B1",
+      "properties": [],
+      "_result": "75"
+    },
+    {
+      "id": 13,
+      "kind": "cell_value",
+      "row": 2,
+      "col": 0,
+      "name": "cell_vip",
+      "label": "",
+      "value": "0",
+      "properties": []
+    },
+    {
+      "id": 14,
+      "kind": "cell_formula",
+      "row": 3,
+      "col": 0,
+      "name": "cell_discount",
+      "label": "",
+      "value": "=IF(WIDGET(\"vip\").checked > 0, 10, 0)",
+      "properties": [],
+      "_result": "0"
+    },
+    {
+      "id": 15,
+      "kind": "cell_formula",
+      "row": 4,
+      "col": 0,
+      "name": "cell_total",
+      "label": "",
+      "value": "=cell_subtotal - cell_discount",
+      "properties": [],
+      "fmt_currency": true,
+      "fmt_decimals": 2,
+      "_result": "75"
+    },
+    {
+      "id": 20,
+      "kind": "cell_text",
+      "row": 0,
+      "col": 3,
+      "name": "cell_hdr",
+      "label": "",
+      "value": "Line items",
+      "properties": []
+    },
+    {
+      "id": 21,
+      "kind": "cell_value",
+      "row": 1,
+      "col": 3,
+      "name": "cell_d2",
+      "label": "",
+      "value": "10",
+      "properties": []
+    },
+    {
+      "id": 22,
+      "kind": "cell_value",
+      "row": 2,
+      "col": 3,
+      "name": "cell_d3",
+      "label": "",
+      "value": "20",
+      "properties": []
+    },
+    {
+      "id": 23,
+      "kind": "cell_value",
+      "row": 3,
+      "col": 3,
+      "name": "cell_d4",
+      "label": "",
+      "value": "12",
+      "properties": []
+    },
+    {
+      "id": 24,
+      "kind": "cell_formula",
+      "row": 4,
+      "col": 3,
+      "name": "cell_dsum",
+      "label": "",
+      "value": "=SUM(D2:D4)",
+      "properties": [],
+      "_result": "42"
+    },
+    {
+      "id": 25,
+      "kind": "cell_formula",
+      "row": 5,
+      "col": 3,
+      "name": "cell_clicks",
+      "label": "",
+      "value": "=SIGNAL_LAST(\"save_button_clicked\")",
+      "properties": [],
+      "_result": "0"
+    }
+  ],
+  "sheet_regions": [
+    {
+      "id": 0,
+      "kind": "sheet_region",
+      "name": "notes_region",
+      "x": 360,
+      "y": 40,
+      "w": 240,
+      "h": 100,
+      "label": "Notes"
+    }
+  ],
+  "free_cells": [
+    {
+      "id": 30,
+      "kind": "cell_text",
+      "region_id": 0,
+      "px": 12,
+      "py": 30,
+      "name": "cell_note",
+      "label": "note",
+      "value": "Priority acct",
+      "properties": []
+    }
+  ],
+  "sequence": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "tgui_meta": {
+    "widget_count": 6,
+    "edge_count": 0,
+    "flow_symbol_count": 4,
+    "flow_edge_count": 0,
+    "cmd_widget_count": 0,
+    "cell_count": 12,
+    "mmoe_types_used": [
+      "gui_button",
+      "gui_entry",
+      "gui_toggle",
+      "gui_label",
+      "gui_window"
+    ]
+  }
+}
