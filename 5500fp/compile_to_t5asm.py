@@ -380,6 +380,18 @@ def _emit_widget_render(widget, ex: int, ey: int, ew: int, eh: int,
 
     elif k == 'gui_entry':
         lines += _emit_draw_rect(ex, ey, ew, eh, 'color_dark', 0)
+        # Focus indicator: if this entry is the focused one, overdraw a teal
+        # border so a click gives visible feedback (Piece 3).
+        skip_focus = f'skip_focus_{abs(widget.id)}'
+        lines += [
+            '    LI   R20, state_focused_entry',
+            '    LDW  R15, R20, 0',
+            f'    LI   R16, {widget.id}',
+            f'    SUB  R15, R15, R16',
+            f'    BNEZ R15, {skip_focus}',
+        ]
+        lines += _emit_draw_rect(ex - 1, ey - 1, ew + 2, eh + 2, 'color_teal', 0)
+        lines.append(f'{skip_focus}:')
         s = state_map.get(widget.id, {})
         text_lbl = s.get('text', '')
         if text_lbl:

@@ -754,3 +754,26 @@ class TestStage85RTWriteBack(unittest.TestCase):
         asm = compile_wordstream_to_t5asm(s, 'd.fc')
         self.assertNotIn('"', asm.split('; ============ Data')[0])  # no quotes in code
         self.assertNotIn('→', asm)
+
+
+class TestEntryInteractivity(unittest.TestCase):
+    """Piece 3: gui_entry focus indicator + keyboard path."""
+
+    def _asm(self):
+        s = WordStream()
+        s._widget_meta = {
+            0: _make_widget(0, 'gui_window', 0, 0, 400, 300, 'W'),
+            1: dict(_make_widget(1, 'gui_entry', 20, 40, 160, 28), name='nm'),
+        }
+        return compile_wordstream_to_t5asm(s, 'e.fc')
+
+    def test_focus_indicator(self):
+        asm = self._asm()
+        self.assertIn('skip_focus_1:', asm)
+        self.assertIn('state_focused_entry', asm)
+        self.assertIn('color_teal', asm)          # focus border
+
+    def test_key_handler_and_text_render(self):
+        asm = self._asm()
+        self.assertIn('handle_key_down:', asm)     # keyboard routed to entry
+        self.assertIn('state_text_1', asm)         # text buffer rendered from state
