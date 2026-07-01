@@ -130,5 +130,68 @@ class TestPortsUISourceWiring(unittest.TestCase):
         self.assertIn("Expr (= interior formula)", self.src)
 
 
+import subprocess
+import tempfile
+
+import compile_to_t5asm as C
+from word_stream import WordStream
+
+_EMU = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                    '..', 'NASM-TernOO-5500FP-Emulator', 'c_emulator', '5500fp')
+_HAVE_EMU = os.path.exists(_EMU)
+
+
+def _demo_stream(input_value):
+    """compute_score container: entry pulls input_cell, exit doubles it;
+    an output cell reads the exit port."""
+    s = WordStream()
+    s._cell_meta = {
+        (0, 0): {'id': 1, 'kind': 'cell_value', 'row': 0, 'col': 0,
+                 'name': 'input_cell', 'value': input_value, 'properties': []},
+        (0, 1): {'id': 2, 'kind': 'cell_formula', 'row': 0, 'col': 1,
+                 'name': 'out', 'value': '=compute_score_result', 'properties': []},
+    }
+    s._flow_meta = {100: {'id': 100, 'kind': 'flow_process', 'x': 0, 'y': 0,
+                          'w': 1, 'h': 1, 'label': 'CS', 'name': 'compute_score',
+                          'entry_points': [{'name': 'input_value', 'type': 'number',
+                                            'expr': 'input_cell'}],
+                          'exit_points': [{'name': 'result', 'type': 'number',
+                                           'expr': 'input_value * 2'}]}}
+    return s
+
+
+class TestPortCompilation(unittest.TestCase):
+
+    def test_port_slots_and_recompute_emitted(self):
+        asm = C.compile_wordstream_to_t5asm(_demo_stream(5), 'demo.fc')
+        self.assertIn('state_entry_compute_score_input_value:', asm)
+        self.assertIn('state_exit_compute_score_result:', asm)
+        self.assertIn('recompute_all_ports', asm)
+        self.assertIn('CALL recompute_all_ports', asm)   # per-frame trigger
+        self.assertNotIn('uncompilable', asm)
+
+    @unittest.skipUnless(_HAVE_EMU, 'C emulator binary not built')
+    def test_cross_scope_dataflow_runs(self):
+        for inp, exp in ((5, '10'), (7, '14')):
+            asm = C.compile_wordstream_to_t5asm(_demo_stream(inp), 'demo.fc')
+            tail = asm[asm.index('; ---- Container entry/exit ports'):]
+            driver = ['main:', '    CALL recompute_all_ports',
+                      '    CALL recompute_all_cells',
+                      '    LI R20, state_cell_2', '    LDW R2, R20, 0',
+                      '    LI R1, 1', '    SYSCALL', '    LI R1, 6', '    SYSCALL',
+                      '    HALT', '']
+            with tempfile.NamedTemporaryFile('w', suffix='.t5asm', delete=False) as f:
+                f.write('\n'.join(driver) + '\n' + tail)
+                path = f.name
+            try:
+                r = subprocess.run([_EMU, '--run', path], capture_output=True,
+                                   text=True, timeout=10)
+            finally:
+                os.unlink(path)
+            digits = [x for x in r.stdout.splitlines() if x.strip().lstrip('-').isdigit()]
+            self.assertEqual(digits[-1:], [exp],
+                             f'input {inp} should double to {exp}')
+
+
 if __name__ == '__main__':
     unittest.main()

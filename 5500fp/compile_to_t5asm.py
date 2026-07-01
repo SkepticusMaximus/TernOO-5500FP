@@ -703,6 +703,7 @@ def _dynamic_cells(stream):
     if _fxc is None:
         return []
     cells = getattr(stream, '_cell_meta', {}) or {}
+    exit_flat = _exit_flatname_slots(stream)   # Phase 7c-4b: cells reading exits
     dyn = {}      # rc -> (cid, ast)
     for rc, cell in cells.items():
         if cell.get('kind') != 'cell_formula':
@@ -713,7 +714,9 @@ def _dynamic_cells(stream):
             ast = _sheetf.parse(expr)
         except Exception:
             continue
-        if _ast_has_native(ast):
+        refs_exit = exit_flat and any(r in exit_flat
+                                      for r in _sheetf.extract_refs(ast))
+        if _ast_has_native(ast) or refs_exit:
             dyn[rc] = (cell.get('id'), ast)
     # address/name → rc, to order cells that reference other dynamic cells
     addr2rc, name2rc = {}, {}
@@ -808,6 +811,7 @@ def _make_recompute_resolver(stream, state_map):
         s = state_map.get(w.id) or {}
         if 'checked' in s and getattr(w, 'name', ''):
             wname2slot[w.name] = s['checked']
+    exit_flat = _exit_flatname_slots(stream)   # Phase 7c-4b: <container>_<port>
 
     def resolver(ref):
         if isinstance(ref, tuple):
@@ -816,6 +820,8 @@ def _make_recompute_resolver(stream, state_map):
             if ref[0] == 'signal':
                 return f'state_signal_last_{ref[1]}'
             return None
+        if ref in exit_flat:               # a cell reading a container exit port
+            return exit_flat[ref]
         cid = addr2id.get(ref)
         if cid is None:
             cid = name2id.get(ref)
@@ -855,6 +861,115 @@ def _section_recompute_blocks(stream, state_map) -> list:
 
 def _has_dynamic_cells(stream) -> bool:
     return bool(_dynamic_cells(stream))
+
+
+# ---------------------------------------------------------------------------
+# Phase 7c-4b: container entry/exit ports → state slots
+# ---------------------------------------------------------------------------
+#
+# A container flow symbol (flow_process / flow_subroutine) exposes named ports.
+# Each becomes a one-word state slot:
+#   entry -> state_entry_<container>_<port>   (fed from the OUTER scope)
+#   exit  -> state_exit_<container>_<port>    (produced by the interior)
+# Data flow is expressed by port `expr` formulas (reusing the AST engine):
+#   entry.expr — evaluated over outer cells/widgets   -> state_entry
+#   exit.expr  — evaluated over this container's entry-port names -> state_exit
+# recompute_all_ports runs entries then exits each frame, before cell recompute.
+
+try:
+    import flowcode_ports as _fports
+except Exception:                  # pragma: no cover
+    _fports = None
+
+
+def _container_port_syms(stream) -> list:
+    """[(container_name, sym)] for container symbols carrying any ports."""
+    if _fports is None:
+        return []
+    out = []
+    for sid, sym in (getattr(stream, '_flow_meta', {}) or {}).items():
+        if sym.get('kind') in _fports.CONTAINER_KINDS and \
+                (sym.get('entry_points') or sym.get('exit_points')):
+            out.append((sym.get('name') or f'container_{sid}', sym))
+    return out
+
+
+def _has_ports(stream) -> bool:
+    return bool(_container_port_syms(stream))
+
+
+def _exit_flatname_slots(stream) -> dict:
+    """{'<container>_<port>': state_exit_slot} — how outer cells read an exit."""
+    m = {}
+    for cname, sym in _container_port_syms(stream):
+        for p in (sym.get('exit_points') or []):
+            m[f'{cname}_{p["name"]}'] = _fports.exit_slot(cname, p['name'])
+    return m
+
+
+def _make_entry_resolver(cname, sym):
+    """entry-port names -> state_entry slots, for a container's exit exprs."""
+    m = {p['name']: _fports.entry_slot(cname, p['name'])
+         for p in (sym.get('entry_points') or [])}
+    return lambda ref: (None if isinstance(ref, tuple) else m.get(ref))
+
+
+def _section_port_blocks(stream, state_map) -> list:
+    conts = _container_port_syms(stream)
+    if not conts or _fxc is None or _sheetf is None:
+        return []
+    outer = _make_recompute_resolver(stream, state_map)   # entry exprs → outer
+    base = _fxc._BASE_REG
+    lines = ['; ---- Container entry/exit ports (Phase 7c-4b) ----']
+    calls = []
+
+    def _emit(slot, expr, resolver, why):
+        lbl = f'recompute_{slot}'
+        lines.append(f'{lbl}:')
+        try:
+            src = expr[1:] if str(expr).startswith('=') else str(expr)
+            ast = _sheetf.parse(src)
+            lines.append(f'    LI   R{_fxc._ERR_REG}, 0')
+            lines.extend(_fxc.compile_ast(ast, base, resolver))
+            lines.append(f'    LI   R20, {slot}')
+            lines.append(f'    STW  R{base}, R20, 0   ; {why}')
+        except Exception as e:
+            lines.append(f'    ; (uncompilable {why}: {e})')
+        lines.append('    RET')
+        lines.append('')
+        calls.append(lbl)
+
+    for cname, sym in conts:
+        for p in (sym.get('entry_points') or []):
+            if p.get('expr'):
+                _emit(_fports.entry_slot(cname, p['name']), p['expr'], outer,
+                      f'entry {cname}.{p["name"]}')
+        entry_res = _make_entry_resolver(cname, sym)
+        for p in (sym.get('exit_points') or []):
+            if p.get('expr'):
+                _emit(_fports.exit_slot(cname, p['name']), p['expr'], entry_res,
+                      f'exit {cname}.{p["name"]}')
+
+    lines.append('recompute_all_ports:')
+    for c in calls:
+        lines.append(f'    CALL {c}')
+    lines.append('    RET')
+    lines.append('')
+    return lines
+
+
+def _section_port_data(stream) -> list:
+    conts = _container_port_syms(stream)
+    if not conts:
+        return []
+    lines = ['; ---- Container port state (Phase 7c-4b) ----']
+    for cname, sym in conts:
+        for p in (sym.get('entry_points') or []):
+            lines += [f'{_fports.entry_slot(cname, p["name"])}:', '    .word 0']
+        for p in (sym.get('exit_points') or []):
+            lines += [f'{_fports.exit_slot(cname, p["name"])}:', '    .word 0']
+    lines.append('')
+    return lines
 
 
 # ---------------------------------------------------------------------------
@@ -1142,6 +1257,8 @@ def _section_render(stream: 'WordStream', wstr_labels: dict,
         ex, ey, ew, eh = eff_pos.get(w.id, (w.x, w.y, w.w, w.h))
         lines += _emit_widget_render(w, ex, ey, ew, eh, wstr_labels, state_map)
         lines.append('')
+    if _has_ports(stream):               # Phase 7c-4b: refresh ports before cells
+        lines.append('    CALL recompute_all_ports   ; entry/exit port data flow')
     if _has_dynamic_cells(stream):       # Stage 8-3-RT-dynamic: refresh each frame
         lines.append('    CALL recompute_all_cells   ; recompute dynamic cells')
     lines += _emit_cell_render(stream)   # Stage 8-3-RT: draw Sheet cells
@@ -1552,9 +1669,11 @@ def _compile_full_program(stream: 'WordStream', source_path: str) -> str:
     if has_entries:
         parts += _section_key_handler(stream, state_map)
     parts += _section_handler_blocks(stream)
+    parts += _section_port_blocks(stream, state_map)       # Phase 7c-4b
     parts += _section_recompute_blocks(stream, state_map)  # Stage 8-3-RT-dynamic
     parts += _section_command_blocks(stream)               # Stage 9-1B
     parts += _section_data(stream, wstr_labels, state_map)
+    parts += _section_port_data(stream)                    # Phase 7c-4b
     parts += _section_command_data(stream)                 # Stage 9-1B
 
     return '\n'.join(parts) + '\n'
@@ -1644,7 +1763,7 @@ def compile_wordstream_to_t5asm(stream: 'WordStream',
     """
     has_gui   = any(w.kind.startswith('gui_') for w in stream.iter_widgets())
     has_cells = bool(getattr(stream, '_cell_meta', {}))
-    if has_gui or has_cells:           # Stage 8-3-RT: cells also need the PIGART path
+    if has_gui or has_cells or _has_ports(stream):   # cells/ports need the PIGART path
         return _compile_full_program(stream, source_path)
     if _has_commands(stream):          # Stage 9-1B: shell-only program
         return _compile_shell_program(stream, source_path)
