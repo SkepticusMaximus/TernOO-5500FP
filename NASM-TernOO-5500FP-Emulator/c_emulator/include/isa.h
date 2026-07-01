@@ -142,11 +142,14 @@ typedef enum {
     SYS_STR_TRIM    = 51, /* R2=handle         -> R1=new space-trimmed handle*/
     SYS_STR_REPLACE = 52, /* R2=text R3=find R4=with R5=ci -> R1=new handle  */
 
-    /* Runtime value substrate — lists (60..64), Piece 4. */
+    /* Runtime value substrate — fixed-length immutable lists (60..64).
+     * Same length-prefixed heap header as strings; elements are values
+     * (numbers or handles). APPEND returns a NEW list one longer. */
     SYS_LIST_ALLOC  = 60, /* R2=len            -> R1=handle (values zeroed)  */
     SYS_LIST_LEN    = 61, /* R2=handle         -> R1=length                  */
     SYS_LIST_GET    = 62, /* R2=handle R3=i    -> R1=value (0 if OOB)        */
     SYS_LIST_SET    = 63, /* R2=handle R3=i R4=value                         */
+    SYS_LIST_APPEND = 64, /* R2=handle R3=value -> R1=new handle (len+1)     */
 } syscall_t;
 
 #endif /* ISA_H */

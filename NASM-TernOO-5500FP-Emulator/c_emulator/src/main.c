@@ -444,6 +444,42 @@ static void run_tests(void) {
         }
     }
 
+    /* Test 5d: Runtime value substrate — fixed-length lists */
+    printf("\n-- List Runtime Tests --\n");
+    {
+        struct { const char *name; const char *src; int reg; int64_t exp; } lt[] = {
+        { "LIST_ALLOC+SET+GET [1]=42",
+          "LI R1,60\nLI R2,3\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,63\nMOV R2,R5\nLI R3,1\nLI R4,42\nSYSCALL\n"
+          "LI R1,62\nMOV R2,R5\nLI R3,1\nSYSCALL\nMOV R3,R1\nHALT\n", 3, 42 },
+        { "LIST_LEN alloc 5 = 5",
+          "LI R1,60\nLI R2,5\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,61\nMOV R2,R5\nSYSCALL\nMOV R3,R1\nHALT\n", 3, 5 },
+        { "LIST_GET out-of-bounds = 0",
+          "LI R1,60\nLI R2,2\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,62\nMOV R2,R5\nLI R3,9\nSYSCALL\nMOV R3,R1\nHALT\n", 3, 0 },
+        { "LIST_APPEND grows length to 3",
+          "LI R1,60\nLI R2,2\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,63\nMOV R2,R5\nLI R3,0\nLI R4,10\nSYSCALL\n"
+          "LI R1,63\nMOV R2,R5\nLI R3,1\nLI R4,20\nSYSCALL\n"
+          "LI R1,64\nMOV R2,R5\nLI R3,30\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,61\nMOV R2,R6\nSYSCALL\nMOV R3,R1\nHALT\n", 3, 3 },
+        { "LIST_APPEND value lands at [2]",
+          "LI R1,60\nLI R2,2\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,64\nMOV R2,R5\nLI R3,77\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,62\nMOV R2,R6\nLI R3,2\nSYSCALL\nMOV R3,R1\nHALT\n", 3, 77 },
+        };
+        for (unsigned i = 0; i < sizeof(lt)/sizeof(lt[0]); i++) {
+            int64_t prog[128];
+            int len = assemble(lt[i].src, prog, 128, 0);
+            cpu_t *cpu = cpu_create(65536);
+            cpu_load_program(cpu, prog, len, 0);
+            cpu_run_n(cpu, 100000);
+            test_assert(lt[i].name, cpu->reg[lt[i].reg], lt[i].exp);
+            cpu_destroy(cpu);
+        }
+    }
+
     /* Test 6: Ternary trit operations */
     printf("\n-- Ternary Logic Tests --\n");
     {

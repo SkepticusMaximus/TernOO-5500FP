@@ -338,6 +338,16 @@ static int64_t str_char(const cpu_t *cpu, int64_t h, int64_t i) {
     return cpu->mem[h + 1 + i] & 0xFF;
 }
 
+/* Fixed-length list: same length-prefixed header as a string, no trailing
+ * NUL; elements are raw values (numbers or handles). */
+static int64_t list_new(cpu_t *cpu, int64_t len) {
+    if (len < 0) len = 0;
+    int64_t h = heap_alloc(cpu, 1 + len);
+    if (!h) return 0;
+    cpu->mem[h] = len;
+    return h;
+}
+
 /* Whole-string transforms — each returns a new heap string (immutable). */
 static int64_t str_case(cpu_t *cpu, int64_t h, int upper) {
     int64_t n = str_len(cpu, h);
@@ -528,6 +538,35 @@ static void handle_syscall(cpu_t *cpu) {
             reg_write(cpu, 1, str_replace(cpu, reg_read(cpu, 2), reg_read(cpu, 3),
                                           reg_read(cpu, 4), (int)reg_read(cpu, 5)));
             break;
+
+        /* ---- Runtime value substrate: fixed-length lists ---- */
+        case SYS_LIST_ALLOC:
+            reg_write(cpu, 1, list_new(cpu, reg_read(cpu, 2)));
+            break;
+        case SYS_LIST_LEN:
+            reg_write(cpu, 1, str_len(cpu, reg_read(cpu, 2)));   /* shared header */
+            break;
+        case SYS_LIST_GET: {
+            int64_t h = reg_read(cpu, 2), i = reg_read(cpu, 3);
+            reg_write(cpu, 1, (i >= 0 && i < str_len(cpu, h)) ? cpu->mem[h + 1 + i] : 0);
+            break;
+        }
+        case SYS_LIST_SET: {
+            int64_t h = reg_read(cpu, 2), i = reg_read(cpu, 3);
+            if (i >= 0 && i < str_len(cpu, h)) cpu->mem[h + 1 + i] = reg_read(cpu, 4);
+            break;
+        }
+        case SYS_LIST_APPEND: {
+            int64_t h = reg_read(cpu, 2), v = reg_read(cpu, 3);
+            int64_t n = str_len(cpu, h);
+            int64_t nh = list_new(cpu, n + 1);
+            if (nh) {
+                for (int64_t i = 0; i < n; i++) cpu->mem[nh + 1 + i] = cpu->mem[h + 1 + i];
+                cpu->mem[nh + 1 + n] = v;
+            }
+            reg_write(cpu, 1, nh);
+            break;
+        }
         /* ---- PIGART rendering syscalls 100-111 ---- */
         case PIGART_OPEN_WINDOW:
         case PIGART_CLEAR:
