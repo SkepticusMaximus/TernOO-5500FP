@@ -1058,22 +1058,24 @@ def _section_command_blocks(stream) -> list:
             lines.append(f'    ; no runtime yet: {e}')
         lines.append('    RET')
         lines.append('')
+    # run_all_commands: CALL each command block in topological (upstream-first)
+    # order. Now that the return-address stack (Option A) supports nesting, this
+    # wrapper is a real subroutine — main CALLs it, it CALLs each command; the
+    # old "inline at depth 0" workaround for the single-R80 hazard is retired.
+    lines.append('run_all_commands:')
+    for cid, wd in cmds:
+        lines.append(f'    CALL command_{abs(cid)}   ; {wd.get("kind")} #{cid}')
+    lines.append('    RET')
+    lines.append('')
     return lines
 
 
 def _command_dispatch_lines(stream) -> list:
-    """Top-level `CALL command_<id>` for each command, in run order.
-
-    Deliberately emitted at call depth 0 (like the hit-test → handler pattern):
-    the engine's return address lives in a single link register (R80), so a
-    wrapper subroutine that CALLs the leaf blocks would clobber its own return.
-    Command blocks are leaves, so calling them directly is safe.
-    """
-    cmds = _ordered_commands(stream)      # topological (upstream-first) order
-    if not cmds:
+    """A single `CALL run_all_commands` — the pipeline runs via the wrapper
+    subroutine (nested CALLs, enabled by the RA stack)."""
+    if not _iter_commands(stream):
         return []
-    return [f'    CALL command_{abs(cid)}   ; run {wd.get("kind")} #{cid}'
-            for cid, wd in cmds]
+    return ['    CALL run_all_commands']
 
 
 def _section_command_data(stream) -> list:

@@ -136,11 +136,14 @@ class TestCommandWiring(unittest.TestCase):
         self.assertIn('state_cmd_7:', asm)
         self.assertNotIn('event_loop_top', asm)     # no GUI → shell path
 
-    def test_no_nested_call_wrapper(self):
-        # The single link-register engine forbids a run_all_commands wrapper
-        # that CALLs the leaf blocks — dispatch must be inline at depth 0.
+    def test_dispatch_via_run_all_commands_wrapper(self):
+        # With the RA-stack fix nested CALLs work, so dispatch goes through a
+        # real run_all_commands subroutine (retiring the inline-at-depth-0
+        # workaround).
         asm = _compile_stream([_mk_cmd(7, 'cmd_math_add', a=1, b=2)])
-        self.assertNotIn('run_all_commands', asm)
+        self.assertIn('run_all_commands:', asm)
+        self.assertIn('CALL run_all_commands', asm)
+        self.assertIn('CALL command_7', asm)
 
     def test_text_command_allocates_buffer(self):
         asm = _compile_stream([_mk_cmd(5, 'cmd_text_upper', text='hi')])
@@ -384,6 +387,57 @@ class TestPipelineCompile(unittest.TestCase):
              _mk_cmd(2, 'cmd_text_length', text='')],       # len("HI") = 2
             [{'src': 1, 'dst': 2, 'dst_param': 'text'}])
         self.assertEqual(_run_slot(asm, 'state_cmd_2'), '2')
+
+
+# ---------------------------------------------------------------------------
+# Nested CALLs — dynamic Sheet-cell recompute (R80 return-address fix)
+# ---------------------------------------------------------------------------
+
+class TestDynamicCellRecompute(unittest.TestCase):
+    """recompute_all_cells → recompute_cell_<id> is a two-level CALL chain that
+    used to hang under the single-R80 hazard. With the return-address stack it
+    both emits and executes correctly."""
+
+    def _dynamic_stream(self, checked):
+        s = WordStream()
+        s._widget_meta = {
+            1: {'id': 1, 'kind': 'gui_window', 'x': 0, 'y': 0,
+                'w': 300, 'h': 200, 'label': 'W'},
+            2: {'id': 2, 'kind': 'gui_toggle', 'x': 10, 'y': 10, 'w': 80,
+                'h': 30, 'label': 'T', 'name': 't',
+                'properties': [{'name': 'checked', 'value': checked}]},
+        }
+        s._cell_meta = {(0, 0): {'id': 5, 'kind': 'cell_formula', 'row': 0,
+                                 'col': 0, 'name': 'c1',
+                                 'value': '=WIDGET("t").checked * 7',
+                                 'properties': []}}
+        return s
+
+    def test_recompute_nesting_emitted(self):
+        asm = C.compile_wordstream_to_t5asm(self._dynamic_stream(1), 'dyn.fc')
+        self.assertIn('CALL recompute_all_cells', asm)
+        self.assertIn('recompute_all_cells:', asm)
+        self.assertIn('CALL recompute_cell_5', asm)   # the 2nd nesting level
+
+    @unittest.skipUnless(_HAVE_EMU, 'C emulator binary not built')
+    def test_recompute_runs(self):
+        # Drive recompute_all_cells once in isolation (the GUI event loop never
+        # exits headlessly) and read the recomputed cell slot.
+        asm = C.compile_wordstream_to_t5asm(self._dynamic_stream(1), 'dyn.fc')
+        tail = asm[asm.index('; ---- Dynamic cell recompute'):]
+        for chk, exp in ((1, '7'), (0, '0')):
+            driver = [
+                'main:',
+                '    LI R20, state_checked_2',
+                f'    LI R15, {chk}',
+                '    STW R15, R20, 0',
+                '    CALL recompute_all_cells',
+                '    LI R20, state_cell_5',
+                '    LDW R2, R20, 0',
+                '    LI R1, 1', '    SYSCALL', '    LI R1, 6', '    SYSCALL',
+                '    HALT', '']
+            out = _assemble_run(('\n'.join(driver) + '\n' + tail).split('\n'))
+            self.assertEqual(out, exp)
 
 
 if __name__ == '__main__':
