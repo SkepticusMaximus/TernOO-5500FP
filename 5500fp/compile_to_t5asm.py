@@ -391,8 +391,29 @@ def _emit_widget_render(widget, ex: int, ey: int, ew: int, eh: int,
             f'    BNEZ R15, {skip_focus}',
         ]
         lines += _emit_draw_rect(ex - 1, ey - 1, ew + 2, eh + 2, 'color_teal', 0)
-        lines.append(f'{skip_focus}:')
+        # Text caret at the end of the current text (focused only).  Monospace
+        # font (DejaVu Sans Mono @ 14px) advances ~8px/char, so the caret x is
+        # text_start + len*8.  Drawn as a 1px teal filled bar (Piece 5).
         s = state_map.get(widget.id, {})
+        textlen_lbl = s.get('textlen', '')
+        text_x = ex + 8
+        text_y = ey + eh // 2 - 8
+        if textlen_lbl:
+            lines += [
+                '    ; Caret at end of text',
+                f'    LI   R20, {textlen_lbl}',
+                '    LDW  R2, R20, 0',
+                '    MULI R2, R2, 8       ; len * char advance',
+                f'    LI   R3, {text_x}',
+                '    ADD  R2, R2, R3      ; caret_x = text_x + len*8',
+                f'    LI   R1, {_PIG_DRAW_RECT}',
+                f'    LI   R3, {text_y}',
+                '    LI   R4, 1           ; caret width',
+                f'    LI   R5, {_FONT_SIZE}     ; caret height',
+            ]
+            lines += _load_color('color_teal', 'R6')
+            lines += ['    LI   R7, 1           ; filled', '    SYSCALL']
+        lines.append(f'{skip_focus}:')
         text_lbl = s.get('text', '')
         if text_lbl:
             # Dynamic text from state buffer (pointer is the data-section label)
@@ -1066,7 +1087,7 @@ def _section_key_handler(stream: 'WordStream', state_map: dict) -> list:
             '    ; len++',
             f'    LI   R20, {textlen_lbl}',
             '    LDW  R13, R20, 0',
-            '    ADDI R13, 1',
+            '    ADDI R13, R13, 1     ; 3-operand form: len = len + 1',
             '    STW  R13, R20, 0',
             '',
         ]

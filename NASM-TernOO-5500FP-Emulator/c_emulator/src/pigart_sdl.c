@@ -191,6 +191,10 @@ static int sdl_open_window(int w, int h, const char *title) {
      * on the first click rather than first focusing then closing. */
     SDL_RaiseWindow(g_window);
     SDL_SetWindowInputFocus(g_window);
+    /* Enable SDL text input so SDL_TEXTINPUT events deliver the actual typed
+     * character (respecting Shift/CapsLock/layout).  gui_entry text relies on
+     * this rather than raw keysyms — see SDL_TEXTINPUT handling in poll. */
+    SDL_StartTextInput();
     g_open_tick = SDL_GetTicks();
     g_open = 1;
     return 1;
@@ -295,7 +299,23 @@ static int sdl_poll_event(int64_t *out_buf4) {
                     return 1;
                 }
                 continue;
+            case SDL_TEXTINPUT:
+                /* Actual typed character(s), UTF-8.  For entry text we only
+                 * consume printable ASCII (32-126); the compiler's key handler
+                 * filters the same range.  This is what lets Shift/uppercase
+                 * and symbols reach the text buffer — raw keysyms cannot. */
+                out_buf4[0] = PIGART_EVENT_KEY_DOWN;
+                out_buf4[1] = (unsigned char)ev.text.text[0];
+                out_buf4[2] = 0;
+                out_buf4[3] = 0;
+                return 1;
             case SDL_KEYDOWN:
+                /* Printable keys are delivered via SDL_TEXTINPUT (above); skip
+                 * them here so a character is not emitted twice.  Non-printable
+                 * keys (Backspace, Enter, Escape, arrows, …) still pass through
+                 * as raw keysyms for any handler that wants them. */
+                if (ev.key.keysym.sym >= 32 && ev.key.keysym.sym < 127)
+                    continue;
                 out_buf4[0] = PIGART_EVENT_KEY_DOWN;
                 out_buf4[1] = ev.key.keysym.sym;
                 out_buf4[2] = ev.key.keysym.mod;
