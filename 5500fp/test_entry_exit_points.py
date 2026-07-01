@@ -325,5 +325,25 @@ class TestEntryExitDemoFile(unittest.TestCase):
         self.assertNotIn('uncompilable', asm)
 
 
+_CELL_DEMO = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          '..', 'FlowCode', 'cell_port_demo.fc')
+
+
+class TestCellPortDemoFile(unittest.TestCase):
+
+    @unittest.skipUnless(os.path.exists(_CELL_DEMO), 'demo .fc not present')
+    def test_cell_port_demo_compiles(self):
+        d = json.load(open(_CELL_DEMO))
+        s = WordStream()
+        for f in d.get('flow_symbols', []):
+            s._flow_meta[f['id']] = f
+        for c in d.get('cell_symbols', []):
+            s._cell_meta[(c['row'], c['col'])] = c
+        asm = C.compile_wordstream_to_t5asm(s, 'cell_port_demo.fc')
+        self.assertIn('entry calculator.a <- cell', asm)   # cell → entry
+        self.assertIn('state_exit_calculator_sum', asm)    # exit → cell reads it
+        self.assertNotIn('uncompilable', asm)
+
+
 if __name__ == '__main__':
     unittest.main()
