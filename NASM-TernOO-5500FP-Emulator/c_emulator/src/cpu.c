@@ -613,16 +613,38 @@ void cpu_step(cpu_t *cpu) {
             break;
 
         case OP_CALL:
+            /* Push return address (Option A); keep R80 for backward compat. */
             reg_write(cpu, 80, cpu->pc);
+            if (cpu->ra_sp >= RA_STACK_MAX) {
+                fprintf(stderr, "[5500FP] Return-address stack overflow "
+                        "(depth %d) at pc=%lld\n",
+                        RA_STACK_MAX, (long long)cpu->pc);
+                cpu->halted = 1;
+                break;
+            }
+            cpu->ra_stack[cpu->ra_sp++] = cpu->pc;
             cpu->pc += d.imm18 - 1;
             break;
 
         case OP_RET:
-            cpu->pc = reg_read(cpu, 80);
+            /* Pop the return-address stack; fall back to R80 if empty so a
+             * stray RET (or legacy single-level code) still behaves. */
+            if (cpu->ra_sp > 0)
+                cpu->pc = cpu->ra_stack[--cpu->ra_sp];
+            else
+                cpu->pc = reg_read(cpu, 80);
             break;
 
         case OP_CALLR:
             reg_write(cpu, 80, cpu->pc);
+            if (cpu->ra_sp >= RA_STACK_MAX) {
+                fprintf(stderr, "[5500FP] Return-address stack overflow "
+                        "(depth %d) at pc=%lld\n",
+                        RA_STACK_MAX, (long long)cpu->pc);
+                cpu->halted = 1;
+                break;
+            }
+            cpu->ra_stack[cpu->ra_sp++] = cpu->pc;
             cpu->pc = reg_read(cpu, d.rs1);
             break;
 

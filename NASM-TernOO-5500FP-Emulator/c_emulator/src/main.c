@@ -287,6 +287,54 @@ static void run_tests(void) {
         cpu_destroy(cpu);
     }
 
+    /* Test 5b: Nested CALL/RET — return-address stack (R80 hazard fix) */
+    printf("\n-- Nested CALL/RET Tests --\n");
+    {
+        /* Three levels; each frame adds a distinct magnitude before AND after
+         * its inner call, so the result only comes out right if every RET
+         * resumes at the correct site: 0 +1 +100 +5 +1000 +10 = 1116. */
+        const char *src =
+            "LI R2, 0\n"
+            "CALL a\n"
+            "HALT\n"
+            "a:\n  ADDI R2, R2, 1\n  CALL b\n  ADDI R2, R2, 10\n  RET\n"
+            "b:\n  ADDI R2, R2, 100\n  CALL c\n  ADDI R2, R2, 1000\n  RET\n"
+            "c:\n  ADDI R2, R2, 5\n  RET\n";
+        int64_t prog[64];
+        int len = assemble(src, prog, 64, 0);
+        cpu_t *cpu = cpu_create(4096);
+        cpu_load_program(cpu, prog, len, 0);
+        cpu_run_n(cpu, 100000);
+        test_assert("Nested CALL/RET 3 levels resume correctly",
+                    cpu->reg[2], 1116);
+        cpu_destroy(cpu);
+    }
+    {
+        /* Deep recursion to depth 150 (well past the old 1-level limit, under
+         * RA_STACK_MAX=1024): rec increments R2 each frame until R2==R3, then
+         * unwinds. Bounded run so a regression fails loud instead of hanging. */
+        const char *src =
+            "LI R2, 0\n"
+            "LI R3, 150\n"
+            "CALL rec\n"
+            "HALT\n"
+            "rec:\n"
+            "  ADDI R2, R2, 1\n"
+            "  BGE R2, R3, done\n"
+            "  CALL rec\n"
+            "done:\n"
+            "  RET\n";
+        int64_t prog[64];
+        int len = assemble(src, prog, 64, 0);
+        cpu_t *cpu = cpu_create(4096);
+        cpu_load_program(cpu, prog, len, 0);
+        cpu_run_n(cpu, 1000000);
+        test_assert("Deep recursion depth 150 unwinds", cpu->reg[2], 150);
+        test_assert("Deep recursion halted (stack balanced)",
+                    (int64_t)cpu->halted, 1);
+        cpu_destroy(cpu);
+    }
+
     /* Test 6: Ternary trit operations */
     printf("\n-- Ternary Logic Tests --\n");
     {
