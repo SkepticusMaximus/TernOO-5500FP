@@ -724,6 +724,7 @@ void cpu_reset(cpu_t *cpu) {
     cpu->halted = 0;
     cpu->cycle_count = 0;
     cpu->reservation_addr = -1;
+    cpu->ra_sp = 0;                /* empty return-address stack */
     memset(cpu->mem, 0, cpu->mem_size * sizeof(int64_t));
 }
 
