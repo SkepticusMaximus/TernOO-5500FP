@@ -104,17 +104,21 @@ class TestCompileCommandUnit(unittest.TestCase):
         self.assertIn('state_env_k', out)
         self.assertIn('state_env_k_present', out)
 
-    def test_text_upper_needs_output_buffer(self):
-        with self.assertRaises(cmdc.CommandCompileError):
-            cmdc.compile_command('cmd_text_upper', [('text', 'inbuf')], 21)
-        ctx = cmdc.new_ctx(out_text='outbuf')
-        out = '\n'.join(cmdc.compile_command('cmd_text_upper',
-                                             [('text', 'inbuf')], 21, ctx))
-        self.assertIn('outbuf', out)
+    def test_text_upper_uses_string_syscall(self):
+        out = '\n'.join(cmdc.compile_command(
+            'cmd_text_upper', [('strlit', 'inbuf')], 21))
+        self.assertIn('inbuf', out)             # STR_FROMBUF of the literal
+        self.assertIn('LI   R1, 49', out)       # STR_UPPER
+
+    def test_text_replace_emits_replace_syscall(self):
+        out = '\n'.join(cmdc.compile_command('cmd_text_replace', [
+            ('strlit', 't'), ('strlit', 'f'), ('strlit', 'w'), _num(0)], 21))
+        self.assertIn('LI   R1, 52', out)       # STR_REPLACE
+        self.assertIn('LI   R5, 1', out)        # ci = not case_sensitive(0)
 
     def test_unsupported_command_raises(self):
         with self.assertRaises(cmdc.CommandCompileError):
-            cmdc.compile_command('cmd_list_sort', [('text', 'l')], 21)
+            cmdc.compile_command('cmd_list_sort', [('strlit', 'l')], 21)
 
     def test_output_kind_table(self):
         self.assertEqual(cmdc.command_output_kind('cmd_math_add'), 'number')
@@ -145,10 +149,11 @@ class TestCommandWiring(unittest.TestCase):
         self.assertIn('CALL run_all_commands', asm)
         self.assertIn('CALL command_7', asm)
 
-    def test_text_command_allocates_buffer(self):
+    def test_text_command_allocates_literal_buffer(self):
         asm = _compile_stream([_mk_cmd(5, 'cmd_text_upper', text='hi')])
-        self.assertIn('cmdbuf_5:', asm)
-        self.assertIn('cmdarg_5_text:', asm)
+        self.assertIn('cmdarg_5_text:', asm)    # literal source buffer
+        self.assertIn('state_cmd_5:', asm)      # result handle slot
+        self.assertNotIn('cmdbuf_5:', asm)      # fixed buffer retired
 
     def test_env_command_allocates_slots(self):
         asm = _compile_stream([_mk_cmd(4, 'cmd_env_set', name='count', value=3)])
@@ -228,17 +233,49 @@ class TestCommandRuntime(unittest.TestCase):
             lines.append(l)
         self.assertEqual(_assemble_run(lines), '42')
 
-    def test_text_upper_runtime(self):
-        ctx = cmdc.new_ctx(out_text='outbuf')
-        body = cmdc.compile_command('cmd_text_upper', [('text', 'inbuf')],
-                                    cmdc._BASE_REG, ctx)
-        prog = ['LI R19, 0'] + body + [
-            'LI R10, outbuf', 'pl:', '    LDW R2, R10, 0', '    BEQZ R2, pd',
+    def _print_handle_str(self, body, handle_reg=cmdc._BASE_REG):
+        """Wrap a command body: print the result string (handle in handle_reg)
+        by walking its NUL-terminated char run at handle+1."""
+        return ['LI R19, 0'] + body + [
+            f'MOV R10, R{handle_reg}', 'ADDI R10, R10, 1',
+            'pl:', '    LDW R2, R10, 0', '    BEQZ R2, pd',
             '    LI R1, 3', '    SYSCALL', '    ADDI R10, R10, 1', '    JMP pl',
-            'pd:', 'LI R1, 6', 'SYSCALL', 'HALT',
-            'inbuf:'] + [f'    .word {ord(c)}' for c in 'hi there'] + [
-            '    .word 0', 'outbuf:'] + ['    .word 0'] * 64
+            'pd:', 'LI R1, 6', 'SYSCALL', 'HALT']
+
+    def _text_databuf(self, label, s):
+        return [f'{label}:'] + [f'    .word {ord(c)}' for c in s] + ['    .word 0']
+
+    def test_text_upper_runtime(self):
+        body = cmdc.compile_command('cmd_text_upper', [('strlit', 'inbuf')],
+                                    cmdc._BASE_REG)
+        prog = self._print_handle_str(body) + self._text_databuf('inbuf', 'hi there')
         self.assertEqual(_assemble_run(prog), 'HI THERE')
+
+    def test_text_trim_runtime(self):
+        body = cmdc.compile_command('cmd_text_trim', [('strlit', 'inbuf')],
+                                    cmdc._BASE_REG)
+        prog = self._print_handle_str(body) + self._text_databuf('inbuf', '  hi  ')
+        self.assertEqual(_assemble_run(prog), 'hi')
+
+    def test_text_replace_runtime(self):
+        # case-insensitive by default: replace "hello" in "Hello World"
+        body = cmdc.compile_command('cmd_text_replace', [
+            ('strlit', 't'), ('strlit', 'f'), ('strlit', 'w'), _num(0)],
+            cmdc._BASE_REG)
+        prog = (self._print_handle_str(body)
+                + self._text_databuf('t', 'Hello World')
+                + self._text_databuf('f', 'hello')
+                + self._text_databuf('w', 'goodbye'))
+        self.assertEqual(_assemble_run(prog), 'goodbye World')
+
+    def test_text_length_runtime(self):
+        body = cmdc.compile_command('cmd_text_length', [('strlit', 'inbuf')],
+                                    cmdc._BASE_REG)
+        prog = (['LI R19, 0'] + body
+                + [f'MOV R2, R{cmdc._BASE_REG}', 'LI R1, 1', 'SYSCALL',
+                   'LI R1, 6', 'SYSCALL', 'HALT']
+                + self._text_databuf('inbuf', 'Adelaide'))
+        self.assertEqual(_assemble_run(prog), '8')
 
 
 # ---------------------------------------------------------------------------
@@ -248,18 +285,17 @@ class TestCommandRuntime(unittest.TestCase):
 class TestInteractiveCommands(unittest.TestCase):
 
     def test_prompt_emits_dialog_syscall(self):
-        ctx = cmdc.new_ctx(out_text='outbuf')
         out = '\n'.join(cmdc.compile_command('cmd_io_prompt',
-                                             [('text', 'msg')], 21, ctx))
+                                             [('strlit', 'msg')], 21))
         self.assertIn('LI   R1, 112', out)      # PIGART_DIALOG_PROMPT
-        self.assertIn('outbuf', out)
+        self.assertIn('_prompt_scratch', out)   # answer scratch buffer
 
     def test_display_and_confirm_syscalls(self):
         d = '\n'.join(cmdc.compile_command('cmd_io_display',
-                                           [('text', 'v'), ('text', 't')], 21))
+                                           [('strlit', 'v'), ('strlit', 't')], 21))
         self.assertIn('LI   R1, 113', d)
         c = '\n'.join(cmdc.compile_command('cmd_io_confirm',
-                                           [('text', 'm')], 21))
+                                           [('strlit', 'm')], 21))
         self.assertIn('LI   R1, 114', c)
 
     def test_io_shell_program_opens_window(self):

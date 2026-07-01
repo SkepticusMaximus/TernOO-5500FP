@@ -338,6 +338,74 @@ static int64_t str_char(const cpu_t *cpu, int64_t h, int64_t i) {
     return cpu->mem[h + 1 + i] & 0xFF;
 }
 
+/* Whole-string transforms — each returns a new heap string (immutable). */
+static int64_t str_case(cpu_t *cpu, int64_t h, int upper) {
+    int64_t n = str_len(cpu, h);
+    int64_t out = str_new(cpu, n);
+    if (!out) return 0;
+    for (int64_t i = 0; i < n; i++) {
+        int64_t c = str_char(cpu, h, i);
+        if (upper && c >= 'a' && c <= 'z') c -= 32;
+        else if (!upper && c >= 'A' && c <= 'Z') c += 32;
+        cpu->mem[out + 1 + i] = c;
+    }
+    return out;
+}
+
+static int64_t str_trim_ws(cpu_t *cpu, int64_t h) {
+    int64_t n = str_len(cpu, h), s = 0, e = n - 1;
+    while (s < n && str_char(cpu, h, s) == ' ') s++;
+    while (e >= s && str_char(cpu, h, e) == ' ') e--;
+    int64_t len = (e >= s) ? (e - s + 1) : 0;
+    int64_t out = str_new(cpu, len);
+    if (!out) return 0;
+    for (int64_t i = 0; i < len; i++) cpu->mem[out + 1 + i] = str_char(cpu, h, s + i);
+    return out;
+}
+
+static int chars_eq(int a, int b, int ci) {
+    if (ci) { if (a >= 'A' && a <= 'Z') a += 32; if (b >= 'A' && b <= 'Z') b += 32; }
+    return a == b;
+}
+
+static int str_match_at(cpu_t *cpu, int64_t text, int64_t i,
+                        int64_t find, int64_t nf, int ci) {
+    for (int64_t j = 0; j < nf; j++)
+        if (!chars_eq((int)str_char(cpu, text, i + j),
+                      (int)str_char(cpu, find, j), ci)) return 0;
+    return 1;
+}
+
+/* Replace all non-overlapping occurrences of `find` in `text` with `repl`. */
+static int64_t str_replace(cpu_t *cpu, int64_t text, int64_t find,
+                           int64_t repl, int ci) {
+    int64_t nt = str_len(cpu, text), nf = str_len(cpu, find), nr = str_len(cpu, repl);
+    if (nf == 0) {                        /* empty needle -> copy of text */
+        int64_t o = str_new(cpu, nt);
+        if (o) for (int64_t i = 0; i < nt; i++) cpu->mem[o + 1 + i] = str_char(cpu, text, i);
+        return o;
+    }
+    int64_t k = 0, i = 0;                  /* count matches to size output */
+    while (i + nf <= nt) {
+        if (str_match_at(cpu, text, i, find, nf, ci)) { k++; i += nf; }
+        else i++;
+    }
+    int64_t out = str_new(cpu, nt + k * (nr - nf));
+    if (!out) return 0;
+    int64_t oi = 0;
+    i = 0;
+    while (i < nt) {
+        if (i + nf <= nt && str_match_at(cpu, text, i, find, nf, ci)) {
+            for (int64_t j = 0; j < nr; j++) cpu->mem[out + 1 + (oi++)] = str_char(cpu, repl, j);
+            i += nf;
+        } else {
+            cpu->mem[out + 1 + (oi++)] = str_char(cpu, text, i);
+            i++;
+        }
+    }
+    return out;
+}
+
 /* -----------------------------------------------------------------------
  * Syscall handler
  * --------------------------------------------------------------------- */
@@ -447,6 +515,19 @@ static void handle_syscall(cpu_t *cpu) {
             reg_write(cpu, 1, found);
             break;
         }
+        case SYS_STR_UPPER:
+            reg_write(cpu, 1, str_case(cpu, reg_read(cpu, 2), 1));
+            break;
+        case SYS_STR_LOWER:
+            reg_write(cpu, 1, str_case(cpu, reg_read(cpu, 2), 0));
+            break;
+        case SYS_STR_TRIM:
+            reg_write(cpu, 1, str_trim_ws(cpu, reg_read(cpu, 2)));
+            break;
+        case SYS_STR_REPLACE:
+            reg_write(cpu, 1, str_replace(cpu, reg_read(cpu, 2), reg_read(cpu, 3),
+                                          reg_read(cpu, 4), (int)reg_read(cpu, 5)));
+            break;
         /* ---- PIGART rendering syscalls 100-111 ---- */
         case PIGART_OPEN_WINDOW:
         case PIGART_CLEAR:

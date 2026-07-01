@@ -1013,7 +1013,8 @@ def _command_plan(wd: dict, cid: int, incoming: dict = None,
                     f'pipe type mismatch into {name} #{cid}.{pname}: '
                     f'{src_kind} outputs {src_out}, expected {ptype}')
             if _is_text_buf_param(name, pname):
-                args.append(('text', f'cmdbuf_{abs(src_id)}'))
+                # text value flows as a string handle in the upstream slot
+                args.append(('handleslot', f'state_cmd_{abs(src_id)}'))
             else:
                 args.append(('numslot', f'state_cmd_{abs(src_id)}'))
             continue
@@ -1023,9 +1024,10 @@ def _command_plan(wd: dict, cid: int, incoming: dict = None,
             env.add(nm)
             args.append(('name', nm))
         elif _is_text_buf_param(name, pname):
+            # literal text becomes a heap string (STR_FROMBUF of this buffer)
             label = f'cmdarg_{abs(cid)}_{pname}'
             bufs.append((label, '' if val is None else str(val)))
-            args.append(('text', label))
+            args.append(('strlit', label))
         elif ptype == 'bool':
             args.append(('num', 1 if val else 0))
         else:                              # number / text-as-number / any
@@ -1045,14 +1047,13 @@ def _section_command_blocks(stream) -> list:
         plan = _command_plan(wd, cid, incoming, by_id)
         lines.append(f'command_{abs(cid)}:   ; {name} #{cid}')
         try:
-            out_buf = f'cmdbuf_{abs(cid)}' if plan['out_kind'] == 'text' else None
-            ctx = _cmdc.new_ctx(out_text=out_buf)
+            ctx = _cmdc.new_ctx()
             lines.append(f'    LI   R{_cmdc._ERR_REG}, 0   ; clear error code')
             lines += _cmdc.compile_command(name, plan['args'],
                                            _cmdc._BASE_REG, ctx)
             if plan['out_kind'] in ('number', 'text'):
                 lines.append(f'    LI   R20, state_cmd_{abs(cid)}')
-                tag = 'length' if plan['out_kind'] == 'text' else 'result'
+                tag = 'handle' if plan['out_kind'] == 'text' else 'result'
                 lines.append(f'    STW  R{_cmdc._BASE_REG}, R20, 0   ; store {tag}')
         except _cmdc.CommandCompileError as e:
             lines.append(f'    ; no runtime yet: {e}')
@@ -1087,10 +1088,9 @@ def _section_command_data(stream) -> list:
     env_names: set = set()
     for cid, wd in cmds:
         plan = _command_plan(wd, cid, incoming, by_id)
+        # state_cmd_<id> holds the result: a number, or a string handle for text
+        # commands (both are one word).
         lines += [f'state_cmd_{abs(cid)}:', '    .word 0']
-        if plan['out_kind'] == 'text':
-            lines.append(f'cmdbuf_{abs(cid)}:')
-            lines += ['    .word 0'] * _cmdc._TEXT_BUF_WORDS
         for label, text in plan['bufs']:
             lines.append(f'{label}:')
             lines += _emit_string_words(text)
@@ -1099,6 +1099,11 @@ def _section_command_data(stream) -> list:
     for nm in sorted(env_names):
         lines += [f'{_cmdc.env_slot(nm)}:', '    .word 0',
                   f'{_cmdc.env_present_slot(nm)}:', '    .word 0', '']
+    if any(wd.get('kind') == 'cmd_io_prompt' for _cid, wd in cmds):
+        lines += ['_prompt_scratch:',
+                  f'    .word 0   ; x{_cmdc._PROMPT_SCRATCH_WORDS} prompt answer scratch']
+        lines += ['    .word 0'] * (_cmdc._PROMPT_SCRATCH_WORDS - 1)
+        lines.append('')
     return lines
 
 

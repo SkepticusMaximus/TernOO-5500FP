@@ -394,6 +394,44 @@ static void run_tests(void) {
           "LI R1,44\nMOV R2,R5\nLI R3,0\nLI R4,88\nSYSCALL\n"
           "LI R1,43\nMOV R2,R5\nLI R3,0\nSYSCALL\nMOV R3,R1\nHALT\n",
           3, 88 },
+        { "STR_UPPER 'ab' -> char[0]='A'",
+          "LI R1,41\nLI R2,ub\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,49\nMOV R2,R5\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,43\nMOV R2,R6\nLI R3,0\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "ub:\n.word 97\n.word 98\n.word 0\n",
+          3, 65 },
+        { "STR_LOWER 'AB' -> char[0]='a'",
+          "LI R1,41\nLI R2,lb\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,50\nMOV R2,R5\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,43\nMOV R2,R6\nLI R3,0\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "lb:\n.word 65\n.word 66\n.word 0\n",
+          3, 97 },
+        { "STR_TRIM ' hi ' -> len 2",
+          "LI R1,41\nLI R2,tb\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,51\nMOV R2,R5\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,42\nMOV R2,R6\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "tb:\n.word 32\n.word 104\n.word 105\n.word 32\n.word 0\n",
+          3, 2 },
+        { "STR_REPLACE 'axbxc'/x/- (cs) char[1]='-'",
+          "LI R1,41\nLI R2,rt\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,rf\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,41\nLI R2,rw\nSYSCALL\nMOV R7,R1\n"
+          "LI R1,52\nMOV R2,R5\nMOV R3,R6\nMOV R4,R7\nLI R5,0\nSYSCALL\nMOV R8,R1\n"
+          "LI R1,43\nMOV R2,R8\nLI R3,1\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "rt:\n.word 97\n.word 120\n.word 98\n.word 120\n.word 99\n.word 0\n"
+          "rf:\n.word 120\n.word 0\n"
+          "rw:\n.word 45\n.word 0\n",
+          3, 45 },
+        { "STR_REPLACE 'aXa'/x/y (ci) char[1]='y'",
+          "LI R1,41\nLI R2,ct\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,cf\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,41\nLI R2,cw\nSYSCALL\nMOV R7,R1\n"
+          "LI R1,52\nMOV R2,R5\nMOV R3,R6\nMOV R4,R7\nLI R5,1\nSYSCALL\nMOV R8,R1\n"
+          "LI R1,43\nMOV R2,R8\nLI R3,1\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "ct:\n.word 97\n.word 88\n.word 97\n.word 0\n"
+          "cf:\n.word 120\n.word 0\n"
+          "cw:\n.word 121\n.word 0\n",
+          3, 121 },
         };
         for (unsigned i = 0; i < sizeof(st)/sizeof(st[0]); i++) {
             int64_t prog[128];

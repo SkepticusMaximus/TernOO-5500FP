@@ -137,6 +137,10 @@ typedef enum {
     SYS_STR_EQ      = 46, /* R2=h1 R3=h2       -> R1=1 if equal else 0       */
     SYS_STR_SUB     = 47, /* R2=handle R3=start R4=len -> R1=new handle      */
     SYS_STR_INDEXOF = 48, /* R2=hay R3=needle R4=from  -> R1=index or -1     */
+    SYS_STR_UPPER   = 49, /* R2=handle         -> R1=new upper-cased handle  */
+    SYS_STR_LOWER   = 50, /* R2=handle         -> R1=new lower-cased handle  */
+    SYS_STR_TRIM    = 51, /* R2=handle         -> R1=new space-trimmed handle*/
+    SYS_STR_REPLACE = 52, /* R2=text R3=find R4=with R5=ci -> R1=new handle  */
 
     /* Runtime value substrate — lists (60..64), Piece 4. */
     SYS_LIST_ALLOC  = 60, /* R2=len            -> R1=handle (values zeroed)  */

@@ -42,8 +42,17 @@ _ERR_REG = 19
 _ERR_DIV0 = 1
 _ERR_NAME = 2
 
-# Text value buffers match the gui_entry runtime buffer (64 words + null pad).
-_TEXT_BUF_WORDS = 64
+# Prompt answers land in this shared scratch buffer before becoming a heap
+# string (commands run sequentially, so one scratch is safe).
+_PROMPT_SCRATCH_WORDS = 128
+
+# String-runtime syscalls (Runtime Value Substrate). Handles are heap addresses.
+_SYS_STR_FROMBUF = 41
+_SYS_STR_LEN     = 42
+_SYS_STR_UPPER   = 49
+_SYS_STR_LOWER   = 50
+_SYS_STR_TRIM    = 51
+_SYS_STR_REPLACE = 52
 
 # PIGART interactive dialog syscalls (Stage 9-1C).
 _PIG_DIALOG_PROMPT = 112
@@ -68,15 +77,18 @@ _OUTPUT_KIND = {
     'cmd_env_set': 'none', 'cmd_env_get': 'number', 'cmd_env_exists': 'number',
     'cmd_text_length': 'number',
     'cmd_text_upper': 'text', 'cmd_text_lower': 'text',
+    'cmd_text_trim': 'text', 'cmd_text_replace': 'text',
     'cmd_io_prompt': 'text', 'cmd_io_display': 'none',
     'cmd_io_confirm': 'number',
 }
 
-# (command, param) pairs whose value is a text buffer (vs a number). Drives both
-# the argument encoding and data-section buffer allocation in the wiring.
+# (command, param) pairs whose value is a text (string-handle) value. Drives the
+# argument encoding: literals become heap strings (STR_FROMBUF of a data buffer)
+# and piped text loads the upstream command's handle slot.
 _TEXT_BUF_PARAMS = {
     'cmd_text_upper': {'text'}, 'cmd_text_lower': {'text'},
-    'cmd_text_length': {'text'},
+    'cmd_text_length': {'text'}, 'cmd_text_trim': {'text'},
+    'cmd_text_replace': {'text', 'find', 'with'},
     'cmd_io_prompt': {'message'}, 'cmd_io_confirm': {'message'},
     'cmd_io_display': {'value', 'title'},
 }
@@ -114,21 +126,17 @@ def _sanitize(name: str) -> str:
 # ---------------------------------------------------------------------------
 
 class _Ctx:
-    """Unique-label state + text-output target for one command compilation."""
+    """Unique-label state for one command compilation."""
 
     def __init__(self, out_text: str = None):
         self._n = 0
-        self.out_text = out_text     # buffer label for text-producing commands
+        self.out_text = out_text     # retained for signature compat (unused)
         self.env_names: set = set()  # env vars referenced (for allocation)
+        self.needs_prompt_scratch = False
 
     def label(self, prefix: str) -> str:
         self._n += 1
         return f'_cmd_{prefix}_{self._n}'
-
-    def require_out(self) -> str:
-        if not self.out_text:
-            raise CommandCompileError('text command needs an output buffer')
-        return self.out_text
 
 
 # ---------------------------------------------------------------------------
@@ -148,9 +156,20 @@ def _load_num(arg, reg: int) -> list:
     raise CommandCompileError(f'unusable numeric argument {arg!r}')
 
 
-def _text_label(arg) -> str:
-    if arg[0] == 'text':
-        return arg[1]
+def _load_text(arg, reg: int) -> list:
+    """Emit code leaving a string HANDLE in R<reg>.
+      ('strlit', buflabel)    -> STR_FROMBUF of a NUL-terminated data buffer
+      ('handleslot', label)   -> load a slot already holding a handle (pipe/ref)
+    """
+    kind = arg[0]
+    if kind == 'strlit':
+        return [f'    LI   R2, {arg[1]}',
+                f'    LI   R1, {_SYS_STR_FROMBUF}',
+                '    SYSCALL',
+                f'    MOV  R{reg}, R1']
+    if kind == 'handleslot':
+        return [f'    LI   R{reg}, {arg[1]}',
+                f'    LDW  R{reg}, R{reg}, 0']
     raise CommandCompileError(f'text argument required, got {arg!r}')
 
 
@@ -310,113 +329,106 @@ def _cmd_env_exists(args, dst, ctx):
 
 
 # ---------------------------------------------------------------------------
-# Text (char-loop over fixed buffers — length/upper/lower real)
+# Text (string-handle model — whole-string transforms are string syscalls)
 # ---------------------------------------------------------------------------
 
 def _cmd_text_length(args, dst, ctx):
-    buf = _text_label(args[0])
-    ptr, ch = dst + 1, dst + 2      # dst-relative scratch (no collision with dst)
-    loop, done = ctx.label('len'), ctx.label('lend')
-    return [
-        f'    LI   R{dst}, 0',
-        f'    LI   R{ptr}, {buf}',
-        f'{loop}:',
-        f'    LDW  R{ch}, R{ptr}, 0',
-        f'    BEQZ R{ch}, {done}',
-        f'    ADDI R{dst}, R{dst}, 1',
-        f'    ADDI R{ptr}, R{ptr}, 1',
-        f'    JMP  {loop}',
-        f'{done}:',
+    """length(text) -> number. Handle in R<dst>, then STR_LEN."""
+    lines = _load_text(args[0], dst)
+    lines += [
+        f'    MOV  R2, R{dst}',
+        f'    LI   R1, {_SYS_STR_LEN}',
+        '    SYSCALL',
+        f'    MOV  R{dst}, R1',
     ]
+    return lines
 
 
-def _cmd_text_case(args, dst, ctx, lo, hi, delta):
-    """Shared upper/lower body: chars in [lo,hi] get `delta` added.
+def _str_transform(sysnum, why):
+    """Unary string transform: load a handle, apply a whole-string syscall."""
+    def emit(args, dst, ctx):
+        lines = _load_text(args[0], dst)
+        lines += [
+            f'    MOV  R2, R{dst}',
+            f'    LI   R1, {sysnum}   ; {why}',
+            '    SYSCALL',
+            f'    MOV  R{dst}, R1',
+        ]
+        return lines
+    return emit
 
-    dst   = char count (result)
-    dst+1 = src pointer   dst+2 = current char
-    dst+3 = dst pointer   dst+4 = bound literal   dst+5 = comparison scratch
-    """
-    buf = _text_label(args[0])
-    out = ctx.require_out()
-    src, ch, dp, bnd, cmp = dst + 1, dst + 2, dst + 3, dst + 4, dst + 5
-    loop, skip, done = ctx.label('cs'), ctx.label('cssk'), ctx.label('csd')
-    op = 'ADDI' if delta > 0 else 'SUBI'
-    mag = abs(delta)
-    return [
-        f'    LI   R{dst}, 0',
-        f'    LI   R{src}, {buf}',
-        f'    LI   R{dp}, {out}',
-        f'{loop}:',
-        f'    LDW  R{ch}, R{src}, 0',
-        f'    BEQZ R{ch}, {done}',
-        f'    LI   R{bnd}, {lo}',
-        f'    SUB  R{cmp}, R{ch}, R{bnd}',
-        f'    BLTZ R{cmp}, {skip}   ; below range',
-        f'    LI   R{bnd}, {hi}',
-        f'    SUB  R{cmp}, R{ch}, R{bnd}',
-        f'    BGTZ R{cmp}, {skip}   ; above range',
-        f'    {op} R{ch}, R{ch}, {mag}   ; shift case',
-        f'{skip}:',
-        f'    STW  R{ch}, R{dp}, 0',
-        f'    ADDI R{dp}, R{dp}, 1',
-        f'    ADDI R{src}, R{src}, 1',
-        f'    ADDI R{dst}, R{dst}, 1',
-        f'    JMP  {loop}',
-        f'{done}:',
-        f'    LI   R{ch}, 0',
-        f'    STW  R{ch}, R{dp}, 0   ; null-terminate output',
+
+def _cmd_text_replace(args, dst, ctx):
+    """replace(text, find, with, case_sensitive) -> text (STR_REPLACE).
+    STR_REPLACE's ci flag is the negation of case_sensitive."""
+    th, fh, wh = dst, dst + 1, dst + 2
+    lines = _load_text(args[0], th)
+    lines += _load_text(args[1], fh)
+    lines += _load_text(args[2], wh)
+    cs = 1 if (len(args) > 3 and args[3][0] == 'num' and args[3][1]) else 0
+    lines += [
+        f'    MOV  R2, R{th}',
+        f'    MOV  R3, R{fh}',
+        f'    MOV  R4, R{wh}',
+        f'    LI   R5, {1 - cs}   ; ci = not case_sensitive',
+        f'    LI   R1, {_SYS_STR_REPLACE}',
+        '    SYSCALL',
+        f'    MOV  R{dst}, R1',
     ]
-
-
-def _cmd_text_upper(args, dst, ctx):
-    return _cmd_text_case(args, dst, ctx, 97, 122, -32)   # a..z -> A..Z
-
-
-def _cmd_text_lower(args, dst, ctx):
-    return _cmd_text_case(args, dst, ctx, 65, 90, +32)    # A..Z -> a..z
+    return lines
 
 
 # ---------------------------------------------------------------------------
-# Interactive I/O (SDL dialog syscalls — Stage 9-1C)
+# Interactive I/O (SDL dialog syscalls — Stage 9-1C), string-handle model
 # ---------------------------------------------------------------------------
 
 def _cmd_io_prompt(args, dst, ctx):
-    """prompt(message) -> text. Writes the typed answer to ctx.out_text;
-    R<dst> = its length (or the syscall's -1 on cancel)."""
-    msg = _text_label(args[0])
-    out = ctx.require_out()
-    return [
+    """prompt(message) -> text handle. The dialog writes the typed answer to a
+    shared scratch buffer; STR_FROMBUF turns it into a heap string."""
+    ctx.needs_prompt_scratch = True
+    lines = _load_text(args[0], dst)          # message handle in R<dst>
+    lines += [
+        f'    MOV  R2, R{dst}',
+        '    ADDI R2, R2, 1                ; message chars (handle+1)',
+        '    LI   R3, _prompt_scratch',
+        f'    LI   R4, {_PROMPT_SCRATCH_WORDS}',
         f'    LI   R1, {_PIG_DIALOG_PROMPT}',
-        f'    LI   R2, {msg}',
-        f'    LI   R3, {out}',
-        f'    LI   R4, {_TEXT_BUF_WORDS}',
         '    SYSCALL',
-        f'    MOV  R{dst}, R1   ; answer length',
+        '    LI   R2, _prompt_scratch',
+        f'    LI   R1, {_SYS_STR_FROMBUF}',
+        '    SYSCALL',
+        f'    MOV  R{dst}, R1               ; answer as string handle',
     ]
+    return lines
 
 
 def _cmd_io_display(args, dst, ctx):
-    """display(value, title) -> none."""
-    value = _text_label(args[0])
-    title = _text_label(args[1])
-    return [
+    """display(value, title) -> none. Handles rendered via their char runs."""
+    vh, th = dst, dst + 1
+    lines = _load_text(args[0], vh)
+    lines += _load_text(args[1], th)
+    lines += [
+        f'    MOV  R2, R{th}',
+        '    ADDI R2, R2, 1                ; title chars',
+        f'    MOV  R3, R{vh}',
+        '    ADDI R3, R3, 1                ; value chars',
         f'    LI   R1, {_PIG_DIALOG_DISPLAY}',
-        f'    LI   R2, {title}',
-        f'    LI   R3, {value}',
         '    SYSCALL',
     ]
+    return lines
 
 
 def _cmd_io_confirm(args, dst, ctx):
     """confirm(message) -> 1/0."""
-    msg = _text_label(args[0])
-    return [
+    lines = _load_text(args[0], dst)
+    lines += [
+        f'    MOV  R2, R{dst}',
+        '    ADDI R2, R2, 1                ; message chars',
         f'    LI   R1, {_PIG_DIALOG_CONFIRM}',
-        f'    LI   R2, {msg}',
         '    SYSCALL',
         f'    MOV  R{dst}, R1   ; 1=yes 0=no',
     ]
+    return lines
 
 
 # ---------------------------------------------------------------------------
@@ -437,8 +449,10 @@ _DISPATCH = {
     'cmd_env_get':       _cmd_env_get,
     'cmd_env_exists':    _cmd_env_exists,
     'cmd_text_length':   _cmd_text_length,
-    'cmd_text_upper':    _cmd_text_upper,
-    'cmd_text_lower':    _cmd_text_lower,
+    'cmd_text_upper':    _str_transform(_SYS_STR_UPPER, 'STR_UPPER'),
+    'cmd_text_lower':    _str_transform(_SYS_STR_LOWER, 'STR_LOWER'),
+    'cmd_text_trim':     _str_transform(_SYS_STR_TRIM, 'STR_TRIM'),
+    'cmd_text_replace':  _cmd_text_replace,
     'cmd_io_prompt':     _cmd_io_prompt,
     'cmd_io_display':    _cmd_io_display,
     'cmd_io_confirm':    _cmd_io_confirm,
