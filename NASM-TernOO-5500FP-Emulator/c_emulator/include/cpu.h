@@ -51,6 +51,15 @@ typedef struct {
      * ra_sp == 0 means empty. */
     int64_t  ra_stack[RA_STACK_MAX];
     int      ra_sp;
+
+    /* Runtime value heap (variable-length strings + lists — Option A).
+     * A bump allocator living in mem[] above the loaded program. Values are
+     * length-prefixed: header word = length, payload words follow. A "handle"
+     * is the header's mem address (passed around like a number). Immutable;
+     * no free/GC — programs run and exit. heap_ptr is the next free word;
+     * heap_base is where the heap started (== end of the loaded program). */
+    int64_t  heap_ptr;
+    int64_t  heap_base;
 } cpu_t;
 
 /* -----------------------------------------------------------------------

@@ -747,6 +747,8 @@ void cpu_reset(cpu_t *cpu) {
     cpu->cycle_count = 0;
     cpu->reservation_addr = -1;
     cpu->ra_sp = 0;                /* empty return-address stack */
+    cpu->heap_ptr = 0;
+    cpu->heap_base = 0;
     memset(cpu->mem, 0, cpu->mem_size * sizeof(int64_t));
 }
 
@@ -755,6 +757,10 @@ void cpu_load_program(cpu_t *cpu, const int64_t *prog, uint32_t len, int64_t sta
         mem_write(cpu, start_addr + i, prog[i]);
     }
     cpu->pc = start_addr;
+    /* The value heap starts just past the loaded program (code + data) and
+     * grows toward the top of memory. A small gap guards against a program
+     * writing one past its last labelled word. */
+    cpu->heap_base = cpu->heap_ptr = start_addr + len + 16;
 }
 
 /* -----------------------------------------------------------------------
