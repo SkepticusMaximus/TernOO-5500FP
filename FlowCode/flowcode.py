@@ -3395,6 +3395,9 @@ def run_gui():
                 }
                 if 'name' in cell:
                     fc_state['cells'][(r, c)]['name'] = cell['name']
+                if cell.get('bound_to_port'):    # Stage 8-6 cell↔port binding
+                    fc_state['cells'][(r, c)]['bound_to_port'] = \
+                        dict(cell['bound_to_port'])
                 fc_state['cell_next_id'] = max(fc_state['cell_next_id'],
                                                cell.get('id', 0) + 1)
             fc_state['cell_sel'] = (0, 0)

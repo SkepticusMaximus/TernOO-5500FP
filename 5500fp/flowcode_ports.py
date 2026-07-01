@@ -119,3 +119,45 @@ def entry_slot(container_name: str, port_name: str) -> str:
 
 def exit_slot(container_name: str, port_name: str) -> str:
     return f'state_exit_{_sanitize(container_name)}_{_sanitize(port_name)}'
+
+
+# --- Stage 8-6: cell ↔ port bindings --------------------------------------
+#
+# A Sheet cell may be bound to one container port instead of holding a formula.
+# The binding is a dict {container_name, port_name, direction} stored on the
+# cell as `bound_to_port`. direction 'entry' -> the cell drives the entry port;
+# 'exit' -> the cell reflects the exit port. Mutually exclusive with a formula.
+
+def make_cell_binding(container_name: str, port_name: str, direction: str) -> dict:
+    return {'container_name': str(container_name),
+            'port_name': str(port_name),
+            'direction': 'entry' if direction == 'entry' else 'exit'}
+
+
+def cell_bound_port(cell: dict):
+    """The cell's port binding dict, or None."""
+    b = cell.get('bound_to_port')
+    return b if (isinstance(b, dict) and b.get('container_name')
+                 and b.get('port_name')) else None
+
+
+def cell_has_formula(cell: dict) -> bool:
+    return (cell.get('kind') == 'cell_formula'
+            or str(cell.get('value', '')).startswith('='))
+
+
+def validate_cell_binding(cell: dict, container_sym: dict, port_name: str,
+                          direction: str):
+    """Validate binding `cell` to container_sym.<port_name> as `direction`.
+    Returns (ok, msg). A cell bound to a port must not also be a formula, and
+    the port must exist in the requested direction on the container."""
+    if container_sym is None:
+        return False, 'Container not found'
+    if cell_has_formula(cell):
+        return False, ('Cell has a formula — clear it before binding to a port '
+                       '(a cell is a value, a formula, or a port binding)')
+    ports = (entry_points(container_sym) if direction == 'entry'
+             else exit_points(container_sym))
+    if port_name not in {p.get('name') for p in ports}:
+        return False, f'No {direction} port {port_name!r} on that container'
+    return True, ''

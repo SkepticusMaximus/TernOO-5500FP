@@ -93,6 +93,44 @@ class TestPortDataModel(unittest.TestCase):
         self.assertEqual(loaded['exit_points'][0]['description'], 'the output')
 
 
+class TestCellPortBinding(unittest.TestCase):
+    """Stage 8-6 cell↔port binding data model."""
+
+    def _container(self):
+        return {'id': 1, 'kind': 'flow_process', 'name': 'calc',
+                'entry_points': [fp.make_port('a', 'number'),
+                                 fp.make_port('b', 'number')],
+                'exit_points':  [fp.make_port('sum', 'number', expr='a + b')]}
+
+    def test_make_and_read_binding(self):
+        b = fp.make_cell_binding('calc', 'a', 'entry')
+        cell = {'id': 5, 'kind': 'cell_value', 'value': 3, 'bound_to_port': b}
+        self.assertEqual(fp.cell_bound_port(cell)['port_name'], 'a')
+        self.assertIsNone(fp.cell_bound_port({'id': 6, 'value': 1}))
+
+    def test_binding_mutually_exclusive_with_formula(self):
+        c = self._container()
+        formula_cell = {'id': 7, 'kind': 'cell_formula', 'value': '=1+2'}
+        ok, msg = fp.validate_cell_binding(formula_cell, c, 'a', 'entry')
+        self.assertFalse(ok)
+        self.assertIn('formula', msg)
+
+    def test_binding_requires_existing_port(self):
+        c = self._container()
+        cell = {'id': 8, 'kind': 'cell_value', 'value': 3}
+        self.assertTrue(fp.validate_cell_binding(cell, c, 'a', 'entry')[0])
+        self.assertTrue(fp.validate_cell_binding(cell, c, 'sum', 'exit')[0])
+        self.assertFalse(fp.validate_cell_binding(cell, c, 'a', 'exit')[0])   # wrong dir
+        self.assertFalse(fp.validate_cell_binding(cell, c, 'nope', 'entry')[0])
+        self.assertFalse(fp.validate_cell_binding(cell, None, 'a', 'entry')[0])
+
+    def test_binding_json_round_trip(self):
+        b = fp.make_cell_binding('calc', 'sum', 'exit')
+        cell = {'id': 9, 'kind': 'cell_value', 'value': 0, 'bound_to_port': b}
+        loaded = json.loads(json.dumps(cell))
+        self.assertEqual(fp.cell_bound_port(loaded)['direction'], 'exit')
+
+
 class TestPortsUISourceWiring(unittest.TestCase):
     """Source-level checks that the properties dialog wires the ports UI (the
     tkinter dialog itself is screen-only — verified on-screen by Stevo)."""
