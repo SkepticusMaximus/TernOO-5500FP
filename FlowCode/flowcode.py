@@ -1504,6 +1504,37 @@ def run_gui():
         return bool(nm) and any(s.get('parent_scope') == nm
                                 for s in fc_state['flow_symbols'].values())
 
+    def _fc_port_positions(sym):
+        """Phase 7c-4b: design-space positions of a container's ports.
+        Returns {'entry': [(port, x, y)], 'exit': [(port, x, y)]}. Entry ports
+        sit on the left edge, exit ports on the right, distributed vertically."""
+        out = {'entry': [], 'exit': []}
+        if _flowcode_ports is None or sym.get('kind') not in _FC_CONTAINER_KINDS:
+            return out
+        hw, hh = SYMBOL_W // 2, SYMBOL_H // 2
+        top, bot = sym['y'] - hh, sym['y'] + hh
+        for edge, key, ex in (('entry', 'entry_points', sym['x'] - hw),
+                              ('exit', 'exit_points', sym['x'] + hw)):
+            ports = sym.get(key) or []
+            n = len(ports)
+            for i, p in enumerate(ports):
+                py = top + (bot - top) * (i + 1) / (n + 1)
+                out[edge].append((p, ex, py))
+        return out
+
+    def _fc_port_at(x, y, tol=8):
+        """Return (sym, 'entry'|'exit', port) whose dot is near design (x,y)."""
+        scope = fc_state.get('flow_scope')
+        for s in reversed(list(fc_state['flow_symbols'].values())):
+            if s.get('parent_scope') != scope:
+                continue
+            pp = _fc_port_positions(s)
+            for edge in ('entry', 'exit'):
+                for port, px, py in pp[edge]:
+                    if abs(px - x) <= tol and abs(py - y) <= tol:
+                        return s, edge, port
+        return None
+
     def _fc_sym_by_name(name):
         for s in fc_state['flow_symbols'].values():
             if s.get('name') == name:
@@ -1790,6 +1821,19 @@ def run_gui():
         if _fc_has_pocket(s):
             tk_canvas.create_text(x+hw-_cp*2, y-hh+_cp*2, text='\U0001F4E6',
                                   font=('Monospace', max(7, int(11*z))))
+
+        # Phase 7c-4b: entry/exit ports on the container's edges (labelled dots)
+        pp = _fc_port_positions(s)
+        _pr = max(2, int(3 * z))
+        for edge, anchor, dx in (('entry', 'e', _pr + 2), ('exit', 'w', -_pr - 2)):
+            for port, px, py in pp[edge]:
+                sx, sy = _fc_d2s(px, py); sx, sy = int(sx), int(sy)
+                tk_canvas.create_oval(sx-_pr, sy-_pr, sx+_pr, sy+_pr,
+                                      fill='#00e5ff' if edge == 'entry' else '#ffb000',
+                                      outline=bor, width=1)
+                if z >= 0.7:
+                    tk_canvas.create_text(sx+dx, sy, anchor=anchor, text=port['name'],
+                                          fill=C['dim'], font=('Monospace', _fs))
 
         # Connection points in edge mode
         if state['mode'] in ('edge_src', 'edge_dst_pending'):

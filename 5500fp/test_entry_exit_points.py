@@ -102,6 +102,12 @@ class TestPortsUISourceWiring(unittest.TestCase):
         self.assertIn('_port_add_edit', self.src)
         self.assertIn('validate_new_port', self.src)
 
+    def test_port_rendering_wired(self):
+        self.assertIn('_fc_port_positions', self.src)
+        self.assertIn('_fc_port_at', self.src)          # hit-test for edges (P4)
+        # ports drawn in draw_symbol (dots on container edges)
+        self.assertIn("pp = _fc_port_positions(s)", self.src)
+
 
 if __name__ == '__main__':
     unittest.main()
