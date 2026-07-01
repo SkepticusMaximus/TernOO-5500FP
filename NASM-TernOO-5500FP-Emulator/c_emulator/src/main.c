@@ -480,6 +480,72 @@ static void run_tests(void) {
         }
     }
 
+    /* Test 5e: Value algorithms — split/join/reverse/sort/unique/format */
+    printf("\n-- Value Algorithm Tests --\n");
+    {
+        struct { const char *name; const char *src; int reg; int64_t exp; } vt[] = {
+        { "STR_SPLIT 'a,b,c' -> len 3",
+          "LI R1,41\nLI R2,st\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,sd\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,53\nMOV R2,R5\nMOV R3,R6\nSYSCALL\nMOV R7,R1\n"
+          "LI R1,61\nMOV R2,R7\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "st:\n.word 97\n.word 44\n.word 98\n.word 44\n.word 99\n.word 0\n"
+          "sd:\n.word 44\n.word 0\n", 3, 3 },
+        { "LIST_JOIN split('a,b,c') by '-' -> len 5",
+          "LI R1,41\nLI R2,st\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,sd\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,53\nMOV R2,R5\nMOV R3,R6\nSYSCALL\nMOV R7,R1\n"
+          "LI R1,41\nLI R2,js\nSYSCALL\nMOV R8,R1\n"
+          "LI R1,65\nMOV R2,R7\nMOV R3,R8\nSYSCALL\nMOV R9,R1\n"
+          "LI R1,42\nMOV R2,R9\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "st:\n.word 97\n.word 44\n.word 98\n.word 44\n.word 99\n.word 0\n"
+          "sd:\n.word 44\n.word 0\njs:\n.word 45\n.word 0\n", 3, 5 },
+        { "LIST_REVERSE [3,1,2] -> [0]=2",
+          "LI R1,60\nLI R2,3\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,63\nMOV R2,R5\nLI R3,0\nLI R4,3\nSYSCALL\n"
+          "LI R1,63\nMOV R2,R5\nLI R3,1\nLI R4,1\nSYSCALL\n"
+          "LI R1,63\nMOV R2,R5\nLI R3,2\nLI R4,2\nSYSCALL\n"
+          "LI R1,66\nMOV R2,R5\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,62\nMOV R2,R6\nLI R3,0\nSYSCALL\nMOV R3,R1\nHALT\n", 3, 2 },
+        { "LIST_SORT asc '3,1,2' -> [0] char='1'",
+          "LI R1,41\nLI R2,st\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,sd\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,53\nMOV R2,R5\nMOV R3,R6\nSYSCALL\nMOV R7,R1\n"
+          "LI R1,67\nMOV R2,R7\nLI R3,1\nSYSCALL\nMOV R8,R1\n"
+          "LI R1,62\nMOV R2,R8\nLI R3,0\nSYSCALL\nMOV R9,R1\n"
+          "LI R1,43\nMOV R2,R9\nLI R3,0\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "st:\n.word 51\n.word 44\n.word 49\n.word 44\n.word 50\n.word 0\n"
+          "sd:\n.word 44\n.word 0\n", 3, 49 },
+        { "LIST_UNIQUE 'a,a,b' -> len 2",
+          "LI R1,41\nLI R2,st\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,sd\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,53\nMOV R2,R5\nMOV R3,R6\nSYSCALL\nMOV R7,R1\n"
+          "LI R1,68\nMOV R2,R7\nSYSCALL\nMOV R8,R1\n"
+          "LI R1,61\nMOV R2,R8\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "st:\n.word 97\n.word 44\n.word 97\n.word 44\n.word 98\n.word 0\n"
+          "sd:\n.word 44\n.word 0\n", 3, 2 },
+        { "STR_FORMAT 'X{0}Y{1}' [p,q] -> char[1]='p'",
+          "LI R1,41\nLI R2,tp\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,ag\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,41\nLI R2,sd\nSYSCALL\nMOV R7,R1\n"
+          "LI R1,53\nMOV R2,R6\nMOV R3,R7\nSYSCALL\nMOV R8,R1\n"
+          "LI R1,54\nMOV R2,R5\nMOV R3,R8\nSYSCALL\nMOV R9,R1\n"
+          "LI R1,43\nMOV R2,R9\nLI R3,1\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "tp:\n.word 88\n.word 123\n.word 48\n.word 125\n.word 89\n.word 123\n.word 49\n.word 125\n.word 0\n"
+          "ag:\n.word 112\n.word 44\n.word 113\n.word 0\n"
+          "sd:\n.word 44\n.word 0\n", 3, 112 },
+        };
+        for (unsigned i = 0; i < sizeof(vt)/sizeof(vt[0]); i++) {
+            int64_t prog[160];
+            int len = assemble(vt[i].src, prog, 160, 0);
+            cpu_t *cpu = cpu_create(65536);
+            cpu_load_program(cpu, prog, len, 0);
+            cpu_run_n(cpu, 100000);
+            test_assert(vt[i].name, cpu->reg[vt[i].reg], vt[i].exp);
+            cpu_destroy(cpu);
+        }
+    }
+
     /* Test 6: Ternary trit operations */
     printf("\n-- Ternary Logic Tests --\n");
     {

@@ -141,6 +141,8 @@ typedef enum {
     SYS_STR_LOWER   = 50, /* R2=handle         -> R1=new lower-cased handle  */
     SYS_STR_TRIM    = 51, /* R2=handle         -> R1=new space-trimmed handle*/
     SYS_STR_REPLACE = 52, /* R2=text R3=find R4=with R5=ci -> R1=new handle  */
+    SYS_STR_SPLIT   = 53, /* R2=text R3=delim  -> R1=list of string handles  */
+    SYS_STR_FORMAT  = 54, /* R2=template R3=args-list -> R1=string ({i} subst)*/
 
     /* Runtime value substrate — fixed-length immutable lists (60..64).
      * Same length-prefixed heap header as strings; elements are values
@@ -150,6 +152,10 @@ typedef enum {
     SYS_LIST_GET    = 62, /* R2=handle R3=i    -> R1=value (0 if OOB)        */
     SYS_LIST_SET    = 63, /* R2=handle R3=i R4=value                         */
     SYS_LIST_APPEND = 64, /* R2=handle R3=value -> R1=new handle (len+1)     */
+    SYS_LIST_JOIN   = 65, /* R2=list R3=sep    -> R1=string handle           */
+    SYS_LIST_REVERSE= 66, /* R2=list           -> R1=reversed list handle    */
+    SYS_LIST_SORT   = 67, /* R2=list R3=ascending -> R1=sorted list handle   */
+    SYS_LIST_UNIQUE = 68, /* R2=list           -> R1=distinct list handle    */
 } syscall_t;
 
 #endif /* ISA_H */

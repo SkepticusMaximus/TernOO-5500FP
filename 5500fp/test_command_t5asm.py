@@ -117,14 +117,16 @@ class TestCompileCommandUnit(unittest.TestCase):
         self.assertIn('LI   R5, 1', out)        # ci = not case_sensitive(0)
 
     def test_unsupported_command_raises(self):
+        # ctl_while needs the sub-flow substrate (out of scope) — still deferred.
         with self.assertRaises(cmdc.CommandCompileError):
-            cmdc.compile_command('cmd_list_sort', [('strlit', 'l')], 21)
+            cmdc.compile_command('cmd_ctl_while', [('num', 1), ('num', 0)], 21)
 
     def test_output_kind_table(self):
         self.assertEqual(cmdc.command_output_kind('cmd_math_add'), 'number')
         self.assertEqual(cmdc.command_output_kind('cmd_text_upper'), 'text')
+        self.assertEqual(cmdc.command_output_kind('cmd_list_sort'), 'list')
         self.assertEqual(cmdc.command_output_kind('cmd_env_set'), 'none')
-        self.assertEqual(cmdc.command_output_kind('cmd_list_sort'), 'unsupported')
+        self.assertEqual(cmdc.command_output_kind('cmd_ctl_while'), 'unsupported')
 
 
 # ---------------------------------------------------------------------------
@@ -161,8 +163,9 @@ class TestCommandWiring(unittest.TestCase):
         self.assertIn('state_env_count_present:', asm)
 
     def test_unsupported_command_stub(self):
-        asm = _compile_stream([_mk_cmd(9, 'cmd_text_split', text='a,b',
-                                       delimiter=',')])
+        # ctl_while still needs the sub-flow substrate (out of scope).
+        asm = _compile_stream([_mk_cmd(9, 'cmd_ctl_while', predicate='1',
+                                       body='x')])
         self.assertIn('command_9:', asm)
         self.assertIn('no runtime yet', asm)
 
@@ -305,11 +308,13 @@ class TestInteractiveCommands(unittest.TestCase):
         self.assertIn('LI   R1, 111', asm)      # PIGART_CLOSE_WINDOW
         self.assertIn('LI   R1, 114', asm)      # confirm dialog
 
-    def test_choice_is_unsupported_stub(self):
-        # cmd_io_choice needs the list substrate → stub block, not execution.
-        asm = _compile_stream([_mk_cmd(6, 'cmd_io_choice', prompt='pick')])
+    def test_choice_emits_list_dialog_syscall(self):
+        # cmd_io_choice is now live: DIALOG_CHOICE_LIST over a list handle.
+        asm = _compile_stream([_mk_cmd(6, 'cmd_io_choice',
+                                       options='red,green', prompt='pick')])
         self.assertIn('command_6:', asm)
-        self.assertIn('no runtime yet', asm)
+        self.assertIn('LI   R1, 117', asm)      # PIGART_DIALOG_CHOICE_LIST
+        self.assertIn('shell_win_title', asm)   # opens a window (io command)
 
     @unittest.skipUnless(_HAVE_EMU, 'C emulator binary not built')
     def test_confirm_runtime_ascii_default(self):
@@ -474,6 +479,98 @@ class TestDynamicCellRecompute(unittest.TestCase):
                 '    HALT', '']
             out = _assemble_run(('\n'.join(driver) + '\n' + tail).split('\n'))
             self.assertEqual(out, exp)
+
+
+# ---------------------------------------------------------------------------
+# List commands + pipelines (Piece 5) — end-to-end on the emulator
+# ---------------------------------------------------------------------------
+
+@unittest.skipUnless(_HAVE_EMU, 'C emulator binary not built')
+class TestListCommandsRuntime(unittest.TestCase):
+
+    def _run_slot(self, cmds, edges, slot):
+        s = WordStream()
+        s._cmd_meta = {c['id']: c for c in cmds}
+        s._cmd_edges = edges
+        asm = C.compile_wordstream_to_t5asm(s, 't.fc')
+        lines, printed = [], False
+        for l in asm.splitlines():
+            if l.strip() == 'HALT' and not printed:
+                lines += [f'    LI R20, {slot}', '    LDW R2, R20, 0',
+                          '    LI R1, 1', '    SYSCALL', '    LI R1, 6', '    SYSCALL']
+                printed = True
+            lines.append(l)
+        return _assemble_run(lines)
+
+    def test_split_then_count(self):
+        # text_split("a,b,c", ",") -> list_count = 3
+        cmds = [_mk_cmd(1, 'cmd_text_split', text='a,b,c', delimiter=','),
+                _mk_cmd(2, 'cmd_list_count', list='')]
+        edges = [{'src': 1, 'dst': 2, 'dst_param': 'list'}]
+        self.assertEqual(self._run_slot(cmds, edges, 'state_cmd_2'), '3')
+
+    def test_sort_reverse_first(self):
+        # split "3,1,2" -> sort asc [1,2,3] -> reverse [3,2,1] -> first "3"
+        cmds = [_mk_cmd(1, 'cmd_text_split', text='3,1,2', delimiter=','),
+                _mk_cmd(2, 'cmd_list_sort', list='', ascending=True),
+                _mk_cmd(3, 'cmd_list_reverse', list=''),
+                _mk_cmd(4, 'cmd_list_first', list='')]
+        edges = [{'src': 1, 'dst': 2, 'dst_param': 'list'},
+                 {'src': 2, 'dst': 3, 'dst_param': 'list'},
+                 {'src': 3, 'dst': 4, 'dst_param': 'list'}]
+        # list_first returns a string handle; print its first char via STR_CHAR
+        s = WordStream()
+        s._cmd_meta = {c['id']: c for c in cmds}
+        s._cmd_edges = edges
+        asm = C.compile_wordstream_to_t5asm(s, 't.fc')
+        lines, printed = [], False
+        for l in asm.splitlines():
+            if l.strip() == 'HALT' and not printed:
+                lines += ['    LI R20, state_cmd_4', '    LDW R2, R20, 0',
+                          '    LI R3, 0', '    LI R1, 43', '    SYSCALL',   # STR_CHAR
+                          '    MOV R2, R1', '    LI R1, 1', '    SYSCALL',
+                          '    LI R1, 6', '    SYSCALL']
+                printed = True
+            lines.append(l)
+        self.assertEqual(_assemble_run(lines), str(ord('3')))   # '3'
+
+    def test_unique_count(self):
+        cmds = [_mk_cmd(1, 'cmd_text_split', text='a,a,b', delimiter=','),
+                _mk_cmd(2, 'cmd_list_unique', list=''),
+                _mk_cmd(3, 'cmd_list_count', list='')]
+        edges = [{'src': 1, 'dst': 2, 'dst_param': 'list'},
+                 {'src': 2, 'dst': 3, 'dst_param': 'list'}]
+        self.assertEqual(self._run_slot(cmds, edges, 'state_cmd_3'), '2')
+
+    def test_join_length(self):
+        # split "a,b,c" -> join by "-" = "a-b-c" -> length 5
+        cmds = [_mk_cmd(1, 'cmd_text_split', text='a,b,c', delimiter=','),
+                _mk_cmd(2, 'cmd_text_join', list='', separator='-'),
+                _mk_cmd(3, 'cmd_text_length', text='')]
+        edges = [{'src': 1, 'dst': 2, 'dst_param': 'list'},
+                 {'src': 2, 'dst': 3, 'dst_param': 'text'}]
+        self.assertEqual(self._run_slot(cmds, edges, 'state_cmd_3'), '5')
+
+    def test_repeat_count(self):
+        # ctl_repeat(5, "x") -> list of 5 -> list_count = 5
+        cmds = [_mk_cmd(1, 'cmd_ctl_repeat', count=5, value='x'),
+                _mk_cmd(2, 'cmd_list_count', list='')]
+        edges = [{'src': 1, 'dst': 2, 'dst_param': 'list'}]
+        self.assertEqual(self._run_slot(cmds, edges, 'state_cmd_2'), '5')
+
+    def test_format_length(self):
+        # format("Count: {0}", ["3"]) -> "Count: 3" length 8
+        cmds = [_mk_cmd(1, 'cmd_text_format', template='Count: {0}', args='3'),
+                _mk_cmd(2, 'cmd_text_length', text='')]
+        edges = [{'src': 1, 'dst': 2, 'dst_param': 'text'}]
+        self.assertEqual(self._run_slot(cmds, edges, 'state_cmd_2'), '8')
+
+    def test_ctl_while_still_deferred(self):
+        # ctl_while needs sub-flows (out of scope) — stubbed, not executed.
+        s = WordStream()
+        s._cmd_meta = {1: _mk_cmd(1, 'cmd_ctl_while', predicate='1', body='x')}
+        asm = C.compile_wordstream_to_t5asm(s, 't.fc')
+        self.assertIn('no runtime yet', asm)
 
 
 if __name__ == '__main__':

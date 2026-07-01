@@ -47,6 +47,9 @@
 
 /* Runtime value substrate — render a length-prefixed heap string */
 #define PIGART_DRAW_STRING    116
+/* Choose from a heap list of string handles: R2=list R3=prompt-chars
+ * -> R1 = selected element handle (0 on cancel) */
+#define PIGART_DIALOG_CHOICE_LIST 117
 
 /* -----------------------------------------------------------------------
  * Event types (D8)

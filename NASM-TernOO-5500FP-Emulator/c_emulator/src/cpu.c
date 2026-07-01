@@ -416,6 +416,162 @@ static int64_t str_replace(cpu_t *cpu, int64_t text, int64_t find,
     return out;
 }
 
+/* New string of text[start..start+len). */
+static int64_t str_sub_new(cpu_t *cpu, int64_t s, int64_t start, int64_t len) {
+    int64_t n = str_len(cpu, s);
+    if (start < 0) start = 0;
+    if (start > n) start = n;
+    if (len < 0) len = 0;
+    if (start + len > n) len = n - start;
+    int64_t h = str_new(cpu, len);
+    if (!h) return 0;
+    for (int64_t i = 0; i < len; i++) cpu->mem[h + 1 + i] = str_char(cpu, s, start + i);
+    return h;
+}
+
+static int str_equal(cpu_t *cpu, int64_t a, int64_t b) {
+    int64_t la = str_len(cpu, a), lb = str_len(cpu, b);
+    if (la != lb) return 0;
+    for (int64_t i = 0; i < la; i++)
+        if (str_char(cpu, a, i) != str_char(cpu, b, i)) return 0;
+    return 1;
+}
+
+static int str_lex_cmp(cpu_t *cpu, int64_t a, int64_t b) {
+    int64_t la = str_len(cpu, a), lb = str_len(cpu, b), m = la < lb ? la : lb;
+    for (int64_t i = 0; i < m; i++) {
+        int ca = (int)str_char(cpu, a, i), cb = (int)str_char(cpu, b, i);
+        if (ca != cb) return ca < cb ? -1 : 1;
+    }
+    return la == lb ? 0 : (la < lb ? -1 : 1);
+}
+
+/* text.split(delim) -> list of string handles (empty delim -> [text]). */
+static int64_t str_split(cpu_t *cpu, int64_t text, int64_t delim) {
+    int64_t nt = str_len(cpu, text), nd = str_len(cpu, delim);
+    if (nd == 0) {
+        int64_t list = list_new(cpu, 1);
+        if (list) cpu->mem[list + 1] = str_sub_new(cpu, text, 0, nt);
+        return list;
+    }
+    int64_t count = 1, i = 0;
+    while (i + nd <= nt) {
+        if (str_match_at(cpu, text, i, delim, nd, 0)) { count++; i += nd; }
+        else i++;
+    }
+    int64_t list = list_new(cpu, count);
+    if (!list) return 0;
+    int64_t start = 0, idx = 0;
+    i = 0;
+    while (i <= nt) {
+        if (i + nd <= nt && str_match_at(cpu, text, i, delim, nd, 0)) {
+            cpu->mem[list + 1 + (idx++)] = str_sub_new(cpu, text, start, i - start);
+            i += nd; start = i;
+        } else if (i == nt) {
+            cpu->mem[list + 1 + (idx++)] = str_sub_new(cpu, text, start, nt - start);
+            break;
+        } else i++;
+    }
+    return list;
+}
+
+/* list.join(sep) -> concatenated string. */
+static int64_t list_join(cpu_t *cpu, int64_t list, int64_t sep) {
+    int64_t n = str_len(cpu, list), ns = str_len(cpu, sep), total = 0;
+    for (int64_t i = 0; i < n; i++) {
+        if (i) total += ns;
+        total += str_len(cpu, cpu->mem[list + 1 + i]);
+    }
+    int64_t out = str_new(cpu, total);
+    if (!out) return 0;
+    int64_t oi = 0;
+    for (int64_t i = 0; i < n; i++) {
+        if (i) for (int64_t j = 0; j < ns; j++) cpu->mem[out + 1 + (oi++)] = str_char(cpu, sep, j);
+        int64_t e = cpu->mem[list + 1 + i], le = str_len(cpu, e);
+        for (int64_t j = 0; j < le; j++) cpu->mem[out + 1 + (oi++)] = str_char(cpu, e, j);
+    }
+    return out;
+}
+
+static int64_t list_reverse(cpu_t *cpu, int64_t list) {
+    int64_t n = str_len(cpu, list), out = list_new(cpu, n);
+    if (!out) return 0;
+    for (int64_t i = 0; i < n; i++) cpu->mem[out + 1 + i] = cpu->mem[list + 1 + (n - 1 - i)];
+    return out;
+}
+
+/* Insertion sort of a copy, lexicographic on element string content. */
+static int64_t list_sort(cpu_t *cpu, int64_t list, int ascending) {
+    int64_t n = str_len(cpu, list), out = list_new(cpu, n);
+    if (!out) return 0;
+    for (int64_t i = 0; i < n; i++) cpu->mem[out + 1 + i] = cpu->mem[list + 1 + i];
+    for (int64_t i = 1; i < n; i++) {
+        int64_t v = cpu->mem[out + 1 + i], j = i - 1;
+        while (j >= 0) {
+            int c = str_lex_cmp(cpu, cpu->mem[out + 1 + j], v);
+            if (ascending ? c > 0 : c < 0) { cpu->mem[out + 1 + j + 1] = cpu->mem[out + 1 + j]; j--; }
+            else break;
+        }
+        cpu->mem[out + 1 + j + 1] = v;
+    }
+    return out;
+}
+
+static int64_t list_unique(cpu_t *cpu, int64_t list) {
+    int64_t n = str_len(cpu, list), cnt = 0;
+    for (int64_t i = 0; i < n; i++) {
+        int dup = 0;
+        for (int64_t k = 0; k < i; k++)
+            if (str_equal(cpu, cpu->mem[list + 1 + i], cpu->mem[list + 1 + k])) { dup = 1; break; }
+        if (!dup) cnt++;
+    }
+    int64_t out = list_new(cpu, cnt);
+    if (!out) return 0;
+    int64_t oi = 0;
+    for (int64_t i = 0; i < n; i++) {
+        int dup = 0;
+        for (int64_t k = 0; k < i; k++)
+            if (str_equal(cpu, cpu->mem[list + 1 + i], cpu->mem[list + 1 + k])) { dup = 1; break; }
+        if (!dup) cpu->mem[out + 1 + (oi++)] = cpu->mem[list + 1 + i];
+    }
+    return out;
+}
+
+/* template.format(args) — substitute {0},{1},... with args[i] string values. */
+static int64_t str_format(cpu_t *cpu, int64_t tmpl, int64_t args) {
+    int64_t nt = str_len(cpu, tmpl), na = str_len(cpu, args);
+    int64_t total = 0, i = 0;
+    for (int pass = 0; pass < 2; pass++) {
+        int64_t out = 0, oi = 0;
+        if (pass == 1) { out = str_new(cpu, total); if (!out) return 0; }
+        i = 0;
+        while (i < nt) {
+            int c = (int)str_char(cpu, tmpl, i);
+            if (c == '{') {
+                int64_t j = i + 1, num = 0; int has = 0;
+                while (j < nt) {
+                    int d = (int)str_char(cpu, tmpl, j);
+                    if (d < '0' || d > '9') break;
+                    num = num * 10 + (d - '0'); j++; has = 1;
+                }
+                if (has && j < nt && str_char(cpu, tmpl, j) == '}') {
+                    if (num < na) {
+                        int64_t e = cpu->mem[args + 1 + num], le = str_len(cpu, e);
+                        if (pass == 0) total += le;
+                        else for (int64_t k = 0; k < le; k++) cpu->mem[out + 1 + (oi++)] = str_char(cpu, e, k);
+                    }
+                    i = j + 1; continue;
+                }
+            }
+            if (pass == 0) total++;
+            else cpu->mem[out + 1 + (oi++)] = c;
+            i++;
+        }
+        if (pass == 1) return out;
+    }
+    return 0;
+}
+
 /* -----------------------------------------------------------------------
  * Syscall handler
  * --------------------------------------------------------------------- */
@@ -567,6 +723,24 @@ static void handle_syscall(cpu_t *cpu) {
             reg_write(cpu, 1, nh);
             break;
         }
+        case SYS_STR_SPLIT:
+            reg_write(cpu, 1, str_split(cpu, reg_read(cpu, 2), reg_read(cpu, 3)));
+            break;
+        case SYS_STR_FORMAT:
+            reg_write(cpu, 1, str_format(cpu, reg_read(cpu, 2), reg_read(cpu, 3)));
+            break;
+        case SYS_LIST_JOIN:
+            reg_write(cpu, 1, list_join(cpu, reg_read(cpu, 2), reg_read(cpu, 3)));
+            break;
+        case SYS_LIST_REVERSE:
+            reg_write(cpu, 1, list_reverse(cpu, reg_read(cpu, 2)));
+            break;
+        case SYS_LIST_SORT:
+            reg_write(cpu, 1, list_sort(cpu, reg_read(cpu, 2), (int)reg_read(cpu, 3)));
+            break;
+        case SYS_LIST_UNIQUE:
+            reg_write(cpu, 1, list_unique(cpu, reg_read(cpu, 2)));
+            break;
         /* ---- PIGART rendering syscalls 100-111 ---- */
         case PIGART_OPEN_WINDOW:
         case PIGART_CLEAR:
@@ -585,6 +759,7 @@ static void handle_syscall(cpu_t *cpu) {
         case PIGART_DIALOG_CONFIRM:
         case PIGART_DIALOG_CHOICE:
         case PIGART_DRAW_STRING:
+        case PIGART_DIALOG_CHOICE_LIST:
             pigart_handle_syscall((int)call, cpu->reg, cpu->mem, cpu->mem_size);
             break;
         default:

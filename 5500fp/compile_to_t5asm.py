@@ -898,8 +898,13 @@ def _has_io_commands(stream) -> bool:
 
 
 def _is_text_buf_param(cmd_name: str, pname: str) -> bool:
-    """True when (command, param) consumes a text-value buffer (vs a number)."""
+    """True when (command, param) consumes a text (string-handle) value."""
     return pname in _cmdc.text_buf_params(cmd_name)
+
+
+def _is_list_param(cmd_name: str, pname: str) -> bool:
+    """True when (command, param) consumes a list value."""
+    return pname in _cmdc.list_params(cmd_name)
 
 
 # --- Stage 9-2: typed pipe edges between commands -------------------------
@@ -1004,7 +1009,7 @@ def _command_plan(wd: dict, cid: int, incoming: dict = None,
             src_wd = cmd_by_id.get(src_id, {})
             src_kind = src_wd.get('kind', '')
             src_out = _cmdreg.commands().get(src_kind, {}).get('output', '')
-            if _cmdc.command_output_kind(src_kind) not in ('number', 'text'):
+            if _cmdc.command_output_kind(src_kind) not in ('number', 'text', 'list'):
                 raise CompileError(
                     f'pipe into {name} #{cid}.{pname}: source {src_kind} '
                     f'#{src_id} has no runtime output')
@@ -1012,8 +1017,8 @@ def _command_plan(wd: dict, cid: int, incoming: dict = None,
                 raise CompileError(
                     f'pipe type mismatch into {name} #{cid}.{pname}: '
                     f'{src_kind} outputs {src_out}, expected {ptype}')
-            if _is_text_buf_param(name, pname):
-                # text value flows as a string handle in the upstream slot
+            if _is_text_buf_param(name, pname) or _is_list_param(name, pname):
+                # text/list values flow as a handle in the upstream slot
                 args.append(('handleslot', f'state_cmd_{abs(src_id)}'))
             else:
                 args.append(('numslot', f'state_cmd_{abs(src_id)}'))
@@ -1023,6 +1028,11 @@ def _command_plan(wd: dict, cid: int, incoming: dict = None,
             nm = str(val if val is not None else '')
             env.add(nm)
             args.append(('name', nm))
+        elif _is_list_param(name, pname):
+            # literal list = a comma-separated string split at runtime
+            label = f'cmdarg_{abs(cid)}_{pname}'
+            bufs.append((label, '' if val is None else str(val)))
+            args.append(('listlit', label))
         elif _is_text_buf_param(name, pname):
             # literal text becomes a heap string (STR_FROMBUF of this buffer)
             label = f'cmdarg_{abs(cid)}_{pname}'
@@ -1051,9 +1061,9 @@ def _section_command_blocks(stream) -> list:
             lines.append(f'    LI   R{_cmdc._ERR_REG}, 0   ; clear error code')
             lines += _cmdc.compile_command(name, plan['args'],
                                            _cmdc._BASE_REG, ctx)
-            if plan['out_kind'] in ('number', 'text'):
+            if plan['out_kind'] in ('number', 'text', 'list'):
                 lines.append(f'    LI   R20, state_cmd_{abs(cid)}')
-                tag = 'handle' if plan['out_kind'] == 'text' else 'result'
+                tag = 'result' if plan['out_kind'] == 'number' else 'handle'
                 lines.append(f'    STW  R{_cmdc._BASE_REG}, R20, 0   ; store {tag}')
         except _cmdc.CommandCompileError as e:
             lines.append(f'    ; no runtime yet: {e}')
@@ -1103,6 +1113,15 @@ def _section_command_data(stream) -> list:
         lines += ['_prompt_scratch:',
                   f'    .word 0   ; x{_cmdc._PROMPT_SCRATCH_WORDS} prompt answer scratch']
         lines += ['    .word 0'] * (_cmdc._PROMPT_SCRATCH_WORDS - 1)
+        lines.append('')
+    # literal list args are split on "," at runtime — emit the shared delimiter
+    needs_comma = any(
+        a[0] == 'listlit'
+        for cid, wd in cmds
+        for a in _command_plan(wd, cid, incoming, by_id)['args'])
+    if needs_comma:
+        lines.append('_comma_str:')
+        lines += _emit_string_words(',')
         lines.append('')
     return lines
 

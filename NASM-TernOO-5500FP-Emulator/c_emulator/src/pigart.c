@@ -214,6 +214,32 @@ int pigart_handle_syscall(int syscall_num,
             break;
         }
 
+        /* ---- 117: PIGART_DIALOG_CHOICE_LIST ----
+         * R2=list handle (of string handles), R3=prompt char-ptr.
+         * Builds the NUL-separated options block from the list, shows the
+         * choice dialog, returns the selected element's handle (0 = cancel). */
+        case PIGART_DIALOG_CHOICE_LIST: {
+            if (!b || !b->dialog_choice) { regs[1] = 0; break; }
+            int64_t list = regs[2];
+            char prompt[1025];
+            mem_read_string(mem, mem_size, regs[3], prompt, sizeof(prompt));
+            int64_t n = (list > 0 && (uint64_t)list < mem_size) ? mem[list] : 0;
+            if (n > 8) n = 8;
+            char opts[1025];
+            opts[0] = '\0';
+            int oi = 0;
+            for (int64_t i = 0; i < n; i++) {
+                int64_t e = mem[list + 1 + i];
+                int64_t le = (e > 0 && (uint64_t)e < mem_size) ? mem[e] : 0;
+                for (int64_t k = 0; k < le && oi < (int)sizeof(opts) - 2; k++)
+                    opts[oi++] = (char)(mem[e + 1 + k] & 0xFF);
+                opts[oi++] = '\0';
+            }
+            int idx = b->dialog_choice(prompt, opts, (int)n);
+            regs[1] = (idx >= 0 && idx < n) ? mem[list + 1 + idx] : 0;
+            break;
+        }
+
         /* ---- 106: PIGART_DRAW_LINE ---- */
         case PIGART_DRAW_LINE: {
             if (!b || !g_window_open) break;
