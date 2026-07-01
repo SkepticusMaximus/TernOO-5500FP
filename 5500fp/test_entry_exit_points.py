@@ -71,6 +71,19 @@ class TestPortDataModel(unittest.TestCase):
         self.assertEqual(fp.exit_slot('compute_score', 'result'),
                          'state_exit_compute_score_result')
 
+    def test_port_edge_compatibility(self):
+        self.assertTrue(fp.port_edge_compatible('number', 'number'))
+        self.assertTrue(fp.port_edge_compatible('boolean', 'number'))   # num class
+        self.assertTrue(fp.port_edge_compatible('list_of_text', 'list_of_number'))
+        self.assertFalse(fp.port_edge_compatible('text', 'number'))
+        self.assertTrue(fp.port_edge_compatible('', 'number'))          # unknown → any
+
+    def test_exit_port_expr(self):
+        p = fp.make_port('result', 'number', 'out', expr='input_value * 2')
+        self.assertEqual(p.get('expr'), 'input_value * 2')
+        # entry ports (no expr) omit the field
+        self.assertNotIn('expr', fp.make_port('input_value', 'number'))
+
     def test_json_round_trip(self):
         c = self._container()
         # the .fc save path dumps flow symbols (incl. entry/exit points) to JSON
@@ -107,6 +120,14 @@ class TestPortsUISourceWiring(unittest.TestCase):
         self.assertIn('_fc_port_at', self.src)          # hit-test for edges (P4)
         # ports drawn in draw_symbol (dots on container edges)
         self.assertIn("pp = _fc_port_positions(s)", self.src)
+
+    def test_cross_scope_edge_binding_wired(self):
+        # edges can bind to a port by name; load preserves bound_port_name
+        self.assertIn('bound_port_name', self.src)
+        self.assertIn('port_hit = _fc_port_at(x, y)', self.src)
+        self.assertIn("_ne['bound_port_name'] = e['bound_port_name']", self.src)
+        # exit-port expr field (interior computation)
+        self.assertIn("Expr (= interior formula)", self.src)
 
 
 if __name__ == '__main__':

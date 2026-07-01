@@ -1680,20 +1680,26 @@ def run_gui():
         fc_state['flow_multi_sel'].discard(sid)
         _guic_push_undo({'kind': 'flow_add', 'sym': dict(sym)})  # undo = re-add
 
-    def _fc_add_edge(src_id, dst_id, waypoints=(), condition=''):
-        """Add flow edge dict to fc_state, push undo. Returns edge dict or None."""
+    def _fc_add_edge(src_id, dst_id, waypoints=(), condition='', bound_port_name=''):
+        """Add flow edge dict to fc_state, push undo. Returns edge dict or None.
+
+        Phase 7c-4b: an edge may bind to one of dst's (a container's) entry/exit
+        ports by name (bound_port_name). Same-scope edges stay scope-local; the
+        port binding is what crosses into the container's pocket interior."""
         src = fc_state['flow_symbols'].get(src_id)
         dst = fc_state['flow_symbols'].get(dst_id)
         if src is None or dst is None: return None
-        # Phase 7c-4 (L3): flow edges are strictly scope-local. Cross-scope
-        # connections use named entry/exit points (a later bundle); reject here.
-        if src.get('parent_scope') != dst.get('parent_scope'):
-            set_status("Can't connect across pocket scopes — edges are scope-local")
+        # Phase 7c-4 (L3): flow edges are strictly scope-local unless the edge
+        # binds to a named port on the destination container (Phase 7c-4b).
+        if not bound_port_name and src.get('parent_scope') != dst.get('parent_scope'):
+            set_status("Can't connect across pocket scopes — bind to a named port")
             return None
         for e in fc_state['flow_edges']:
             if e['src'] == src_id and e['dst'] == dst_id: return None
         edge = {'src': src_id, 'dst': dst_id,
                 'waypoints': list(waypoints), 'condition': condition}
+        if bound_port_name:
+            edge['bound_port_name'] = bound_port_name
         fc_state['flow_edges'].append(edge)
         _guic_push_undo({'kind': 'flow_edge_remove', 'edge': dict(edge)})  # undo = remove
         return edge
@@ -2126,10 +2132,15 @@ def run_gui():
 
         # Edge waypoint / destination
         if state['mode'] == 'edge_dst_pending':
-            hit = _fc_sym_at(x, y)
+            # Phase 7c-4b: dropping on a container's port dot binds the edge to
+            # that port by name (crosses into the pocket); else a normal edge.
+            port_hit = _fc_port_at(x, y)
+            hit = port_hit[0] if port_hit else _fc_sym_at(x, y)
+            bpn = port_hit[2]['name'] if port_hit else ''
             if hit and hit['id'] != state['edge_src']:
                 wps = state['edge_waypoints']
-                e = _fc_add_edge(state['edge_src'], hit['id'], waypoints=wps)
+                e = _fc_add_edge(state['edge_src'], hit['id'], waypoints=wps,
+                                 bound_port_name=bpn)
                 if e:
                     src = fc_state['flow_symbols'].get(state['edge_src'])
                     state['selected_edge'] = {'src': e['src'], 'dst': e['dst'],
@@ -2137,7 +2148,8 @@ def run_gui():
                                               'condition': e['condition']}
                     state['selected_sym'] = None
                     sl = src['label'] if src else f"#{state['edge_src']}"
-                    set_status(f"Edge {sl}→{hit['label']} ({len(wps)} waypoints)")
+                    tail = f" → port {bpn}" if bpn else ''
+                    set_status(f"Edge {sl}→{hit['label']}{tail} ({len(wps)} waypoints)")
                     update_inspect()
                 state['edge_src'] = None; state['edge_waypoints'] = []
                 set_mode('select')
@@ -2358,9 +2370,12 @@ def run_gui():
                     nv = tk.StringVar(value=(existing or {}).get('name', ''))
                     tv = tk.StringVar(value=(existing or {}).get('type', 'number'))
                     dv = tk.StringVar(value=(existing or {}).get('description', ''))
-                    for r, (lbl, var, opts) in enumerate((
-                            ('Name', nv, None), ('Type', tv, _fp.PORT_TYPES),
-                            ('Description', dv, None))):
+                    ev = tk.StringVar(value=(existing or {}).get('expr', ''))
+                    _rows = [('Name', nv, None), ('Type', tv, _fp.PORT_TYPES),
+                             ('Description', dv, None)]
+                    if pkind == 'exit':   # interior computation over entry names
+                        _rows.append(('Expr (= interior formula)', ev, None))
+                    for r, (lbl, var, opts) in enumerate(_rows):
                         tk.Label(pd, text=lbl + ':', bg=C['palette'], fg=C['text'],
                                  font=('Monospace', 9), anchor='w').grid(
                                      row=r, column=0, sticky='w', padx=8, pady=2)
@@ -2372,16 +2387,18 @@ def run_gui():
                                      fg=C['text'], insertbackground=C['text'],
                                      font=('Monospace', 9), width=22).grid(
                                          row=r, column=1, padx=8, pady=2)
+                    _wrow = len(_rows)
                     warn = tk.Label(pd, text='', bg=C['palette'], fg='#ff8888',
                                     font=('Monospace', 8))
-                    warn.grid(row=3, column=0, columnspan=2, sticky='w', padx=8)
+                    warn.grid(row=_wrow, column=0, columnspan=2, sticky='w', padx=8)
 
                     def _commit_port():
                         ok, msg = _fp.validate_new_port(s, nv.get(), tv.get(),
                                                         exclude=existing)
                         if not ok:
                             warn.config(text=msg); return
-                        port = _fp.make_port(nv.get(), tv.get(), dv.get())
+                        port = _fp.make_port(nv.get(), tv.get(), dv.get(),
+                                             expr=ev.get() if pkind == 'exit' else '')
                         lst = s['entry_points'] if pkind == 'entry' else s['exit_points']
                         if existing is not None:
                             lst[lst.index(existing)] = port
@@ -2391,7 +2408,7 @@ def run_gui():
                         _guic_sync_stream(); redraw()
                         _open_flow_props_fc(s)   # reopen to show the update
 
-                    bf = tk.Frame(pd, bg=C['palette']); bf.grid(row=4, column=0,
+                    bf = tk.Frame(pd, bg=C['palette']); bf.grid(row=_wrow + 1, column=0,
                                                                 columnspan=2, pady=8)
                     tk.Button(bf, text='OK', command=_commit_port, bg=C['pal_btn'],
                               fg=C['text'], font=('Monospace', 9), relief='flat',
@@ -3321,12 +3338,15 @@ def run_gui():
                 fc_state['flow_next_id'] = max(fc_state['flow_next_id'], sid + 1)
             fc_state['flow_scope'] = None   # Phase 7c-4: reset to top-level on load
             for e in tgui.get('flow_edges', []):
-                fc_state['flow_edges'].append({
+                _ne = {
                     'src':       e['src'],
                     'dst':       e['dst'],
                     'waypoints': [tuple(w) for w in e.get('waypoints', [])],
                     'condition': e.get('condition', ''),
-                })
+                }
+                if e.get('bound_port_name'):     # Phase 7c-4b port binding
+                    _ne['bound_port_name'] = e['bound_port_name']
+                fc_state['flow_edges'].append(_ne)
             fc_state['flow_selected'] = None
             fc_state['flow_multi_sel'].clear()
             # Stage 9-0: load Shell command widgets

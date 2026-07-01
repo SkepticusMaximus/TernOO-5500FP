@@ -33,11 +33,33 @@ def is_container(kind: str) -> bool:
     return kind in CONTAINER_KINDS
 
 
-def make_port(name: str, type_: str = 'number', description: str = '') -> dict:
-    """A normalised port dict."""
-    return {'name': str(name).strip(),
-            'type': type_ if type_ in PORT_TYPES else 'number',
-            'description': str(description)}
+def make_port(name: str, type_: str = 'number', description: str = '',
+              expr: str = '') -> dict:
+    """A normalised port dict. `expr` (exit ports only) is the interior
+    computation — a formula over entry-port names, e.g. "input_value * 2"."""
+    p = {'name': str(name).strip(),
+         'type': type_ if type_ in PORT_TYPES else 'number',
+         'description': str(description)}
+    if expr:
+        p['expr'] = str(expr)
+    return p
+
+
+def _value_class(type_str: str) -> str:
+    t = (type_str or '').lower()
+    if t in ('number', 'boolean', 'bool'):
+        return 'num'
+    if t == 'text':
+        return 'text'
+    if t.startswith('list'):
+        return 'list'
+    return 'any'
+
+
+def port_edge_compatible(src_type: str, port_type: str) -> bool:
+    """True if a source of `src_type` can bind to a port of `port_type`."""
+    sc, pc = _value_class(src_type), _value_class(port_type)
+    return 'any' in (sc, pc) or sc == pc
 
 
 def entry_points(sym: dict) -> list:
