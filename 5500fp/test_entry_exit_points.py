@@ -236,6 +236,61 @@ class TestPortCompilation(unittest.TestCase):
                              f'input {inp} should double to {exp}')
 
 
+def _calc_stream(a, b):
+    """calc container (sum = a + b); input cells bound to entries, result cell
+    bound to the exit port (Stage 8-6)."""
+    import flowcode_ports as _fp
+    s = WordStream()
+    s._cell_meta = {
+        (0, 0): {'id': 1, 'kind': 'cell_value', 'row': 0, 'col': 0,
+                 'name': 'input_a', 'value': a, 'properties': [],
+                 'bound_to_port': _fp.make_cell_binding('calc', 'a', 'entry')},
+        (0, 1): {'id': 2, 'kind': 'cell_value', 'row': 0, 'col': 1,
+                 'name': 'input_b', 'value': b, 'properties': [],
+                 'bound_to_port': _fp.make_cell_binding('calc', 'b', 'entry')},
+        (0, 2): {'id': 3, 'kind': 'cell_value', 'row': 0, 'col': 2,
+                 'name': 'result', 'value': 0, 'properties': [],
+                 'bound_to_port': _fp.make_cell_binding('calc', 'sum', 'exit')},
+    }
+    s._flow_meta = {9: {'id': 9, 'kind': 'flow_process', 'x': 0, 'y': 0,
+                        'w': 1, 'h': 1, 'label': 'C', 'name': 'calc',
+                        'entry_points': [{'name': 'a', 'type': 'number'},
+                                         {'name': 'b', 'type': 'number'}],
+                        'exit_points': [{'name': 'sum', 'type': 'number',
+                                         'expr': 'a + b'}]}}
+    return s
+
+
+class TestCellPortCompilation(unittest.TestCase):
+
+    def test_bindings_emit_copies(self):
+        asm = C.compile_wordstream_to_t5asm(_calc_stream(3, 4), 'd.fc')
+        self.assertIn('entry calc.a <- cell #1', asm)      # cell → entry copy
+        self.assertIn('state_exit_calc_sum', asm)          # exit computed
+        self.assertNotIn('uncompilable', asm)
+
+    @unittest.skipUnless(_HAVE_EMU, 'C emulator binary not built')
+    def test_cell_port_dataflow_runs(self):
+        for a, b, exp in ((3, 4, '7'), (10, 5, '15')):
+            asm = C.compile_wordstream_to_t5asm(_calc_stream(a, b), 'd.fc')
+            tail = asm[asm.index('; ---- Container entry/exit ports'):]
+            driver = ['main:', '    CALL recompute_all_ports',
+                      '    CALL recompute_all_cells',
+                      '    LI R20, state_cell_3', '    LDW R2, R20, 0',
+                      '    LI R1, 1', '    SYSCALL', '    LI R1, 6', '    SYSCALL',
+                      '    HALT', '']
+            with tempfile.NamedTemporaryFile('w', suffix='.t5asm', delete=False) as f:
+                f.write('\n'.join(driver) + '\n' + tail)
+                path = f.name
+            try:
+                r = subprocess.run([_EMU, '--run', path], capture_output=True,
+                                   text=True, timeout=10)
+            finally:
+                os.unlink(path)
+            digits = [x for x in r.stdout.splitlines() if x.strip().lstrip('-').isdigit()]
+            self.assertEqual(digits[-1:], [exp])
+
+
 _DEMO = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                      '..', 'FlowCode', 'entry_exit_demo.fc')
 

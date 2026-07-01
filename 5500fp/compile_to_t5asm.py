@@ -540,7 +540,7 @@ def _cell_render_info(stream: 'WordStream') -> list:
     refs) emit a placeholder 0 here — Stage 8-3-RT-dynamic (Step 4) emits their
     recompute fragments. cell_value / cell_text emit their literal directly.
     """
-    cells = getattr(stream, '_cell_meta', {}) or {}
+    cells = _effective_cells(stream)   # Stage 8-6: exit-bound cells → formulas
     if not cells or _sheetf is None:
         return []
     dynamic = set()
@@ -702,7 +702,7 @@ def _dynamic_cells(stream):
     cells come after them)."""
     if _fxc is None:
         return []
-    cells = getattr(stream, '_cell_meta', {}) or {}
+    cells = _effective_cells(stream)   # Stage 8-6: exit-bound cells → formulas
     exit_flat = _exit_flatname_slots(stream)   # Phase 7c-4b: cells reading exits
     dyn = {}      # rc -> (cid, ast)
     for rc, cell in cells.items():
@@ -907,6 +907,38 @@ def _exit_flatname_slots(stream) -> dict:
     return m
 
 
+def _effective_cells(stream) -> dict:
+    """Stage 8-6: cell_meta where an exit-bound cell presents as a formula cell
+    reading its exit-port flat name (so the existing dynamic-cell machinery
+    renders/recomputes it). Non-destructive — shallow-copies only rewrites."""
+    cells = getattr(stream, '_cell_meta', {}) or {}
+    if _fports is None:
+        return cells
+    out, changed = {}, False
+    for rc, cell in cells.items():
+        b = _fports.cell_bound_port(cell)
+        if b and b.get('direction') == 'exit':
+            nc = dict(cell)
+            nc['kind'] = 'cell_formula'
+            nc['value'] = f'={b["container_name"]}_{b["port_name"]}'
+            out[rc], changed = nc, True
+        else:
+            out[rc] = cell
+    return out if changed else cells
+
+
+def _entry_bound_cell_id(stream, cname, pname):
+    """Cell id bound to (cname, pname) as an entry driver, or None."""
+    if _fports is None:
+        return None
+    for rc, cell in (getattr(stream, '_cell_meta', {}) or {}).items():
+        b = _fports.cell_bound_port(cell)
+        if (b and b.get('direction') == 'entry'
+                and b['container_name'] == cname and b['port_name'] == pname):
+            return cell.get('id')
+    return None
+
+
 def _make_entry_resolver(cname, sym):
     """entry-port names -> state_entry slots, for a container's exit exprs."""
     m = {p['name']: _fports.entry_slot(cname, p['name'])
@@ -939,11 +971,26 @@ def _section_port_blocks(stream, state_map) -> list:
         lines.append('')
         calls.append(lbl)
 
+    def _emit_copy(slot, src_slot, why):
+        lbl = f'recompute_{slot}'
+        lines.append(f'{lbl}:')
+        lines.append(f'    LI   R20, {src_slot}')
+        lines.append(f'    LDW  R{base}, R20, 0')
+        lines.append(f'    LI   R20, {slot}')
+        lines.append(f'    STW  R{base}, R20, 0   ; {why}')
+        lines.append('    RET')
+        lines.append('')
+        calls.append(lbl)
+
     for cname, sym in conts:
         for p in (sym.get('entry_points') or []):
-            if p.get('expr'):
-                _emit(_fports.entry_slot(cname, p['name']), p['expr'], outer,
-                      f'entry {cname}.{p["name"]}')
+            slot = _fports.entry_slot(cname, p['name'])
+            bcid = _entry_bound_cell_id(stream, cname, p['name'])  # Stage 8-6
+            if bcid is not None:
+                _emit_copy(slot, f'state_cell_{bcid}',
+                           f'entry {cname}.{p["name"]} <- cell #{bcid}')
+            elif p.get('expr'):
+                _emit(slot, p['expr'], outer, f'entry {cname}.{p["name"]}')
         entry_res = _make_entry_resolver(cname, sym)
         for p in (sym.get('exit_points') or []):
             if p.get('expr'):
