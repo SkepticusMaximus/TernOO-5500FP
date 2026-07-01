@@ -621,6 +621,36 @@ class TestCompileToT5Asm(unittest.TestCase):
                           f"handler_term_{tid} must end with RET")
 
 
+import json
+
+_DEMO = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                     '..', 'FlowCode', 'customer_record_demo.fc')
+
+
+class TestCustomerRecordDemo(unittest.TestCase):
+    """Regression guard: the shipped Customer Record demo compiles cleanly and
+    emits the dynamic-cell recompute chain that the R80 return-address fix
+    unblocked (it used to compile but hang at runtime)."""
+
+    @unittest.skipUnless(os.path.exists(_DEMO), 'demo .fc not present')
+    def test_demo_compiles_with_recompute_chain(self):
+        d = json.load(open(_DEMO))
+        s = WordStream()
+        for w in d.get('symbols', []):
+            s._widget_meta[w['id']] = w
+        for f in d.get('flow_symbols', []):
+            s._flow_meta[f['id']] = f
+        for c in d.get('cell_symbols', []):
+            s._cell_meta[(c.get('row', 0), c.get('col', 0))] = c
+        asm = compile_wordstream_to_t5asm(s, 'customer_record_demo.fc')
+        # dynamic cells recompute via a two-level CALL chain (was the hang)
+        self.assertIn('CALL recompute_all_cells', asm)
+        self.assertIn('recompute_all_cells:', asm)
+        self.assertRegex(asm, r'recompute_cell_\d+:')
+        # the gui_entry text-buffer fix is still present
+        self.assertIn('state_text_', asm)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
 
