@@ -183,3 +183,21 @@ class TestCompilePure(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestRegisterRangeGuard(unittest.TestCase):
+    """Finding 1: emitter must fail loudly past R40, not silently clamp."""
+
+    def test_deep_expression_raises(self):
+        # A right-deep tree drives dst up one register per level; past R40 the
+        # emitter must RAISE (loud) rather than silently clamp onto R40.
+        ast = ('num', 1)
+        for _ in range(40):
+            ast = ('bin', '+', ('num', 1), ast)
+        with self.assertRaises(ft.FormulaCompileError):
+            ft.compile_ast(ast, ft._BASE_REG, lambda r: None)
+
+    def test_within_range_ok(self):
+        ast = sf.parse('1+2+3+4')
+        lines = ft.compile_ast(ast, ft._BASE_REG, lambda r: None)
+        self.assertTrue(any('ADD' in l for l in lines))

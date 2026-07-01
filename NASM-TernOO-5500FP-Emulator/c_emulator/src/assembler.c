@@ -81,7 +81,18 @@ static int64_t encode_field(int64_t val, int pos, int n) {
     return val * POW3[pos];
 }
 
+/* Register fields are 4 balanced trits → only R0..R40 are addressable.
+ * Warn loudly on out-of-range registers instead of silently clamping (which
+ * previously collapsed R41+ onto R40 and produced wrong-but-silent code). */
+static void check_reg_range(int rd, int rs1, int rs2) {
+    if (rd  > 40 || rs1 > 40 || rs2 > 40 || rd < 0 || rs1 < 0 || rs2 < 0) {
+        fprintf(stderr, "[ASM] register out of range (only R0..R40 encodable): "
+                        "rd=R%d rs1=R%d rs2=R%d\n", rd, rs1, rs2);
+    }
+}
+
 static int64_t encode_r(int op, int rd, int rs1, int rs2, int func) {
+    check_reg_range(rd, rs1, rs2);
     return encode_field(op,   18, 6)
          + encode_field(rd,   14, 4)
          + encode_field(rs1,  10, 4)
