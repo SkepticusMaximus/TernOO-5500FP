@@ -367,6 +367,39 @@ static void run_tests(void) {
         test_assert("PIGART_POLL_EVENT returns 0 in ASCII mode", (int64_t)r, 0);
     }
 
+    /* Test P7-P10: Stage 9-1C dialog syscalls dispatch through
+     * pigart_handle_syscall (memory read/write + backend routing). The ASCII
+     * backend returns deterministic defaults so this is headless-verifiable;
+     * live SDL modal behaviour is screen-only. */
+    {
+        int64_t dmem[256];
+        for (int i = 0; i < 256; i++) dmem[i] = 0;
+        int64_t regs[81];
+        for (int i = 0; i < 81; i++) regs[i] = 0;
+        /* message "Go?" @10, title "T" @20, options "a\0b\0c" @30 */
+        const char *m = "Go?"; for (int i = 0; m[i]; i++) dmem[10 + i] = m[i];
+        dmem[20] = 'T';
+        dmem[30] = 'a'; dmem[32] = 'b'; dmem[34] = 'c';
+
+        regs[2] = 10;
+        pigart_handle_syscall(PIGART_DIALOG_CONFIRM, regs, dmem, 256);
+        test_assert("DIALOG_CONFIRM ascii default=0", regs[1], 0);
+
+        regs[1] = 0;
+        regs[2] = 20; regs[3] = 10;
+        int rc = pigart_handle_syscall(PIGART_DIALOG_DISPLAY, regs, dmem, 256);
+        test_assert("DIALOG_DISPLAY dispatch ok", (int64_t)rc, 0);
+
+        regs[1] = 999; regs[2] = 10; regs[3] = 50; regs[4] = 16;
+        pigart_handle_syscall(PIGART_DIALOG_PROMPT, regs, dmem, 256);
+        test_assert("DIALOG_PROMPT ascii empty len=0", regs[1], 0);
+        test_assert("DIALOG_PROMPT out NUL-terminated", dmem[50], 0);
+
+        regs[1] = 999; regs[2] = 10; regs[3] = 30; regs[4] = 3;
+        pigart_handle_syscall(PIGART_DIALOG_CHOICE, regs, dmem, 256);
+        test_assert("DIALOG_CHOICE ascii default index=0", regs[1], 0);
+    }
+
     /* Test P6: PIGART_GET_TICKS returns positive value after sleep */
     {
         pigart_active_backend->sleep_ms(50);

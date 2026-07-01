@@ -45,6 +45,11 @@ _ERR_NAME = 2
 # Text value buffers match the gui_entry runtime buffer (64 words + null pad).
 _TEXT_BUF_WORDS = 64
 
+# PIGART interactive dialog syscalls (Stage 9-1C).
+_PIG_DIALOG_PROMPT = 112
+_PIG_DIALOG_DISPLAY = 113
+_PIG_DIALOG_CONFIRM = 114
+
 
 class CommandCompileError(Exception):
     pass
@@ -63,7 +68,23 @@ _OUTPUT_KIND = {
     'cmd_env_set': 'none', 'cmd_env_get': 'number', 'cmd_env_exists': 'number',
     'cmd_text_length': 'number',
     'cmd_text_upper': 'text', 'cmd_text_lower': 'text',
+    'cmd_io_prompt': 'text', 'cmd_io_display': 'none',
+    'cmd_io_confirm': 'number',
 }
+
+# (command, param) pairs whose value is a text buffer (vs a number). Drives both
+# the argument encoding and data-section buffer allocation in the wiring.
+_TEXT_BUF_PARAMS = {
+    'cmd_text_upper': {'text'}, 'cmd_text_lower': {'text'},
+    'cmd_text_length': {'text'},
+    'cmd_io_prompt': {'message'}, 'cmd_io_confirm': {'message'},
+    'cmd_io_display': {'value', 'title'},
+}
+
+
+def text_buf_params(name: str) -> set:
+    """Param names of `name` that carry a text buffer value."""
+    return _TEXT_BUF_PARAMS.get(name, set())
 
 # Commands with a real runtime in this stage. Everything else in the registry
 # (text_trim/replace/split/join/format, all list_*, ctl_repeat/while) needs the
@@ -357,6 +378,48 @@ def _cmd_text_lower(args, dst, ctx):
 
 
 # ---------------------------------------------------------------------------
+# Interactive I/O (SDL dialog syscalls — Stage 9-1C)
+# ---------------------------------------------------------------------------
+
+def _cmd_io_prompt(args, dst, ctx):
+    """prompt(message) -> text. Writes the typed answer to ctx.out_text;
+    R<dst> = its length (or the syscall's -1 on cancel)."""
+    msg = _text_label(args[0])
+    out = ctx.require_out()
+    return [
+        f'    LI   R1, {_PIG_DIALOG_PROMPT}',
+        f'    LI   R2, {msg}',
+        f'    LI   R3, {out}',
+        f'    LI   R4, {_TEXT_BUF_WORDS}',
+        '    SYSCALL',
+        f'    MOV  R{dst}, R1   ; answer length',
+    ]
+
+
+def _cmd_io_display(args, dst, ctx):
+    """display(value, title) -> none."""
+    value = _text_label(args[0])
+    title = _text_label(args[1])
+    return [
+        f'    LI   R1, {_PIG_DIALOG_DISPLAY}',
+        f'    LI   R2, {title}',
+        f'    LI   R3, {value}',
+        '    SYSCALL',
+    ]
+
+
+def _cmd_io_confirm(args, dst, ctx):
+    """confirm(message) -> 1/0."""
+    msg = _text_label(args[0])
+    return [
+        f'    LI   R1, {_PIG_DIALOG_CONFIRM}',
+        f'    LI   R2, {msg}',
+        '    SYSCALL',
+        f'    MOV  R{dst}, R1   ; 1=yes 0=no',
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Dispatch table
 # ---------------------------------------------------------------------------
 
@@ -376,4 +439,7 @@ _DISPATCH = {
     'cmd_text_length':   _cmd_text_length,
     'cmd_text_upper':    _cmd_text_upper,
     'cmd_text_lower':    _cmd_text_lower,
+    'cmd_io_prompt':     _cmd_io_prompt,
+    'cmd_io_display':    _cmd_io_display,
+    'cmd_io_confirm':    _cmd_io_confirm,
 }

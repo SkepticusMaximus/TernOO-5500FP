@@ -146,6 +146,27 @@ COMMAND_REGISTRY = {
                        'output': 'none',
                        'params': [_p('predicate', 'text'), _p('body', 'text')],
                        'fn': lambda a: ''},   # editor-side no-op; runtime executes
+    # ── Interactive I/O (SDL dialogs — runtime only, Stage 9-1C) ──────────────
+    # No editor-side execution: SDL dialogs exist only at runtime. The preview
+    # shows "(runtime only)"; the Shell tab offers a "Run interactively…" button.
+    'cmd_io_prompt':  {'desc': 'Prompt for text input via a dialog',
+                       'output': 'text', 'runtime_only': True,
+                       'params': [_p('message', 'text')],
+                       'fn': lambda a: '(runtime only)'},
+    'cmd_io_display': {'desc': 'Display a value in a dialog',
+                       'output': 'none', 'runtime_only': True,
+                       'params': [_p('value', 'text'),
+                                  _p('title', 'text', True, '')],
+                       'fn': lambda a: '(runtime only)'},
+    'cmd_io_confirm': {'desc': 'Yes/no confirmation dialog',
+                       'output': 'bool', 'runtime_only': True,
+                       'params': [_p('message', 'text')],
+                       'fn': lambda a: '(runtime only)'},
+    'cmd_io_choice':  {'desc': 'Pick one item from a list via a dialog',
+                       'output': 'text', 'runtime_only': True,
+                       'params': [_p('options', 'list_of_text'),
+                                  _p('prompt', 'text')],
+                       'fn': lambda a: '(runtime only)'},
 }
 
 # In-program environment store (editor-side preview). Runtime uses the program

@@ -374,6 +374,114 @@ static int sdl_get_ticks(void) {
 }
 
 /* -----------------------------------------------------------------------
+ * Interactive dialogs (Stage 9-1C)
+ *
+ * display/confirm/choice use SDL's built-in modal message boxes (reliable,
+ * no custom event loop). prompt has no SDL built-in, so it runs a small modal
+ * text-input loop reusing the window/renderer/font and the SDL_TEXTINPUT path.
+ * --------------------------------------------------------------------- */
+
+static void sdl_dialog_display(const char *title, const char *message) {
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION,
+                             title && title[0] ? title : "TernOO",
+                             message ? message : "", g_window);
+}
+
+static int sdl_dialog_confirm(const char *message) {
+    const SDL_MessageBoxButtonData buttons[] = {
+        { SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "No"  },
+        { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Yes" },
+    };
+    SDL_MessageBoxData data = {
+        SDL_MESSAGEBOX_INFORMATION, g_window, "Confirm",
+        message ? message : "", 2, buttons, NULL
+    };
+    int hit = 0;
+    if (SDL_ShowMessageBox(&data, &hit) < 0) return 0;
+    return hit == 1 ? 1 : 0;
+}
+
+static int sdl_dialog_choice(const char *prompt, const char *options,
+                             int n_options) {
+    /* options is a run of NUL-separated strings; make a button per option. */
+    if (n_options < 1) return -1;
+    if (n_options > 8) n_options = 8;          /* keep the box sane */
+    SDL_MessageBoxButtonData buttons[8];
+    const char *p = options ? options : "";
+    for (int i = 0; i < n_options; i++) {
+        buttons[i].flags = (i == 0) ? SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT : 0;
+        buttons[i].buttonid = i;
+        buttons[i].text = p;
+        p += (int)SDL_strlen(p) + 1;           /* advance past this option's NUL */
+    }
+    SDL_MessageBoxData data = {
+        SDL_MESSAGEBOX_INFORMATION, g_window, "Choose",
+        prompt ? prompt : "", n_options, buttons, NULL
+    };
+    int hit = -1;
+    if (SDL_ShowMessageBox(&data, &hit) < 0) return -1;
+    return hit;
+}
+
+static int sdl_dialog_prompt(const char *message, char *out, int out_size) {
+    if (!g_renderer || !g_window || !g_open) {
+        if (out && out_size > 0) out[0] = '\0';
+        return -1;
+    }
+    char buf[1024];
+    int len = 0;
+    buf[0] = '\0';
+    SDL_StartTextInput();
+    int done = 0, cancelled = 0;
+    while (!done) {
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT) { done = 1; cancelled = 1; }
+            else if (e.type == SDL_TEXTINPUT) {
+                for (const char *c = e.text.text; *c; c++) {
+                    unsigned char uc = (unsigned char)*c;
+                    if (uc >= 32 && uc < 127 && len < (int)sizeof(buf) - 1) {
+                        buf[len++] = (char)uc; buf[len] = '\0';
+                    }
+                }
+            } else if (e.type == SDL_KEYDOWN) {
+                SDL_Keycode k = e.key.keysym.sym;
+                if (k == SDLK_RETURN || k == SDLK_KP_ENTER) done = 1;
+                else if (k == SDLK_ESCAPE) { done = 1; cancelled = 1; }
+                else if (k == SDLK_BACKSPACE && len > 0) buf[--len] = '\0';
+            }
+        }
+        int W, H;
+        SDL_GetWindowSize(g_window, &W, &H);
+        SDL_Rect box = { W / 2 - 220, H / 2 - 60, 440, 120 };
+        set_draw_color(g_renderer, 0x282830, 235);
+        SDL_RenderFillRect(g_renderer, &box);
+        set_draw_color(g_renderer, 0x30A0A0, 255);
+        SDL_RenderDrawRect(g_renderer, &box);
+        sdl_draw_text(box.x + 12, box.y + 10, message ? message : "",
+                      16, 0xE0E0E0);
+        SDL_Rect field = { box.x + 12, box.y + 50, 416, 30 };
+        set_draw_color(g_renderer, 0x141418, 255);
+        SDL_RenderFillRect(g_renderer, &field);
+        set_draw_color(g_renderer, 0x606068, 255);
+        SDL_RenderDrawRect(g_renderer, &field);
+        char shown[1026];
+        SDL_snprintf(shown, sizeof(shown), "%s_", buf);   /* trailing caret */
+        sdl_draw_text(field.x + 5, field.y + 6, shown, 16, 0xFFFFFF);
+        sdl_draw_text(box.x + 12, box.y + 92, "Enter = OK   Esc = Cancel",
+                      12, 0x909098);
+        SDL_RenderPresent(g_renderer);
+        SDL_Delay(16);
+    }
+    SDL_StopTextInput();
+    if (cancelled) { if (out && out_size > 0) out[0] = '\0'; return -1; }
+    int n = 0;
+    for (; buf[n] && n < out_size - 1; n++) out[n] = buf[n];
+    if (out && out_size > 0) out[n] = '\0';
+    return n;
+}
+
+/* -----------------------------------------------------------------------
  * Backend factory
  * --------------------------------------------------------------------- */
 static pigart_backend_t s_sdl_backend = {
@@ -389,6 +497,10 @@ static pigart_backend_t s_sdl_backend = {
     .poll_event   = sdl_poll_event,
     .sleep_ms     = sdl_sleep_ms,
     .get_ticks    = sdl_get_ticks,
+    .dialog_prompt  = sdl_dialog_prompt,
+    .dialog_display = sdl_dialog_display,
+    .dialog_confirm = sdl_dialog_confirm,
+    .dialog_choice  = sdl_dialog_choice,
     .name         = "sdl",
 };
 

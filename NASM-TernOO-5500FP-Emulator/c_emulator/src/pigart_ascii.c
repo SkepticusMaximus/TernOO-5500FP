@@ -278,6 +278,38 @@ static int ascii_get_ticks(void) {
 }
 
 /* -----------------------------------------------------------------------
+ * Interactive dialogs — ASCII backend has no interactive surface.
+ * Report to stderr and return safe, deterministic defaults so headless runs
+ * (and the --test suite) are reproducible.
+ * --------------------------------------------------------------------- */
+static int ascii_dialog_prompt(const char *message, char *out, int out_size) {
+    (void)message;
+    if (out && out_size > 0) out[0] = '\0';
+    fprintf(stderr, "[PIGART ascii] prompt (no input): \"%s\"\n",
+            message ? message : "");
+    return 0;                 /* empty answer, not a cancel */
+}
+
+static void ascii_dialog_display(const char *title, const char *message) {
+    fprintf(stderr, "[PIGART ascii] display: %s — %s\n",
+            title ? title : "", message ? message : "");
+}
+
+static int ascii_dialog_confirm(const char *message) {
+    fprintf(stderr, "[PIGART ascii] confirm (default no): \"%s\"\n",
+            message ? message : "");
+    return 0;
+}
+
+static int ascii_dialog_choice(const char *prompt, const char *options,
+                               int n_options) {
+    (void)options;
+    fprintf(stderr, "[PIGART ascii] choice (default 0 of %d): \"%s\"\n",
+            n_options, prompt ? prompt : "");
+    return n_options > 0 ? 0 : -1;
+}
+
+/* -----------------------------------------------------------------------
  * Test helper
  * --------------------------------------------------------------------- */
 char pigart_ascii_cell(int x, int y) {
@@ -301,6 +333,10 @@ static pigart_backend_t s_ascii_backend = {
     .poll_event   = ascii_poll_event,
     .sleep_ms     = ascii_sleep_ms,
     .get_ticks    = ascii_get_ticks,
+    .dialog_prompt  = ascii_dialog_prompt,
+    .dialog_display = ascii_dialog_display,
+    .dialog_confirm = ascii_dialog_confirm,
+    .dialog_choice  = ascii_dialog_choice,
     .name         = "ascii",
 };
 

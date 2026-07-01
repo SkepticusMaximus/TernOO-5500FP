@@ -338,6 +338,10 @@ static void handle_syscall(cpu_t *cpu) {
         case PIGART_SLEEP_MS:
         case PIGART_GET_TICKS:
         case PIGART_CLOSE_WINDOW:
+        case PIGART_DIALOG_PROMPT:
+        case PIGART_DIALOG_DISPLAY:
+        case PIGART_DIALOG_CONFIRM:
+        case PIGART_DIALOG_CHOICE:
             pigart_handle_syscall((int)call, cpu->reg, cpu->mem, cpu->mem_size);
             break;
         default:

@@ -89,6 +89,22 @@ static void mem_write_event(int64_t *mem, uint32_t mem_size,
     }
 }
 
+/* Write a C string into engine memory as one char per word, NUL-terminated.
+ * Writes at most maxwords-1 chars. Returns the number of chars written. */
+static int mem_write_string(int64_t *mem, uint32_t mem_size,
+                            int64_t addr, const char *s, int maxwords) {
+    int i = 0;
+    if (addr < 0 || maxwords <= 0) return 0;
+    for (; s[i] && i < maxwords - 1; i++) {
+        int64_t wa = addr + i;
+        if ((uint64_t)wa >= mem_size) break;
+        mem[wa] = (unsigned char)s[i];
+    }
+    int64_t term = addr + i;
+    if ((uint64_t)term < mem_size) mem[term] = 0;
+    return i;
+}
+
 /* -----------------------------------------------------------------------
  * Syscall dispatcher
  * --------------------------------------------------------------------- */
@@ -222,6 +238,62 @@ int pigart_handle_syscall(int syscall_num,
             if (!b || !g_window_open) break;
             b->close_window();
             g_window_open = 0;
+            break;
+        }
+
+        /* ---- 112: PIGART_DIALOG_PROMPT ----
+         * R2=message ptr, R3=out buffer ptr, R4=out buffer words.
+         * Returns R1 = chars written (>=0), or -1 on cancel/unavailable. */
+        case PIGART_DIALOG_PROMPT: {
+            if (!b || !b->dialog_prompt) { regs[1] = -1; break; }
+            char msg[1025], answer[1025];
+            mem_read_string(mem, mem_size, regs[2], msg, sizeof(msg));
+            int outwords = (int)regs[4];
+            if (outwords <= 0 || outwords > (int)sizeof(answer))
+                outwords = (int)sizeof(answer);
+            int n = b->dialog_prompt(msg, answer, outwords);
+            if (n < 0) { regs[1] = -1; break; }
+            regs[1] = mem_write_string(mem, mem_size, regs[3], answer, outwords);
+            break;
+        }
+
+        /* ---- 113: PIGART_DIALOG_DISPLAY ---- R2=title ptr, R3=message ptr. */
+        case PIGART_DIALOG_DISPLAY: {
+            if (!b || !b->dialog_display) break;
+            char title[1025], msg[1025];
+            mem_read_string(mem, mem_size, regs[2], title, sizeof(title));
+            mem_read_string(mem, mem_size, regs[3], msg, sizeof(msg));
+            b->dialog_display(title, msg);
+            break;
+        }
+
+        /* ---- 114: PIGART_DIALOG_CONFIRM ---- R2=message ptr. R1 = 1/0. */
+        case PIGART_DIALOG_CONFIRM: {
+            if (!b || !b->dialog_confirm) { regs[1] = 0; break; }
+            char msg[1025];
+            mem_read_string(mem, mem_size, regs[2], msg, sizeof(msg));
+            regs[1] = b->dialog_confirm(msg) ? 1 : 0;
+            break;
+        }
+
+        /* ---- 115: PIGART_DIALOG_CHOICE ----
+         * R2=prompt ptr, R3=options block ptr (n NUL-separated strings),
+         * R4=option count. Returns R1 = selected index, -1 = cancel. */
+        case PIGART_DIALOG_CHOICE: {
+            if (!b || !b->dialog_choice) { regs[1] = -1; break; }
+            char prompt[1025], opts[1025];
+            mem_read_string(mem, mem_size, regs[2], prompt, sizeof(prompt));
+            /* Read the options block: a run of chars where 0 separates entries.
+             * Copy raw (including embedded NULs) up to buffer end. */
+            int n = (int)regs[4];
+            int i;
+            for (i = 0; i < (int)sizeof(opts) - 1; i++) {
+                int64_t wa = regs[3] + i;
+                if ((uint64_t)wa >= mem_size) break;
+                opts[i] = (char)(mem[wa] & 0xFF);
+            }
+            opts[i] = '\0';
+            regs[1] = b->dialog_choice(prompt, opts, n);
             break;
         }
 

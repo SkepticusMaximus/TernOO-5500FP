@@ -891,10 +891,15 @@ def _has_commands(stream) -> bool:
     return bool(_iter_commands(stream))
 
 
+def _has_io_commands(stream) -> bool:
+    """True if any command is an interactive cmd_io_* (needs an SDL surface)."""
+    return any(wd.get('kind', '').startswith('cmd_io_')
+               for _cid, wd in _iter_commands(stream))
+
+
 def _is_text_buf_param(cmd_name: str, pname: str) -> bool:
     """True when (command, param) consumes a text-value buffer (vs a number)."""
-    return (cmd_name in ('cmd_text_upper', 'cmd_text_lower', 'cmd_text_length')
-            and pname == 'text')
+    return pname in _cmdc.text_buf_params(cmd_name)
 
 
 def _as_int(val) -> int:
@@ -1439,12 +1444,24 @@ def _compile_shell_program(stream: 'WordStream', source_path: str) -> str:
     """A Connectors/Shell program with commands but no GUI: run every command
     once, then halt. Results live in state_cmd_<id> / cmdbuf_<id> slots (read
     by pipes in Stage 9-2, or an interactive display command in Stage 9-1C)."""
+    io = _has_io_commands(stream)
     parts: list = []
     parts += _section_header(stream, source_path)
+    if io:                       # interactive dialogs need an SDL window/renderer
+        parts += [
+            '    ; Open a window so interactive dialogs have an SDL surface',
+            f'    LI   R1, {_PIG_OPEN_WINDOW}',
+            '    LI   R2, 480', '    LI   R3, 240',
+            '    LI   R4, shell_win_title', '    SYSCALL', '',
+        ]
     parts += _command_dispatch_lines(stream)
+    if io:
+        parts += [f'    LI   R1, {_PIG_CLOSE_WINDOW}', '    SYSCALL']
     parts += ['    HALT', '']
     parts += _section_command_blocks(stream)
     parts += ['; ============ Data ============', '']
+    if io:
+        parts += ['shell_win_title:'] + _emit_string_words('TernOO Shell')
     parts += _section_command_data(stream)
     return '\n'.join(parts) + '\n'
 

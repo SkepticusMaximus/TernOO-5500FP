@@ -238,5 +238,63 @@ class TestCommandRuntime(unittest.TestCase):
         self.assertEqual(_assemble_run(prog), 'HI THERE')
 
 
+# ---------------------------------------------------------------------------
+# Interactive cmd_io_* (Stage 9-1C)
+# ---------------------------------------------------------------------------
+
+class TestInteractiveCommands(unittest.TestCase):
+
+    def test_prompt_emits_dialog_syscall(self):
+        ctx = cmdc.new_ctx(out_text='outbuf')
+        out = '\n'.join(cmdc.compile_command('cmd_io_prompt',
+                                             [('text', 'msg')], 21, ctx))
+        self.assertIn('LI   R1, 112', out)      # PIGART_DIALOG_PROMPT
+        self.assertIn('outbuf', out)
+
+    def test_display_and_confirm_syscalls(self):
+        d = '\n'.join(cmdc.compile_command('cmd_io_display',
+                                           [('text', 'v'), ('text', 't')], 21))
+        self.assertIn('LI   R1, 113', d)
+        c = '\n'.join(cmdc.compile_command('cmd_io_confirm',
+                                           [('text', 'm')], 21))
+        self.assertIn('LI   R1, 114', c)
+
+    def test_io_shell_program_opens_window(self):
+        asm = _compile_stream([_mk_cmd(5, 'cmd_io_confirm', message='ok?')])
+        self.assertIn('shell_win_title:', asm)
+        self.assertIn('LI   R1, 100', asm)      # PIGART_OPEN_WINDOW
+        self.assertIn('LI   R1, 111', asm)      # PIGART_CLOSE_WINDOW
+        self.assertIn('LI   R1, 114', asm)      # confirm dialog
+
+    def test_choice_is_unsupported_stub(self):
+        # cmd_io_choice needs the list substrate → stub block, not execution.
+        asm = _compile_stream([_mk_cmd(6, 'cmd_io_choice', prompt='pick')])
+        self.assertIn('command_6:', asm)
+        self.assertIn('no runtime yet', asm)
+
+    @unittest.skipUnless(_HAVE_EMU, 'C emulator binary not built')
+    def test_confirm_runtime_ascii_default(self):
+        """cmd_io_confirm on the ASCII backend returns 0 (no interactive UI)."""
+        asm = _compile_stream([_mk_cmd(5, 'cmd_io_confirm', message='go?')])
+        lines, printed = [], False
+        for l in asm.splitlines():
+            if l.strip() == 'HALT' and not printed:
+                lines += ['    LI R20, state_cmd_5', '    LDW R2, R20, 0',
+                          '    LI R1, 1', '    SYSCALL', '    LI R1, 6',
+                          '    SYSCALL']
+                printed = True
+            lines.append(l)
+        with tempfile.NamedTemporaryFile('w', suffix='.t5asm', delete=False) as f:
+            f.write('\n'.join(lines) + '\n')
+            path = f.name
+        try:
+            r = subprocess.run([_EMU, '--display', 'ascii', '--run', path],
+                               capture_output=True, text=True, timeout=10)
+        finally:
+            os.unlink(path)
+        digits = [x for x in r.stdout.splitlines() if x.strip().isdigit()]
+        self.assertEqual(digits[-1:], ['0'])
+
+
 if __name__ == '__main__':
     unittest.main()

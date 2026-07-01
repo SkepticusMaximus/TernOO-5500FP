@@ -5941,6 +5941,38 @@ def run_gui():
             return f"{cmd['name']} → {result}"
         return cmd['name']
 
+    def _lingo_run_interactive():
+        """Stage 9-1C: compile the active command on its own and launch it in
+        an SDL window so interactive (cmd_io_*) dialogs run for real."""
+        import subprocess as _sp, time as _t
+        cmd = _lingo['active']
+        if not cmd:
+            return
+        full = cmd.get('full', 'cmd_' + cmd['name'])
+        if not _compile_to_t5asm or WordStream is None:
+            guic_set_status('Compiler/WordStream unavailable'); return
+        if not os.path.isfile(_engine_path) or not os.access(_engine_path, os.X_OK):
+            guic_set_status('Engine not built — run make in c_emulator/'); return
+        args = _lingo_collect_args()
+        stream = WordStream()
+        stream._cmd_meta = {1: {
+            'id': 1, 'kind': full, 'x': 0, 'y': 0, 'w': 160, 'h': 80,
+            'label': '', 'name': f'{full}_1',
+            'properties': [{'name': k, 'value': v} for k, v in args.items()],
+        }}
+        try:
+            t5 = _compile_to_t5asm(stream, source_path='<lingo>')
+        except Exception as e:
+            guic_set_status(f'Compile error: {e}'); return
+        tmp = f'/tmp/lingo_{os.getpid()}_{int(_t.time())}.t5asm'
+        try:
+            with open(tmp, 'w') as f:
+                f.write(t5)
+            _sp.Popen([_engine_path, '--display', 'sdl', '--run', tmp])
+            guic_set_status(f'Running {cmd["name"]} — interact in the SDL window')
+        except OSError as e:
+            guic_set_status(f'Launch failed: {e}')
+
     def _lingo_update_preview(*_a):
         txt = _lingo_generate()
         _lg_out.config(state='normal')
@@ -6016,6 +6048,10 @@ def run_gui():
 
     tk.Button(_lg_actions, text='Add to Pipeline', command=_lingo_add_pipeline,
               bg=C['pal_btn'], fg='#7aff7a', font=('Monospace', 9), relief='flat',
+              activebackground=C['pal_active'], cursor='hand2', padx=8, pady=4
+              ).pack(side='left', padx=(0, 6))
+    tk.Button(_lg_actions, text='Run interactively…', command=_lingo_run_interactive,
+              bg=C['pal_btn'], fg='#7ad0ff', font=('Monospace', 9), relief='flat',
               activebackground=C['pal_active'], cursor='hand2', padx=8, pady=4
               ).pack(side='left', padx=(0, 6))
     tk.Button(_lg_actions, text='Clear', command=_lingo_clear_form,
