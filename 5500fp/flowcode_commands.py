@@ -228,6 +228,47 @@ def _unique(lst):
     return out
 
 
+def _value_class(type_str):
+    """Collapse a socket type to a runtime value class (Stage 9-2 pipes)."""
+    t = (type_str or '').lower()
+    if t in ('number', 'bool', 'boolean'):
+        return 'num'
+    if t == 'text':
+        return 'text'
+    if t.startswith('list'):
+        return 'list'
+    return 'any'
+
+
+def output_type(kind):
+    """Output socket type of a command kind ('' if unknown)."""
+    return COMMAND_REGISTRY.get(kind, {}).get('output', '')
+
+
+def param_type(kind, pname):
+    """Type of a command's named input param ('' if unknown)."""
+    for p in COMMAND_REGISTRY.get(kind, {}).get('params', []):
+        if p.get('name') == pname:
+            return p.get('type', '')
+    return ''
+
+
+def input_params(kind):
+    """[(name, type)] of a command's input sockets (params), in order."""
+    return [(p.get('name'), p.get('type'))
+            for p in COMMAND_REGISTRY.get(kind, {}).get('params', [])]
+
+
+def pipe_compatible(src_kind, dst_kind, dst_param):
+    """True if src's output can feed dst's `dst_param` input socket by type.
+    Unknown / 'any' types are permissive; list_* never matches num/text."""
+    sc = _value_class(output_type(src_kind))
+    dc = _value_class(param_type(dst_kind, dst_param))
+    if 'any' in (sc, dc):
+        return True
+    return sc == dc
+
+
 def commands():
     """The command registry (name → spec)."""
     return COMMAND_REGISTRY

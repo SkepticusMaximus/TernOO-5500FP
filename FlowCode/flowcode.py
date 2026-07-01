@@ -1179,6 +1179,8 @@ def run_gui():
     def _clear_shell():
         """Clear the Connectors canvas (cmd_* widgets) without prompting."""
         fc_state['cmd_widgets'].clear()
+        fc_state['cmd_edges'].clear()
+        fc_state['cmd_pipe_src']  = None
         fc_state['cmd_selected']  = None
         fc_state['cmd_multi_sel'] = set()
         fc_state['cmd_next_id']   = 0
@@ -2625,6 +2627,10 @@ def run_gui():
         'cmd_drag_offset':(0, 0),
         'cmd_drag_origin':None,  # (x, y) at drag-start for undo
         'cmd_ghost':      None,  # (x, y) design-space placement ghost
+        # Stage 9-2: typed pipe edges between commands
+        'cmd_edges':      [],    # [{src, dst, dst_param}]
+        'cmd_pipe_src':   None,  # (cmd_id) while dragging a pipe from an output
+        'cmd_pipe_xy':    None,  # (x, y) current drag end during pipe draw
         # Stage 8-1: Sheet tab — cells keyed by (row, col)
         'cells':          {},    # (row,col) → {id, kind, row, col, name, value, properties}
         'cell_next_id':   0,
@@ -2669,6 +2675,7 @@ def run_gui():
         fc_state['stream']._widget_meta = fc_state['widgets']
         fc_state['stream']._flow_meta   = fc_state['flow_symbols']  # Phase 6C
         fc_state['stream']._cmd_meta    = fc_state['cmd_widgets']   # Stage 9-0
+        fc_state['stream']._cmd_edges   = fc_state['cmd_edges']     # Stage 9-2
         fc_state['stream']._cell_meta   = fc_state['cells']         # Stage 8-1
 
     # ── Ghost canvas layout ───────────────────────────────────────────────────
@@ -2932,8 +2939,10 @@ def run_gui():
         # partial is reserved by the file-extension policy but not yet emitted.
         if ext in ('.gui', '.flow'):
             save_cmd_syms = []
+            save_cmd_edges = []
         else:
             save_cmd_syms = [dict(c) for c in fc_state['cmd_widgets'].values()]
+            save_cmd_edges = [dict(e) for e in fc_state.get('cmd_edges', [])]
 
         # Stage 8-1: Sheet cells — saved in full programs only.
         if ext in ('.gui', '.flow'):
@@ -2958,6 +2967,7 @@ def run_gui():
             'flow_symbols':  save_flow_syms,
             'flow_edges':    save_flow_edges,
             'cmd_symbols':   save_cmd_syms,   # Stage 9-0: Shell command widgets
+            'cmd_edges':     save_cmd_edges,  # Stage 9-2: typed pipe edges
             'cell_symbols':  save_cell_syms,  # Stage 8-1: Sheet cells
             'sheet_regions': save_regions,    # Stage 8-9: free-form regions
             'free_cells':    save_free,       # Stage 8-9: absolutely-positioned cells
@@ -3192,6 +3202,17 @@ def run_gui():
                 fc_state['cmd_next_id'] = max(fc_state['cmd_next_id'], cid + 1)
             fc_state['cmd_selected'] = None
             fc_state['cmd_multi_sel'].clear()
+            # Stage 9-2: load typed pipe edges (drop dangling endpoints)
+            fc_state['cmd_edges'].clear()
+            _cmd_ids = set(fc_state['cmd_widgets'])
+            for e in tgui.get('cmd_edges', []):
+                if e.get('src') in _cmd_ids and e.get('dst') in _cmd_ids:
+                    fc_state['cmd_edges'].append({
+                        'src':       e['src'],
+                        'dst':       e['dst'],
+                        'dst_param': e.get('dst_param', ''),
+                    })
+            fc_state['cmd_pipe_src'] = None
             # Stage 8-1: load Sheet cells
             fc_state['cells'].clear()
             fc_state['cell_next_id'] = 0
@@ -5471,6 +5492,66 @@ def run_gui():
                 return c
         return None
 
+    def _sh_sockets(c):
+        """Design-space socket geometry for a command widget.
+        Returns (inputs, output) where inputs = [(param_name, type, x, y)] on
+        the left edge (one per registry input param) and output = (x, y) on the
+        right edge. Placeholder / unknown kinds get no typed inputs."""
+        hw, hh = CMD_W // 2, CMD_H // 2
+        top = c['y'] - hh + 22          # below the header band
+        bot = c['y'] + hh
+        params = (_flowcode_commands.input_params(c['kind'])
+                  if _flowcode_commands else [])
+        inputs = []
+        n = len(params)
+        for i, (pname, ptype) in enumerate(params):
+            fy = top + (bot - top) * (i + 1) / (n + 1)
+            inputs.append((pname, ptype, c['x'] - hw, fy))
+        return inputs, (c['x'] + hw, (top + bot) / 2)
+
+    def _sh_output_hit(x, y, tol=8):
+        """Command id whose output socket is within tol design px of (x,y)."""
+        for c in reversed(list(fc_state['cmd_widgets'].values())):
+            _ins, (ox, oy) = _sh_sockets(c)
+            if abs(ox - x) <= tol and abs(oy - y) <= tol:
+                return c['id']
+        return None
+
+    def _sh_input_hit(x, y, tol=8):
+        """(cmd, param_name) whose input socket is within tol of (x,y), or None."""
+        for c in reversed(list(fc_state['cmd_widgets'].values())):
+            ins, _out = _sh_sockets(c)
+            for pname, _pt, ix, iy in ins:
+                if abs(ix - x) <= tol and abs(iy - y) <= tol:
+                    return c, pname
+        return None
+
+    def _sh_edge_compatible(edge):
+        """True if a pipe edge's types are compatible (Stage 9-2)."""
+        if _flowcode_commands is None:
+            return True
+        src = fc_state['cmd_widgets'].get(edge['src'])
+        dst = fc_state['cmd_widgets'].get(edge['dst'])
+        if not src or not dst:
+            return False
+        return _flowcode_commands.pipe_compatible(
+            src['kind'], dst['kind'], edge.get('dst_param', ''))
+
+    def _sh_add_pipe(src_id, dst_id, dst_param):
+        """Create (or replace) the pipe feeding (dst_id, dst_param). One pipe per
+        input socket. Warns on a type mismatch but still records the edge so the
+        red indicator is visible (compile is the hard gate)."""
+        edges = fc_state['cmd_edges']
+        edges[:] = [e for e in edges
+                    if not (e['dst'] == dst_id and e.get('dst_param') == dst_param)]
+        edge = {'src': src_id, 'dst': dst_id, 'dst_param': dst_param}
+        edges.append(edge)
+        if not _sh_edge_compatible(edge):
+            _sh_set_status(f"⚠ type mismatch: pipe into .{dst_param} — "
+                           f"will error at compile")
+        else:
+            _sh_set_status(f"Piped → .{dst_param}")
+
     def _sh_add_cmd(kind, x, y, label=''):
         """Add a command-widget dict to fc_state. Returns the cmd dict."""
         cid = fc_state['cmd_next_id']
@@ -5492,6 +5573,10 @@ def run_gui():
         if fc_state['cmd_selected'] == cid:
             fc_state['cmd_selected'] = None
         fc_state['cmd_multi_sel'].discard(cid)
+        # Stage 9-2: drop any pipe edges touching the removed command
+        fc_state['cmd_edges'][:] = [
+            e for e in fc_state['cmd_edges']
+            if e['src'] != cid and e['dst'] != cid]
 
     # ── Shell drawing ─────────────────────────────────────────────────────────
     def _sh_draw_grid():
@@ -5533,14 +5618,28 @@ def run_gui():
         sh_canvas.create_text((L + R) // 2, T + hdr_h + max(6, int(9 * z)),
                               text=c['kind'].replace('cmd_', ''),
                               fill=C['dim'], font=('Monospace', _f2))
-        # Placeholder sockets: inputs on the left edge, outputs on the right edge
+        # Typed sockets (Stage 9-2): one input dot per registry param on the
+        # left edge, a single output dot on the right edge. Placeholder kinds
+        # fall back to a pair of untyped input dots.
         _sr = max(2, int(4 * z))
-        body_mid = T + hdr_h + (B - (T + hdr_h)) // 2
-        for sy in (body_mid - int(12 * z), body_mid + int(12 * z)):
-            sh_canvas.create_oval(L - _sr, sy - _sr, L + _sr, sy + _sr,
-                                  fill=C['io'], outline=bor, width=1)   # inputs
-            sh_canvas.create_oval(R - _sr, sy - _sr, R + _sr, sy + _sr,
-                                  fill=C['pal_border'], outline=bor, width=1)  # outputs
+        inputs, (ox, oy) = _sh_sockets(c)
+        if inputs:
+            for pname, _pt, ix, iy in inputs:
+                sxp, syp = _sh_d2s(ix, iy)
+                sh_canvas.create_oval(sxp - _sr, syp - _sr, sxp + _sr, syp + _sr,
+                                      fill=C['io'], outline=bor, width=1)
+                if z >= 0.8:
+                    sh_canvas.create_text(sxp + _sr + 2, syp, anchor='w',
+                                          text=pname, fill=C['dim'],
+                                          font=('Monospace', _f2))
+        else:
+            body_mid = T + hdr_h + (B - (T + hdr_h)) // 2
+            for sy in (body_mid - int(12 * z), body_mid + int(12 * z)):
+                sh_canvas.create_oval(L - _sr, sy - _sr, L + _sr, sy + _sr,
+                                      fill=C['io'], outline=bor, width=1)
+        oxs, oys = _sh_d2s(ox, oy)
+        sh_canvas.create_oval(oxs - _sr, oys - _sr, oxs + _sr, oys + _sr,
+                              fill=C['pal_border'], outline=bor, width=1)  # output
         # Pocket indicator
         sh_canvas.create_text((L + R) // 2, B - max(6, int(10 * z)),
                               text='\U0001F4E6', font=('Monospace', max(6, int(11 * z))))
@@ -5561,11 +5660,42 @@ def run_gui():
                               text=f"snap ({x},{y})", fill='#2a3050',
                               font=('Monospace', max(5, int(7 * z))))
 
+    def _sh_draw_edges():
+        """Draw pipe edges: src output socket → dst input socket. Mismatched
+        types are drawn red (the edit-time warning)."""
+        for e in fc_state['cmd_edges']:
+            src = fc_state['cmd_widgets'].get(e['src'])
+            dst = fc_state['cmd_widgets'].get(e['dst'])
+            if not src or not dst:
+                continue
+            _ins, (ox, oy) = _sh_sockets(src)
+            dins, _o = _sh_sockets(dst)
+            tgt = next((s for s in dins if s[0] == e.get('dst_param')), None)
+            if tgt is None:
+                continue
+            x1, y1 = _sh_d2s(ox, oy)
+            x2, y2 = _sh_d2s(tgt[2], tgt[3])
+            ok = _sh_edge_compatible(e)
+            col = C['pal_border'] if ok else '#ff5555'
+            sh_canvas.create_line(x1, y1, x2, y2, fill=col,
+                                  width=2, arrow='last',
+                                  dash=() if ok else (5, 3))
+
     def _sh_redraw():
         sh_canvas.delete('all')
         _sh_draw_grid()
+        _sh_draw_edges()
         for c in fc_state['cmd_widgets'].values():
             _sh_draw_cmd(c)
+        # Rubber-band while dragging a new pipe from an output socket
+        if fc_state.get('cmd_pipe_src') is not None and fc_state.get('cmd_pipe_xy'):
+            src = fc_state['cmd_widgets'].get(fc_state['cmd_pipe_src'])
+            if src:
+                _ins, (ox, oy) = _sh_sockets(src)
+                x1, y1 = _sh_d2s(ox, oy)
+                x2, y2 = _sh_d2s(*fc_state['cmd_pipe_xy'])
+                sh_canvas.create_line(x1, y1, x2, y2, fill=C['pal_border'],
+                                      width=2, arrow='last', dash=(3, 2))
         if fc_state['cmd_mode'] == 'place' and fc_state.get('cmd_ghost'):
             _sh_draw_ghost(*fc_state['cmd_ghost'])
 
@@ -5598,6 +5728,10 @@ def run_gui():
     def _sh_on_motion(event):
         ddx, ddy = _sh_s2d(event.x, event.y)
         fc_state['cmd_ghost'] = (ddx, ddy)
+        # Stage 9-2: dragging a pipe from an output socket
+        if fc_state.get('cmd_pipe_src') is not None:
+            fc_state['cmd_pipe_xy'] = (ddx, ddy)
+            _sh_redraw(); return
         if fc_state['cmd_dragging'] and not (event.state & 0x0100):
             fc_state['cmd_dragging'] = False
         if fc_state['cmd_dragging'] and fc_state['cmd_selected'] is not None:
@@ -5611,9 +5745,10 @@ def run_gui():
         x, y = _sh_s2d(event.x, event.y)
         mode = fc_state['cmd_mode']
         if mode == 'place':
-            c = _sh_add_cmd('cmd_placeholder', x, y)
+            kind = _sh_pick_command_kind() or 'cmd_placeholder'
+            c = _sh_add_cmd(kind, x, y)
             fc_state['cmd_selected'] = c['id']
-            _sh_set_status(f"Placed {c['name']}")
+            _sh_set_status(f"Placed {c.get('name') or c['label']} ({kind})")
             _sh_update_inspect(); _sh_set_mode('select'); return
         if mode == 'delete':
             hit = _sh_cmd_at(x, y)
@@ -5623,7 +5758,13 @@ def run_gui():
                 _sh_set_status(f"Deleted {lbl}")
                 _sh_update_inspect()
             _sh_redraw(); return
-        # Select mode
+        # Select mode — an output socket under the cursor starts a pipe drag
+        pipe_src = _sh_output_hit(x, y)
+        if pipe_src is not None:
+            fc_state['cmd_pipe_src'] = pipe_src
+            fc_state['cmd_pipe_xy']  = (x, y)
+            _sh_set_status('Drag to an input socket to pipe (release to connect)')
+            _sh_redraw(); return
         hit = _sh_cmd_at(x, y)
         if hit:
             fc_state['cmd_selected']   = hit['id']
@@ -5638,6 +5779,18 @@ def run_gui():
         _sh_update_inspect(); _sh_redraw()
 
     def _sh_on_release(event):
+        # Stage 9-2: complete a pipe drag onto an input socket
+        if fc_state.get('cmd_pipe_src') is not None:
+            x, y = _sh_s2d(event.x, event.y)
+            tgt = _sh_input_hit(x, y)
+            src_id = fc_state['cmd_pipe_src']
+            if tgt and tgt[0]['id'] != src_id:
+                _sh_add_pipe(src_id, tgt[0]['id'], tgt[1])
+            else:
+                _sh_set_status('Pipe cancelled')
+            fc_state['cmd_pipe_src'] = None
+            fc_state['cmd_pipe_xy']  = None
+            _sh_redraw(); return
         if fc_state['cmd_dragging'] and fc_state['cmd_selected'] is not None:
             c = fc_state['cmd_widgets'].get(fc_state['cmd_selected'])
             if c:
@@ -5651,6 +5804,43 @@ def run_gui():
         hit = _sh_cmd_at(ddx, ddy)
         if hit:
             _sh_open_cmd_props(hit)
+
+    def _sh_pick_command_kind():
+        """Modal picker: choose a real command kind from the registry.
+        Returns the chosen kind (e.g. 'cmd_math_add') or None if cancelled."""
+        if _flowcode_commands is None:
+            return None
+        names = sorted(_flowcode_commands.command_names())
+        dlg = tk.Toplevel(root)
+        dlg.title('Add command')
+        dlg.configure(bg=C['palette']); dlg.transient(root); dlg.grab_set()
+        tk.Label(dlg, text='Choose a command:', bg=C['palette'], fg=C['text'],
+                 font=('Monospace', 9), anchor='w').pack(fill='x', padx=8, pady=(8, 2))
+        lb = tk.Listbox(dlg, bg=C['inspect'], fg=C['text'], height=14, width=28,
+                        font=('Monospace', 9), selectbackground=C['pal_active'])
+        for n in names:
+            lb.insert('end', n.replace('cmd_', ''))
+        lb.pack(padx=8, pady=2)
+        if names:
+            lb.selection_set(0)
+        chosen = {'kind': None}
+
+        def _ok(_e=None):
+            sel = lb.curselection()
+            if sel:
+                chosen['kind'] = names[sel[0]]
+            dlg.destroy()
+
+        lb.bind('<Double-Button-1>', _ok)
+        lb.bind('<Return>', _ok)
+        btns = tk.Frame(dlg, bg=C['palette']); btns.pack(pady=8)
+        tk.Button(btns, text='Add', command=_ok, bg=C['pal_btn'], fg=C['text'],
+                  font=('Monospace', 9), relief='flat', padx=10).pack(side='left', padx=4)
+        tk.Button(btns, text='Cancel', command=dlg.destroy, bg=C['pal_btn'],
+                  fg=C['text'], font=('Monospace', 9), relief='flat',
+                  padx=10).pack(side='left', padx=4)
+        dlg.wait_window()
+        return chosen['kind']
 
     def _sh_open_cmd_props(c):
         """Stage 9-0: minimal dialog to edit a command's name and label, with
@@ -5893,11 +6083,36 @@ def run_gui():
     _lg_pipe.pack(side='left', fill='both', expand=True, padx=(6, 0), pady=6)
     _lg_pipe_sb.config(command=_lg_pipe.yview)
 
+    def _lingo_reflect_connectors():
+        """Stage 9-2: mirror the Connectors-canvas command pipeline into the
+        Pipeline list — each command with its incoming pipes annotated."""
+        cmds = fc_state.get('cmd_widgets', {})
+        edges = fc_state.get('cmd_edges', [])
+        _lg_pipe.delete(0, 'end')
+        for i, txt in enumerate(_lingo['pipeline']):
+            _lg_pipe.insert('end', f"{i + 1}. {txt}")
+        real = {cid: c for cid, c in cmds.items()
+                if c.get('kind', '') != 'cmd_placeholder'}
+        if real:
+            _lg_pipe.insert('end', '── Connectors pipeline ──')
+            incoming = {}
+            for e in edges:
+                incoming.setdefault(e['dst'], []).append(e)
+            for cid, c in real.items():
+                nm = c.get('name') or c.get('label') or c['kind']
+                _lg_pipe.insert('end', f"• {nm}  [{c['kind'].replace('cmd_', '')}]")
+                for e in incoming.get(cid, []):
+                    src = cmds.get(e['src'], {})
+                    sn = src.get('name') or src.get('kind', '?')
+                    _lg_pipe.insert('end', f"     {e.get('dst_param')} ← {sn}")
+
     def _lingo_show_out(mode):
         _lingo['out_mode'] = mode
         _lg_out_frame.pack_forget(); _lg_pipe_frame.pack_forget()
         (_lg_out_frame if mode == 'output' else _lg_pipe_frame).pack(
             fill='both', expand=True)
+        if mode == 'pipeline':
+            _lingo_reflect_connectors()
         for key, b in _lg_tab_btns.items():
             b.config(fg=C['pal_border'] if key == mode else C['dim'])
 

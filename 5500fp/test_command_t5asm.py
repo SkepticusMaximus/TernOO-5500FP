@@ -296,5 +296,95 @@ class TestInteractiveCommands(unittest.TestCase):
         self.assertEqual(digits[-1:], ['0'])
 
 
+# ---------------------------------------------------------------------------
+# Stage 9-2 — typed pipe edges + pipeline compilation
+# ---------------------------------------------------------------------------
+
+import flowcode_commands as _fcmd
+
+
+def _compile_piped(cmds, edges):
+    s = WordStream()
+    s._cmd_meta = {c['id']: c for c in cmds}
+    s._cmd_edges = edges
+    return s, C.compile_wordstream_to_t5asm(s, 'p.fc')
+
+
+def _run_slot(asm, slot):
+    lines, printed = [], False
+    for l in asm.splitlines():
+        if l.strip() == 'HALT' and not printed:
+            lines += [f'    LI R20, {slot}', '    LDW R2, R20, 0',
+                      '    LI R1, 1', '    SYSCALL', '    LI R1, 6', '    SYSCALL']
+            printed = True
+        lines.append(l)
+    return _assemble_run(lines)
+
+
+class TestPipeTypeHelper(unittest.TestCase):
+
+    def test_numeric_pipe_compatible(self):
+        self.assertTrue(_fcmd.pipe_compatible('cmd_math_add', 'cmd_math_multiply', 'a'))
+
+    def test_text_pipe_compatible(self):
+        self.assertTrue(_fcmd.pipe_compatible('cmd_text_upper', 'cmd_text_length', 'text'))
+
+    def test_text_into_number_incompatible(self):
+        self.assertFalse(_fcmd.pipe_compatible('cmd_text_upper', 'cmd_math_add', 'a'))
+
+    def test_number_into_text_incompatible(self):
+        self.assertFalse(_fcmd.pipe_compatible('cmd_math_add', 'cmd_text_upper', 'text'))
+
+
+class TestPipelineCompile(unittest.TestCase):
+
+    def test_topological_dispatch_order(self):
+        # declared dst-first; must still dispatch upstream (src) first
+        _s, asm = _compile_piped(
+            [_mk_cmd(2, 'cmd_math_multiply', a=0, b=10),
+             _mk_cmd(1, 'cmd_math_add', a=3, b=5)],
+            [{'src': 1, 'dst': 2, 'dst_param': 'a'}])
+        self.assertLess(asm.index('CALL command_1'), asm.index('CALL command_2'))
+
+    def test_pipe_arg_reads_upstream_slot(self):
+        _s, asm = _compile_piped(
+            [_mk_cmd(1, 'cmd_math_add', a=3, b=5),
+             _mk_cmd(2, 'cmd_math_multiply', a=0, b=10)],
+            [{'src': 1, 'dst': 2, 'dst_param': 'a'}])
+        self.assertIn('command_2:', asm)
+        self.assertIn('state_cmd_1', asm)      # #2 loads #1's output slot
+
+    def test_type_mismatch_is_hard_error(self):
+        with self.assertRaises(C.CompileError):
+            _compile_piped(
+                [_mk_cmd(1, 'cmd_text_upper', text='hi'),
+                 _mk_cmd(2, 'cmd_math_add', a=0, b=1)],
+                [{'src': 1, 'dst': 2, 'dst_param': 'a'}])
+
+    def test_pipe_cycle_is_error(self):
+        with self.assertRaises(C.CompileError):
+            _compile_piped(
+                [_mk_cmd(1, 'cmd_math_add', a=0, b=1),
+                 _mk_cmd(2, 'cmd_math_add', a=0, b=1)],
+                [{'src': 1, 'dst': 2, 'dst_param': 'a'},
+                 {'src': 2, 'dst': 1, 'dst_param': 'a'}])
+
+    @unittest.skipUnless(_HAVE_EMU, 'C emulator binary not built')
+    def test_numeric_pipeline_runtime(self):
+        _s, asm = _compile_piped(
+            [_mk_cmd(1, 'cmd_math_add', a=3, b=5),          # = 8
+             _mk_cmd(2, 'cmd_math_multiply', a=0, b=10)],   # 8 * 10 = 80
+            [{'src': 1, 'dst': 2, 'dst_param': 'a'}])
+        self.assertEqual(_run_slot(asm, 'state_cmd_2'), '80')
+
+    @unittest.skipUnless(_HAVE_EMU, 'C emulator binary not built')
+    def test_text_pipeline_runtime(self):
+        _s, asm = _compile_piped(
+            [_mk_cmd(1, 'cmd_text_upper', text='hi'),       # "HI"
+             _mk_cmd(2, 'cmd_text_length', text='')],       # len("HI") = 2
+            [{'src': 1, 'dst': 2, 'dst_param': 'text'}])
+        self.assertEqual(_run_slot(asm, 'state_cmd_2'), '2')
+
+
 if __name__ == '__main__':
     unittest.main()

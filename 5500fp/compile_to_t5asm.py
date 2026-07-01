@@ -902,6 +902,74 @@ def _is_text_buf_param(cmd_name: str, pname: str) -> bool:
     return pname in _cmdc.text_buf_params(cmd_name)
 
 
+# --- Stage 9-2: typed pipe edges between commands -------------------------
+
+def _value_class(type_str: str) -> str:
+    """Collapse a socket type to a runtime value class for pipe compatibility.
+    number/bool share the numeric word; text is a buffer; list_* is deferred."""
+    t = (type_str or '').lower()
+    if t in ('number', 'bool', 'boolean'):
+        return 'num'
+    if t == 'text':
+        return 'text'
+    if t.startswith('list'):
+        return 'list'
+    return 'any'
+
+
+def _cmd_by_id(stream) -> dict:
+    return {cid: wd for cid, wd in _iter_commands(stream)}
+
+
+def _command_edges(stream) -> list:
+    """Pipe edges whose endpoints are both real commands.
+    Edge dict: {'src': id, 'dst': id, 'dst_param': param_name}."""
+    edges = getattr(stream, '_cmd_edges', None) or []
+    ids = set(_cmd_by_id(stream))
+    return [e for e in edges
+            if e.get('src') in ids and e.get('dst') in ids]
+
+
+def _incoming_pipes(stream) -> dict:
+    """{dst_id: {param_name: src_id}} — the pipe feeding each input socket."""
+    m: dict = {}
+    for e in _command_edges(stream):
+        m.setdefault(e['dst'], {})[e.get('dst_param')] = e['src']
+    return m
+
+
+def _ordered_command_ids(stream) -> list:
+    """Command ids in topological (upstream-first) pipe order.
+    Raises CompileError on a pipe cycle."""
+    ids = [cid for cid, _ in _iter_commands(stream)]
+    deps: dict = {cid: set() for cid in ids}
+    for e in _command_edges(stream):
+        deps[e['dst']].add(e['src'])
+    order, done, active = [], set(), set()
+
+    def visit(n):
+        if n in done:
+            return
+        if n in active:
+            raise CompileError(f'pipe cycle through command #{n}')
+        active.add(n)
+        for d in deps.get(n, ()):
+            visit(d)
+        active.discard(n)
+        done.add(n)
+        order.append(n)
+
+    for cid in ids:
+        visit(cid)
+    return order
+
+
+def _ordered_commands(stream) -> list:
+    """[(cid, wd)] in topological pipe order."""
+    by_id = _cmd_by_id(stream)
+    return [(cid, by_id[cid]) for cid in _ordered_command_ids(stream)]
+
+
 def _as_int(val) -> int:
     try:
         f = float(val)
@@ -910,18 +978,46 @@ def _as_int(val) -> int:
         return 0
 
 
-def _command_plan(wd: dict, cid: int) -> dict:
+def _command_plan(wd: dict, cid: int, incoming: dict = None,
+                  cmd_by_id: dict = None) -> dict:
     """Resolve a cmd widget into {args, out_kind, bufs, env} for both the code
     and data emitters. `bufs` = [(label, text)] text-input buffers to allocate;
-    `env` = set of env var names referenced."""
+    `env` = set of env var names referenced.
+
+    A parameter fed by a pipe (Stage 9-2) takes its value from the upstream
+    command's output slot instead of a literal buffer; the pipe's types are
+    checked here and a mismatch raises CompileError (the hard compile-time
+    error the editor's red warning mirrors)."""
     name = wd.get('kind')
     spec = _cmdreg.commands().get(name, {})
     props = {p.get('name'): p.get('value')
              for p in (wd.get('properties') or [])}
+    pipes = (incoming or {}).get(cid, {})
+    cmd_by_id = cmd_by_id or {}
     args, bufs, env = [], [], set()
     for p in spec.get('params', []):
         pname, ptype = p.get('name'), p.get('type')
         val = props.get(pname, p.get('default'))
+
+        src_id = pipes.get(pname)
+        if src_id is not None:                     # piped input
+            src_wd = cmd_by_id.get(src_id, {})
+            src_kind = src_wd.get('kind', '')
+            src_out = _cmdreg.commands().get(src_kind, {}).get('output', '')
+            if _cmdc.command_output_kind(src_kind) not in ('number', 'text'):
+                raise CompileError(
+                    f'pipe into {name} #{cid}.{pname}: source {src_kind} '
+                    f'#{src_id} has no runtime output')
+            if _value_class(src_out) != _value_class(ptype):
+                raise CompileError(
+                    f'pipe type mismatch into {name} #{cid}.{pname}: '
+                    f'{src_kind} outputs {src_out}, expected {ptype}')
+            if _is_text_buf_param(name, pname):
+                args.append(('text', f'cmdbuf_{abs(src_id)}'))
+            else:
+                args.append(('numslot', f'state_cmd_{abs(src_id)}'))
+            continue
+
         if name.startswith('cmd_env_') and pname == 'name':
             nm = str(val if val is not None else '')
             env.add(nm)
@@ -939,13 +1035,14 @@ def _command_plan(wd: dict, cid: int) -> dict:
 
 
 def _section_command_blocks(stream) -> list:
-    cmds = _iter_commands(stream)
+    cmds = _ordered_commands(stream)
     if not cmds:
         return []
-    lines = ['; ---- Shell command blocks (Stage 9-1B) ----']
+    incoming, by_id = _incoming_pipes(stream), _cmd_by_id(stream)
+    lines = ['; ---- Shell command blocks (Stage 9-1B/9-2) ----']
     for cid, wd in cmds:
         name = wd.get('kind')
-        plan = _command_plan(wd, cid)
+        plan = _command_plan(wd, cid, incoming, by_id)
         lines.append(f'command_{abs(cid)}:   ; {name} #{cid}')
         try:
             out_buf = f'cmdbuf_{abs(cid)}' if plan['out_kind'] == 'text' else None
@@ -972,7 +1069,7 @@ def _command_dispatch_lines(stream) -> list:
     wrapper subroutine that CALLs the leaf blocks would clobber its own return.
     Command blocks are leaves, so calling them directly is safe.
     """
-    cmds = _iter_commands(stream)
+    cmds = _ordered_commands(stream)      # topological (upstream-first) order
     if not cmds:
         return []
     return [f'    CALL command_{abs(cid)}   ; run {wd.get("kind")} #{cid}'
@@ -983,10 +1080,11 @@ def _section_command_data(stream) -> list:
     cmds = _iter_commands(stream)
     if not cmds:
         return []
-    lines = ['; ---- Shell command state (Stage 9-1B) ----']
+    incoming, by_id = _incoming_pipes(stream), _cmd_by_id(stream)
+    lines = ['; ---- Shell command state (Stage 9-1B/9-2) ----']
     env_names: set = set()
     for cid, wd in cmds:
-        plan = _command_plan(wd, cid)
+        plan = _command_plan(wd, cid, incoming, by_id)
         lines += [f'state_cmd_{abs(cid)}:', '    .word 0']
         if plan['out_kind'] == 'text':
             lines.append(f'cmdbuf_{abs(cid)}:')
