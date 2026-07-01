@@ -198,5 +198,25 @@ class TestPortCompilation(unittest.TestCase):
                              f'input {inp} should double to {exp}')
 
 
+_DEMO = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                     '..', 'FlowCode', 'entry_exit_demo.fc')
+
+
+class TestEntryExitDemoFile(unittest.TestCase):
+
+    @unittest.skipUnless(os.path.exists(_DEMO), 'demo .fc not present')
+    def test_demo_loads_and_compiles(self):
+        d = json.load(open(_DEMO))
+        s = WordStream()
+        for f in d.get('flow_symbols', []):
+            s._flow_meta[f['id']] = f
+        for c in d.get('cell_symbols', []):
+            s._cell_meta[(c['row'], c['col'])] = c
+        asm = C.compile_wordstream_to_t5asm(s, 'entry_exit_demo.fc')
+        self.assertIn('recompute_all_ports', asm)
+        self.assertIn('state_exit_compute_score_result:', asm)
+        self.assertNotIn('uncompilable', asm)
+
+
 if __name__ == '__main__':
     unittest.main()

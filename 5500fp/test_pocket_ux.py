@@ -71,7 +71,10 @@ class TestDrilldownAndUI(unittest.TestCase):
 
 class TestScopeLocalEdges(unittest.TestCase):
     def test_cross_scope_rejected(self):
-        self.assertIn("edges are scope-local", SRC)
+        # Phase 7c-4b: unbound cross-scope edges are still rejected; the message
+        # now points at named ports as the sanctioned mechanism.
+        self.assertIn("Can't connect across pocket scopes", SRC)
+        self.assertIn("bind to a named port", SRC)
 
     def test_load_preserves_parent_scope(self):
         self.assertIn("'parent_scope': sym.get('parent_scope')", SRC)

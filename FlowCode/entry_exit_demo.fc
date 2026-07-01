@@ -1,0 +1,65 @@
+{
+  "ternoo_version": "0.3",
+  "source_file": "entry_exit_demo.fc",
+  "source_type": "ternoo_design",
+  "word_stream": [],
+  "symbols": [],
+  "edges": [],
+  "flow_symbols": [
+    {
+      "id": 100,
+      "kind": "flow_process",
+      "x": 200,
+      "y": 150,
+      "w": 120,
+      "h": 60,
+      "label": "compute_score",
+      "name": "compute_score",
+      "parent_scope": null,
+      "properties": [],
+      "entry_points": [
+        {
+          "name": "input_value",
+          "type": "number",
+          "description": "value from outer scope",
+          "expr": "input_cell"
+        }
+      ],
+      "exit_points": [
+        {
+          "name": "result",
+          "type": "number",
+          "description": "doubled output",
+          "expr": "input_value * 2"
+        }
+      ]
+    }
+  ],
+  "flow_edges": [],
+  "cmd_symbols": [],
+  "cmd_edges": [],
+  "cell_symbols": [
+    {
+      "id": 1,
+      "kind": "cell_value",
+      "row": 0,
+      "col": 0,
+      "name": "input_cell",
+      "value": 5,
+      "properties": []
+    },
+    {
+      "id": 2,
+      "kind": "cell_formula",
+      "row": 0,
+      "col": 1,
+      "name": "out",
+      "value": "=compute_score_result",
+      "properties": []
+    }
+  ],
+  "sheet_regions": [],
+  "free_cells": [],
+  "sequence": [],
+  "tgui_meta": {}
+}
