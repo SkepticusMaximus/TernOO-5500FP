@@ -688,6 +688,13 @@ try:
 except Exception:                  # pragma: no cover
     _fxc = None
 
+try:
+    import command_t5asm as _cmdc
+    import flowcode_commands as _cmdreg
+except Exception:                  # pragma: no cover
+    _cmdc = None
+    _cmdreg = None
+
 
 def _dynamic_cells(stream):
     """[(cid, rc, ast)] for each dynamic formula cell (references WIDGET /
@@ -848,6 +855,146 @@ def _section_recompute_blocks(stream, state_map) -> list:
 
 def _has_dynamic_cells(stream) -> bool:
     return bool(_dynamic_cells(stream))
+
+
+# ---------------------------------------------------------------------------
+# Stage 9-1B: Shell command compilation (cmd_* widgets → t5asm)
+# ---------------------------------------------------------------------------
+#
+# Each cmd_* widget whose kind is a real command (flowcode_commands registry)
+# compiles to a `command_<id>` subroutine that computes the command and stores
+# its result to a well-known slot the caller reads from:
+#   number output -> state_cmd_<id>       (one word)
+#   text   output -> cmdbuf_<id>          (64-word buffer) + length in state_cmd_<id>
+# `run_all_commands` calls each block (declaration order; Stage 9-2 pipes will
+# reorder topologically). Commands without a runtime yet (list_*, split/join/
+# format/trim, ctl_repeat/while) still get a block — a documented no-op stub.
+
+def _iter_commands(stream) -> list:
+    """[(cmd_id, widget_dict)] for cmd_* widgets that name a real command.
+
+    cmd_placeholder (no command identity) is skipped. Registry commands with no
+    runtime yet are included so they still get a (stub) compile block.
+    """
+    if _cmdc is None or _cmdreg is None:
+        return []
+    cmd_meta = getattr(stream, '_cmd_meta', {}) or {}
+    registry = _cmdreg.commands()
+    out = []
+    for cid, wd in cmd_meta.items():
+        if wd.get('kind') in registry:
+            out.append((cid, wd))
+    return out
+
+
+def _has_commands(stream) -> bool:
+    return bool(_iter_commands(stream))
+
+
+def _is_text_buf_param(cmd_name: str, pname: str) -> bool:
+    """True when (command, param) consumes a text-value buffer (vs a number)."""
+    return (cmd_name in ('cmd_text_upper', 'cmd_text_lower', 'cmd_text_length')
+            and pname == 'text')
+
+
+def _as_int(val) -> int:
+    try:
+        f = float(val)
+        return int(f)
+    except (ValueError, TypeError):
+        return 0
+
+
+def _command_plan(wd: dict, cid: int) -> dict:
+    """Resolve a cmd widget into {args, out_kind, bufs, env} for both the code
+    and data emitters. `bufs` = [(label, text)] text-input buffers to allocate;
+    `env` = set of env var names referenced."""
+    name = wd.get('kind')
+    spec = _cmdreg.commands().get(name, {})
+    props = {p.get('name'): p.get('value')
+             for p in (wd.get('properties') or [])}
+    args, bufs, env = [], [], set()
+    for p in spec.get('params', []):
+        pname, ptype = p.get('name'), p.get('type')
+        val = props.get(pname, p.get('default'))
+        if name.startswith('cmd_env_') and pname == 'name':
+            nm = str(val if val is not None else '')
+            env.add(nm)
+            args.append(('name', nm))
+        elif _is_text_buf_param(name, pname):
+            label = f'cmdarg_{abs(cid)}_{pname}'
+            bufs.append((label, '' if val is None else str(val)))
+            args.append(('text', label))
+        elif ptype == 'bool':
+            args.append(('num', 1 if val else 0))
+        else:                              # number / text-as-number / any
+            args.append(('num', _as_int(val)))
+    return {'args': args, 'out_kind': _cmdc.command_output_kind(name),
+            'bufs': bufs, 'env': env}
+
+
+def _section_command_blocks(stream) -> list:
+    cmds = _iter_commands(stream)
+    if not cmds:
+        return []
+    lines = ['; ---- Shell command blocks (Stage 9-1B) ----']
+    for cid, wd in cmds:
+        name = wd.get('kind')
+        plan = _command_plan(wd, cid)
+        lines.append(f'command_{abs(cid)}:   ; {name} #{cid}')
+        try:
+            out_buf = f'cmdbuf_{abs(cid)}' if plan['out_kind'] == 'text' else None
+            ctx = _cmdc.new_ctx(out_text=out_buf)
+            lines.append(f'    LI   R{_cmdc._ERR_REG}, 0   ; clear error code')
+            lines += _cmdc.compile_command(name, plan['args'],
+                                           _cmdc._BASE_REG, ctx)
+            if plan['out_kind'] in ('number', 'text'):
+                lines.append(f'    LI   R20, state_cmd_{abs(cid)}')
+                tag = 'length' if plan['out_kind'] == 'text' else 'result'
+                lines.append(f'    STW  R{_cmdc._BASE_REG}, R20, 0   ; store {tag}')
+        except _cmdc.CommandCompileError as e:
+            lines.append(f'    ; no runtime yet: {e}')
+        lines.append('    RET')
+        lines.append('')
+    return lines
+
+
+def _command_dispatch_lines(stream) -> list:
+    """Top-level `CALL command_<id>` for each command, in run order.
+
+    Deliberately emitted at call depth 0 (like the hit-test → handler pattern):
+    the engine's return address lives in a single link register (R80), so a
+    wrapper subroutine that CALLs the leaf blocks would clobber its own return.
+    Command blocks are leaves, so calling them directly is safe.
+    """
+    cmds = _iter_commands(stream)
+    if not cmds:
+        return []
+    return [f'    CALL command_{abs(cid)}   ; run {wd.get("kind")} #{cid}'
+            for cid, wd in cmds]
+
+
+def _section_command_data(stream) -> list:
+    cmds = _iter_commands(stream)
+    if not cmds:
+        return []
+    lines = ['; ---- Shell command state (Stage 9-1B) ----']
+    env_names: set = set()
+    for cid, wd in cmds:
+        plan = _command_plan(wd, cid)
+        lines += [f'state_cmd_{abs(cid)}:', '    .word 0']
+        if plan['out_kind'] == 'text':
+            lines.append(f'cmdbuf_{abs(cid)}:')
+            lines += ['    .word 0'] * _cmdc._TEXT_BUF_WORDS
+        for label, text in plan['bufs']:
+            lines.append(f'{label}:')
+            lines += _emit_string_words(text)
+        env_names |= plan['env']
+        lines.append('')
+    for nm in sorted(env_names):
+        lines += [f'{_cmdc.env_slot(nm)}:', '    .word 0',
+                  f'{_cmdc.env_present_slot(nm)}:', '    .word 0', '']
+    return lines
 
 
 def _section_render(stream: 'WordStream', wstr_labels: dict,
@@ -1264,6 +1411,10 @@ def _compile_full_program(stream: 'WordStream', source_path: str) -> str:
     parts: list = []
     parts += _section_header(stream, source_path)
     parts += _section_open_window(stream)
+    if _has_commands(stream):
+        parts += ['    ; Stage 9-1B — run Shell commands once at startup']
+        parts += _command_dispatch_lines(stream)
+        parts += ['']
     parts += ['event_loop_top:']
     parts += _section_render(stream, wstr_labels, eff_pos, state_map)
     parts += _section_event_poll(has_entries=has_entries)
@@ -1273,8 +1424,28 @@ def _compile_full_program(stream: 'WordStream', source_path: str) -> str:
         parts += _section_key_handler(stream, state_map)
     parts += _section_handler_blocks(stream)
     parts += _section_recompute_blocks(stream, state_map)  # Stage 8-3-RT-dynamic
+    parts += _section_command_blocks(stream)               # Stage 9-1B
     parts += _section_data(stream, wstr_labels, state_map)
+    parts += _section_command_data(stream)                 # Stage 9-1B
 
+    return '\n'.join(parts) + '\n'
+
+
+# ===========================================================================
+# Stage 9-1B: shell-only program (cmd_* widgets, no GUI / cells)
+# ===========================================================================
+
+def _compile_shell_program(stream: 'WordStream', source_path: str) -> str:
+    """A Connectors/Shell program with commands but no GUI: run every command
+    once, then halt. Results live in state_cmd_<id> / cmdbuf_<id> slots (read
+    by pipes in Stage 9-2, or an interactive display command in Stage 9-1C)."""
+    parts: list = []
+    parts += _section_header(stream, source_path)
+    parts += _command_dispatch_lines(stream)
+    parts += ['    HALT', '']
+    parts += _section_command_blocks(stream)
+    parts += ['; ============ Data ============', '']
+    parts += _section_command_data(stream)
     return '\n'.join(parts) + '\n'
 
 
@@ -1334,4 +1505,6 @@ def compile_wordstream_to_t5asm(stream: 'WordStream',
     has_cells = bool(getattr(stream, '_cell_meta', {}))
     if has_gui or has_cells:           # Stage 8-3-RT: cells also need the PIGART path
         return _compile_full_program(stream, source_path)
+    if _has_commands(stream):          # Stage 9-1B: shell-only program
+        return _compile_shell_program(stream, source_path)
     return _compile_trivial(stream, source_path)

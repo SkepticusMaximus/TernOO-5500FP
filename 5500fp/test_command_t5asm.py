@@ -1,0 +1,242 @@
+"""test_command_t5asm.py — Stage 9-1B: Shell command → t5asm compilation.
+
+Two layers:
+  * pure unit tests on command_t5asm.compile_command and the compile_to_t5asm
+    wiring (no emulator, no display);
+  * end-to-end tests that assemble the emitted t5asm and run it on the C
+    emulator, checking printed results. These skip automatically when the
+    emulator binary is absent.
+"""
+
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import command_t5asm as cmdc
+import compile_to_t5asm as C
+from word_stream import WordStream
+
+_EMU = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                    '..', 'NASM-TernOO-5500FP-Emulator', 'c_emulator', '5500fp')
+_HAVE_EMU = os.path.exists(_EMU)
+
+
+def _num(v):
+    return ('num', v)
+
+
+def _mk_cmd(cid, kind, **params):
+    return {'id': cid, 'kind': kind, 'x': 0, 'y': 0, 'w': 160, 'h': 80,
+            'label': '', 'name': f'{kind}_{cid}',
+            'properties': [{'name': k, 'value': v} for k, v in params.items()]}
+
+
+def _compile_stream(cmds):
+    s = WordStream()
+    s._cmd_meta = {c['id']: c for c in cmds}
+    return C.compile_wordstream_to_t5asm(s, 'test.fc')
+
+
+def _assemble_run(prog_lines):
+    with tempfile.NamedTemporaryFile('w', suffix='.t5asm', delete=False) as f:
+        f.write('\n'.join(prog_lines) + '\n')
+        path = f.name
+    try:
+        r = subprocess.run([_EMU, '--run', path], capture_output=True,
+                           text=True, timeout=10)
+    finally:
+        os.unlink(path)
+    keep = [l for l in r.stdout.splitlines()
+            if l and 'cycles' not in l and 'Emulator' not in l
+            and 'Architecture' not in l and set(l) != {'-'}]
+    return '\n'.join(keep).strip()
+
+
+def _run_number(name, args, env_names=()):
+    """Compile one command, print its numeric result, run, return stdout."""
+    ctx = cmdc.new_ctx()
+    body = cmdc.compile_command(name, args, cmdc._BASE_REG, ctx)
+    prog = ['LI R19, 0'] + body + [
+        f'MOV R2, R{cmdc._BASE_REG}', 'LI R1, 1', 'SYSCALL',
+        'LI R1, 6', 'SYSCALL', 'HALT']
+    for nm in sorted(set(ctx.env_names) | set(env_names)):
+        prog += [f'{cmdc.env_slot(nm)}:', '    .word 0',
+                 f'{cmdc.env_present_slot(nm)}:', '    .word 0']
+    return _assemble_run(prog)
+
+
+# ---------------------------------------------------------------------------
+# Unit tests — compile_command emission (no emulator)
+# ---------------------------------------------------------------------------
+
+class TestCompileCommandUnit(unittest.TestCase):
+
+    def test_math_add_emits_add(self):
+        out = '\n'.join(cmdc.compile_command('cmd_math_add',
+                                             [_num(3), _num(5)], 21))
+        self.assertIn('LI   R21, 3', out)
+        self.assertIn('LI   R22, 5', out)
+        self.assertIn('ADD  R21, R21, R22', out)
+
+    def test_divide_is_guarded(self):
+        out = '\n'.join(cmdc.compile_command('cmd_math_divide',
+                                             [_num(6), _num(2)], 21))
+        self.assertIn('BEQZ R22', out)          # divisor-zero guard
+        self.assertIn('DIV  R21, R21, R22', out)
+
+    def test_power_unrolls_constant_exponent(self):
+        out = '\n'.join(cmdc.compile_command('cmd_math_power',
+                                             [_num(2), _num(3)], 21))
+        self.assertEqual(out.count('MUL  R21, R21, R22'), 2)   # 2^3 → 2 muls
+
+    def test_power_requires_constant_exponent(self):
+        with self.assertRaises(cmdc.CommandCompileError):
+            cmdc.compile_command('cmd_math_power',
+                                 [_num(2), ('numslot', 'x')], 21)
+
+    def test_env_set_writes_slot_and_present(self):
+        out = '\n'.join(cmdc.compile_command('cmd_env_set',
+                                             [('name', 'k'), _num(9)], 21))
+        self.assertIn('state_env_k', out)
+        self.assertIn('state_env_k_present', out)
+
+    def test_text_upper_needs_output_buffer(self):
+        with self.assertRaises(cmdc.CommandCompileError):
+            cmdc.compile_command('cmd_text_upper', [('text', 'inbuf')], 21)
+        ctx = cmdc.new_ctx(out_text='outbuf')
+        out = '\n'.join(cmdc.compile_command('cmd_text_upper',
+                                             [('text', 'inbuf')], 21, ctx))
+        self.assertIn('outbuf', out)
+
+    def test_unsupported_command_raises(self):
+        with self.assertRaises(cmdc.CommandCompileError):
+            cmdc.compile_command('cmd_list_sort', [('text', 'l')], 21)
+
+    def test_output_kind_table(self):
+        self.assertEqual(cmdc.command_output_kind('cmd_math_add'), 'number')
+        self.assertEqual(cmdc.command_output_kind('cmd_text_upper'), 'text')
+        self.assertEqual(cmdc.command_output_kind('cmd_env_set'), 'none')
+        self.assertEqual(cmdc.command_output_kind('cmd_list_sort'), 'unsupported')
+
+
+# ---------------------------------------------------------------------------
+# Unit tests — compile_to_t5asm wiring (no emulator)
+# ---------------------------------------------------------------------------
+
+class TestCommandWiring(unittest.TestCase):
+
+    def test_shell_only_program_structure(self):
+        asm = _compile_stream([_mk_cmd(7, 'cmd_math_add', a=3, b=5)])
+        self.assertIn('command_7:', asm)
+        self.assertIn('CALL command_7', asm)
+        self.assertIn('state_cmd_7:', asm)
+        self.assertNotIn('event_loop_top', asm)     # no GUI → shell path
+
+    def test_no_nested_call_wrapper(self):
+        # The single link-register engine forbids a run_all_commands wrapper
+        # that CALLs the leaf blocks — dispatch must be inline at depth 0.
+        asm = _compile_stream([_mk_cmd(7, 'cmd_math_add', a=1, b=2)])
+        self.assertNotIn('run_all_commands', asm)
+
+    def test_text_command_allocates_buffer(self):
+        asm = _compile_stream([_mk_cmd(5, 'cmd_text_upper', text='hi')])
+        self.assertIn('cmdbuf_5:', asm)
+        self.assertIn('cmdarg_5_text:', asm)
+
+    def test_env_command_allocates_slots(self):
+        asm = _compile_stream([_mk_cmd(4, 'cmd_env_set', name='count', value=3)])
+        self.assertIn('state_env_count:', asm)
+        self.assertIn('state_env_count_present:', asm)
+
+    def test_unsupported_command_stub(self):
+        asm = _compile_stream([_mk_cmd(9, 'cmd_text_split', text='a,b',
+                                       delimiter=',')])
+        self.assertIn('command_9:', asm)
+        self.assertIn('no runtime yet', asm)
+
+    def test_gui_program_runs_commands_at_startup(self):
+        s = WordStream()
+        s._widget_meta = {1: {'id': 1, 'kind': 'gui_window', 'x': 0, 'y': 0,
+                              'w': 200, 'h': 150, 'label': 'W'}}
+        s._cmd_meta = {2: _mk_cmd(2, 'cmd_math_add', a=4, b=4)}
+        asm = C.compile_wordstream_to_t5asm(s, 't.fc')
+        self.assertIn('event_loop_top', asm)        # GUI path
+        self.assertIn('CALL command_2', asm)
+        self.assertIn('command_2:', asm)
+
+    def test_placeholder_only_is_not_a_command(self):
+        s = WordStream()
+        s._cmd_meta = {3: _mk_cmd(3, 'cmd_placeholder')}
+        with self.assertRaises(C.CompileError):        # falls to trivial path
+            C.compile_wordstream_to_t5asm(s, 't.fc')
+
+
+# ---------------------------------------------------------------------------
+# End-to-end tests — assemble + run on the C emulator
+# ---------------------------------------------------------------------------
+
+@unittest.skipUnless(_HAVE_EMU, 'C emulator binary not built')
+class TestCommandRuntime(unittest.TestCase):
+
+    def test_math_family(self):
+        self.assertEqual(_run_number('cmd_math_add', [_num(3), _num(5)]), '8')
+        self.assertEqual(_run_number('cmd_math_subtract', [_num(10), _num(4)]), '6')
+        self.assertEqual(_run_number('cmd_math_multiply', [_num(6), _num(7)]), '42')
+        self.assertEqual(_run_number('cmd_math_divide', [_num(20), _num(4)]), '5')
+        self.assertEqual(_run_number('cmd_math_divide', [_num(5), _num(0)]), '0')
+        self.assertEqual(_run_number('cmd_math_mod', [_num(17), _num(5)]), '2')
+        self.assertEqual(_run_number('cmd_math_abs', [_num(-9)]), '9')
+        self.assertEqual(_run_number('cmd_math_power', [_num(2), _num(5)]), '32')
+
+    def test_control_if(self):
+        self.assertEqual(_run_number('cmd_ctl_if',
+                                     [_num(1), _num(7), _num(9)]), '7')
+        self.assertEqual(_run_number('cmd_ctl_if',
+                                     [_num(0), _num(7), _num(9)]), '9')
+
+    def test_env_set_get(self):
+        ctx = cmdc.new_ctx()
+        body = cmdc.compile_command('cmd_env_set', [('name', 'c'), _num(42)],
+                                    cmdc._BASE_REG, ctx)
+        body += cmdc.compile_command('cmd_env_get', [('name', 'c')],
+                                     cmdc._BASE_REG, ctx)
+        prog = ['LI R19, 0'] + body + [
+            f'MOV R2, R{cmdc._BASE_REG}', 'LI R1, 1', 'SYSCALL',
+            'LI R1, 6', 'SYSCALL', 'HALT']
+        for nm in sorted(ctx.env_names):
+            prog += [f'{cmdc.env_slot(nm)}:', '    .word 0',
+                     f'{cmdc.env_present_slot(nm)}:', '    .word 0']
+        self.assertEqual(_assemble_run(prog), '42')
+
+    def test_shell_program_end_to_end(self):
+        """Full compile path → run → read the result slot."""
+        asm = _compile_stream([_mk_cmd(7, 'cmd_math_add', a=30, b=12)])
+        lines, printed = [], False
+        for l in asm.splitlines():
+            if l.strip() == 'HALT' and not printed:
+                lines += ['    LI R20, state_cmd_7', '    LDW R2, R20, 0',
+                          '    LI R1, 1', '    SYSCALL', '    LI R1, 6',
+                          '    SYSCALL']
+                printed = True
+            lines.append(l)
+        self.assertEqual(_assemble_run(lines), '42')
+
+    def test_text_upper_runtime(self):
+        ctx = cmdc.new_ctx(out_text='outbuf')
+        body = cmdc.compile_command('cmd_text_upper', [('text', 'inbuf')],
+                                    cmdc._BASE_REG, ctx)
+        prog = ['LI R19, 0'] + body + [
+            'LI R10, outbuf', 'pl:', '    LDW R2, R10, 0', '    BEQZ R2, pd',
+            '    LI R1, 3', '    SYSCALL', '    ADDI R10, R10, 1', '    JMP pl',
+            'pd:', 'LI R1, 6', 'SYSCALL', 'HALT',
+            'inbuf:'] + [f'    .word {ord(c)}' for c in 'hi there'] + [
+            '    .word 0', 'outbuf:'] + ['    .word 0'] * 64
+        self.assertEqual(_assemble_run(prog), 'HI THERE')
+
+
+if __name__ == '__main__':
+    unittest.main()
