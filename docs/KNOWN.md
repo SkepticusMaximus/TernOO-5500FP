@@ -118,3 +118,9 @@ untested surface. Worth a scripted on-screen pass before public demos.
   the key was written but never read, and the loader comment claimed
   otherwise). The single `decode_label_words` implementation was promoted to
   `widget_lib`; both renderers now alias it (duplication retired).
+- **Command args are `properties`, not `params` (CF5 Bundle 5).** The REPL
+  exposed that command argument values live in a widget's `properties`, so the
+  compile-from-words money test had been comparing default-against-default. The
+  whole chain (REPL, rehydrator, dialect, encoders, fixtures) now speaks
+  `properties`; the money test exercises real values through the words for the
+  first time — a strictly stronger guarantee.

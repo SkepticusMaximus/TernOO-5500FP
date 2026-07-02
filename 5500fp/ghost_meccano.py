@@ -566,9 +566,11 @@ def cmds_to_model_words(cmd_meta: dict) -> list:
     """fc_state['cmd_widgets'] → MCMDW [+MNAME identity] /MPARM words."""
     words = []
     for cid, cmd in sorted(cmd_meta.items()):
+        _p = {p.get('name'): p.get('value')
+              for p in (cmd.get('properties') or [])}
+        _p.update(cmd.get('params') or {})       # legacy fallback
         words += build_model_cmd(int(cmd.get('x', 0)), int(cmd.get('y', 0)),
-                                 cmd.get('kind', ''),
-                                 dict(cmd.get('params', {})))
+                                 cmd.get('kind', ''), _p)
         ident = cmd.get('name') or str(cid)
         words += build_model_name(ident)
     return words
@@ -686,7 +688,10 @@ def rehydrate_wordstream(words):
                         except (TypeError, ValueError):
                             pass
         cmds[ident] = {'id': ident, 'kind': c['kind'], 'x': c['x'],
-                       'y': c['y'], 'params': params}
+                       'y': c['y'], 'w': 160, 'h': 80, 'label': '',
+                       'name': c.get('name', ''),
+                       'properties': [{'name': k, 'value': v}
+                                      for k, v in params.items()]}
     stream._widget_meta = widgets
     stream._flow_meta = flows
     stream._cell_meta = dict(m['cells'])

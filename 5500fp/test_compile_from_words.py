@@ -129,9 +129,13 @@ class TestCompileFromWords(unittest.TestCase):
 
     def test_shell_pipeline_with_typed_pipe(self):
         cmds = {11: {'id': 11, 'kind': 'cmd_math_add', 'x': 10, 'y': 10,
-                       'params': {'a': 4, 'b': 5}},
+                     'w': 160, 'h': 80, 'label': '', 'name': 'adder',
+                     'properties': [{'name': 'a', 'value': 4},
+                                    {'name': 'b', 'value': 5}]},
                 12: {'id': 12, 'kind': 'cmd_math_multiply', 'x': 60,
-                       'y': 10, 'params': {'b': 3}}}
+                     'y': 10, 'w': 160, 'h': 80, 'label': '',
+                     'name': 'tripler',
+                     'properties': [{'name': 'b', 'value': 3}]}}
         edges = [{'src': 11, 'dst': 12, 'dst_param': 'a'}]
         a, b = self._both_paths({}, {}, {}, cmds, edges)
         self.assertEqual(a, b)
@@ -177,7 +181,8 @@ class TestCompileFromWords(unittest.TestCase):
         cells = {(0, 0): {'kind': 'cell_number', 'value': 10},
                  (1, 0): {'kind': 'cell_formula', 'value': '=A1+A1'}}
         cmds = {21: {'id': 21, 'kind': 'cmd_math_abs', 'x': 5, 'y': 5,
-                       'params': {'x': -9}}}
+                     'w': 160, 'h': 80, 'label': '', 'name': 'abso',
+                     'properties': [{'name': 'x', 'value': -9}]}}
         a, b = self._both_paths(widgets, flows, cells, cmds, [])
         self.assertEqual(a, b)
 
