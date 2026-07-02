@@ -61,7 +61,8 @@ class TextTabView:
 
         bar = tk.Frame(parent, bg=C['palette'])
         bar.pack(side='top', fill='x')
-        for label, cmd in (('Open', self.open_file), ('Save', self.save),
+        for label, cmd in (('New', self.new_file),
+                           ('Open', self.open_file), ('Save', self.save),
                            ('Save As', self.save_as), ('Sync ⇄', self.sync),
                            ('Format', self.format_text),
                            ('From Canvas', self.render_from_substrate)):
@@ -117,6 +118,23 @@ class TextTabView:
         self.txt.edit_modified(False)
         self._dirty = False
 
+    def _confirm_discard(self) -> bool:
+        """True if it's safe to replace the buffer (clean, or user agrees)."""
+        if not self._dirty:
+            return True
+        from tkinter import messagebox
+        return messagebox.askyesno(
+            'Unsaved changes',
+            'The current document has unsaved changes.\nDiscard them?')
+
+    def new_file(self):
+        """Fresh untitled buffer — no close-and-reopen dance required."""
+        if not self._confirm_discard():
+            return
+        self.set_text('')
+        self._set_mode(None)
+        self.status.config(text='new document')
+
     # ── actions ─────────────────────────────────────────────────────────────
     def render_from_substrate(self):
         """Canvas → text (the projection direction)."""
@@ -166,6 +184,8 @@ class TextTabView:
 
     def open_file(self):
         from tkinter import filedialog
+        if not self._confirm_discard():
+            return
         p = filedialog.askopenfilename(title='Open file')
         if not p:
             return

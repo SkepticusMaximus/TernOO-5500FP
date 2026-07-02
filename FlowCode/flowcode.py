@@ -635,7 +635,7 @@ class FCCanvas:
 # ── Headless demo ─────────────────────────────────────────────────────────────
 
 def run_headless_demo():
-    print("="*60+"\nFlowCode v0.6.0 — Headless Demo\n"+"="*60)
+    print("="*60+"\nFlowCode v0.7.0 — Headless Demo\n"+"="*60)
     canvas=FCCanvas()
     start=canvas.add_symbol(SYMBOL_IO,200,80,"START")
     check=canvas.add_symbol(SYMBOL_DECISION,200,240,"CHECK")
@@ -702,7 +702,7 @@ def run_gui():
 
     # ── Root ─────────────────────────────────────────────────────────────────
     root = tk.Tk()
-    root.title("FlowCode v0.6.0 — TernOO-5500FP Visual IDE")
+    root.title("FlowCode v0.7.0 — TernOO-5500FP Visual IDE")
     root.configure(bg=C['bg'])
     root.resizable(True,True)
     root.minsize(960, 600)   # Bundle 17 B1: usable at 1366×768
@@ -3183,7 +3183,7 @@ def run_gui():
             json.dump(payload, _sf, indent=2)
         _current_design_path[0] = path   # Phase 7b-1: track for compiler header
         _name = os.path.basename(path)
-        root.title(f"FlowCode v0.6.0 — TernOO-5500FP Visual IDE  [{_name}]")
+        root.title(f"FlowCode v0.7.0 — TernOO-5500FP Visual IDE  [{_name}]")
         guic_set_status(f"Saved: {_name}")
 
     def guic_do_save():
@@ -3471,7 +3471,7 @@ def run_gui():
             guic_set_mode('select')
             _current_design_path[0] = path   # Phase 7b-1: track for compiler header
             _name = os.path.basename(path)
-            root.title(f"FlowCode v0.6.0 — TernOO-5500FP Visual IDE  [{_name}]")
+            root.title(f"FlowCode v0.7.0 — TernOO-5500FP Visual IDE  [{_name}]")
             guic_set_status(f"Opened: {_name}")
             guic_layout_all()
             guic_redraw()
@@ -6392,6 +6392,51 @@ def run_gui():
         guic_set_status('REPL pipeline captured to Connectors canvas')
         return 'break'
 
+    def _repl_paste(_e=None):
+        """Paste at the prompt regardless of where the insert mark sits;
+        newlines become spaces so a pasted command stays one line."""
+        try:
+            clip = root.clipboard_get()
+        except Exception:
+            return 'break'
+        clip = clip.replace('\r', '').replace('\n', ' ').strip()
+        _lg_out.mark_set('insert', 'end-1c')
+        _lg_out.insert('insert', clip)
+        _lg_out.see('end')
+        return 'break'
+
+    def _repl_copy(_e=None):
+        """Copy the selection (or the current input line if none)."""
+        try:
+            sel = _lg_out.get('sel.first', 'sel.last')
+        except Exception:
+            sel = _repl_current_input()
+        if sel:
+            root.clipboard_clear()
+            root.clipboard_append(sel)
+        return 'break'
+
+    _repl_menu = tk.Menu(_lg_out, tearoff=0, bg=C['palette'], fg=C['text'],
+                         activebackground=C['inspect'],
+                         activeforeground=C['text'])
+    _repl_menu.add_command(label='Copy', command=_repl_copy)
+    _repl_menu.add_command(label='Paste', command=_repl_paste)
+    _repl_menu.add_separator()
+    _repl_menu.add_command(label='Clear (Ctrl+L)', command=_repl_clear)
+    _repl_menu.add_command(label='Capture pipeline (Ctrl+P)',
+                           command=_repl_capture)
+
+    def _repl_context(e):
+        _repl_menu.tk_popup(e.x_root, e.y_root)
+        return 'break'
+
+    _lg_out.bind('<<Paste>>', _repl_paste)
+    _lg_out.bind('<Control-Shift-V>', _repl_paste)
+    _lg_out.bind('<Control-Shift-v>', _repl_paste)
+    _lg_out.bind('<<Copy>>', _repl_copy)
+    _lg_out.bind('<Control-Shift-C>', _repl_copy)
+    _lg_out.bind('<Control-Shift-c>', _repl_copy)
+    _lg_out.bind('<Button-3>', _repl_context)
     _lg_out.bind('<Return>', _repl_enter)
     _lg_out.bind('<Up>',   lambda e: _repl_hist(-1))
     _lg_out.bind('<Down>', lambda e: _repl_hist(+1))
@@ -6479,7 +6524,10 @@ def run_gui():
             result = _flowcode_commands.run_command(full, _lingo_collect_args())
             if isinstance(result, list):
                 result = ', '.join(str(x) for x in result)
-            return f"{cmd['name']} → {result}"
+            _shown = ', '.join(f"{k}={v!r}" if isinstance(v, str)
+                               else f"{k}={v}"
+                               for k, v in _lingo_collect_args().items())
+            return f"{cmd['name']}({_shown}) → {result}"
         return cmd['name']
 
     def _lingo_run_interactive():
