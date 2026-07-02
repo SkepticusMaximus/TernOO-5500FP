@@ -144,7 +144,12 @@ OPF_ISA_STACK = _primary_val(-1,  0)   # (−, 0)
 OPF_WORD_OP   = _primary_val(-1, +1)   # (−, +)
 OPF_PIGART    = _primary_val( 0, -1)   # (0, −)
 OPF_MECCANO   = _primary_val( 0,  0)   # (0, 0)
-# (0,+1), (+1,-1), (+1,0), (+1,+1) reserved.
+OPF_MODEL     = _primary_val( 0, +1)   # (0, +) — program-model words (3 Jul
+                                       # 2026, CF5-Design-OPF-MODEL-v1.md):
+                                       # kind/name/cell/command attributes so
+                                       # the stream carries the program, not
+                                       # just its rendering.
+# (+1,-1), (+1,0), (+1,+1) reserved.
 
 def get_primary(word: int) -> int:
     """Extract 2-trit primary field as a comparable integer."""
@@ -656,6 +661,13 @@ OPCODE_MNEMONICS: dict = {
     (OPF_PIGART, -2): 'RENDER',
 
     # MECCANO family: uses meccano value, not op_index. No entries here.
+    # OPF_MODEL — program-model attribute words (grammar extension v1)
+    (OPF_MODEL, 0): 'MKIND',  (OPF_MODEL, 1): 'MNAME',
+    (OPF_MODEL, 2): 'MCELL',  (OPF_MODEL, 3): 'MCMDW',
+    (OPF_MODEL, 4): 'MPARM',  (OPF_MODEL, 5): 'MPORT',
+    (OPF_MODEL, 6): 'MSCOPE', (OPF_MODEL, 7): 'MMORE',
+    (OPF_MODEL, 8): 'MEDGE',  (OPF_MODEL, 9): 'MFLAG',
+    (OPF_MODEL, 10): 'MNOTE',
 }
 
 # ── Reverse lookup: mnemonic string → (family, op_index) ─────────────────────
@@ -668,6 +680,7 @@ _OPF_NAMES = {
     OPF_WORD_OP:   'WORD_OP',
     OPF_PIGART:    'PIGART',
     OPF_MECCANO:   'MECCANO',
+    OPF_MODEL:     'MODEL',
 }
 
 
@@ -1606,239 +1619,11 @@ class RealTernooNeuralEngine:
 # MAIN INTERACTIVE HARDWARE RUNTIME BENCHMARK
 # ═══════════════════════════════════════════════════════════════
 # ─────────────────────────────────────────────────────────────────────────────
-# Gemini-era exploration — preserved as reference; NOT part of current
-# architecture. This AI 'workbench' came out of a Gemini side-excursion months
-# ago; some concepts were interesting but the implementation isn't core TernOO.
-# Commented out so it's retained for reference but never runs. See the AI
-# workbench security review (commit 30498ca) for the clipboard-handling context.
+# The Gemini-era 'AI workbench' block (~230 commented lines) was removed on
+# 3 Jul 2026 after the pre-documentation audit; it never ran (commented out
+# since the workbench security review, commit 30498ca) and is preserved in
+# git history for reference.
 # ─────────────────────────────────────────────────────────────────────────────
-# def run_pure_ternoo_ai_workbench():
-#     """Authentic, non-compromised development workbench for TernOO v0.3 Autoregressive Loops."""
-#     print("=" * 60)
-#     print("       TernOO-5500FP v0.3.0 ── AUTOREGRESSIVE SUBSTRATE     ")
-#     print("=" * 60)
-#     print("System status: ACTIVE (Hardware Generation Matrix Online)")
-#     print("Type 'exit' to safe-shutdown emulated cores.\n")
-#
-#     cpu = CPU5500FP()
-#     engine = RealTernooNeuralEngine(cpu)
-#     engine.burn_weights_to_ram()
-#
-#     INPUT_BUFFER = 0x2000
-#     IO_STREAM_REG = 0x5000
-#     MMIO_CLIPBOARD_REG = 0x6000
-#
-#     # Natively expanded project token tracking dictionaries
-#     token_dictionary = {
-#         "eos": 0, "architecture": 1, "neural": 2, "substrate": 3, "power": 4, "beowulf": 5,
-#         "logic": 6, "ternary": 7, "hardware": 8, "system": 9, "matrix": 10, "core": 11, "ghost": 12
-#     }
-#     reverse_vocab = {v: k for k, v in token_dictionary.items()}
-#
-#     while True:
-#         try:
-#             user_input = input("TernOO-Workbench> ").strip().lower()
-#             if user_input in ['exit', 'quit']:
-#                 print("Powering down emulated cores... Goodbye.")
-#                 break
-#
-#             words = user_input.split()
-#             if not words:
-#                 continue
-#
-#             print(" [Bus] Streaming input sequence into input RAM blocks...")
-#             valid_tokens = 0
-#             for idx, word in enumerate(words):
-#                 token_id = token_dictionary.get(word, 0)
-#                 cpu.mem_write(INPUT_BUFFER + idx, build_int_word(token_id))
-#                 valid_tokens += 1
-#
-#             # ═══════════════════════════════════════════════════════════════
-#             # THE AUTOREGRESSIVE GENERATIVE DECODER LOOP
-#             # ═══════════════════════════════════════════════════════════════
-#             print(" [CPU] Entering generative feedback execution loop...")
-#             generated_sequence = []
-#
-#             hidden_vector = engine.execute_hardware_inference(INPUT_BUFFER, valid_tokens)
-#
-#             for step in range(8):
-#                 predicted_token_id = engine.execute_hardware_decode(hidden_vector)
-#                 if predicted_token_id == 0:
-#                     break
-#
-#                 io_word = (0x00 << 22) | (0x02 << 18) | (predicted_token_id & 0x3FFFF)
-#                 cpu.mem_write(IO_STREAM_REG, io_word)
-#
-#                 hardware_io_read = cpu.mem_read(IO_STREAM_REG)
-#                 output_token_id = hardware_io_read & 0x3FFFF
-#                 word_string = reverse_vocab.get(output_token_id, "unknown")
-#
-#                 generated_sequence.append(word_string)
-#
-#                 cpu.mem_write(INPUT_BUFFER, build_int_word(predicted_token_id))
-#                 hidden_vector = engine.execute_hardware_inference(INPUT_BUFFER, 1)
-#
-#             print(f" TernOO-Assistant-Native> {' '.join(generated_sequence) if generated_sequence else '[eos]'}\n")
-#
-#             # ── Security review (29 June 2026) ─────────────────────────────
-#             # REMOVED: two unconditional host-clipboard reads (`xclip`) that ran
-#             # here on EVERY loop iteration — silent, unconsented harvesting of
-#             # the user's clipboard with no command and no opt-in. Clipboard
-#             # ingestion now happens ONLY on the explicit `!learn_clipbd` command,
-#             # and ONLY when the user has opted in via TERNOO_ALLOW_CLIPBOARD.
-#             # ═══════════════════════════════════════════════════════════════
-#             # THE !learn_clipbd INGESTION COMMAND (opt-in only)
-#             # ═══════════════════════════════════════════════════════════════
-#             teach = input("Train Output Sequence? (type target word or 'no'): ").strip().lower()
-#
-#             if teach.startswith("!learn_"):
-#                 cmd_parts = teach.split(" ", 1)
-#                 sensor_cmd = cmd_parts[0]
-#                 arg = cmd_parts[1].strip() if len(cmd_parts) > 1 else ""
-#
-#                 if sensor_cmd == "!learn_clipbd":
-#                     # ── Security review (29 June 2026): opt-in clipboard ingest ──
-#                     # Off by default. TernOO does not read your clipboard unless
-#                     # you explicitly opt in for the session. When enabled, ONLY
-#                     # the clipboard selection is read (never the primary/highlight
-#                     # selection), and the read is announced on screen.
-#                     import os
-#                     if os.environ.get("TERNOO_ALLOW_CLIPBOARD", "").strip().lower() \
-#                             not in ("1", "true", "yes", "on"):
-#                         print(" [privacy] Clipboard ingestion is OFF by default — TernOO will")
-#                         print(" [privacy] not read your clipboard without explicit consent.")
-#                         print(" [privacy] To enable for this session only:")
-#                         print(" [privacy]     export TERNOO_ALLOW_CLIPBOARD=1")
-#                         print(" [privacy] Only the CLIPBOARD selection is read (never your")
-#                         print(" [privacy] primary/highlight selection), and only on this command.\n")
-#                         continue
-#
-#                     print(" [clipboard] Reading the system CLIPBOARD now"
-#                           " (opted in via TERNOO_ALLOW_CLIPBOARD).")
-#                     host_text = ""
-#                     import subprocess
-#                     # Clipboard selection only — xclip, with xsel -b fallback.
-#                     try:
-#                         res = subprocess.check_output(['xclip', '-selection', 'clipboard', '-o'],
-#                                                       stderr=subprocess.DEVNULL)
-#                         host_text = res.decode('utf-8', errors='ignore').strip().lower()
-#                     except Exception:
-#                         try:
-#                             res = subprocess.check_output(['xsel', '-b', '-o'],
-#                                                           stderr=subprocess.DEVNULL)
-#                             host_text = res.decode('utf-8', errors='ignore').strip().lower()
-#                         except Exception:
-#                             host_text = ""
-#                     print(f" [clipboard] Captured {len(host_text)} character(s) from the clipboard.")
-#
-#                     # Direct Memory Access emulation: Write host text values straight into address 0x6000
-#                     if host_text:
-#                         for offset, char in enumerate(host_text[:200]):
-#                             cpu.mem_write(MMIO_CLIPBOARD_REG + offset, build_int_word(ord(char)))
-#                         cpu.mem_write(MMIO_CLIPBOARD_REG + len(host_text[:200]), build_int_word(0))
-#                     else:
-#                         cpu.mem_write(MMIO_CLIPBOARD_REG, build_int_word(0))
-#
-#                     # CORE DECODE: Read characters right out of internal memory address 0x6000
-#                     reconstructed_text_chars = []
-#                     addr_ptr = MMIO_CLIPBOARD_REG
-#                     while True:
-#                         raw_word = cpu.mem_read(addr_ptr)
-#                         raw_payload = raw_word & 0x3FFFF  # Isolate 18-trit payload space
-#                         char_code = int(raw_payload) if hasattr(raw_payload, '__int__') else int(raw_payload)
-#
-#                         if char_code == 0 or addr_ptr > (MMIO_CLIPBOARD_REG + 200):
-#                             break
-#
-#                         if 32 <= char_code <= 126:
-#                             reconstructed_text_chars.append(chr(char_code))
-#                         addr_ptr += 1
-#
-#                     clean_clip = "".join(reconstructed_text_chars).split()
-#
-#                     # Safe Fallback: If MMIO trit-mask layout mismatched build_int_word, fall back to direct host tokenization
-#                     if not clean_clip and host_text:
-#                         clean_clip = host_text.split()
-#
-#                     if clean_clip:
-#                         print(f" [CPU] Streamed {len(clean_clip)} tokens out of local MMIO RAM: '{' '.join(clean_clip[:6])}...'")
-#                         trained_count = 0
-#                         for i in range(len(clean_clip) - 1):
-#                             w_now = clean_clip[i].strip(".,()\"';:!?")
-#                             w_next = clean_clip[i+1].strip(".,()\"';:!?")
-#                             if w_now in token_dictionary and w_next in token_dictionary:
-#                                 target_id = token_dictionary[w_next]
-#
-#                                 # Hardware path balance optimization across the projection matrix heap
-#                                 for k in range(engine.hidden_size):
-#                                     base = engine.projection_heap + (k * engine.vocab_size)
-#                                     for j in range(engine.vocab_size):
-#                                         proj_word = cpu.mem_read(base + j)
-#                                         headers = proj_word & ~0x3FFFF
-#                                         raw_payload = proj_word & 0x3FFFF
-#                                         weight = (raw_payload >> 14) & 0x3
-#                                         if weight > 1: weight -= 4
-#
-#                                         if random.random() < 0.40:
-#                                             if j == target_id and weight < 1:
-#                                                 weight += 1
-#                                             elif j != target_id and weight > -1:
-#                                                 weight -= 1
-#
-#                                         new_payload = (raw_payload & ~(0x3 << 14)) | ((weight & 0x3) << 14)
-#                                         cpu.mem_write(base + j, headers | new_payload)
-#                                 trained_count += 1
-#                         print(f" [Trainer] Internal memory matrices calibrated across {trained_count} hardware pathways.\n")
-#                     else:
-#                         print(" [Hardware Bus] Stream empty. Memory address lane 0x6000 returned a neutral null state.\n")
-#
-#                 elif sensor_cmd == "!learn_temp":
-#                     import numpy as np
-#                     print(" [Hardware Bus] Querying Core Thermal Monitoring Line...")
-#                     simulated_temp_raw = int(np.clip(random.randint(35, 75), 0, 193710244))
-#                     print(f" [Hardware Bus] Internal Thermal Register updated: {simulated_temp_raw} C\n")
-#                 else:
-#                     print(f" [Hardware Bus] Signal rejected. Command '{sensor_cmd}' unmapped on the hardware bus.\n")
-#                 continue
-#
-#             elif teach in token_dictionary and teach != "no":
-#                 target_id = token_dictionary[teach]
-#                 print(f" [Trainer] Fine-tuning 18-trit projection payloads toward token ID: {target_id}...")
-#                 for i in range(engine.hidden_size):
-#                     projection_base = engine.projection_heap + (i * engine.vocab_size)
-#                     for j in range(engine.vocab_size):
-#                         proj_word = cpu.mem_read(projection_base + j)
-#                         headers = proj_word & ~0x3FFFF
-#                         raw_payload = proj_word & 0x3FFFF
-#                         weight = (raw_payload >> 14) & 0x3
-#                         if weight > 1: weight -= 4
-#                         if random.random() < 0.40:
-#                             if j == target_id and weight < 1:
-#                                 weight += 1
-#                             elif j != target_id and weight > -1:
-#                                 weight -= 1
-#                         new_payload = (raw_payload & ~(0x3 << 14)) | ((weight & 0x3) << 14)
-#                         cpu.mem_write(projection_base + j, headers | new_payload)
-#                 print(" [Trainer] Soft synaptic adjustments committed to memory matrix.\n")
-#             # ═══════════════════════════════════════════════════════════════
-#             # PERSISTENT HARDWARE MATRIX CHECKPOINT SAVER
-#             # ═══════════════════════════════════════════════════════════════
-#             try:
-#                 save_data = {
-#                     "synapse_heap": [int(cpu.mem_read(addr)) for addr in range(engine.synapse_heap, engine.synapse_heap + (engine.vocab_size * engine.hidden_size))],
-#                     "projection_heap": [int(cpu.mem_read(addr)) for addr in range(engine.projection_heap, engine.projection_heap + (engine.hidden_size * engine.vocab_size))]
-#                 }
-#                 import json
-#                 with open("ternoo_hardware_matrix.json", "w") as f:
-#                     json.dump(save_data, f, indent=4)
-#                 print(" [Storage] Hardware memory arrays successfully checkpointed to drive.\n")
-#             except Exception as e:
-#                 print(f" [Storage] Warning: Failed to backup physical matrix blocks: {e}\n")
-#
-#         except KeyboardInterrupt:
-#             print("\nPowering down emulated cores... Goodbye.")
-#             break
-#             # PERSISTENT HARDWARE MATRIX CHECKPOINT SAVER
 #
 if __name__ == '__main__':
     if '--test' in sys.argv:

@@ -300,7 +300,10 @@ def _eval(node, lookup, ctx=None):
         if op == '/':
             if y == 0:
                 raise FormulaError("#DIV/0!")
-            return x / y
+            # Machine semantics: the 5500FP DIV truncates toward zero
+            # (C integer division). The editor preview models the machine,
+            # so 7/2 == 3 and -7/2 == -3 here, exactly as at runtime.
+            return int(x / y)
     if t == 'call':
         return _eval_call(node[1], node[2], lookup, ctx)
     raise FormulaError("bad node")
@@ -321,7 +324,9 @@ def _eval_call(fname, args, lookup, ctx=None):
     if fname == 'SUM':     return sum(_flat_nums(args, lookup, ctx))
     if fname == 'AVERAGE':
         nums = _flat_nums(args, lookup, ctx)
-        return sum(nums) / len(nums) if nums else 0
+        # Machine semantics: engine folds with ADD then divides with DIV
+        # (truncation toward zero), so AVERAGE(7,2) == 4, not 4.5.
+        return int(sum(nums) / len(nums)) if nums else 0
     if fname == 'MIN':     return min(_flat_nums(args, lookup, ctx) or [0])
     if fname == 'MAX':     return max(_flat_nums(args, lookup, ctx) or [0])
     if fname == 'COUNT':   return len(_flat_nums(args, lookup, ctx))

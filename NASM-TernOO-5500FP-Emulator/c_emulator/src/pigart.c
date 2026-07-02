@@ -89,6 +89,22 @@ static void mem_write_event(int64_t *mem, uint32_t mem_size,
     }
 }
 
+/* Write a C string into engine memory as one char per word, NUL-terminated.
+ * Writes at most maxwords-1 chars. Returns the number of chars written. */
+static int mem_write_string(int64_t *mem, uint32_t mem_size,
+                            int64_t addr, const char *s, int maxwords) {
+    int i = 0;
+    if (addr < 0 || maxwords <= 0) return 0;
+    for (; s[i] && i < maxwords - 1; i++) {
+        int64_t wa = addr + i;
+        if ((uint64_t)wa >= mem_size) break;
+        mem[wa] = (unsigned char)s[i];
+    }
+    int64_t term = addr + i;
+    if ((uint64_t)term < mem_size) mem[term] = 0;
+    return i;
+}
+
 /* -----------------------------------------------------------------------
  * Syscall dispatcher
  * --------------------------------------------------------------------- */
@@ -173,6 +189,57 @@ int pigart_handle_syscall(int syscall_num,
             break;
         }
 
+        /* ---- 116: PIGART_DRAW_STRING (length-prefixed heap string) ----
+         * R2=x, R3=y, R4=handle, R5=size, R6=color. mem[handle]=length,
+         * chars at handle+1. Reuses the backend text renderer. */
+        case PIGART_DRAW_STRING: {
+            if (!b || !g_window_open) break;
+            int x = (int)regs[2], y = (int)regs[3];
+            int64_t h = regs[4];
+            int size = (int)regs[5];
+            uint32_t color = (uint32_t)(regs[6] & 0xFFFFFF);
+            char text[1025];
+            int n = 0;
+            if (h > 0 && (uint64_t)h < mem_size) {
+                int64_t len = mem[h];
+                if (len < 0) len = 0;
+                for (; n < len && n < (int)sizeof(text) - 1; n++) {
+                    int64_t ca = h + 1 + n;
+                    if ((uint64_t)ca >= mem_size) break;
+                    text[n] = (char)(mem[ca] & 0xFF);
+                }
+            }
+            text[n] = '\0';
+            b->draw_text(x, y, text, size, color);
+            break;
+        }
+
+        /* ---- 117: PIGART_DIALOG_CHOICE_LIST ----
+         * R2=list handle (of string handles), R3=prompt char-ptr.
+         * Builds the NUL-separated options block from the list, shows the
+         * choice dialog, returns the selected element's handle (0 = cancel). */
+        case PIGART_DIALOG_CHOICE_LIST: {
+            if (!b || !b->dialog_choice) { regs[1] = 0; break; }
+            int64_t list = regs[2];
+            char prompt[1025];
+            mem_read_string(mem, mem_size, regs[3], prompt, sizeof(prompt));
+            int64_t n = (list > 0 && (uint64_t)list < mem_size) ? mem[list] : 0;
+            if (n > 8) n = 8;
+            char opts[1025];
+            opts[0] = '\0';
+            int oi = 0;
+            for (int64_t i = 0; i < n; i++) {
+                int64_t e = mem[list + 1 + i];
+                int64_t le = (e > 0 && (uint64_t)e < mem_size) ? mem[e] : 0;
+                for (int64_t k = 0; k < le && oi < (int)sizeof(opts) - 2; k++)
+                    opts[oi++] = (char)(mem[e + 1 + k] & 0xFF);
+                opts[oi++] = '\0';
+            }
+            int idx = b->dialog_choice(prompt, opts, (int)n);
+            regs[1] = (idx >= 0 && idx < n) ? mem[list + 1 + idx] : 0;
+            break;
+        }
+
         /* ---- 106: PIGART_DRAW_LINE ---- */
         case PIGART_DRAW_LINE: {
             if (!b || !g_window_open) break;
@@ -222,6 +289,62 @@ int pigart_handle_syscall(int syscall_num,
             if (!b || !g_window_open) break;
             b->close_window();
             g_window_open = 0;
+            break;
+        }
+
+        /* ---- 112: PIGART_DIALOG_PROMPT ----
+         * R2=message ptr, R3=out buffer ptr, R4=out buffer words.
+         * Returns R1 = chars written (>=0), or -1 on cancel/unavailable. */
+        case PIGART_DIALOG_PROMPT: {
+            if (!b || !b->dialog_prompt) { regs[1] = -1; break; }
+            char msg[1025], answer[1025];
+            mem_read_string(mem, mem_size, regs[2], msg, sizeof(msg));
+            int outwords = (int)regs[4];
+            if (outwords <= 0 || outwords > (int)sizeof(answer))
+                outwords = (int)sizeof(answer);
+            int n = b->dialog_prompt(msg, answer, outwords);
+            if (n < 0) { regs[1] = -1; break; }
+            regs[1] = mem_write_string(mem, mem_size, regs[3], answer, outwords);
+            break;
+        }
+
+        /* ---- 113: PIGART_DIALOG_DISPLAY ---- R2=title ptr, R3=message ptr. */
+        case PIGART_DIALOG_DISPLAY: {
+            if (!b || !b->dialog_display) break;
+            char title[1025], msg[1025];
+            mem_read_string(mem, mem_size, regs[2], title, sizeof(title));
+            mem_read_string(mem, mem_size, regs[3], msg, sizeof(msg));
+            b->dialog_display(title, msg);
+            break;
+        }
+
+        /* ---- 114: PIGART_DIALOG_CONFIRM ---- R2=message ptr. R1 = 1/0. */
+        case PIGART_DIALOG_CONFIRM: {
+            if (!b || !b->dialog_confirm) { regs[1] = 0; break; }
+            char msg[1025];
+            mem_read_string(mem, mem_size, regs[2], msg, sizeof(msg));
+            regs[1] = b->dialog_confirm(msg) ? 1 : 0;
+            break;
+        }
+
+        /* ---- 115: PIGART_DIALOG_CHOICE ----
+         * R2=prompt ptr, R3=options block ptr (n NUL-separated strings),
+         * R4=option count. Returns R1 = selected index, -1 = cancel. */
+        case PIGART_DIALOG_CHOICE: {
+            if (!b || !b->dialog_choice) { regs[1] = -1; break; }
+            char prompt[1025], opts[1025];
+            mem_read_string(mem, mem_size, regs[2], prompt, sizeof(prompt));
+            /* Read the options block: a run of chars where 0 separates entries.
+             * Copy raw (including embedded NULs) up to buffer end. */
+            int n = (int)regs[4];
+            int i;
+            for (i = 0; i < (int)sizeof(opts) - 1; i++) {
+                int64_t wa = regs[3] + i;
+                if ((uint64_t)wa >= mem_size) break;
+                opts[i] = (char)(mem[wa] & 0xFF);
+            }
+            opts[i] = '\0';
+            regs[1] = b->dialog_choice(prompt, opts, n);
             break;
         }
 

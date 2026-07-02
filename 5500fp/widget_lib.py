@@ -85,6 +85,8 @@ build_opcode_word  = _v03.build_opcode_word
 decode_opcode_word = _v03.decode_opcode_word
 decode_word        = _v03.decode_word
 OPF_PIGART         = _v03.OPF_PIGART
+OPF_MODEL          = _v03.OPF_MODEL
+build_int_word     = _v03.build_int_word
 OP_RPOINT          = _v03.OP_RPOINT
 OP_RLINE           = _v03.OP_RLINE
 OP_RNODE           = _v03.OP_RNODE
@@ -477,6 +479,125 @@ def _build_size_word(width: int, height: int) -> int:
     """
     payload = from_trits(to_trits(height, 6) + to_trits(width, 6) + [0] * 6)
     return build_int_word(payload)
+
+
+def decode_label_words(string_operands: List[int]) -> str:
+    """Decode DATA-STRING/ASCII words back to text — the inverse of
+    _encode_label().  base-128, 3 chars/word, trailing NULs stripped.
+    Non-STRING words terminate decoding (defensive).
+
+    Promoted here from pigart_ascii_renderer (3 Jul 2026) so encoder and
+    decoder live together; the renderers import this single implementation.
+    """
+    chars: List[int] = []
+    for w in string_operands:
+        d = decode_word(w)
+        if d.get('type') != 'STRING':
+            break
+        n = int(d['length_or_addr'])
+        chars.append(n % 128)
+        chars.append((n // 128) % 128)
+        chars.append((n // 16384) % 128)
+    while chars and chars[-1] == 0:
+        chars.pop()
+    return ''.join(chr(c) for c in chars)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# OPF_MODEL — program-model attribute words (grammar extension v1, 3 Jul 2026)
+# See docs/design/CF5-Design-OPF-MODEL-v1.md.  Ops:
+#   0 MKIND  1 MNAME  2 MCELL  3 MCMDW  4 MPARM  7 MMORE(continuation)
+# Long strings are chunked across MMORE words to respect the 8-operand
+# arity ceiling; decode joins them.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+MOP_KIND, MOP_NAME, MOP_CELL, MOP_CMDW, MOP_PARM, MOP_MORE = 0, 1, 2, 3, 4, 7
+MOP_PORT, MOP_SCOPE, MOP_EDGE, MOP_FLAG, MOP_NOTE = 5, 6, 8, 9, 10
+MPORT_ENTRY, MPORT_EXIT = 0, 1
+MODEL_SEP = '\x1f'   # field separator inside MODEL strings (base-128 safe)
+
+_MODEL_STR_CHUNK = 8          # max string words per MODEL op (arity ceiling)
+MCELL_NUMBER, MCELL_TEXT, MCELL_FORMULA = 0, 1, 2
+
+
+def _model_string_ops(op_index: int, text: str, lead: list = None) -> List[int]:
+    """One MODEL word carrying `lead` operands + as many string words as fit,
+    then MMORE continuation words for the remainder."""
+    lead = list(lead or [])
+    sw = _encode_label(text) or _encode_label('\x00')  # empty → 1 NUL word
+    head_room = _MODEL_STR_CHUNK - len(lead)
+    head, rest = sw[:head_room], sw[head_room:]
+    words = [build_opcode_word(OPF_MODEL, arity=len(lead) + len(head),
+                               op_index=op_index)] + lead + head
+    while rest:
+        chunk, rest = rest[:_MODEL_STR_CHUNK], rest[_MODEL_STR_CHUNK:]
+        words += [build_opcode_word(OPF_MODEL, arity=len(chunk),
+                                    op_index=MOP_MORE)] + chunk
+    return words
+
+
+def build_model_kind(kind: str) -> List[int]:
+    """MKIND — attaches widget/flow kind to the preceding RNODE."""
+    return _model_string_ops(MOP_KIND, kind)
+
+
+def build_model_name(name: str) -> List[int]:
+    """MNAME — attaches the binding-namespace name to the preceding RNODE."""
+    return _model_string_ops(MOP_NAME, name)
+
+
+def build_model_cell(row: int, col: int, cell_kind: int, value) -> List[int]:
+    """MCELL — one Sheet cell.  kind 0=number (value word), 1=text,
+    2=formula (string payload, MMORE-chunked)."""
+    lead = [_build_xy_map(col, row), build_data_symbol(cell_kind)]
+    if cell_kind == MCELL_NUMBER:
+        return [build_opcode_word(OPF_MODEL, arity=3, op_index=MOP_CELL)] \
+               + lead + [build_int_word(int(value))]
+    return _model_string_ops(MOP_CELL, str(value), lead=lead)
+
+
+def build_model_scope(parent_name: str) -> List[int]:
+    """MSCOPE — attaches parent scope/containment (by NAME) to the
+    preceding node (widgets: parent_id's name; flow symbols: parent_scope)."""
+    return _model_string_ops(MOP_SCOPE, parent_name)
+
+
+def build_model_port(direction: int, name: str, type_: str = 'number',
+                     expr: str = '', description: str = '') -> List[int]:
+    """MPORT — one entry (0) or exit (1) port on the preceding container.
+    Payload: name/type/expr/description joined by MODEL_SEP."""
+    payload = MODEL_SEP.join((name, type_, expr, description))
+    return _model_string_ops(MOP_PORT, payload,
+                             lead=[build_data_symbol(direction)])
+
+
+def build_model_edge(kind: str, src: str, dst: str, extra: str = '') -> List[int]:
+    """MEDGE — identity edge.  kind: 'flow' | 'pipe'.
+    Payload: kind/src/dst[/extra] joined by MODEL_SEP (pipe extra =
+    dst_param)."""
+    parts = [kind, src, dst] + ([extra] if extra else [])
+    return _model_string_ops(MOP_EDGE, MODEL_SEP.join(parts))
+
+
+def build_model_flag(key: str, value) -> List[int]:
+    """MFLAG — generic "key=value" attribute on the preceding node
+    (extensible: is_entry, future booleans/scalars)."""
+    return _model_string_ops(MOP_FLAG, f"{key}={value}")
+
+
+def build_model_note(text: str) -> List[int]:
+    """MNOTE — a comment.  Free-standing in the stream (position preserved
+    by word order); the textual FlowCode dialect round-trips `#` comments
+    through these."""
+    return _model_string_ops(MOP_NOTE, text)
+
+
+def build_model_cmd(x: int, y: int, kind: str, params: dict) -> List[int]:
+    """MCMDW + one MPARM per parameter ("key=value" strings)."""
+    words = _model_string_ops(MOP_CMDW, kind, lead=[_build_xy_map(x, y)])
+    for k in sorted(params):
+        words += _model_string_ops(MOP_PARM, f"{k}={params[k]}")
+    return words
 
 
 def _encode_label(text: str) -> List[int]:

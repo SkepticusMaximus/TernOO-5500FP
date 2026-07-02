@@ -58,6 +58,8 @@ class WordStream:
         self._flow_meta: dict = {}     # same object as fc_state['flow_symbols'] (alias Phase 6C)
         # Stage 9-0: Shell command-widget metadata
         self._cmd_meta: dict = {}      # same object as fc_state['cmd_widgets'] (alias Stage 9-0)
+        # Stage 9-2: typed pipe edges between commands
+        self._cmd_edges: list = []     # same object as fc_state['cmd_edges'] (alias Stage 9-2)
         # Stage 8-1: Sheet cell metadata
         self._cell_meta: dict = {}     # same object as fc_state['cells'] (alias Stage 8-1)
         self._rebuild_indices()

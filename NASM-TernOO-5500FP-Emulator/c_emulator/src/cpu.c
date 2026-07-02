@@ -294,6 +294,285 @@ static void decode_instruction(int64_t raw, decoded_inst_t *d) {
 }
 
 /* -----------------------------------------------------------------------
+ * Runtime value heap — variable-length strings (Option A)
+ *
+ * String at handle H: mem[H]=length, mem[H+1..H+len]=chars, mem[H+1+len]=0.
+ * Handle 0 is the null sentinel. Immutable to callers; ops return new strings.
+ * --------------------------------------------------------------------- */
+
+/* Bump-allocate nwords on the value heap; returns base handle, or 0 on OOM. */
+static int64_t heap_alloc(cpu_t *cpu, int64_t nwords) {
+    if (nwords < 0) return 0;
+    int64_t base = cpu->heap_ptr;
+    if (base <= 0 || base + nwords >= (int64_t)cpu->mem_size) {
+        fprintf(stderr, "[5500FP] value heap exhausted (need %lld words)\n",
+                (long long)nwords);
+        return 0;
+    }
+    for (int64_t i = 0; i < nwords; i++) cpu->mem[base + i] = 0;
+    cpu->heap_ptr = base + nwords;
+    return base;
+}
+
+static int valid_handle(const cpu_t *cpu, int64_t h) {
+    return h > 0 && (uint64_t)h < cpu->mem_size;
+}
+
+static int64_t str_len(const cpu_t *cpu, int64_t h) {
+    if (!valid_handle(cpu, h)) return 0;
+    int64_t n = cpu->mem[h];
+    return (n < 0) ? 0 : n;
+}
+
+/* Allocate a length-`len` string (chars zeroed + NUL); returns handle. */
+static int64_t str_new(cpu_t *cpu, int64_t len) {
+    if (len < 0) len = 0;
+    int64_t h = heap_alloc(cpu, 1 + len + 1);   /* length + chars + NUL */
+    if (!h) return 0;
+    cpu->mem[h] = len;
+    return h;
+}
+
+static int64_t str_char(const cpu_t *cpu, int64_t h, int64_t i) {
+    if (i < 0 || i >= str_len(cpu, h)) return 0;
+    return cpu->mem[h + 1 + i] & 0xFF;
+}
+
+/* Fixed-length list: same length-prefixed header as a string, no trailing
+ * NUL; elements are raw values (numbers or handles). */
+static int64_t list_new(cpu_t *cpu, int64_t len) {
+    if (len < 0) len = 0;
+    int64_t h = heap_alloc(cpu, 1 + len);
+    if (!h) return 0;
+    cpu->mem[h] = len;
+    return h;
+}
+
+/* Whole-string transforms — each returns a new heap string (immutable). */
+static int64_t str_case(cpu_t *cpu, int64_t h, int upper) {
+    int64_t n = str_len(cpu, h);
+    int64_t out = str_new(cpu, n);
+    if (!out) return 0;
+    for (int64_t i = 0; i < n; i++) {
+        int64_t c = str_char(cpu, h, i);
+        if (upper && c >= 'a' && c <= 'z') c -= 32;
+        else if (!upper && c >= 'A' && c <= 'Z') c += 32;
+        cpu->mem[out + 1 + i] = c;
+    }
+    return out;
+}
+
+static int64_t str_trim_ws(cpu_t *cpu, int64_t h) {
+    int64_t n = str_len(cpu, h), s = 0, e = n - 1;
+    while (s < n && str_char(cpu, h, s) == ' ') s++;
+    while (e >= s && str_char(cpu, h, e) == ' ') e--;
+    int64_t len = (e >= s) ? (e - s + 1) : 0;
+    int64_t out = str_new(cpu, len);
+    if (!out) return 0;
+    for (int64_t i = 0; i < len; i++) cpu->mem[out + 1 + i] = str_char(cpu, h, s + i);
+    return out;
+}
+
+static int chars_eq(int a, int b, int ci) {
+    if (ci) { if (a >= 'A' && a <= 'Z') a += 32; if (b >= 'A' && b <= 'Z') b += 32; }
+    return a == b;
+}
+
+static int str_match_at(cpu_t *cpu, int64_t text, int64_t i,
+                        int64_t find, int64_t nf, int ci) {
+    for (int64_t j = 0; j < nf; j++)
+        if (!chars_eq((int)str_char(cpu, text, i + j),
+                      (int)str_char(cpu, find, j), ci)) return 0;
+    return 1;
+}
+
+/* Replace all non-overlapping occurrences of `find` in `text` with `repl`. */
+static int64_t str_replace(cpu_t *cpu, int64_t text, int64_t find,
+                           int64_t repl, int ci) {
+    int64_t nt = str_len(cpu, text), nf = str_len(cpu, find), nr = str_len(cpu, repl);
+    if (nf == 0) {                        /* empty needle -> copy of text */
+        int64_t o = str_new(cpu, nt);
+        if (o) for (int64_t i = 0; i < nt; i++) cpu->mem[o + 1 + i] = str_char(cpu, text, i);
+        return o;
+    }
+    int64_t k = 0, i = 0;                  /* count matches to size output */
+    while (i + nf <= nt) {
+        if (str_match_at(cpu, text, i, find, nf, ci)) { k++; i += nf; }
+        else i++;
+    }
+    int64_t out = str_new(cpu, nt + k * (nr - nf));
+    if (!out) return 0;
+    int64_t oi = 0;
+    i = 0;
+    while (i < nt) {
+        if (i + nf <= nt && str_match_at(cpu, text, i, find, nf, ci)) {
+            for (int64_t j = 0; j < nr; j++) cpu->mem[out + 1 + (oi++)] = str_char(cpu, repl, j);
+            i += nf;
+        } else {
+            cpu->mem[out + 1 + (oi++)] = str_char(cpu, text, i);
+            i++;
+        }
+    }
+    return out;
+}
+
+/* New string of text[start..start+len). */
+static int64_t str_sub_new(cpu_t *cpu, int64_t s, int64_t start, int64_t len) {
+    int64_t n = str_len(cpu, s);
+    if (start < 0) start = 0;
+    if (start > n) start = n;
+    if (len < 0) len = 0;
+    if (start + len > n) len = n - start;
+    int64_t h = str_new(cpu, len);
+    if (!h) return 0;
+    for (int64_t i = 0; i < len; i++) cpu->mem[h + 1 + i] = str_char(cpu, s, start + i);
+    return h;
+}
+
+static int str_equal(cpu_t *cpu, int64_t a, int64_t b) {
+    int64_t la = str_len(cpu, a), lb = str_len(cpu, b);
+    if (la != lb) return 0;
+    for (int64_t i = 0; i < la; i++)
+        if (str_char(cpu, a, i) != str_char(cpu, b, i)) return 0;
+    return 1;
+}
+
+static int str_lex_cmp(cpu_t *cpu, int64_t a, int64_t b) {
+    int64_t la = str_len(cpu, a), lb = str_len(cpu, b), m = la < lb ? la : lb;
+    for (int64_t i = 0; i < m; i++) {
+        int ca = (int)str_char(cpu, a, i), cb = (int)str_char(cpu, b, i);
+        if (ca != cb) return ca < cb ? -1 : 1;
+    }
+    return la == lb ? 0 : (la < lb ? -1 : 1);
+}
+
+/* text.split(delim) -> list of string handles (empty delim -> [text]). */
+static int64_t str_split(cpu_t *cpu, int64_t text, int64_t delim) {
+    int64_t nt = str_len(cpu, text), nd = str_len(cpu, delim);
+    if (nd == 0) {
+        int64_t list = list_new(cpu, 1);
+        if (list) cpu->mem[list + 1] = str_sub_new(cpu, text, 0, nt);
+        return list;
+    }
+    int64_t count = 1, i = 0;
+    while (i + nd <= nt) {
+        if (str_match_at(cpu, text, i, delim, nd, 0)) { count++; i += nd; }
+        else i++;
+    }
+    int64_t list = list_new(cpu, count);
+    if (!list) return 0;
+    int64_t start = 0, idx = 0;
+    i = 0;
+    while (i <= nt) {
+        if (i + nd <= nt && str_match_at(cpu, text, i, delim, nd, 0)) {
+            cpu->mem[list + 1 + (idx++)] = str_sub_new(cpu, text, start, i - start);
+            i += nd; start = i;
+        } else if (i == nt) {
+            cpu->mem[list + 1 + (idx++)] = str_sub_new(cpu, text, start, nt - start);
+            break;
+        } else i++;
+    }
+    return list;
+}
+
+/* list.join(sep) -> concatenated string. */
+static int64_t list_join(cpu_t *cpu, int64_t list, int64_t sep) {
+    int64_t n = str_len(cpu, list), ns = str_len(cpu, sep), total = 0;
+    for (int64_t i = 0; i < n; i++) {
+        if (i) total += ns;
+        total += str_len(cpu, cpu->mem[list + 1 + i]);
+    }
+    int64_t out = str_new(cpu, total);
+    if (!out) return 0;
+    int64_t oi = 0;
+    for (int64_t i = 0; i < n; i++) {
+        if (i) for (int64_t j = 0; j < ns; j++) cpu->mem[out + 1 + (oi++)] = str_char(cpu, sep, j);
+        int64_t e = cpu->mem[list + 1 + i], le = str_len(cpu, e);
+        for (int64_t j = 0; j < le; j++) cpu->mem[out + 1 + (oi++)] = str_char(cpu, e, j);
+    }
+    return out;
+}
+
+static int64_t list_reverse(cpu_t *cpu, int64_t list) {
+    int64_t n = str_len(cpu, list), out = list_new(cpu, n);
+    if (!out) return 0;
+    for (int64_t i = 0; i < n; i++) cpu->mem[out + 1 + i] = cpu->mem[list + 1 + (n - 1 - i)];
+    return out;
+}
+
+/* Insertion sort of a copy, lexicographic on element string content. */
+static int64_t list_sort(cpu_t *cpu, int64_t list, int ascending) {
+    int64_t n = str_len(cpu, list), out = list_new(cpu, n);
+    if (!out) return 0;
+    for (int64_t i = 0; i < n; i++) cpu->mem[out + 1 + i] = cpu->mem[list + 1 + i];
+    for (int64_t i = 1; i < n; i++) {
+        int64_t v = cpu->mem[out + 1 + i], j = i - 1;
+        while (j >= 0) {
+            int c = str_lex_cmp(cpu, cpu->mem[out + 1 + j], v);
+            if (ascending ? c > 0 : c < 0) { cpu->mem[out + 1 + j + 1] = cpu->mem[out + 1 + j]; j--; }
+            else break;
+        }
+        cpu->mem[out + 1 + j + 1] = v;
+    }
+    return out;
+}
+
+static int64_t list_unique(cpu_t *cpu, int64_t list) {
+    int64_t n = str_len(cpu, list), cnt = 0;
+    for (int64_t i = 0; i < n; i++) {
+        int dup = 0;
+        for (int64_t k = 0; k < i; k++)
+            if (str_equal(cpu, cpu->mem[list + 1 + i], cpu->mem[list + 1 + k])) { dup = 1; break; }
+        if (!dup) cnt++;
+    }
+    int64_t out = list_new(cpu, cnt);
+    if (!out) return 0;
+    int64_t oi = 0;
+    for (int64_t i = 0; i < n; i++) {
+        int dup = 0;
+        for (int64_t k = 0; k < i; k++)
+            if (str_equal(cpu, cpu->mem[list + 1 + i], cpu->mem[list + 1 + k])) { dup = 1; break; }
+        if (!dup) cpu->mem[out + 1 + (oi++)] = cpu->mem[list + 1 + i];
+    }
+    return out;
+}
+
+/* template.format(args) — substitute {0},{1},... with args[i] string values. */
+static int64_t str_format(cpu_t *cpu, int64_t tmpl, int64_t args) {
+    int64_t nt = str_len(cpu, tmpl), na = str_len(cpu, args);
+    int64_t total = 0, i = 0;
+    for (int pass = 0; pass < 2; pass++) {
+        int64_t out = 0, oi = 0;
+        if (pass == 1) { out = str_new(cpu, total); if (!out) return 0; }
+        i = 0;
+        while (i < nt) {
+            int c = (int)str_char(cpu, tmpl, i);
+            if (c == '{') {
+                int64_t j = i + 1, num = 0; int has = 0;
+                while (j < nt) {
+                    int d = (int)str_char(cpu, tmpl, j);
+                    if (d < '0' || d > '9') break;
+                    num = num * 10 + (d - '0'); j++; has = 1;
+                }
+                if (has && j < nt && str_char(cpu, tmpl, j) == '}') {
+                    if (num < na) {
+                        int64_t e = cpu->mem[args + 1 + num], le = str_len(cpu, e);
+                        if (pass == 0) total += le;
+                        else for (int64_t k = 0; k < le; k++) cpu->mem[out + 1 + (oi++)] = str_char(cpu, e, k);
+                    }
+                    i = j + 1; continue;
+                }
+            }
+            if (pass == 0) total++;
+            else cpu->mem[out + 1 + (oi++)] = c;
+            i++;
+        }
+        if (pass == 1) return out;
+    }
+    return 0;
+}
+
+/* -----------------------------------------------------------------------
  * Syscall handler
  * --------------------------------------------------------------------- */
 static void handle_syscall(cpu_t *cpu) {
@@ -325,6 +604,143 @@ static void handle_syscall(cpu_t *cpu) {
              * output immediately rather than waiting for process exit. */
             fflush(stdout);
             break;
+
+        /* ---- Runtime value substrate: variable-length strings ---- */
+        case SYS_STR_ALLOC:
+            reg_write(cpu, 1, str_new(cpu, reg_read(cpu, 2)));
+            break;
+        case SYS_STR_FROMBUF: {
+            int64_t buf = reg_read(cpu, 2), n = 0;
+            while ((uint64_t)(buf + n) < cpu->mem_size &&
+                   (cpu->mem[buf + n] & 0xFF) != 0) n++;
+            int64_t h = str_new(cpu, n);
+            if (h) for (int64_t i = 0; i < n; i++)
+                cpu->mem[h + 1 + i] = cpu->mem[buf + i] & 0xFF;
+            reg_write(cpu, 1, h);
+            break;
+        }
+        case SYS_STR_LEN:
+            reg_write(cpu, 1, str_len(cpu, reg_read(cpu, 2)));
+            break;
+        case SYS_STR_CHAR:
+            reg_write(cpu, 1, str_char(cpu, reg_read(cpu, 2), reg_read(cpu, 3)));
+            break;
+        case SYS_STR_SETCHAR: {
+            int64_t h = reg_read(cpu, 2), i = reg_read(cpu, 3);
+            if (i >= 0 && i < str_len(cpu, h))
+                cpu->mem[h + 1 + i] = reg_read(cpu, 4) & 0xFF;
+            break;
+        }
+        case SYS_STR_CONCAT: {
+            int64_t a = reg_read(cpu, 2), b = reg_read(cpu, 3);
+            int64_t la = str_len(cpu, a), lb = str_len(cpu, b);
+            int64_t h = str_new(cpu, la + lb);
+            if (h) {
+                for (int64_t i = 0; i < la; i++) cpu->mem[h+1+i]    = str_char(cpu, a, i);
+                for (int64_t i = 0; i < lb; i++) cpu->mem[h+1+la+i] = str_char(cpu, b, i);
+            }
+            reg_write(cpu, 1, h);
+            break;
+        }
+        case SYS_STR_EQ: {
+            int64_t a = reg_read(cpu, 2), b = reg_read(cpu, 3);
+            int64_t la = str_len(cpu, a), lb = str_len(cpu, b);
+            int eq = (la == lb);
+            for (int64_t i = 0; eq && i < la; i++)
+                if (str_char(cpu, a, i) != str_char(cpu, b, i)) eq = 0;
+            reg_write(cpu, 1, eq ? 1 : 0);
+            break;
+        }
+        case SYS_STR_SUB: {
+            int64_t s = reg_read(cpu, 2), start = reg_read(cpu, 3), len = reg_read(cpu, 4);
+            int64_t n = str_len(cpu, s);
+            if (start < 0) start = 0;
+            if (start > n) start = n;
+            if (len < 0) len = 0;
+            if (start + len > n) len = n - start;
+            int64_t h = str_new(cpu, len);
+            if (h) for (int64_t i = 0; i < len; i++)
+                cpu->mem[h + 1 + i] = str_char(cpu, s, start + i);
+            reg_write(cpu, 1, h);
+            break;
+        }
+        case SYS_STR_INDEXOF: {
+            int64_t hay = reg_read(cpu, 2), needle = reg_read(cpu, 3), from = reg_read(cpu, 4);
+            int64_t nh = str_len(cpu, hay), nn = str_len(cpu, needle), found = -1;
+            if (from < 0) from = 0;
+            if (nn == 0) {
+                found = (from <= nh) ? from : -1;
+            } else {
+                for (int64_t i = from; i + nn <= nh; i++) {
+                    int match = 1;
+                    for (int64_t j = 0; j < nn; j++)
+                        if (str_char(cpu, hay, i + j) != str_char(cpu, needle, j)) { match = 0; break; }
+                    if (match) { found = i; break; }
+                }
+            }
+            reg_write(cpu, 1, found);
+            break;
+        }
+        case SYS_STR_UPPER:
+            reg_write(cpu, 1, str_case(cpu, reg_read(cpu, 2), 1));
+            break;
+        case SYS_STR_LOWER:
+            reg_write(cpu, 1, str_case(cpu, reg_read(cpu, 2), 0));
+            break;
+        case SYS_STR_TRIM:
+            reg_write(cpu, 1, str_trim_ws(cpu, reg_read(cpu, 2)));
+            break;
+        case SYS_STR_REPLACE:
+            reg_write(cpu, 1, str_replace(cpu, reg_read(cpu, 2), reg_read(cpu, 3),
+                                          reg_read(cpu, 4), (int)reg_read(cpu, 5)));
+            break;
+
+        /* ---- Runtime value substrate: fixed-length lists ---- */
+        case SYS_LIST_ALLOC:
+            reg_write(cpu, 1, list_new(cpu, reg_read(cpu, 2)));
+            break;
+        case SYS_LIST_LEN:
+            reg_write(cpu, 1, str_len(cpu, reg_read(cpu, 2)));   /* shared header */
+            break;
+        case SYS_LIST_GET: {
+            int64_t h = reg_read(cpu, 2), i = reg_read(cpu, 3);
+            reg_write(cpu, 1, (i >= 0 && i < str_len(cpu, h)) ? cpu->mem[h + 1 + i] : 0);
+            break;
+        }
+        case SYS_LIST_SET: {
+            int64_t h = reg_read(cpu, 2), i = reg_read(cpu, 3);
+            if (i >= 0 && i < str_len(cpu, h)) cpu->mem[h + 1 + i] = reg_read(cpu, 4);
+            break;
+        }
+        case SYS_LIST_APPEND: {
+            int64_t h = reg_read(cpu, 2), v = reg_read(cpu, 3);
+            int64_t n = str_len(cpu, h);
+            int64_t nh = list_new(cpu, n + 1);
+            if (nh) {
+                for (int64_t i = 0; i < n; i++) cpu->mem[nh + 1 + i] = cpu->mem[h + 1 + i];
+                cpu->mem[nh + 1 + n] = v;
+            }
+            reg_write(cpu, 1, nh);
+            break;
+        }
+        case SYS_STR_SPLIT:
+            reg_write(cpu, 1, str_split(cpu, reg_read(cpu, 2), reg_read(cpu, 3)));
+            break;
+        case SYS_STR_FORMAT:
+            reg_write(cpu, 1, str_format(cpu, reg_read(cpu, 2), reg_read(cpu, 3)));
+            break;
+        case SYS_LIST_JOIN:
+            reg_write(cpu, 1, list_join(cpu, reg_read(cpu, 2), reg_read(cpu, 3)));
+            break;
+        case SYS_LIST_REVERSE:
+            reg_write(cpu, 1, list_reverse(cpu, reg_read(cpu, 2)));
+            break;
+        case SYS_LIST_SORT:
+            reg_write(cpu, 1, list_sort(cpu, reg_read(cpu, 2), (int)reg_read(cpu, 3)));
+            break;
+        case SYS_LIST_UNIQUE:
+            reg_write(cpu, 1, list_unique(cpu, reg_read(cpu, 2)));
+            break;
         /* ---- PIGART rendering syscalls 100-111 ---- */
         case PIGART_OPEN_WINDOW:
         case PIGART_CLEAR:
@@ -338,6 +754,12 @@ static void handle_syscall(cpu_t *cpu) {
         case PIGART_SLEEP_MS:
         case PIGART_GET_TICKS:
         case PIGART_CLOSE_WINDOW:
+        case PIGART_DIALOG_PROMPT:
+        case PIGART_DIALOG_DISPLAY:
+        case PIGART_DIALOG_CONFIRM:
+        case PIGART_DIALOG_CHOICE:
+        case PIGART_DRAW_STRING:
+        case PIGART_DIALOG_CHOICE_LIST:
             pigart_handle_syscall((int)call, cpu->reg, cpu->mem, cpu->mem_size);
             break;
         default:
@@ -609,16 +1031,38 @@ void cpu_step(cpu_t *cpu) {
             break;
 
         case OP_CALL:
+            /* Push return address (Option A); keep R80 for backward compat. */
             reg_write(cpu, 80, cpu->pc);
+            if (cpu->ra_sp >= RA_STACK_MAX) {
+                fprintf(stderr, "[5500FP] Return-address stack overflow "
+                        "(depth %d) at pc=%lld\n",
+                        RA_STACK_MAX, (long long)cpu->pc);
+                cpu->halted = 1;
+                break;
+            }
+            cpu->ra_stack[cpu->ra_sp++] = cpu->pc;
             cpu->pc += d.imm18 - 1;
             break;
 
         case OP_RET:
-            cpu->pc = reg_read(cpu, 80);
+            /* Pop the return-address stack; fall back to R80 if empty so a
+             * stray RET (or legacy single-level code) still behaves. */
+            if (cpu->ra_sp > 0)
+                cpu->pc = cpu->ra_stack[--cpu->ra_sp];
+            else
+                cpu->pc = reg_read(cpu, 80);
             break;
 
         case OP_CALLR:
             reg_write(cpu, 80, cpu->pc);
+            if (cpu->ra_sp >= RA_STACK_MAX) {
+                fprintf(stderr, "[5500FP] Return-address stack overflow "
+                        "(depth %d) at pc=%lld\n",
+                        RA_STACK_MAX, (long long)cpu->pc);
+                cpu->halted = 1;
+                break;
+            }
+            cpu->ra_stack[cpu->ra_sp++] = cpu->pc;
             cpu->pc = reg_read(cpu, d.rs1);
             break;
 
@@ -720,6 +1164,9 @@ void cpu_reset(cpu_t *cpu) {
     cpu->halted = 0;
     cpu->cycle_count = 0;
     cpu->reservation_addr = -1;
+    cpu->ra_sp = 0;                /* empty return-address stack */
+    cpu->heap_ptr = 0;
+    cpu->heap_base = 0;
     memset(cpu->mem, 0, cpu->mem_size * sizeof(int64_t));
 }
 
@@ -728,6 +1175,10 @@ void cpu_load_program(cpu_t *cpu, const int64_t *prog, uint32_t len, int64_t sta
         mem_write(cpu, start_addr + i, prog[i]);
     }
     cpu->pc = start_addr;
+    /* The value heap starts just past the loaded program (code + data) and
+     * grows toward the top of memory. A small gap guards against a program
+     * writing one past its last labelled word. */
+    cpu->heap_base = cpu->heap_ptr = start_addr + len + 16;
 }
 
 /* -----------------------------------------------------------------------

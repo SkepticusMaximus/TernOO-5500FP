@@ -1,0 +1,93 @@
+{
+  "ternoo_version": "0.3",
+  "source_file": "cell_port_demo.fc",
+  "source_type": "ternoo_design",
+  "word_stream": [],
+  "symbols": [],
+  "edges": [],
+  "flow_symbols": [
+    {
+      "id": 9,
+      "kind": "flow_process",
+      "x": 260,
+      "y": 160,
+      "w": 120,
+      "h": 60,
+      "label": "calculator",
+      "name": "calculator",
+      "parent_scope": null,
+      "properties": [],
+      "entry_points": [
+        {
+          "name": "a",
+          "type": "number",
+          "description": "first addend"
+        },
+        {
+          "name": "b",
+          "type": "number",
+          "description": "second addend"
+        }
+      ],
+      "exit_points": [
+        {
+          "name": "sum",
+          "type": "number",
+          "description": "a + b",
+          "expr": "a + b"
+        }
+      ]
+    }
+  ],
+  "flow_edges": [],
+  "cmd_symbols": [],
+  "cmd_edges": [],
+  "cell_symbols": [
+    {
+      "id": 1,
+      "kind": "cell_value",
+      "row": 0,
+      "col": 0,
+      "name": "input_a",
+      "value": 3,
+      "properties": [],
+      "bound_to_port": {
+        "container_name": "calculator",
+        "port_name": "a",
+        "direction": "entry"
+      }
+    },
+    {
+      "id": 2,
+      "kind": "cell_value",
+      "row": 0,
+      "col": 1,
+      "name": "input_b",
+      "value": 4,
+      "properties": [],
+      "bound_to_port": {
+        "container_name": "calculator",
+        "port_name": "b",
+        "direction": "entry"
+      }
+    },
+    {
+      "id": 3,
+      "kind": "cell_value",
+      "row": 0,
+      "col": 2,
+      "name": "result",
+      "value": 0,
+      "properties": [],
+      "bound_to_port": {
+        "container_name": "calculator",
+        "port_name": "sum",
+        "direction": "exit"
+      }
+    }
+  ],
+  "sheet_regions": [],
+  "free_cells": [],
+  "sequence": [],
+  "tgui_meta": {}
+}

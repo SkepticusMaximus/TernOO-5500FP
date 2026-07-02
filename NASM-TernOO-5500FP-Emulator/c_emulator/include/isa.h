@@ -125,6 +125,37 @@ typedef enum {
     SYS_READ_INT   = 4,   /* Read integer into R2           */
     SYS_EXIT       = 5,   /* Exit with code R2              */
     SYS_PRINT_NL   = 6,   /* Print newline                  */
+
+    /* Runtime value substrate — variable-length strings (40..48).
+     * Handles are heap addresses; see cpu.h. R1 returns the result. */
+    SYS_STR_ALLOC   = 40, /* R2=len            -> R1=handle (chars zeroed)   */
+    SYS_STR_FROMBUF = 41, /* R2=buf(NUL-term)  -> R1=handle                  */
+    SYS_STR_LEN     = 42, /* R2=handle         -> R1=length                  */
+    SYS_STR_CHAR    = 43, /* R2=handle R3=i    -> R1=char (0 if OOB)         */
+    SYS_STR_SETCHAR = 44, /* R2=handle R3=i R4=char                          */
+    SYS_STR_CONCAT  = 45, /* R2=h1 R3=h2       -> R1=new handle              */
+    SYS_STR_EQ      = 46, /* R2=h1 R3=h2       -> R1=1 if equal else 0       */
+    SYS_STR_SUB     = 47, /* R2=handle R3=start R4=len -> R1=new handle      */
+    SYS_STR_INDEXOF = 48, /* R2=hay R3=needle R4=from  -> R1=index or -1     */
+    SYS_STR_UPPER   = 49, /* R2=handle         -> R1=new upper-cased handle  */
+    SYS_STR_LOWER   = 50, /* R2=handle         -> R1=new lower-cased handle  */
+    SYS_STR_TRIM    = 51, /* R2=handle         -> R1=new space-trimmed handle*/
+    SYS_STR_REPLACE = 52, /* R2=text R3=find R4=with R5=ci -> R1=new handle  */
+    SYS_STR_SPLIT   = 53, /* R2=text R3=delim  -> R1=list of string handles  */
+    SYS_STR_FORMAT  = 54, /* R2=template R3=args-list -> R1=string ({i} subst)*/
+
+    /* Runtime value substrate — fixed-length immutable lists (60..64).
+     * Same length-prefixed heap header as strings; elements are values
+     * (numbers or handles). APPEND returns a NEW list one longer. */
+    SYS_LIST_ALLOC  = 60, /* R2=len            -> R1=handle (values zeroed)  */
+    SYS_LIST_LEN    = 61, /* R2=handle         -> R1=length                  */
+    SYS_LIST_GET    = 62, /* R2=handle R3=i    -> R1=value (0 if OOB)        */
+    SYS_LIST_SET    = 63, /* R2=handle R3=i R4=value                         */
+    SYS_LIST_APPEND = 64, /* R2=handle R3=value -> R1=new handle (len+1)     */
+    SYS_LIST_JOIN   = 65, /* R2=list R3=sep    -> R1=string handle           */
+    SYS_LIST_REVERSE= 66, /* R2=list           -> R1=reversed list handle    */
+    SYS_LIST_SORT   = 67, /* R2=list R3=ascending -> R1=sorted list handle   */
+    SYS_LIST_UNIQUE = 68, /* R2=list           -> R1=distinct list handle    */
 } syscall_t;
 
 #endif /* ISA_H */

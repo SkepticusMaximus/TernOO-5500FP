@@ -102,27 +102,10 @@ def _decode_size(size_word: int) -> tuple[int, int]:
     return w, h
 
 
-def _decode_label_words(string_operands: List[int]) -> str:
-    """Decode a sequence of DATA-STRING/ASCII words into a Python string.
-
-    Each word was encoded by _encode_label() in widget_lib (formerly meccano_lib):
-      packed = c0 + c1*128 + c2*128²   (base-128, 3 chars per word)
-
-    Non-STRING words terminate decoding early (defensive).
-    Trailing null bytes are stripped.
-    """
-    chars: List[int] = []
-    for w in string_operands:
-        d = decode_word(w)
-        if d.get('type') != 'STRING':
-            break
-        n = int(d['length_or_addr'])
-        chars.append(n % 128)
-        chars.append((n // 128) % 128)
-        chars.append((n // 16384) % 128)
-    while chars and chars[-1] == 0:
-        chars.pop()
-    return ''.join(chr(c) for c in chars)
+# Single implementation lives in widget_lib.decode_label_words
+# (promoted 3 Jul 2026); the deliberate duplication noted in this
+# file's header is retired.
+_decode_label_words = _wl.decode_label_words
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -309,10 +292,7 @@ def _build_canvas(program,
 
     for decoded, form, operands in iterate_instructions(words[2:]):
         if decoded['family'] != OPF_PIGART:
-            raise ValueError(
-                f"non-PIGART OPCODE in render stream: "
-                f"family={decoded['family_name']!r}"
-            )
+            continue  # non-PIGART families are outside the render projection (v1)
 
         mnemonic = decoded['mnemonic']
 

@@ -1179,6 +1179,8 @@ def run_gui():
     def _clear_shell():
         """Clear the Connectors canvas (cmd_* widgets) without prompting."""
         fc_state['cmd_widgets'].clear()
+        fc_state['cmd_edges'].clear()
+        fc_state['cmd_pipe_src']  = None
         fc_state['cmd_selected']  = None
         fc_state['cmd_multi_sel'] = set()
         fc_state['cmd_next_id']   = 0
@@ -1502,6 +1504,37 @@ def run_gui():
         return bool(nm) and any(s.get('parent_scope') == nm
                                 for s in fc_state['flow_symbols'].values())
 
+    def _fc_port_positions(sym):
+        """Phase 7c-4b: design-space positions of a container's ports.
+        Returns {'entry': [(port, x, y)], 'exit': [(port, x, y)]}. Entry ports
+        sit on the left edge, exit ports on the right, distributed vertically."""
+        out = {'entry': [], 'exit': []}
+        if _flowcode_ports is None or sym.get('kind') not in _FC_CONTAINER_KINDS:
+            return out
+        hw, hh = SYMBOL_W // 2, SYMBOL_H // 2
+        top, bot = sym['y'] - hh, sym['y'] + hh
+        for edge, key, ex in (('entry', 'entry_points', sym['x'] - hw),
+                              ('exit', 'exit_points', sym['x'] + hw)):
+            ports = sym.get(key) or []
+            n = len(ports)
+            for i, p in enumerate(ports):
+                py = top + (bot - top) * (i + 1) / (n + 1)
+                out[edge].append((p, ex, py))
+        return out
+
+    def _fc_port_at(x, y, tol=8):
+        """Return (sym, 'entry'|'exit', port) whose dot is near design (x,y)."""
+        scope = fc_state.get('flow_scope')
+        for s in reversed(list(fc_state['flow_symbols'].values())):
+            if s.get('parent_scope') != scope:
+                continue
+            pp = _fc_port_positions(s)
+            for edge in ('entry', 'exit'):
+                for port, px, py in pp[edge]:
+                    if abs(px - x) <= tol and abs(py - y) <= tol:
+                        return s, edge, port
+        return None
+
     def _fc_sym_by_name(name):
         for s in fc_state['flow_symbols'].values():
             if s.get('name') == name:
@@ -1647,20 +1680,26 @@ def run_gui():
         fc_state['flow_multi_sel'].discard(sid)
         _guic_push_undo({'kind': 'flow_add', 'sym': dict(sym)})  # undo = re-add
 
-    def _fc_add_edge(src_id, dst_id, waypoints=(), condition=''):
-        """Add flow edge dict to fc_state, push undo. Returns edge dict or None."""
+    def _fc_add_edge(src_id, dst_id, waypoints=(), condition='', bound_port_name=''):
+        """Add flow edge dict to fc_state, push undo. Returns edge dict or None.
+
+        Phase 7c-4b: an edge may bind to one of dst's (a container's) entry/exit
+        ports by name (bound_port_name). Same-scope edges stay scope-local; the
+        port binding is what crosses into the container's pocket interior."""
         src = fc_state['flow_symbols'].get(src_id)
         dst = fc_state['flow_symbols'].get(dst_id)
         if src is None or dst is None: return None
-        # Phase 7c-4 (L3): flow edges are strictly scope-local. Cross-scope
-        # connections use named entry/exit points (a later bundle); reject here.
-        if src.get('parent_scope') != dst.get('parent_scope'):
-            set_status("Can't connect across pocket scopes — edges are scope-local")
+        # Phase 7c-4 (L3): flow edges are strictly scope-local unless the edge
+        # binds to a named port on the destination container (Phase 7c-4b).
+        if not bound_port_name and src.get('parent_scope') != dst.get('parent_scope'):
+            set_status("Can't connect across pocket scopes — bind to a named port")
             return None
         for e in fc_state['flow_edges']:
             if e['src'] == src_id and e['dst'] == dst_id: return None
         edge = {'src': src_id, 'dst': dst_id,
                 'waypoints': list(waypoints), 'condition': condition}
+        if bound_port_name:
+            edge['bound_port_name'] = bound_port_name
         fc_state['flow_edges'].append(edge)
         _guic_push_undo({'kind': 'flow_edge_remove', 'edge': dict(edge)})  # undo = remove
         return edge
@@ -1788,6 +1827,19 @@ def run_gui():
         if _fc_has_pocket(s):
             tk_canvas.create_text(x+hw-_cp*2, y-hh+_cp*2, text='\U0001F4E6',
                                   font=('Monospace', max(7, int(11*z))))
+
+        # Phase 7c-4b: entry/exit ports on the container's edges (labelled dots)
+        pp = _fc_port_positions(s)
+        _pr = max(2, int(3 * z))
+        for edge, anchor, dx in (('entry', 'e', _pr + 2), ('exit', 'w', -_pr - 2)):
+            for port, px, py in pp[edge]:
+                sx, sy = _fc_d2s(px, py); sx, sy = int(sx), int(sy)
+                tk_canvas.create_oval(sx-_pr, sy-_pr, sx+_pr, sy+_pr,
+                                      fill='#00e5ff' if edge == 'entry' else '#ffb000',
+                                      outline=bor, width=1)
+                if z >= 0.7:
+                    tk_canvas.create_text(sx+dx, sy, anchor=anchor, text=port['name'],
+                                          fill=C['dim'], font=('Monospace', _fs))
 
         # Connection points in edge mode
         if state['mode'] in ('edge_src', 'edge_dst_pending'):
@@ -2080,10 +2132,15 @@ def run_gui():
 
         # Edge waypoint / destination
         if state['mode'] == 'edge_dst_pending':
-            hit = _fc_sym_at(x, y)
+            # Phase 7c-4b: dropping on a container's port dot binds the edge to
+            # that port by name (crosses into the pocket); else a normal edge.
+            port_hit = _fc_port_at(x, y)
+            hit = port_hit[0] if port_hit else _fc_sym_at(x, y)
+            bpn = port_hit[2]['name'] if port_hit else ''
             if hit and hit['id'] != state['edge_src']:
                 wps = state['edge_waypoints']
-                e = _fc_add_edge(state['edge_src'], hit['id'], waypoints=wps)
+                e = _fc_add_edge(state['edge_src'], hit['id'], waypoints=wps,
+                                 bound_port_name=bpn)
                 if e:
                     src = fc_state['flow_symbols'].get(state['edge_src'])
                     state['selected_edge'] = {'src': e['src'], 'dst': e['dst'],
@@ -2091,7 +2148,8 @@ def run_gui():
                                               'condition': e['condition']}
                     state['selected_sym'] = None
                     sl = src['label'] if src else f"#{state['edge_src']}"
-                    set_status(f"Edge {sl}→{hit['label']} ({len(wps)} waypoints)")
+                    tail = f" → port {bpn}" if bpn else ''
+                    set_status(f"Edge {sl}→{hit['label']}{tail} ({len(wps)} waypoints)")
                     update_inspect()
                 state['edge_src'] = None; state['edge_waypoints'] = []
                 set_mode('select')
@@ -2297,6 +2355,101 @@ def run_gui():
                       bg=C['pal_btn'], fg=C['text'], font=('Monospace', 9),
                       relief='flat', padx=10, pady=3, cursor='hand2'
                       ).pack(anchor='w', pady=(4, 0))
+
+            # ── Phase 7c-4b: Entry / Exit Points ─────────────────────────────
+            if _flowcode_ports is not None:
+                s.setdefault('entry_points', [])
+                s.setdefault('exit_points', [])
+                _fp = _flowcode_ports
+
+                def _port_add_edit(pkind, existing=None):
+                    """Modal to add or edit one port (name/type/description)."""
+                    pd = tk.Toplevel(dlg); pd.configure(bg=C['palette'])
+                    pd.title(('Edit' if existing else 'Add') + f' {pkind} point')
+                    pd.transient(dlg); pd.grab_set()
+                    nv = tk.StringVar(value=(existing or {}).get('name', ''))
+                    tv = tk.StringVar(value=(existing or {}).get('type', 'number'))
+                    dv = tk.StringVar(value=(existing or {}).get('description', ''))
+                    ev = tk.StringVar(value=(existing or {}).get('expr', ''))
+                    _rows = [('Name', nv, None), ('Type', tv, _fp.PORT_TYPES),
+                             ('Description', dv, None)]
+                    if pkind == 'exit':   # interior computation over entry names
+                        _rows.append(('Expr (= interior formula)', ev, None))
+                    for r, (lbl, var, opts) in enumerate(_rows):
+                        tk.Label(pd, text=lbl + ':', bg=C['palette'], fg=C['text'],
+                                 font=('Monospace', 9), anchor='w').grid(
+                                     row=r, column=0, sticky='w', padx=8, pady=2)
+                        if opts:
+                            tk.OptionMenu(pd, var, *opts).grid(
+                                row=r, column=1, sticky='w', padx=8, pady=2)
+                        else:
+                            tk.Entry(pd, textvariable=var, bg=C['inspect'],
+                                     fg=C['text'], insertbackground=C['text'],
+                                     font=('Monospace', 9), width=22).grid(
+                                         row=r, column=1, padx=8, pady=2)
+                    _wrow = len(_rows)
+                    warn = tk.Label(pd, text='', bg=C['palette'], fg='#ff8888',
+                                    font=('Monospace', 8))
+                    warn.grid(row=_wrow, column=0, columnspan=2, sticky='w', padx=8)
+
+                    def _commit_port():
+                        ok, msg = _fp.validate_new_port(s, nv.get(), tv.get(),
+                                                        exclude=existing)
+                        if not ok:
+                            warn.config(text=msg); return
+                        port = _fp.make_port(nv.get(), tv.get(), dv.get(),
+                                             expr=ev.get() if pkind == 'exit' else '')
+                        lst = s['entry_points'] if pkind == 'entry' else s['exit_points']
+                        if existing is not None:
+                            lst[lst.index(existing)] = port
+                        else:
+                            lst.append(port)
+                        pd.destroy(); dlg.destroy()
+                        _guic_sync_stream(); redraw()
+                        _open_flow_props_fc(s)   # reopen to show the update
+
+                    bf = tk.Frame(pd, bg=C['palette']); bf.grid(row=_wrow + 1, column=0,
+                                                                columnspan=2, pady=8)
+                    tk.Button(bf, text='OK', command=_commit_port, bg=C['pal_btn'],
+                              fg=C['text'], font=('Monospace', 9), relief='flat',
+                              padx=10).pack(side='left', padx=4)
+                    tk.Button(bf, text='Cancel', command=pd.destroy, bg=C['pal_btn'],
+                              fg=C['text'], font=('Monospace', 9), relief='flat',
+                              padx=10).pack(side='left', padx=4)
+
+                def _port_remove(pkind, port):
+                    lst = s['entry_points'] if pkind == 'entry' else s['exit_points']
+                    if port in lst:
+                        lst.remove(port)
+                    dlg.destroy(); _guic_sync_stream(); redraw()
+                    _open_flow_props_fc(s)
+
+                def _ports_section(title, pkind, ports):
+                    fr = tk.Frame(dlg, bg=C['bg']); fr.pack(fill='x', padx=12, pady=(6, 0))
+                    tk.Label(fr, text=title, bg=C['bg'], fg=C['pal_border'],
+                             font=('Monospace', 9, 'bold'), anchor='w').pack(fill='x')
+                    for p in ports:
+                        row = tk.Frame(fr, bg=C['bg']); row.pack(fill='x')
+                        tk.Label(row, text=f"  • {p['name']} : {p['type']}",
+                                 bg=C['bg'], fg=C['text'], font=('Monospace', 8),
+                                 anchor='w').pack(side='left')
+                        tk.Button(row, text='✕', command=lambda pp=p: _port_remove(pkind, pp),
+                                  bg=C['bg'], fg='#ff8888', font=('Monospace', 8),
+                                  relief='flat', cursor='hand2').pack(side='right')
+                        tk.Button(row, text='edit',
+                                  command=lambda pp=p: _port_add_edit(pkind, pp),
+                                  bg=C['bg'], fg=C['dim'], font=('Monospace', 8),
+                                  relief='flat', cursor='hand2').pack(side='right')
+                    if not ports:
+                        tk.Label(fr, text='  (none)', bg=C['bg'], fg=C['dim'],
+                                 font=('Monospace', 8), anchor='w').pack(fill='x')
+                    tk.Button(fr, text=f'+ Add {pkind} point',
+                              command=lambda: _port_add_edit(pkind),
+                              bg=C['pal_btn'], fg=C['text'], font=('Monospace', 8),
+                              relief='flat', padx=8, cursor='hand2').pack(anchor='w', pady=(2, 0))
+
+                _ports_section('Entry Points', 'entry', s['entry_points'])
+                _ports_section('Exit Points', 'exit', s['exit_points'])
 
         btn_frm = tk.Frame(dlg, bg=C['bg']); btn_frm.pack(pady=8)
         tk.Button(btn_frm, text="Apply", command=_apply,
@@ -2542,6 +2695,19 @@ def run_gui():
         except Exception as _fcmd_err:
             print(f'[FlowCode] flowcode_commands failed to load: {_fcmd_err}')
 
+    # ── Load flowcode_ports (Phase 7c-4b entry/exit points) ──────────────────
+    _fport_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               '../5500fp/flowcode_ports.py')
+    _flowcode_ports = None
+    if os.path.exists(_fport_path):
+        try:
+            import importlib.util as _fport_u
+            _fport_spec = _fport_u.spec_from_file_location('flowcode_ports', _fport_path)
+            _flowcode_ports = _fport_u.module_from_spec(_fport_spec)
+            _fport_spec.loader.exec_module(_flowcode_ports)
+        except Exception as _fport_err:
+            print(f'[FlowCode] flowcode_ports failed to load: {_fport_err}')
+
     # ── Load ghost_meccano for incremental word-stream updates (Phase 6E) ───────
     # flowcode_bridge.py deleted; functions now live in ghost_meccano.py
     # (GHOST+flow bridges) and flowcode_signals.py (handler binding emitter).
@@ -2625,6 +2791,10 @@ def run_gui():
         'cmd_drag_offset':(0, 0),
         'cmd_drag_origin':None,  # (x, y) at drag-start for undo
         'cmd_ghost':      None,  # (x, y) design-space placement ghost
+        # Stage 9-2: typed pipe edges between commands
+        'cmd_edges':      [],    # [{src, dst, dst_param}]
+        'cmd_pipe_src':   None,  # (cmd_id) while dragging a pipe from an output
+        'cmd_pipe_xy':    None,  # (x, y) current drag end during pipe draw
         # Stage 8-1: Sheet tab — cells keyed by (row, col)
         'cells':          {},    # (row,col) → {id, kind, row, col, name, value, properties}
         'cell_next_id':   0,
@@ -2669,6 +2839,7 @@ def run_gui():
         fc_state['stream']._widget_meta = fc_state['widgets']
         fc_state['stream']._flow_meta   = fc_state['flow_symbols']  # Phase 6C
         fc_state['stream']._cmd_meta    = fc_state['cmd_widgets']   # Stage 9-0
+        fc_state['stream']._cmd_edges   = fc_state['cmd_edges']     # Stage 9-2
         fc_state['stream']._cell_meta   = fc_state['cells']         # Stage 8-1
 
     # ── Ghost canvas layout ───────────────────────────────────────────────────
@@ -2932,8 +3103,10 @@ def run_gui():
         # partial is reserved by the file-extension policy but not yet emitted.
         if ext in ('.gui', '.flow'):
             save_cmd_syms = []
+            save_cmd_edges = []
         else:
             save_cmd_syms = [dict(c) for c in fc_state['cmd_widgets'].values()]
+            save_cmd_edges = [dict(e) for e in fc_state.get('cmd_edges', [])]
 
         # Stage 8-1: Sheet cells — saved in full programs only.
         if ext in ('.gui', '.flow'):
@@ -2958,6 +3131,7 @@ def run_gui():
             'flow_symbols':  save_flow_syms,
             'flow_edges':    save_flow_edges,
             'cmd_symbols':   save_cmd_syms,   # Stage 9-0: Shell command widgets
+            'cmd_edges':     save_cmd_edges,  # Stage 9-2: typed pipe edges
             'cell_symbols':  save_cell_syms,  # Stage 8-1: Sheet cells
             'sheet_regions': save_regions,    # Stage 8-9: free-form regions
             'free_cells':    save_free,       # Stage 8-9: absolutely-positioned cells
@@ -3103,9 +3277,10 @@ def run_gui():
             fc_state['widgets'].clear(); fc_state['edges'].clear()
             fc_state['selected'] = None; fc_state['next_id'] = 0
             fc_state['child_order'].clear(); fc_state['prop_committed'].clear()
-            # Phase 6B: v0.2 files carry word_stream as canonical.
-            # Load symbols regardless (they carry widget metadata); if word_stream
-            # present, we also restore the stream words directly after loading.
+            # Phase 6B: v0.2+ files carry word_stream alongside the dicts.
+            # The dicts are authoritative on load; the saved words are used
+            # as a projection-verification check after the stream is
+            # regenerated (see the mismatch check below, 3 Jul 2026).
             for sym in tgui.get('symbols', []):
                 wid  = sym['id']
                 kind = sym.get('kind', 'gui_button')
@@ -3164,12 +3339,15 @@ def run_gui():
                 fc_state['flow_next_id'] = max(fc_state['flow_next_id'], sid + 1)
             fc_state['flow_scope'] = None   # Phase 7c-4: reset to top-level on load
             for e in tgui.get('flow_edges', []):
-                fc_state['flow_edges'].append({
+                _ne = {
                     'src':       e['src'],
                     'dst':       e['dst'],
                     'waypoints': [tuple(w) for w in e.get('waypoints', [])],
                     'condition': e.get('condition', ''),
-                })
+                }
+                if e.get('bound_port_name'):     # Phase 7c-4b port binding
+                    _ne['bound_port_name'] = e['bound_port_name']
+                fc_state['flow_edges'].append(_ne)
             fc_state['flow_selected'] = None
             fc_state['flow_multi_sel'].clear()
             # Stage 9-0: load Shell command widgets
@@ -3192,6 +3370,17 @@ def run_gui():
                 fc_state['cmd_next_id'] = max(fc_state['cmd_next_id'], cid + 1)
             fc_state['cmd_selected'] = None
             fc_state['cmd_multi_sel'].clear()
+            # Stage 9-2: load typed pipe edges (drop dangling endpoints)
+            fc_state['cmd_edges'].clear()
+            _cmd_ids = set(fc_state['cmd_widgets'])
+            for e in tgui.get('cmd_edges', []):
+                if e.get('src') in _cmd_ids and e.get('dst') in _cmd_ids:
+                    fc_state['cmd_edges'].append({
+                        'src':       e['src'],
+                        'dst':       e['dst'],
+                        'dst_param': e.get('dst_param', ''),
+                    })
+            fc_state['cmd_pipe_src'] = None
             # Stage 8-1: load Sheet cells
             fc_state['cells'].clear()
             fc_state['cell_next_id'] = 0
@@ -3207,6 +3396,9 @@ def run_gui():
                 }
                 if 'name' in cell:
                     fc_state['cells'][(r, c)]['name'] = cell['name']
+                if cell.get('bound_to_port'):    # Stage 8-6 cell↔port binding
+                    fc_state['cells'][(r, c)]['bound_to_port'] = \
+                        dict(cell['bound_to_port'])
                 fc_state['cell_next_id'] = max(fc_state['cell_next_id'],
                                                cell.get('id', 0) + 1)
             fc_state['cell_sel'] = (0, 0)
@@ -3229,6 +3421,23 @@ def run_gui():
             _guic_reconcile_autowire()
             # Phase 6B/6C: sync stream from widgets+flow content
             _guic_sync_stream()
+            # 3 Jul 2026 — verified-projection check: the .fc carries the word
+            # stream that was live at save; after rebuilding the dicts and
+            # regenerating the stream, the two must agree.  A mismatch means
+            # the dict→word bridge changed since the file was saved (or the
+            # file was edited by hand) — surfaced loudly, never silently.
+            _saved_words = tgui.get('word_stream')
+            if _saved_words is not None:
+                _regen = list(fc_state['stream'].words)
+                if list(_saved_words) != _regen:
+                    print(f"[FlowCode] word-stream projection mismatch on load: "
+                          f"saved {len(_saved_words)} word(s), regenerated "
+                          f"{len(_regen)} — dicts remain authoritative; the "
+                          f"saved words reflect an older bridge encoding.")
+                    guic_set_status(
+                        f"Opened with word-stream mismatch (saved "
+                        f"{len(_saved_words)} vs regenerated {len(_regen)} "
+                        f"words) — see console")
             guic_set_mode('select')
             _current_design_path[0] = path   # Phase 7b-1: track for compiler header
             _name = os.path.basename(path)
@@ -5471,6 +5680,66 @@ def run_gui():
                 return c
         return None
 
+    def _sh_sockets(c):
+        """Design-space socket geometry for a command widget.
+        Returns (inputs, output) where inputs = [(param_name, type, x, y)] on
+        the left edge (one per registry input param) and output = (x, y) on the
+        right edge. Placeholder / unknown kinds get no typed inputs."""
+        hw, hh = CMD_W // 2, CMD_H // 2
+        top = c['y'] - hh + 22          # below the header band
+        bot = c['y'] + hh
+        params = (_flowcode_commands.input_params(c['kind'])
+                  if _flowcode_commands else [])
+        inputs = []
+        n = len(params)
+        for i, (pname, ptype) in enumerate(params):
+            fy = top + (bot - top) * (i + 1) / (n + 1)
+            inputs.append((pname, ptype, c['x'] - hw, fy))
+        return inputs, (c['x'] + hw, (top + bot) / 2)
+
+    def _sh_output_hit(x, y, tol=8):
+        """Command id whose output socket is within tol design px of (x,y)."""
+        for c in reversed(list(fc_state['cmd_widgets'].values())):
+            _ins, (ox, oy) = _sh_sockets(c)
+            if abs(ox - x) <= tol and abs(oy - y) <= tol:
+                return c['id']
+        return None
+
+    def _sh_input_hit(x, y, tol=8):
+        """(cmd, param_name) whose input socket is within tol of (x,y), or None."""
+        for c in reversed(list(fc_state['cmd_widgets'].values())):
+            ins, _out = _sh_sockets(c)
+            for pname, _pt, ix, iy in ins:
+                if abs(ix - x) <= tol and abs(iy - y) <= tol:
+                    return c, pname
+        return None
+
+    def _sh_edge_compatible(edge):
+        """True if a pipe edge's types are compatible (Stage 9-2)."""
+        if _flowcode_commands is None:
+            return True
+        src = fc_state['cmd_widgets'].get(edge['src'])
+        dst = fc_state['cmd_widgets'].get(edge['dst'])
+        if not src or not dst:
+            return False
+        return _flowcode_commands.pipe_compatible(
+            src['kind'], dst['kind'], edge.get('dst_param', ''))
+
+    def _sh_add_pipe(src_id, dst_id, dst_param):
+        """Create (or replace) the pipe feeding (dst_id, dst_param). One pipe per
+        input socket. Warns on a type mismatch but still records the edge so the
+        red indicator is visible (compile is the hard gate)."""
+        edges = fc_state['cmd_edges']
+        edges[:] = [e for e in edges
+                    if not (e['dst'] == dst_id and e.get('dst_param') == dst_param)]
+        edge = {'src': src_id, 'dst': dst_id, 'dst_param': dst_param}
+        edges.append(edge)
+        if not _sh_edge_compatible(edge):
+            _sh_set_status(f"⚠ type mismatch: pipe into .{dst_param} — "
+                           f"will error at compile")
+        else:
+            _sh_set_status(f"Piped → .{dst_param}")
+
     def _sh_add_cmd(kind, x, y, label=''):
         """Add a command-widget dict to fc_state. Returns the cmd dict."""
         cid = fc_state['cmd_next_id']
@@ -5492,6 +5761,10 @@ def run_gui():
         if fc_state['cmd_selected'] == cid:
             fc_state['cmd_selected'] = None
         fc_state['cmd_multi_sel'].discard(cid)
+        # Stage 9-2: drop any pipe edges touching the removed command
+        fc_state['cmd_edges'][:] = [
+            e for e in fc_state['cmd_edges']
+            if e['src'] != cid and e['dst'] != cid]
 
     # ── Shell drawing ─────────────────────────────────────────────────────────
     def _sh_draw_grid():
@@ -5533,14 +5806,28 @@ def run_gui():
         sh_canvas.create_text((L + R) // 2, T + hdr_h + max(6, int(9 * z)),
                               text=c['kind'].replace('cmd_', ''),
                               fill=C['dim'], font=('Monospace', _f2))
-        # Placeholder sockets: inputs on the left edge, outputs on the right edge
+        # Typed sockets (Stage 9-2): one input dot per registry param on the
+        # left edge, a single output dot on the right edge. Placeholder kinds
+        # fall back to a pair of untyped input dots.
         _sr = max(2, int(4 * z))
-        body_mid = T + hdr_h + (B - (T + hdr_h)) // 2
-        for sy in (body_mid - int(12 * z), body_mid + int(12 * z)):
-            sh_canvas.create_oval(L - _sr, sy - _sr, L + _sr, sy + _sr,
-                                  fill=C['io'], outline=bor, width=1)   # inputs
-            sh_canvas.create_oval(R - _sr, sy - _sr, R + _sr, sy + _sr,
-                                  fill=C['pal_border'], outline=bor, width=1)  # outputs
+        inputs, (ox, oy) = _sh_sockets(c)
+        if inputs:
+            for pname, _pt, ix, iy in inputs:
+                sxp, syp = _sh_d2s(ix, iy)
+                sh_canvas.create_oval(sxp - _sr, syp - _sr, sxp + _sr, syp + _sr,
+                                      fill=C['io'], outline=bor, width=1)
+                if z >= 0.8:
+                    sh_canvas.create_text(sxp + _sr + 2, syp, anchor='w',
+                                          text=pname, fill=C['dim'],
+                                          font=('Monospace', _f2))
+        else:
+            body_mid = T + hdr_h + (B - (T + hdr_h)) // 2
+            for sy in (body_mid - int(12 * z), body_mid + int(12 * z)):
+                sh_canvas.create_oval(L - _sr, sy - _sr, L + _sr, sy + _sr,
+                                      fill=C['io'], outline=bor, width=1)
+        oxs, oys = _sh_d2s(ox, oy)
+        sh_canvas.create_oval(oxs - _sr, oys - _sr, oxs + _sr, oys + _sr,
+                              fill=C['pal_border'], outline=bor, width=1)  # output
         # Pocket indicator
         sh_canvas.create_text((L + R) // 2, B - max(6, int(10 * z)),
                               text='\U0001F4E6', font=('Monospace', max(6, int(11 * z))))
@@ -5561,11 +5848,42 @@ def run_gui():
                               text=f"snap ({x},{y})", fill='#2a3050',
                               font=('Monospace', max(5, int(7 * z))))
 
+    def _sh_draw_edges():
+        """Draw pipe edges: src output socket → dst input socket. Mismatched
+        types are drawn red (the edit-time warning)."""
+        for e in fc_state['cmd_edges']:
+            src = fc_state['cmd_widgets'].get(e['src'])
+            dst = fc_state['cmd_widgets'].get(e['dst'])
+            if not src or not dst:
+                continue
+            _ins, (ox, oy) = _sh_sockets(src)
+            dins, _o = _sh_sockets(dst)
+            tgt = next((s for s in dins if s[0] == e.get('dst_param')), None)
+            if tgt is None:
+                continue
+            x1, y1 = _sh_d2s(ox, oy)
+            x2, y2 = _sh_d2s(tgt[2], tgt[3])
+            ok = _sh_edge_compatible(e)
+            col = C['pal_border'] if ok else '#ff5555'
+            sh_canvas.create_line(x1, y1, x2, y2, fill=col,
+                                  width=2, arrow='last',
+                                  dash=() if ok else (5, 3))
+
     def _sh_redraw():
         sh_canvas.delete('all')
         _sh_draw_grid()
+        _sh_draw_edges()
         for c in fc_state['cmd_widgets'].values():
             _sh_draw_cmd(c)
+        # Rubber-band while dragging a new pipe from an output socket
+        if fc_state.get('cmd_pipe_src') is not None and fc_state.get('cmd_pipe_xy'):
+            src = fc_state['cmd_widgets'].get(fc_state['cmd_pipe_src'])
+            if src:
+                _ins, (ox, oy) = _sh_sockets(src)
+                x1, y1 = _sh_d2s(ox, oy)
+                x2, y2 = _sh_d2s(*fc_state['cmd_pipe_xy'])
+                sh_canvas.create_line(x1, y1, x2, y2, fill=C['pal_border'],
+                                      width=2, arrow='last', dash=(3, 2))
         if fc_state['cmd_mode'] == 'place' and fc_state.get('cmd_ghost'):
             _sh_draw_ghost(*fc_state['cmd_ghost'])
 
@@ -5598,6 +5916,10 @@ def run_gui():
     def _sh_on_motion(event):
         ddx, ddy = _sh_s2d(event.x, event.y)
         fc_state['cmd_ghost'] = (ddx, ddy)
+        # Stage 9-2: dragging a pipe from an output socket
+        if fc_state.get('cmd_pipe_src') is not None:
+            fc_state['cmd_pipe_xy'] = (ddx, ddy)
+            _sh_redraw(); return
         if fc_state['cmd_dragging'] and not (event.state & 0x0100):
             fc_state['cmd_dragging'] = False
         if fc_state['cmd_dragging'] and fc_state['cmd_selected'] is not None:
@@ -5611,9 +5933,10 @@ def run_gui():
         x, y = _sh_s2d(event.x, event.y)
         mode = fc_state['cmd_mode']
         if mode == 'place':
-            c = _sh_add_cmd('cmd_placeholder', x, y)
+            kind = _sh_pick_command_kind() or 'cmd_placeholder'
+            c = _sh_add_cmd(kind, x, y)
             fc_state['cmd_selected'] = c['id']
-            _sh_set_status(f"Placed {c['name']}")
+            _sh_set_status(f"Placed {c.get('name') or c['label']} ({kind})")
             _sh_update_inspect(); _sh_set_mode('select'); return
         if mode == 'delete':
             hit = _sh_cmd_at(x, y)
@@ -5623,7 +5946,13 @@ def run_gui():
                 _sh_set_status(f"Deleted {lbl}")
                 _sh_update_inspect()
             _sh_redraw(); return
-        # Select mode
+        # Select mode — an output socket under the cursor starts a pipe drag
+        pipe_src = _sh_output_hit(x, y)
+        if pipe_src is not None:
+            fc_state['cmd_pipe_src'] = pipe_src
+            fc_state['cmd_pipe_xy']  = (x, y)
+            _sh_set_status('Drag to an input socket to pipe (release to connect)')
+            _sh_redraw(); return
         hit = _sh_cmd_at(x, y)
         if hit:
             fc_state['cmd_selected']   = hit['id']
@@ -5638,6 +5967,18 @@ def run_gui():
         _sh_update_inspect(); _sh_redraw()
 
     def _sh_on_release(event):
+        # Stage 9-2: complete a pipe drag onto an input socket
+        if fc_state.get('cmd_pipe_src') is not None:
+            x, y = _sh_s2d(event.x, event.y)
+            tgt = _sh_input_hit(x, y)
+            src_id = fc_state['cmd_pipe_src']
+            if tgt and tgt[0]['id'] != src_id:
+                _sh_add_pipe(src_id, tgt[0]['id'], tgt[1])
+            else:
+                _sh_set_status('Pipe cancelled')
+            fc_state['cmd_pipe_src'] = None
+            fc_state['cmd_pipe_xy']  = None
+            _sh_redraw(); return
         if fc_state['cmd_dragging'] and fc_state['cmd_selected'] is not None:
             c = fc_state['cmd_widgets'].get(fc_state['cmd_selected'])
             if c:
@@ -5651,6 +5992,43 @@ def run_gui():
         hit = _sh_cmd_at(ddx, ddy)
         if hit:
             _sh_open_cmd_props(hit)
+
+    def _sh_pick_command_kind():
+        """Modal picker: choose a real command kind from the registry.
+        Returns the chosen kind (e.g. 'cmd_math_add') or None if cancelled."""
+        if _flowcode_commands is None:
+            return None
+        names = sorted(_flowcode_commands.command_names())
+        dlg = tk.Toplevel(root)
+        dlg.title('Add command')
+        dlg.configure(bg=C['palette']); dlg.transient(root); dlg.grab_set()
+        tk.Label(dlg, text='Choose a command:', bg=C['palette'], fg=C['text'],
+                 font=('Monospace', 9), anchor='w').pack(fill='x', padx=8, pady=(8, 2))
+        lb = tk.Listbox(dlg, bg=C['inspect'], fg=C['text'], height=14, width=28,
+                        font=('Monospace', 9), selectbackground=C['pal_active'])
+        for n in names:
+            lb.insert('end', n.replace('cmd_', ''))
+        lb.pack(padx=8, pady=2)
+        if names:
+            lb.selection_set(0)
+        chosen = {'kind': None}
+
+        def _ok(_e=None):
+            sel = lb.curselection()
+            if sel:
+                chosen['kind'] = names[sel[0]]
+            dlg.destroy()
+
+        lb.bind('<Double-Button-1>', _ok)
+        lb.bind('<Return>', _ok)
+        btns = tk.Frame(dlg, bg=C['palette']); btns.pack(pady=8)
+        tk.Button(btns, text='Add', command=_ok, bg=C['pal_btn'], fg=C['text'],
+                  font=('Monospace', 9), relief='flat', padx=10).pack(side='left', padx=4)
+        tk.Button(btns, text='Cancel', command=dlg.destroy, bg=C['pal_btn'],
+                  fg=C['text'], font=('Monospace', 9), relief='flat',
+                  padx=10).pack(side='left', padx=4)
+        dlg.wait_window()
+        return chosen['kind']
 
     def _sh_open_cmd_props(c):
         """Stage 9-0: minimal dialog to edit a command's name and label, with
@@ -5893,11 +6271,36 @@ def run_gui():
     _lg_pipe.pack(side='left', fill='both', expand=True, padx=(6, 0), pady=6)
     _lg_pipe_sb.config(command=_lg_pipe.yview)
 
+    def _lingo_reflect_connectors():
+        """Stage 9-2: mirror the Connectors-canvas command pipeline into the
+        Pipeline list — each command with its incoming pipes annotated."""
+        cmds = fc_state.get('cmd_widgets', {})
+        edges = fc_state.get('cmd_edges', [])
+        _lg_pipe.delete(0, 'end')
+        for i, txt in enumerate(_lingo['pipeline']):
+            _lg_pipe.insert('end', f"{i + 1}. {txt}")
+        real = {cid: c for cid, c in cmds.items()
+                if c.get('kind', '') != 'cmd_placeholder'}
+        if real:
+            _lg_pipe.insert('end', '── Connectors pipeline ──')
+            incoming = {}
+            for e in edges:
+                incoming.setdefault(e['dst'], []).append(e)
+            for cid, c in real.items():
+                nm = c.get('name') or c.get('label') or c['kind']
+                _lg_pipe.insert('end', f"• {nm}  [{c['kind'].replace('cmd_', '')}]")
+                for e in incoming.get(cid, []):
+                    src = cmds.get(e['src'], {})
+                    sn = src.get('name') or src.get('kind', '?')
+                    _lg_pipe.insert('end', f"     {e.get('dst_param')} ← {sn}")
+
     def _lingo_show_out(mode):
         _lingo['out_mode'] = mode
         _lg_out_frame.pack_forget(); _lg_pipe_frame.pack_forget()
         (_lg_out_frame if mode == 'output' else _lg_pipe_frame).pack(
             fill='both', expand=True)
+        if mode == 'pipeline':
+            _lingo_reflect_connectors()
         for key, b in _lg_tab_btns.items():
             b.config(fg=C['pal_border'] if key == mode else C['dim'])
 
@@ -5940,6 +6343,38 @@ def run_gui():
                 result = ', '.join(str(x) for x in result)
             return f"{cmd['name']} → {result}"
         return cmd['name']
+
+    def _lingo_run_interactive():
+        """Stage 9-1C: compile the active command on its own and launch it in
+        an SDL window so interactive (cmd_io_*) dialogs run for real."""
+        import subprocess as _sp, time as _t
+        cmd = _lingo['active']
+        if not cmd:
+            return
+        full = cmd.get('full', 'cmd_' + cmd['name'])
+        if not _compile_to_t5asm or WordStream is None:
+            guic_set_status('Compiler/WordStream unavailable'); return
+        if not os.path.isfile(_engine_path) or not os.access(_engine_path, os.X_OK):
+            guic_set_status('Engine not built — run make in c_emulator/'); return
+        args = _lingo_collect_args()
+        stream = WordStream()
+        stream._cmd_meta = {1: {
+            'id': 1, 'kind': full, 'x': 0, 'y': 0, 'w': 160, 'h': 80,
+            'label': '', 'name': f'{full}_1',
+            'properties': [{'name': k, 'value': v} for k, v in args.items()],
+        }}
+        try:
+            t5 = _compile_to_t5asm(stream, source_path='<lingo>')
+        except Exception as e:
+            guic_set_status(f'Compile error: {e}'); return
+        tmp = f'/tmp/lingo_{os.getpid()}_{int(_t.time())}.t5asm'
+        try:
+            with open(tmp, 'w') as f:
+                f.write(t5)
+            _sp.Popen([_engine_path, '--display', 'sdl', '--run', tmp])
+            guic_set_status(f'Running {cmd["name"]} — interact in the SDL window')
+        except OSError as e:
+            guic_set_status(f'Launch failed: {e}')
 
     def _lingo_update_preview(*_a):
         txt = _lingo_generate()
@@ -6016,6 +6451,10 @@ def run_gui():
 
     tk.Button(_lg_actions, text='Add to Pipeline', command=_lingo_add_pipeline,
               bg=C['pal_btn'], fg='#7aff7a', font=('Monospace', 9), relief='flat',
+              activebackground=C['pal_active'], cursor='hand2', padx=8, pady=4
+              ).pack(side='left', padx=(0, 6))
+    tk.Button(_lg_actions, text='Run interactively…', command=_lingo_run_interactive,
+              bg=C['pal_btn'], fg='#7ad0ff', font=('Monospace', 9), relief='flat',
               activebackground=C['pal_active'], cursor='hand2', padx=8, pady=4
               ).pack(side='left', padx=(0, 6))
     tk.Button(_lg_actions, text='Clear', command=_lingo_clear_form,
@@ -6430,6 +6869,15 @@ def run_gui():
                           else C['canvas'])
                 sheet_canvas.create_rectangle(sx, sy, ex, ey, fill=bgfill,
                                               outline=grid_col)
+                # Stage 8-6: port-binding indicator dot (cyan entry / amber exit)
+                _pb = (_flowcode_ports.cell_bound_port(cell)
+                       if (cell and _flowcode_ports is not None) else None)
+                if _pb:
+                    _dr = max(2, int(3 * z))
+                    _dc = '#00e5ff' if _pb['direction'] == 'entry' else '#ffb000'
+                    sheet_canvas.create_oval(ex - _dr * 2 - 2, sy + 2,
+                                             ex - 2, sy + _dr * 2 + 2,
+                                             fill=_dc, outline='')
                 if cell:
                     # Stage 8-2 per-kind defaults: numbers right, text/formula
                     # left, formula in accent colour. Stage 8-7 format overrides.
@@ -6653,6 +7101,89 @@ def run_gui():
         tk.Entry(dlg, textvariable=bg_var, width=10, bg=C['canvas'], fg=C['text'],
                  insertbackground=C['text']).grid(row=r[0], column=1, sticky='w', padx=8); r[0] += 1
 
+        # ── Stage 8-6: cell ↔ port binding ───────────────────────────────────
+        if _flowcode_ports is not None:
+            _fp = _flowcode_ports
+            addrow('Port binding:')
+            b = _fp.cell_bound_port(cell)
+            bind_lbl = tk.Label(dlg, bg=C['palette'], fg=C['text'],
+                                font=('Monospace', 8), anchor='w',
+                                text=(f"{b['container_name']}.{b['port_name']} "
+                                      f"({b['direction']})" if b else '(none)'))
+            bind_lbl.grid(row=r[0], column=1, sticky='w', padx=8); r[0] += 1
+
+            def _do_bind():
+                conts = {s['name']: s for s in fc_state['flow_symbols'].values()
+                         if _fp.is_container(s.get('kind', ''))
+                         and (s.get('entry_points') or s.get('exit_points'))}
+                if not conts:
+                    _sheet_set_status('No containers with ports to bind to')
+                    return
+                bd = tk.Toplevel(dlg); bd.configure(bg=C['palette'])
+                bd.title('Bind cell to port'); bd.transient(dlg); bd.grab_set()
+                cvar = tk.StringVar(value=sorted(conts)[0])
+                pvar = tk.StringVar()
+                tk.Label(bd, text='Container:', bg=C['palette'], fg=C['text'],
+                         font=('Monospace', 9)).grid(row=0, column=0, padx=8, pady=4, sticky='e')
+                tk.Label(bd, text='Port:', bg=C['palette'], fg=C['text'],
+                         font=('Monospace', 9)).grid(row=1, column=0, padx=8, pady=4, sticky='e')
+                cmenu = ttk.Combobox(bd, textvariable=cvar, width=18,
+                                     values=sorted(conts), state='readonly')
+                cmenu.grid(row=0, column=1, padx=8, pady=4, sticky='w')
+                pmenu = ttk.Combobox(bd, textvariable=pvar, width=18, state='readonly')
+                pmenu.grid(row=1, column=1, padx=8, pady=4, sticky='w')
+                warn = tk.Label(bd, text='', bg=C['palette'], fg='#ff8888',
+                                font=('Monospace', 8))
+                warn.grid(row=2, column=0, columnspan=2, sticky='w', padx=8)
+
+                def _refresh_ports(*_a):
+                    sym = conts.get(cvar.get(), {})
+                    opts = ([f"{p['name']} (entry)" for p in _fp.entry_points(sym)]
+                            + [f"{p['name']} (exit)" for p in _fp.exit_points(sym)])
+                    pmenu['values'] = opts
+                    if opts:
+                        pvar.set(opts[0])
+                cmenu.bind('<<ComboboxSelected>>', _refresh_ports)
+                _refresh_ports()
+
+                def _commit_bind():
+                    sym = conts.get(cvar.get())
+                    sel = pvar.get()
+                    if not sel:
+                        return
+                    pname = sel.rsplit(' (', 1)[0]
+                    direction = 'entry' if sel.endswith('(entry)') else 'exit'
+                    ok, msg = _fp.validate_cell_binding(cell, sym, pname, direction)
+                    if not ok:
+                        warn.config(text=msg); return
+                    cell['bound_to_port'] = _fp.make_cell_binding(
+                        cvar.get(), pname, direction)
+                    bd.destroy(); _sheet_redraw(); dlg.destroy()
+                    _sheet_set_status(f"Bound {cell.get('name')} → "
+                                      f"{cvar.get()}.{pname} ({direction})")
+
+                bfr = tk.Frame(bd, bg=C['palette']); bfr.grid(row=3, column=0,
+                                                              columnspan=2, pady=8)
+                tk.Button(bfr, text='Bind', command=_commit_bind, bg=C['pal_btn'],
+                          fg=C['text'], relief='flat', padx=10).pack(side='left', padx=4)
+                tk.Button(bfr, text='Cancel', command=bd.destroy, bg=C['pal_btn'],
+                          fg=C['text'], relief='flat', padx=10).pack(side='left', padx=4)
+
+            def _do_unbind():
+                cell.pop('bound_to_port', None)
+                _sheet_redraw(); dlg.destroy()
+                _sheet_set_status('Port binding removed')
+
+            pbtns = tk.Frame(dlg, bg=C['palette'])
+            pbtns.grid(row=r[0], column=0, columnspan=2, pady=(0, 4)); r[0] += 1
+            tk.Button(pbtns, text='Bind to port…', command=_do_bind, bg=C['pal_btn'],
+                      fg=C['text'], relief='flat', padx=8,
+                      font=('Monospace', 8)).pack(side='left', padx=4)
+            if b:
+                tk.Button(pbtns, text='Unbind', command=_do_unbind, bg=C['pal_btn'],
+                          fg='#ff8888', relief='flat', padx=8,
+                          font=('Monospace', 8)).pack(side='left', padx=4)
+
         def _apply():
             def setf(key, val):
                 if val in ('', None, False):
@@ -6754,6 +7285,27 @@ def run_gui():
     sheet_canvas.bind('<Shift-Button-5>',   _sht_on_scroll_h)
     sheet_canvas.bind('<Control-Button-4>', _sheet_on_zoom)
     sheet_canvas.bind('<Control-Button-5>', _sheet_on_zoom)
+
+    def _sheet_ctrl_click(event):
+        """Stage 8-6: Ctrl+click a port-bound cell → jump to its container."""
+        dx, dy = _sht_s2d(event.x, event.y)
+        hit = _sheet_cell_at(dx, dy)
+        cell = fc_state['cells'].get(hit) if hit else None
+        b = (_flowcode_ports.cell_bound_port(cell)
+             if (cell and _flowcode_ports is not None) else None)
+        if not b:
+            _sheet_set_status('Ctrl+click a port-bound cell to jump to its container')
+            return 'break'
+        csym = _fc_sym_by_name(b['container_name'])
+        if csym is None:
+            _sheet_set_status(f"Container {b['container_name']} not found")
+            return 'break'
+        notebook.select(0)                       # Flow tab
+        _nav_center_flow_on(csym['id'])
+        set_status(f"→ {b['container_name']}.{b['port_name']} ({b['direction']})")
+        return 'break'
+    sheet_canvas.bind('<Control-Button-1>', _sheet_ctrl_click)
+
     sheet_canvas.bind('<Button-2>',         _sht_pan_start)
     sheet_canvas.bind('<B2-Motion>',        _sht_pan_motion)
     sheet_canvas.bind('<ButtonRelease-2>',  _sht_pan_end)
@@ -7145,8 +7697,36 @@ def run_gui():
             _nav_popup(event, actions)
         return 'break'
 
+    def _find_cell_bound_to(cname, pname):
+        """Stage 8-6: (row, col, cell) of a cell bound to <cname>.<pname>, or None."""
+        if _flowcode_ports is None:
+            return None
+        for (r, c), cell in fc_state['cells'].items():
+            b = _flowcode_ports.cell_bound_port(cell)
+            if b and b['container_name'] == cname and b['port_name'] == pname:
+                return r, c, cell
+        return None
+
     def _flow_ctrl_click(event):
         x, y = _fc_s2d(event.x, event.y)
+        # Phase 7c-4b / Stage 8-6: Ctrl+click a container's port dot. If a Sheet
+        # cell is bound to that port, jump to the cell; otherwise drill into the
+        # container's pocket interior.
+        ph = _fc_port_at(x, y)
+        if ph:
+            csym, edge, port = ph
+            hit = _find_cell_bound_to(csym['name'], port['name'])
+            if hit:
+                r, c, cell = hit
+                notebook.select(2)               # Sheet tab
+                fc_state['cell_sel'] = (r, c)
+                _sheet_sync_fbar(); _sheet_redraw()
+                _sheet_set_status(f"→ cell {cell.get('name') or _sheet_a1(r, c)} "
+                                  f"(bound {edge} {port['name']})")
+                return 'break'
+            _fc_set_scope(csym['name'])
+            set_status(f"→ pocket {csym['name']}  ({edge} port {port['name']})")
+            return 'break'
         s = _fc_sym_at(x, y)
         if not s:
             return 'break'

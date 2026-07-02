@@ -287,6 +287,265 @@ static void run_tests(void) {
         cpu_destroy(cpu);
     }
 
+    /* Test 5b: Nested CALL/RET — return-address stack (R80 hazard fix) */
+    printf("\n-- Nested CALL/RET Tests --\n");
+    {
+        /* Three levels; each frame adds a distinct magnitude before AND after
+         * its inner call, so the result only comes out right if every RET
+         * resumes at the correct site: 0 +1 +100 +5 +1000 +10 = 1116. */
+        const char *src =
+            "LI R2, 0\n"
+            "CALL a\n"
+            "HALT\n"
+            "a:\n  ADDI R2, R2, 1\n  CALL b\n  ADDI R2, R2, 10\n  RET\n"
+            "b:\n  ADDI R2, R2, 100\n  CALL c\n  ADDI R2, R2, 1000\n  RET\n"
+            "c:\n  ADDI R2, R2, 5\n  RET\n";
+        int64_t prog[64];
+        int len = assemble(src, prog, 64, 0);
+        cpu_t *cpu = cpu_create(4096);
+        cpu_load_program(cpu, prog, len, 0);
+        cpu_run_n(cpu, 100000);
+        test_assert("Nested CALL/RET 3 levels resume correctly",
+                    cpu->reg[2], 1116);
+        cpu_destroy(cpu);
+    }
+    {
+        /* Deep recursion to depth 150 (well past the old 1-level limit, under
+         * RA_STACK_MAX=1024): rec increments R2 each frame until R2==R3, then
+         * unwinds. Bounded run so a regression fails loud instead of hanging. */
+        const char *src =
+            "LI R2, 0\n"
+            "LI R3, 150\n"
+            "CALL rec\n"
+            "HALT\n"
+            "rec:\n"
+            "  ADDI R2, R2, 1\n"
+            "  BGE R2, R3, done\n"
+            "  CALL rec\n"
+            "done:\n"
+            "  RET\n";
+        int64_t prog[64];
+        int len = assemble(src, prog, 64, 0);
+        cpu_t *cpu = cpu_create(4096);
+        cpu_load_program(cpu, prog, len, 0);
+        cpu_run_n(cpu, 1000000);
+        test_assert("Deep recursion depth 150 unwinds", cpu->reg[2], 150);
+        test_assert("Deep recursion halted (stack balanced)",
+                    (int64_t)cpu->halted, 1);
+        cpu_destroy(cpu);
+    }
+
+    /* Test 5c: Runtime value substrate — variable-length strings */
+    printf("\n-- String Runtime Tests --\n");
+    {
+        struct { const char *name; const char *src; int reg; int64_t exp; } st[] = {
+        { "STR_FROMBUF+LEN 'hello'=5",
+          "LI R1,41\nLI R2,sbuf\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,42\nMOV R2,R5\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "sbuf:\n.word 104\n.word 101\n.word 108\n.word 108\n.word 111\n.word 0\n",
+          3, 5 },
+        { "STR_CONCAT len 'ab'+'cd'=4",
+          "LI R1,41\nLI R2,b1\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,b2\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,45\nMOV R2,R5\nMOV R3,R6\nSYSCALL\nMOV R7,R1\n"
+          "LI R1,42\nMOV R2,R7\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "b1:\n.word 97\n.word 98\n.word 0\nb2:\n.word 99\n.word 100\n.word 0\n",
+          3, 4 },
+        { "STR_CONCAT char[2]='c'",
+          "LI R1,41\nLI R2,b1\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,b2\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,45\nMOV R2,R5\nMOV R3,R6\nSYSCALL\nMOV R7,R1\n"
+          "LI R1,43\nMOV R2,R7\nLI R3,2\nSYSCALL\nMOV R4,R1\nHALT\n"
+          "b1:\n.word 97\n.word 98\n.word 0\nb2:\n.word 99\n.word 100\n.word 0\n",
+          4, 99 },
+        { "STR_EQ equal=1",
+          "LI R1,41\nLI R2,b1\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,b2\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,46\nMOV R2,R5\nMOV R3,R6\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "b1:\n.word 97\n.word 98\n.word 0\nb2:\n.word 97\n.word 98\n.word 0\n",
+          3, 1 },
+        { "STR_EQ unequal=0",
+          "LI R1,41\nLI R2,b1\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,b2\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,46\nMOV R2,R5\nMOV R3,R6\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "b1:\n.word 97\n.word 98\n.word 0\nb2:\n.word 97\n.word 99\n.word 0\n",
+          3, 0 },
+        { "STR_SUB('hello',1,3) len=3",
+          "LI R1,41\nLI R2,sbuf\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,47\nMOV R2,R5\nLI R3,1\nLI R4,3\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,42\nMOV R2,R6\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "sbuf:\n.word 104\n.word 101\n.word 108\n.word 108\n.word 111\n.word 0\n",
+          3, 3 },
+        { "STR_SUB('hello',1,3) char[0]='e'",
+          "LI R1,41\nLI R2,sbuf\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,47\nMOV R2,R5\nLI R3,1\nLI R4,3\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,43\nMOV R2,R6\nLI R3,0\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "sbuf:\n.word 104\n.word 101\n.word 108\n.word 108\n.word 111\n.word 0\n",
+          3, 101 },
+        { "STR_INDEXOF('hello','ll')=2",
+          "LI R1,41\nLI R2,sbuf\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,nbuf\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,48\nMOV R2,R5\nMOV R3,R6\nLI R4,0\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "sbuf:\n.word 104\n.word 101\n.word 108\n.word 108\n.word 111\n.word 0\n"
+          "nbuf:\n.word 108\n.word 108\n.word 0\n",
+          3, 2 },
+        { "STR_ALLOC+SETCHAR+CHAR round-trips",
+          "LI R1,40\nLI R2,3\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,44\nMOV R2,R5\nLI R3,0\nLI R4,88\nSYSCALL\n"
+          "LI R1,43\nMOV R2,R5\nLI R3,0\nSYSCALL\nMOV R3,R1\nHALT\n",
+          3, 88 },
+        { "STR_UPPER 'ab' -> char[0]='A'",
+          "LI R1,41\nLI R2,ub\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,49\nMOV R2,R5\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,43\nMOV R2,R6\nLI R3,0\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "ub:\n.word 97\n.word 98\n.word 0\n",
+          3, 65 },
+        { "STR_LOWER 'AB' -> char[0]='a'",
+          "LI R1,41\nLI R2,lb\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,50\nMOV R2,R5\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,43\nMOV R2,R6\nLI R3,0\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "lb:\n.word 65\n.word 66\n.word 0\n",
+          3, 97 },
+        { "STR_TRIM ' hi ' -> len 2",
+          "LI R1,41\nLI R2,tb\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,51\nMOV R2,R5\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,42\nMOV R2,R6\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "tb:\n.word 32\n.word 104\n.word 105\n.word 32\n.word 0\n",
+          3, 2 },
+        { "STR_REPLACE 'axbxc'/x/- (cs) char[1]='-'",
+          "LI R1,41\nLI R2,rt\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,rf\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,41\nLI R2,rw\nSYSCALL\nMOV R7,R1\n"
+          "LI R1,52\nMOV R2,R5\nMOV R3,R6\nMOV R4,R7\nLI R5,0\nSYSCALL\nMOV R8,R1\n"
+          "LI R1,43\nMOV R2,R8\nLI R3,1\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "rt:\n.word 97\n.word 120\n.word 98\n.word 120\n.word 99\n.word 0\n"
+          "rf:\n.word 120\n.word 0\n"
+          "rw:\n.word 45\n.word 0\n",
+          3, 45 },
+        { "STR_REPLACE 'aXa'/x/y (ci) char[1]='y'",
+          "LI R1,41\nLI R2,ct\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,cf\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,41\nLI R2,cw\nSYSCALL\nMOV R7,R1\n"
+          "LI R1,52\nMOV R2,R5\nMOV R3,R6\nMOV R4,R7\nLI R5,1\nSYSCALL\nMOV R8,R1\n"
+          "LI R1,43\nMOV R2,R8\nLI R3,1\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "ct:\n.word 97\n.word 88\n.word 97\n.word 0\n"
+          "cf:\n.word 120\n.word 0\n"
+          "cw:\n.word 121\n.word 0\n",
+          3, 121 },
+        };
+        for (unsigned i = 0; i < sizeof(st)/sizeof(st[0]); i++) {
+            int64_t prog[128];
+            int len = assemble(st[i].src, prog, 128, 0);
+            cpu_t *cpu = cpu_create(65536);
+            cpu_load_program(cpu, prog, len, 0);
+            cpu_run_n(cpu, 100000);
+            test_assert(st[i].name, cpu->reg[st[i].reg], st[i].exp);
+            cpu_destroy(cpu);
+        }
+    }
+
+    /* Test 5d: Runtime value substrate — fixed-length lists */
+    printf("\n-- List Runtime Tests --\n");
+    {
+        struct { const char *name; const char *src; int reg; int64_t exp; } lt[] = {
+        { "LIST_ALLOC+SET+GET [1]=42",
+          "LI R1,60\nLI R2,3\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,63\nMOV R2,R5\nLI R3,1\nLI R4,42\nSYSCALL\n"
+          "LI R1,62\nMOV R2,R5\nLI R3,1\nSYSCALL\nMOV R3,R1\nHALT\n", 3, 42 },
+        { "LIST_LEN alloc 5 = 5",
+          "LI R1,60\nLI R2,5\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,61\nMOV R2,R5\nSYSCALL\nMOV R3,R1\nHALT\n", 3, 5 },
+        { "LIST_GET out-of-bounds = 0",
+          "LI R1,60\nLI R2,2\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,62\nMOV R2,R5\nLI R3,9\nSYSCALL\nMOV R3,R1\nHALT\n", 3, 0 },
+        { "LIST_APPEND grows length to 3",
+          "LI R1,60\nLI R2,2\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,63\nMOV R2,R5\nLI R3,0\nLI R4,10\nSYSCALL\n"
+          "LI R1,63\nMOV R2,R5\nLI R3,1\nLI R4,20\nSYSCALL\n"
+          "LI R1,64\nMOV R2,R5\nLI R3,30\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,61\nMOV R2,R6\nSYSCALL\nMOV R3,R1\nHALT\n", 3, 3 },
+        { "LIST_APPEND value lands at [2]",
+          "LI R1,60\nLI R2,2\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,64\nMOV R2,R5\nLI R3,77\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,62\nMOV R2,R6\nLI R3,2\nSYSCALL\nMOV R3,R1\nHALT\n", 3, 77 },
+        };
+        for (unsigned i = 0; i < sizeof(lt)/sizeof(lt[0]); i++) {
+            int64_t prog[128];
+            int len = assemble(lt[i].src, prog, 128, 0);
+            cpu_t *cpu = cpu_create(65536);
+            cpu_load_program(cpu, prog, len, 0);
+            cpu_run_n(cpu, 100000);
+            test_assert(lt[i].name, cpu->reg[lt[i].reg], lt[i].exp);
+            cpu_destroy(cpu);
+        }
+    }
+
+    /* Test 5e: Value algorithms — split/join/reverse/sort/unique/format */
+    printf("\n-- Value Algorithm Tests --\n");
+    {
+        struct { const char *name; const char *src; int reg; int64_t exp; } vt[] = {
+        { "STR_SPLIT 'a,b,c' -> len 3",
+          "LI R1,41\nLI R2,st\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,sd\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,53\nMOV R2,R5\nMOV R3,R6\nSYSCALL\nMOV R7,R1\n"
+          "LI R1,61\nMOV R2,R7\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "st:\n.word 97\n.word 44\n.word 98\n.word 44\n.word 99\n.word 0\n"
+          "sd:\n.word 44\n.word 0\n", 3, 3 },
+        { "LIST_JOIN split('a,b,c') by '-' -> len 5",
+          "LI R1,41\nLI R2,st\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,sd\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,53\nMOV R2,R5\nMOV R3,R6\nSYSCALL\nMOV R7,R1\n"
+          "LI R1,41\nLI R2,js\nSYSCALL\nMOV R8,R1\n"
+          "LI R1,65\nMOV R2,R7\nMOV R3,R8\nSYSCALL\nMOV R9,R1\n"
+          "LI R1,42\nMOV R2,R9\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "st:\n.word 97\n.word 44\n.word 98\n.word 44\n.word 99\n.word 0\n"
+          "sd:\n.word 44\n.word 0\njs:\n.word 45\n.word 0\n", 3, 5 },
+        { "LIST_REVERSE [3,1,2] -> [0]=2",
+          "LI R1,60\nLI R2,3\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,63\nMOV R2,R5\nLI R3,0\nLI R4,3\nSYSCALL\n"
+          "LI R1,63\nMOV R2,R5\nLI R3,1\nLI R4,1\nSYSCALL\n"
+          "LI R1,63\nMOV R2,R5\nLI R3,2\nLI R4,2\nSYSCALL\n"
+          "LI R1,66\nMOV R2,R5\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,62\nMOV R2,R6\nLI R3,0\nSYSCALL\nMOV R3,R1\nHALT\n", 3, 2 },
+        { "LIST_SORT asc '3,1,2' -> [0] char='1'",
+          "LI R1,41\nLI R2,st\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,sd\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,53\nMOV R2,R5\nMOV R3,R6\nSYSCALL\nMOV R7,R1\n"
+          "LI R1,67\nMOV R2,R7\nLI R3,1\nSYSCALL\nMOV R8,R1\n"
+          "LI R1,62\nMOV R2,R8\nLI R3,0\nSYSCALL\nMOV R9,R1\n"
+          "LI R1,43\nMOV R2,R9\nLI R3,0\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "st:\n.word 51\n.word 44\n.word 49\n.word 44\n.word 50\n.word 0\n"
+          "sd:\n.word 44\n.word 0\n", 3, 49 },
+        { "LIST_UNIQUE 'a,a,b' -> len 2",
+          "LI R1,41\nLI R2,st\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,sd\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,53\nMOV R2,R5\nMOV R3,R6\nSYSCALL\nMOV R7,R1\n"
+          "LI R1,68\nMOV R2,R7\nSYSCALL\nMOV R8,R1\n"
+          "LI R1,61\nMOV R2,R8\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "st:\n.word 97\n.word 44\n.word 97\n.word 44\n.word 98\n.word 0\n"
+          "sd:\n.word 44\n.word 0\n", 3, 2 },
+        { "STR_FORMAT 'X{0}Y{1}' [p,q] -> char[1]='p'",
+          "LI R1,41\nLI R2,tp\nSYSCALL\nMOV R5,R1\n"
+          "LI R1,41\nLI R2,ag\nSYSCALL\nMOV R6,R1\n"
+          "LI R1,41\nLI R2,sd\nSYSCALL\nMOV R7,R1\n"
+          "LI R1,53\nMOV R2,R6\nMOV R3,R7\nSYSCALL\nMOV R8,R1\n"
+          "LI R1,54\nMOV R2,R5\nMOV R3,R8\nSYSCALL\nMOV R9,R1\n"
+          "LI R1,43\nMOV R2,R9\nLI R3,1\nSYSCALL\nMOV R3,R1\nHALT\n"
+          "tp:\n.word 88\n.word 123\n.word 48\n.word 125\n.word 89\n.word 123\n.word 49\n.word 125\n.word 0\n"
+          "ag:\n.word 112\n.word 44\n.word 113\n.word 0\n"
+          "sd:\n.word 44\n.word 0\n", 3, 112 },
+        };
+        for (unsigned i = 0; i < sizeof(vt)/sizeof(vt[0]); i++) {
+            int64_t prog[160];
+            int len = assemble(vt[i].src, prog, 160, 0);
+            cpu_t *cpu = cpu_create(65536);
+            cpu_load_program(cpu, prog, len, 0);
+            cpu_run_n(cpu, 100000);
+            test_assert(vt[i].name, cpu->reg[vt[i].reg], vt[i].exp);
+            cpu_destroy(cpu);
+        }
+    }
+
     /* Test 6: Ternary trit operations */
     printf("\n-- Ternary Logic Tests --\n");
     {
@@ -349,6 +608,23 @@ static void run_tests(void) {
         test_assert("PIGART_DRAW_TEXT 'i' at grid(9,6)", (int64_t)ci, (int64_t)'i');
     }
 
+    /* Test P3b: PIGART_DRAW_STRING renders a length-prefixed heap string.
+     * A string "Hi" at handle 100: mem[100]=2, mem[101]='H', mem[102]='i'. */
+    {
+        int64_t m[128];
+        for (int i = 0; i < 128; i++) m[i] = 0;
+        m[100] = 2; m[101] = 'H'; m[102] = 'i';
+        int64_t regs[NUM_REGISTERS];
+        for (int i = 0; i < NUM_REGISTERS; i++) regs[i] = 0;
+        regs[2] = 80; regs[3] = 150; regs[4] = 100; regs[5] = 16; regs[6] = 0xFFFFFF;
+        pigart_active_backend->clear(0);
+        pigart_handle_syscall(PIGART_DRAW_STRING, regs, m, 128);
+        test_assert("PIGART_DRAW_STRING 'H' at grid(8,6)",
+                    (int64_t)pigart_ascii_cell(8, 6), (int64_t)'H');
+        test_assert("PIGART_DRAW_STRING 'i' at grid(9,6)",
+                    (int64_t)pigart_ascii_cell(9, 6), (int64_t)'i');
+    }
+
     /* Test P4: PIGART_DRAW_RECT filled region contains '#'
      *   Filled rect at pixel (400,300,200,120).
      *   Scaled: x=400*80/800=40, y=300*24/600=12, w=200*80/800=20, h=120*24/600=4.
@@ -365,6 +641,39 @@ static void run_tests(void) {
         int64_t ev4[4] = {1, 2, 3, 4};
         int r = pigart_active_backend->poll_event(ev4);
         test_assert("PIGART_POLL_EVENT returns 0 in ASCII mode", (int64_t)r, 0);
+    }
+
+    /* Test P7-P10: Stage 9-1C dialog syscalls dispatch through
+     * pigart_handle_syscall (memory read/write + backend routing). The ASCII
+     * backend returns deterministic defaults so this is headless-verifiable;
+     * live SDL modal behaviour is screen-only. */
+    {
+        int64_t dmem[256];
+        for (int i = 0; i < 256; i++) dmem[i] = 0;
+        int64_t regs[81];
+        for (int i = 0; i < 81; i++) regs[i] = 0;
+        /* message "Go?" @10, title "T" @20, options "a\0b\0c" @30 */
+        const char *m = "Go?"; for (int i = 0; m[i]; i++) dmem[10 + i] = m[i];
+        dmem[20] = 'T';
+        dmem[30] = 'a'; dmem[32] = 'b'; dmem[34] = 'c';
+
+        regs[2] = 10;
+        pigart_handle_syscall(PIGART_DIALOG_CONFIRM, regs, dmem, 256);
+        test_assert("DIALOG_CONFIRM ascii default=0", regs[1], 0);
+
+        regs[1] = 0;
+        regs[2] = 20; regs[3] = 10;
+        int rc = pigart_handle_syscall(PIGART_DIALOG_DISPLAY, regs, dmem, 256);
+        test_assert("DIALOG_DISPLAY dispatch ok", (int64_t)rc, 0);
+
+        regs[1] = 999; regs[2] = 10; regs[3] = 50; regs[4] = 16;
+        pigart_handle_syscall(PIGART_DIALOG_PROMPT, regs, dmem, 256);
+        test_assert("DIALOG_PROMPT ascii empty len=0", regs[1], 0);
+        test_assert("DIALOG_PROMPT out NUL-terminated", dmem[50], 0);
+
+        regs[1] = 999; regs[2] = 10; regs[3] = 30; regs[4] = 3;
+        pigart_handle_syscall(PIGART_DIALOG_CHOICE, regs, dmem, 256);
+        test_assert("DIALOG_CHOICE ascii default index=0", regs[1], 0);
     }
 
     /* Test P6: PIGART_GET_TICKS returns positive value after sleep */

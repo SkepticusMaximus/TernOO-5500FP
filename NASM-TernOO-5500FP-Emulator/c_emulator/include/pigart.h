@@ -39,6 +39,18 @@
 #define PIGART_GET_TICKS     110
 #define PIGART_CLOSE_WINDOW  111
 
+/* Stage 9-1C — interactive modal dialogs (block until dismissed) */
+#define PIGART_DIALOG_PROMPT  112
+#define PIGART_DIALOG_DISPLAY 113
+#define PIGART_DIALOG_CONFIRM 114
+#define PIGART_DIALOG_CHOICE  115
+
+/* Runtime value substrate — render a length-prefixed heap string */
+#define PIGART_DRAW_STRING    116
+/* Choose from a heap list of string handles: R2=list R3=prompt-chars
+ * -> R1 = selected element handle (0 on cancel) */
+#define PIGART_DIALOG_CHOICE_LIST 117
+
 /* -----------------------------------------------------------------------
  * Event types (D8)
  * --------------------------------------------------------------------- */
@@ -85,6 +97,17 @@ typedef struct pigart_backend {
     int  (*poll_event)(int64_t *out_buf4); /* fills 4 words; returns 1 if event, 0 if none */
     void (*sleep_ms)(int ms);              /* may pump events internally (SDL backend) */
     int  (*get_ticks)(void);              /* ms since open_window; 0 if not open */
+
+    /* Interactive modal dialogs (Stage 9-1C). Each blocks until dismissed.
+     * A backend with no interactive surface (ASCII) returns safe defaults. */
+    int  (*dialog_prompt)(const char *message, char *out, int out_size);
+                                           /* text input; returns length, -1 = cancel */
+    void (*dialog_display)(const char *title, const char *message);
+    int  (*dialog_confirm)(const char *message);        /* 1 = yes, 0 = no */
+    int  (*dialog_choice)(const char *prompt,
+                          const char *options, int n_options);
+                                           /* options = n NUL-separated strings;
+                                            * returns selected index, -1 = cancel */
 
     /* Metadata */
     const char *name;   /* "sdl" or "ascii" */

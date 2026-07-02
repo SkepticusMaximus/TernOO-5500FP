@@ -621,6 +621,72 @@ class TestCompileToT5Asm(unittest.TestCase):
                           f"handler_term_{tid} must end with RET")
 
 
+import json
+
+_DEMO = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                     '..', 'FlowCode', 'customer_record_demo.fc')
+
+
+class TestCustomerRecordDemo(unittest.TestCase):
+    """Regression guard: the shipped Customer Record demo compiles cleanly and
+    emits the dynamic-cell recompute chain that the R80 return-address fix
+    unblocked (it used to compile but hang at runtime)."""
+
+    @unittest.skipUnless(os.path.exists(_DEMO), 'demo .fc not present')
+    def test_demo_compiles_with_recompute_chain(self):
+        d = json.load(open(_DEMO))
+        s = WordStream()
+        for w in d.get('symbols', []):
+            s._widget_meta[w['id']] = w
+        for f in d.get('flow_symbols', []):
+            s._flow_meta[f['id']] = f
+        for c in d.get('cell_symbols', []):
+            s._cell_meta[(c.get('row', 0), c.get('col', 0))] = c
+        asm = compile_wordstream_to_t5asm(s, 'customer_record_demo.fc')
+        # dynamic cells recompute via a two-level CALL chain (was the hang)
+        self.assertIn('CALL recompute_all_cells', asm)
+        self.assertIn('recompute_all_cells:', asm)
+        self.assertRegex(asm, r'recompute_cell_\d+:')
+        # the gui_entry text-buffer fix is still present
+        self.assertIn('state_text_', asm)
+
+
+class TestSheetVariableLengthText(unittest.TestCase):
+    """Static cell_text renders arbitrary-length strings — the display string is
+    emitted at full length (one word per char) and drawn via DRAW_TEXT, with no
+    fixed-buffer truncation. (The only fixed buffer in this area is gui_entry's
+    64-word interactive input, which is a separate widget concern.)"""
+
+    def _cellstr_words(self, asm, label):
+        i = asm.find(label + ':')
+        n = 0
+        for line in asm[i:].splitlines()[1:]:
+            s = line.strip()
+            if s.startswith('.word'):
+                n += 1
+            elif s.endswith(':') and not s.startswith('.'):
+                break
+        return n
+
+    def _compile_text_cell(self, value):
+        s = WordStream()
+        s._cell_meta = {(0, 0): {'id': 5, 'kind': 'cell_text', 'row': 0,
+                                 'col': 0, 'name': 'n', 'value': value,
+                                 'properties': []}}
+        return compile_wordstream_to_t5asm(s, 't.fc')
+
+    def test_full_length_emission_various_sizes(self):
+        for value in ('Al', 'Christopher Alexander', 'x' * 120):
+            asm = self._compile_text_cell(value)
+            self.assertEqual(self._cellstr_words(asm, 'cellstr_5'), len(value) + 1)
+            self.assertIn('LI   R4, cellstr_5', asm)   # drawn via DRAW_TEXT
+
+    def test_short_string_backward_compat(self):
+        asm = self._compile_text_cell('Hi')
+        self.assertIn('cellstr_5:', asm)
+        self.assertEqual(self._cellstr_words(asm, 'cellstr_5'), 3)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
 

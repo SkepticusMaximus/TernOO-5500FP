@@ -125,8 +125,8 @@ def _emit_binary(op, left, right, dst, ctx) -> list:
 
 
 def _emit_div(dst, ctx) -> list:
-    """Guarded divide: divisor 0 → result 0 (engine already writes 0; explicit
-    for clarity / future #DIV/0! sentinel)."""
+    """Guarded divide: divisor 0 → result 0 and _ERR_REG set to _ERR_DIV0,
+    which the runtime error display renders as #DIV/0! (AST bundle Part 7)."""
     skip = ctx.label('div0')
     return [
         f"    BEQZ R{dst + 1}, {skip}   ; divisor==0 -> DIV/0 error",
