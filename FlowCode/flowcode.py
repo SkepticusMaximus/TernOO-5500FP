@@ -3277,9 +3277,10 @@ def run_gui():
             fc_state['widgets'].clear(); fc_state['edges'].clear()
             fc_state['selected'] = None; fc_state['next_id'] = 0
             fc_state['child_order'].clear(); fc_state['prop_committed'].clear()
-            # Phase 6B: v0.2 files carry word_stream as canonical.
-            # Load symbols regardless (they carry widget metadata); if word_stream
-            # present, we also restore the stream words directly after loading.
+            # Phase 6B: v0.2+ files carry word_stream alongside the dicts.
+            # The dicts are authoritative on load; the saved words are used
+            # as a projection-verification check after the stream is
+            # regenerated (see the mismatch check below, 3 Jul 2026).
             for sym in tgui.get('symbols', []):
                 wid  = sym['id']
                 kind = sym.get('kind', 'gui_button')
@@ -3420,6 +3421,23 @@ def run_gui():
             _guic_reconcile_autowire()
             # Phase 6B/6C: sync stream from widgets+flow content
             _guic_sync_stream()
+            # 3 Jul 2026 — verified-projection check: the .fc carries the word
+            # stream that was live at save; after rebuilding the dicts and
+            # regenerating the stream, the two must agree.  A mismatch means
+            # the dict→word bridge changed since the file was saved (or the
+            # file was edited by hand) — surfaced loudly, never silently.
+            _saved_words = tgui.get('word_stream')
+            if _saved_words is not None:
+                _regen = list(fc_state['stream'].words)
+                if list(_saved_words) != _regen:
+                    print(f"[FlowCode] word-stream projection mismatch on load: "
+                          f"saved {len(_saved_words)} word(s), regenerated "
+                          f"{len(_regen)} — dicts remain authoritative; the "
+                          f"saved words reflect an older bridge encoding.")
+                    guic_set_status(
+                        f"Opened with word-stream mismatch (saved "
+                        f"{len(_saved_words)} vs regenerated {len(_regen)} "
+                        f"words) — see console")
             guic_set_mode('select')
             _current_design_path[0] = path   # Phase 7b-1: track for compiler header
             _name = os.path.basename(path)

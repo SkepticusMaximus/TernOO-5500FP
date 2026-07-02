@@ -72,31 +72,10 @@ STYLE_CONTAIN        = _wl.STYLE_CONTAIN
 
 # ── String decoder (v0.4) ─────────────────────────────────────────────────────
 
-def _decode_label_words(string_operands: List[int]) -> str:
-    """Decode a sequence of DATA-STRING/ASCII words into a Python string.
-
-    Each word was encoded by _encode_label() in widget_lib (formerly meccano_lib):
-      packed = c0 + c1*128 + c2*128²   (base-128, 3 chars per word)
-
-    Collects all character values, strips trailing null bytes,
-    and returns the assembled string.
-
-    Non-STRING words terminate decoding early (defensive, should not occur
-    if the word stream is well-formed).
-    """
-    chars: List[int] = []
-    for w in string_operands:
-        d = decode_word(w)
-        if d.get('type') != 'STRING':
-            break
-        n = int(d['length_or_addr'])
-        chars.append(n % 128)
-        chars.append((n // 128) % 128)
-        chars.append((n // 16384) % 128)
-    # Strip trailing null padding
-    while chars and chars[-1] == 0:
-        chars.pop()
-    return ''.join(chr(c) for c in chars)
+# Promoted to widget_lib.decode_label_words (3 Jul 2026); alias kept
+# so existing internal callers and the tkinter renderer's import of
+# this module keep working unchanged.
+_decode_label_words = _wl.decode_label_words
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -251,10 +230,11 @@ def render(program, width: int = 60, height: int = 20) -> str:
     # iterate_instructions() skips non-OPCODE words defensively.
     for decoded, form, operands in iterate_instructions(words[2:]):
         if decoded['family'] != OPF_PIGART:
-            raise ValueError(
-                f"non-PIGART OPCODE in render stream: "
-                f"family={decoded['family_name']!r}"
-            )
+            # Grammar extension v1 (3 Jul 2026): streams legitimately carry
+            # OPF_MODEL (and MECCANO) words alongside PIGART.  Rendering is
+            # the PIGART projection of the stream — other families are
+            # simply not part of this projection.
+            continue
 
         mnemonic = decoded['mnemonic']
 

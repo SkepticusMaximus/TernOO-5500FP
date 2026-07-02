@@ -3,8 +3,12 @@
 Reference material for the documentation phase and CF5's audit. Produced during
 the pre-documentation housekeeping pass (Dual Handoff, Section A / A3).
 
-Test baseline at this snapshot: **344 python unit tests, 78/78 C emulator,
-15/15 widget_lib, 25/25 gristmill, v03 pass.** Working branch
+Test baseline at this snapshot (reconciled 3 Jul, post-audit bundle):
+**343 python unittests across 16 suites** (`test_run.py` is an interactive
+demo, not a unittest suite; earlier count of 344 was a counting-method
+artifact), **78/78 C emulator, 15/15 widget_lib, 25/25 gristmill, v03 pass.**
+New suites this bundle: `test_parity.py` (5) — editor/engine parity harness;
+`test_word_roundtrip.py` (9) — dicts→words→dicts projection pin. Working branch
 `origin/claude/sleepy-brattain-21dd09` (28 commits ahead of `origin/master`).
 
 Line counts are approximate (whole-file `wc -l`).
@@ -64,7 +68,7 @@ Line counts are approximate (whole-file `wc -l`).
 
 | Suite | Tests | Covers |
 |---|---|---|
-| `test_compile_to_t5asm.py` | 42 | FlowCode→t5asm: print path, GUI program, cells, error display, long-text cells, Customer Record demo guard. |
+| `test_compile_to_t5asm.py` | 29 | FlowCode→t5asm: print path, GUI program, cells, error display, long-text cells, Customer Record demo guard. |
 | `test_command_t5asm.py` | 49 | Shell command compilation + emulator-run of math/env/text/list/io/pipelines. |
 | `test_sheet_formula.py` | 36 | Formula parse/eval + ranges. |
 | `test_shell_tab.py` | 32 | Shell tab UI wiring + command registry. |

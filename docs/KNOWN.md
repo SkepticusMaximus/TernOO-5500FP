@@ -3,8 +3,9 @@
 The honest inventory at the build→documentation pivot. Each item: what it is,
 and its impact. Reference for the documentation phase and CF5's audit.
 
-Baseline: 344 python tests, 78/78 C emulator, 15/15 widget_lib, 25/25 gristmill,
-v03 pass — all green. Nothing here is a test failure; these are design gaps,
+Baseline (reconciled 3 Jul, post-audit bundle): 343 python unittests across
+16 suites (`test_run.py` is an interactive demo, not a suite), 78/78 C
+emulator, 15/15 widget_lib, 25/25 gristmill, v03 pass — all green. Nothing here is a test failure; these are design gaps,
 deferrals, and doc drift.
 
 ---
@@ -50,6 +51,12 @@ deferrals, and doc drift.
   `FormulaCompileError` rather than clamp. *Impact:* practical formulas are fine;
   pathological nesting is bounded. (Documented in `CAI-Compiler-Constraints.md`.)
 
+- **POWER exponent must be a compile-time constant.** The engine unrolls
+  POWER as repeated MUL, so `=POWER(B2, A2)` (cell-valued exponent) raises
+  `FormulaCompileError`; the editor evaluator accepts it. *Impact:* documented
+  engine boundary, caught loudly at compile; parity corpus excludes it by
+  design.
+
 ## Screen-truth (verified headless, on-screen unconfirmed)
 
 These compile and pass headless tests (ASCII backend / state-slot checks) but
@@ -91,5 +98,23 @@ untested surface. Worth a scripted on-screen pass before public demos.
   `run_pure_ternoo_ai_workbench` block in `5500fp_ternoo_v03.py` is **commented
   out**, and the two unconditional `xclip` reads flagged in Language Audit §7.6
   were removed (ingestion was made opt-in before being commented). *Impact:* not
-  a live exfiltration risk. Remaining action is purely tidiness — delete the
-  ~260 commented lines. (Bonus-cleanup candidate, not a gap.)
+  a live exfiltration risk.
+- **AI-workbench dead block DELETED (3 Jul audit bundle).** The ~230 commented
+  lines were removed from `5500fp_ternoo_v03.py` with a tombstone comment;
+  the code remains in git history. numpy imports were already function-local.
+- **Editor/engine division parity FIXED (3 Jul audit bundle).** The editor
+  formula evaluator did Python true division (7/2 = 3.5) while the engine does
+  machine integer division (7/2 = 3, truncation toward zero). The editor now
+  models the machine (`sheet_formula.py` `/` and `AVERAGE`); `test_parity.py`
+  pins editor==engine over a 34-expression formula corpus and a command corpus.
+- **Words-as-projection is now a VERIFIED property (3 Jul audit bundle).**
+  `ghost_meccano.meccano_to_ghost` inverts the dict→word bridges over the
+  full encoded surface (geometry [Meccano-unit quantized], labels, shapes,
+  layouts, edges); `test_word_roundtrip.py` pins the round-trip AND the
+  negative space (words do not carry kind, name, bindings, pockets, ports,
+  cells, formulas, or command args — extending that is a whitepaper §6
+  grammar decision). The `.fc` loader now reads the saved `word_stream` key
+  and warns loudly on any mismatch with the regenerated stream (previously
+  the key was written but never read, and the loader comment claimed
+  otherwise). The single `decode_label_words` implementation was promoted to
+  `widget_lib`; both renderers now alias it (duplication retired).
