@@ -813,6 +813,11 @@ def run_gui():
     sheet_tab = tk.Frame(notebook,bg=C['bg'])
     notebook.add(sheet_tab, text='  Sheet  ')
 
+    # ── Text tab — dual-mode editor (text/language bundle Piece 1). View
+    # class lives in 5500fp/text_tab_view.py; mounted after fc_state exists. ──
+    text_tab = tk.Frame(notebook,bg=C['bg'])
+    notebook.add(text_tab, text='  Text  ')
+
     # ── Tab 4: Shell — three-pane command builder (Bundle 24). Internal symbol
     # stays sh_tab; the three-pane _lingo_view lives here. ────────────────────
     sh_tab = tk.Frame(notebook,bg=C['bg'])
@@ -828,6 +833,31 @@ def run_gui():
     # "GristMill" name is reserved for the future package-manager arc. ─────────
     gm_tab = tk.Frame(notebook,bg=C['bg'])
     notebook.add(gm_tab, text='  Lingo  ')
+    # Piece 2: Lingo hosts two views — Vocabulary (GristMillTabView, as
+    # before) and Translator (multi-dialect projections). Toggle header:
+    _lingo_hdr = tk.Frame(gm_tab, bg=C['palette'])
+    _lingo_hdr.pack(side='top', fill='x')
+    _lingo_vocab_frame = tk.Frame(gm_tab, bg=C['bg'])
+    _lingo_trans_frame = tk.Frame(gm_tab, bg=C['bg'])
+    _lingo_view_btns = {}
+    def _lingo_show_view(which):
+        _lingo_vocab_frame.pack_forget(); _lingo_trans_frame.pack_forget()
+        (_lingo_vocab_frame if which == 'vocab'
+         else _lingo_trans_frame).pack(fill='both', expand=True)
+        for k, b in _lingo_view_btns.items():
+            b.config(fg=C['pal_border'] if k == which else C['dim'])
+        if which == 'trans' and _translator_view[0] is not None:
+            _translator_view[0].refresh()
+    for _k, _lbl in (('vocab', 'Vocabulary'), ('trans', 'Translator')):
+        _b = tk.Button(_lingo_hdr, text=_lbl, bg=C['palette'], fg=C['dim'],
+                       font=('Monospace', 9, 'bold'), relief='flat', bd=0,
+                       activebackground=C['palette'], cursor='hand2',
+                       padx=10, pady=3,
+                       command=lambda k=_k: _lingo_show_view(k))
+        _b.pack(side='left')
+        _lingo_view_btns[_k] = _b
+    _translator_view = [None]
+    _lingo_show_view('vocab')
 
     def set_status(m): status.config(text=m)
     def set_inspect(m): inspect.config(text=m)
@@ -6260,9 +6290,117 @@ def run_gui():
 
     _lg_out = tk.Text(_lg_out_frame, bg=C['inspect'], fg='#7aff7a',
                       font=('Monospace', 10), relief='flat', wrap='word',
-                      height=8, padx=8, pady=6, state='disabled',
-                      highlightthickness=0)
+                      height=8, padx=8, pady=6,
+                      insertbackground='#7aff7a', highlightthickness=0)
     _lg_out.pack(fill='both', expand=True, padx=6, pady=6)
+
+    # ── Piece 3: the Output area is a live REPL. Same command engine the
+    # visual Shell compiles to (flowcode_repl.Repl → compile → C emulator);
+    # fs commands route through the FileSystem abstraction. ─────────────────
+    _repl = [None]
+    _repl_hist_pos = [0]
+    _REPL_PROMPT = '> '
+    try:
+        import importlib.util as _rpl_u
+        _rpl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 '../5500fp/flowcode_repl.py')
+        _rpl_spec = _rpl_u.spec_from_file_location('flowcode_repl', _rpl_path)
+        _rpl_mod  = _rpl_u.module_from_spec(_rpl_spec)
+        _rpl_spec.loader.exec_module(_rpl_mod)
+        _repl[0] = _rpl_mod.Repl()
+    except Exception as _rpl_err:
+        print(f'[FlowCode] REPL engine failed to load: {_rpl_err}')
+
+    def _repl_new_prompt():
+        _lg_out.insert('end', _REPL_PROMPT)
+        _lg_out.mark_set('repl_input', 'end-1c')
+        _lg_out.mark_gravity('repl_input', 'left')
+        _lg_out.see('end')
+
+    def _repl_print(text):
+        """Program/system output goes above the live prompt line."""
+        _lg_out.insert('repl_input linestart', text.rstrip('\n') + '\n')
+        _lg_out.see('end')
+
+    def _repl_current_input():
+        return _lg_out.get('repl_input', 'end-1c')
+
+    def _repl_set_input(text):
+        _lg_out.delete('repl_input', 'end-1c')
+        _lg_out.insert('repl_input', text)
+
+    def _repl_enter(_e=None):
+        line = _repl_current_input()
+        _lg_out.insert('end', '\n')
+        if _repl[0] is None:
+            _lg_out.insert('end', 'REPL engine unavailable\n')
+        elif line.strip():
+            try:
+                out = _repl[0].execute(line)
+            except Exception as ex:
+                out = f'error: {ex}'
+            if out:
+                _lg_out.insert('end', out + '\n')
+        _repl_hist_pos[0] = len(_repl[0].history) if _repl[0] else 0
+        _repl_new_prompt()
+        return 'break'
+
+    def _repl_hist(delta):
+        if _repl[0] is None or not _repl[0].history:
+            return 'break'
+        _repl_hist_pos[0] = max(0, min(len(_repl[0].history),
+                                       _repl_hist_pos[0] + delta))
+        h = _repl[0].history
+        _repl_set_input(h[_repl_hist_pos[0]]
+                        if _repl_hist_pos[0] < len(h) else '')
+        return 'break'
+
+    def _repl_clear(_e=None):
+        _lg_out.delete('1.0', 'end')
+        _repl_new_prompt()
+        return 'break'
+
+    def _repl_guard(_e=None):
+        """Keep edits at/after the prompt: clicks above just move the view."""
+        try:
+            if _lg_out.compare('insert', '<', 'repl_input'):
+                _lg_out.mark_set('insert', 'end-1c')
+        except Exception:
+            pass
+
+    def _repl_capture(_e=None):
+        """Capture-to-Pipeline: last successful registry pipeline becomes
+        Connectors widgets + typed pipes."""
+        if _repl[0] is None or not _repl[0].capture_last():
+            _repl_print('(nothing to capture — run a command pipeline first)')
+            return 'break'
+        seg_cmds, seg_edges = _repl[0].capture_last()
+        idmap = {}
+        for old in sorted(seg_cmds):
+            nid = fc_state['cmd_next_id']; fc_state['cmd_next_id'] += 1
+            c = dict(seg_cmds[old]); c['id'] = nid
+            c['x'] = 60 + 180 * len(idmap); c['y'] = 60
+            idmap[old] = nid
+            fc_state['cmd_widgets'][nid] = c
+        for e in seg_edges:
+            fc_state['cmd_edges'].append({'src': idmap[e['src']],
+                                          'dst': idmap[e['dst']],
+                                          'dst_param': e.get('dst_param')})
+        _guic_sync_stream()
+        _sh_redraw()
+        _repl_print(f'captured {len(idmap)} command(s) to Connectors')
+        guic_set_status('REPL pipeline captured to Connectors canvas')
+        return 'break'
+
+    _lg_out.bind('<Return>', _repl_enter)
+    _lg_out.bind('<Up>',   lambda e: _repl_hist(-1))
+    _lg_out.bind('<Down>', lambda e: _repl_hist(+1))
+    _lg_out.bind('<Control-l>', _repl_clear)
+    _lg_out.bind('<Control-p>', _repl_capture)
+    _lg_out.bind('<KeyPress>', _repl_guard, add='+')
+    _lg_out.insert('end', 'TernOO Shell — type help for commands; '
+                          'Ctrl+P captures the last pipeline\n')
+    _repl_new_prompt()
     _lg_pipe_sb = tk.Scrollbar(_lg_pipe_frame, orient='vertical')
     _lg_pipe_sb.pack(side='right', fill='y')
     _lg_pipe = tk.Listbox(_lg_pipe_frame, bg=C['inspect'], fg=C['text'],
@@ -6378,10 +6516,10 @@ def run_gui():
 
     def _lingo_update_preview(*_a):
         txt = _lingo_generate()
-        _lg_out.config(state='normal')
-        _lg_out.delete('1.0', 'end')
-        _lg_out.insert('1.0', txt)
-        _lg_out.config(state='disabled')
+        # Piece 3: the Output area is a live REPL now — preview text goes
+        # above the prompt instead of wiping/disabling the widget.
+        if txt:
+            _repl_print(txt)
 
     def _lingo_activate(cmd):
         _lingo['active'] = cmd
@@ -7415,13 +7553,80 @@ def run_gui():
             _gmtv_spec = _gmtv_u.spec_from_file_location('gristmill_tab_view', _gmtv_path)
             _gmtv_mod  = _gmtv_u.module_from_spec(_gmtv_spec)
             _gmtv_spec.loader.exec_module(_gmtv_mod)
-            _gristmill_view = _gmtv_mod.GristMillTabView(gm_tab, fc_state, C, root)
+            _gristmill_view = _gmtv_mod.GristMillTabView(_lingo_vocab_frame, fc_state, C, root)
             if fc_state.get('stream') is not None:
                 fc_state['stream'].subscribe(_gristmill_view.on_stream_change)
         except Exception as _gmtv_err:
             import traceback
             traceback.print_exc()
             print(f'[FlowCode] GristMill tab failed to load: {_gmtv_err}')
+
+    # ── Text/language bundle: model plumbing shared by Text tab, Translator
+    # and the Shell REPL. flowcode.py stays the only fc_state expert; the
+    # view modules receive closures. ─────────────────────────────────────────
+    def _dialect_model():
+        return {'widgets': fc_state['widgets'],
+                'flows': fc_state['flow_symbols'],
+                'cells': fc_state['cells'],
+                'cmds': fc_state['cmd_widgets'],
+                'flow_edges': fc_state['flow_edges'],
+                'cmd_edges': fc_state['cmd_edges'],
+                'notes': []}
+
+    def _apply_dialect_model(model):
+        """Replace program state with a parsed dialect model, then run the
+        same refresh sequence the Open path uses."""
+        fc_state['widgets'].clear(); fc_state['widgets'].update(model['widgets'])
+        fc_state['edges'].clear()
+        fc_state['flow_symbols'].clear()
+        fc_state['flow_symbols'].update(model['flows'])
+        fc_state['flow_edges'].clear()
+        fc_state['flow_edges'].extend(model['flow_edges'])
+        fc_state['cells'].clear(); fc_state['cells'].update(model['cells'])
+        fc_state['cmd_widgets'].clear()
+        fc_state['cmd_widgets'].update(model['cmds'])
+        fc_state['cmd_edges'].clear()
+        fc_state['cmd_edges'].extend(model['cmd_edges'])
+        fc_state['flow_selected'] = None
+        fc_state['flow_multi_sel'].clear()
+        _guic_sync_stream()
+        redraw()
+        guic_layout_all()
+        guic_redraw()
+        _sh_redraw()
+        _sheet_recompute()
+        _sheet_redraw()
+        if _translator_view[0] is not None:
+            _translator_view[0].refresh()
+
+    _text_tab_view = [None]
+    _ttv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             '../5500fp/text_tab_view.py')
+    if os.path.exists(_ttv_path):
+        try:
+            import importlib.util as _ttv_u
+            _ttv_spec = _ttv_u.spec_from_file_location('text_tab_view', _ttv_path)
+            _ttv_mod  = _ttv_u.module_from_spec(_ttv_spec)
+            _ttv_spec.loader.exec_module(_ttv_mod)
+            _text_tab_view[0] = _ttv_mod.TextTabView(
+                text_tab, C, root, _dialect_model, _apply_dialect_model,
+                guic_set_status)
+        except Exception as _ttv_err:
+            import traceback; traceback.print_exc()
+            print(f'[FlowCode] Text tab failed to load: {_ttv_err}')
+
+    _trv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             '../5500fp/translator_view.py')
+    if os.path.exists(_trv_path):
+        try:
+            import importlib.util as _trv_u
+            _trv_spec = _trv_u.spec_from_file_location('translator_view', _trv_path)
+            _trv_mod  = _trv_u.module_from_spec(_trv_spec)
+            _translator_view[0] = _trv_mod.TranslatorView(
+                _lingo_trans_frame, C, _dialect_model)
+        except Exception as _trv_err:
+            import traceback; traceback.print_exc()
+            print(f'[FlowCode] Translator failed to load: {_trv_err}')
 
     # ── Bundle 18: zoom indicator update helper ───────────────────────────────
     def _update_zoom_indicator():
