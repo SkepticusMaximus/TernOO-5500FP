@@ -68,6 +68,10 @@ class TestFsCommands(unittest.TestCase):
         self.assertIn('1  pwd', h)
         self.assertIn('2  ls', h)
 
+    def test_ni_demands_and_accepts_shrubbery(self):
+        self.assertIn('NI!', self.repl.execute('ni'))
+        self.assertIn('appeased', self.repl.execute('ni shrubbery'))
+
     def test_help_lists_both_families(self):
         h = self.repl.execute('help')
         self.assertIn('math_add', h)
