@@ -61,7 +61,7 @@ _EMU = os.path.abspath(os.path.join(
     _HERE, '..', 'NASM-TernOO-5500FP-Emulator', 'c_emulator', '5500fp'))
 
 FS_COMMANDS = ('ls', 'cat', 'pwd', 'cd', 'cp', 'mv', 'rm', 'mkdir',
-               'touch', 'echo', 'run', 'help', 'history')
+               'touch', 'echo', 'run', 'help', 'history', 'ni', 'ghost')
 
 
 class ReplError(ValueError):
@@ -342,6 +342,56 @@ class Repl:
                     "fs: " + ' '.join(FS_COMMANDS) + "\n"
                     "pipes: a | b.param   sequence: a && b   "
                     "redirect: echo \"x\" > file")
+        if cmd == 'ghost':
+            # GHOST First Breath: native intent routing.  The forward pass
+            # runs ON THE EMULATOR (gen_ghost_t5asm) — no host inference.
+            text = part[len('ghost'):].strip()
+            if text.startswith('"') and text.endswith('"'):
+                text = text[1:-1]
+            if not text:
+                return 'usage: ghost "<what you want done>"'
+            import json as _json
+            mpath = os.path.join(_HERE, 'ghost_model.json')
+            if not os.path.exists(mpath):
+                raise ReplError("ghost model missing — run ghost_train.py")
+            model = _json.load(open(mpath))
+            GEN = _load('gen_ghost_t5asm')
+            asm = GEN.emit_forward(text, model)
+            with tempfile.NamedTemporaryFile('w', suffix='.t5asm',
+                                             delete=False) as f:
+                f.write(asm); p = f.name
+            try:
+                r = subprocess.run([self.emulator, '--run', p],
+                                   capture_output=True, text=True,
+                                   timeout=60)
+            finally:
+                os.unlink(p)
+            nums = [int(l) for l in r.stdout.splitlines()
+                    if l.strip().lstrip('-').isdigit()]
+            if len(nums) < 2:
+                raise ReplError("ghost forward pass produced no result")
+            cls_idx, margin = nums[0], nums[1]
+            cls = model['classes'][cls_idx]
+            if cls == 'none' or margin < model['margin']:
+                return ("ghost: I'm sorry, I can't do that — yet.  "
+                        f"(margin {margin})")
+            short = cls[4:] if cls.startswith('cmd_') else cls
+            return (f"ghost: that sounds like {short}  "
+                    f"(margin {margin}, {cls_idx=})\n"
+                    f"ghost: try `{short}(...)` — or `help` for its "
+                    f"parameters")
+        if cmd == 'ni':
+            # Penance protocol (Stevo, 4 Jul 2026): the Knights Who Say Ni
+            # demand a shrubbery before any further traversal of this shell.
+            # One that looks nice. And not too expensive.
+            joined = ' '.join(args).lower()
+            if 'shrubbery' in joined:
+                return ("The Knights Who Say Ni are appeased. You may pass.\n"
+                        "(They would also accept a herring, for the tree.)")
+            return ("NI! NI! NI!\n"
+                    "We are the Knights Who Say... NI! We demand... "
+                    "A SHRUBBERY!\n"
+                    "(usage: ni shrubbery)")
         if cmd == 'run':
             if not args:
                 raise ReplError("run: program path required")
