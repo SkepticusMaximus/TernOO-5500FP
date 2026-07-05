@@ -832,7 +832,7 @@ def run_gui():
     # stays gm_tab; module is still ternoo_gristmill / GristMill concept. The
     # "GristMill" name is reserved for the future package-manager arc. ─────────
     gm_tab = tk.Frame(notebook,bg=C['bg'])
-    notebook.add(gm_tab, text='  Lingo  ')
+    notebook.add(gm_tab, text='  Babble-Fish  ')
     # Piece 2: Lingo hosts two views — Vocabulary (GristMillTabView, as
     # before) and Translator (multi-dialect projections). Toggle header:
     _lingo_hdr = tk.Frame(gm_tab, bg=C['palette'])
