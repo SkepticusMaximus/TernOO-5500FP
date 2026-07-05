@@ -833,6 +833,11 @@ def run_gui():
     # "GristMill" name is reserved for the future package-manager arc. ─────────
     gm_tab = tk.Frame(notebook,bg=C['bg'])
     notebook.add(gm_tab, text='  Babble-Fish  ')
+    # ── Tab 8: GHOST — the Academy (chat + curriculum + harness). View
+    #    class lives in 5500fp/ghost_tab_view.py; mounted at the bottom of
+    #    this file alongside the Text/Translator mounts.
+    academy_tab = tk.Frame(notebook, bg=C['bg'])
+    notebook.add(academy_tab, text='  GHOST  ')
     # Piece 2: Lingo hosts two views — Vocabulary (GristMillTabView, as
     # before) and Translator (multi-dialect projections). Toggle header:
     _lingo_hdr = tk.Frame(gm_tab, bg=C['palette'])
@@ -7662,6 +7667,22 @@ def run_gui():
         except Exception as _ttv_err:
             import traceback; traceback.print_exc()
             print(f'[FlowCode] Text tab failed to load: {_ttv_err}')
+
+    _gtv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             '../5500fp/ghost_tab_view.py')
+    _ghost_tab_view = [None]
+    if os.path.exists(_gtv_path):
+        try:
+            import importlib.util as _gtv_u
+            _gtv_spec = _gtv_u.spec_from_file_location('ghost_tab_view',
+                                                       _gtv_path)
+            _gtv_mod = _gtv_u.module_from_spec(_gtv_spec)
+            _gtv_spec.loader.exec_module(_gtv_mod)
+            _ghost_tab_view[0] = _gtv_mod.GhostTabView(
+                academy_tab, C, root, guic_set_status)
+        except Exception as _gtv_err:
+            import traceback; traceback.print_exc()
+            print(f'[FlowCode] GHOST tab failed to load: {_gtv_err}')
 
     _trv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              '../5500fp/translator_view.py')

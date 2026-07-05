@@ -211,7 +211,7 @@ class TestShellTabWiring(unittest.TestCase):
 
     def test_lingo_label_on_gm_tab(self):
         # The old GristMill/GMill tab is now labelled "Lingo".
-        self.assertIn("notebook.add(gm_tab, text='  Lingo  ')", self.src)
+        self.assertIn("notebook.add(gm_tab, text='  Babble-Fish  ')", self.src)
 
     def test_shell_sidebar_builder(self):
         self.assertIn('def _build_shell_tools', self.src)

@@ -202,12 +202,16 @@ class Repl:
 
     # -- public ------------------------------------------------------------
     def execute(self, line: str) -> str:
+        """One prompt line → output text.  !learn family is handled here
+        (before && splitting: a lesson is one act, not a pipeline)."""
         """One prompt line → output text.  `&&` sequences short-circuit on
         error."""
         line = line.strip()
         if not line:
             return ''
         self.history.append(line)
+        if line.startswith('!learn'):
+            return self._learn(line)
         outs = []
         parts = [p.strip() for p in _split_top(line, '&&')]
         i = 0
@@ -239,6 +243,26 @@ class Repl:
         """(cmd_meta, cmd_edges) of the last successful registry pipeline,
         for placement on the Connectors canvas."""
         return self._last_pipeline
+
+    def _learn(self, line: str) -> str:
+        H = _load('ghost_harness')
+        try:
+            bang = H.parse_bang(line)
+        except H.HarnessError as e:
+            return f'error: {e}'
+        if bang is None:
+            return 'usage: !learn <class> "<phrase>" | !learn-undo | !learn-log'
+        h = H.Harness(fs=self.fs)
+        try:
+            if bang[0] == 'undo':
+                return h.learn_undo()
+            if bang[0] == 'log':
+                return h.learn_log()
+            _, cls, phrase = bang
+            out = h.learn(cls, phrase)
+            return out + '\n(!learn-undo to revert; Train in the GHOST tab to apply)'
+        except H.HarnessError as e:
+            return f'error: {e}'
 
     # -- registry path: compile + run on the emulator -----------------------
     def _run_group(self, group) -> str:
