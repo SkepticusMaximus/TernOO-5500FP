@@ -58,6 +58,19 @@ MODEL_FILE = 'ghost_model.json'
 LEARNLOG_FILE = 'ghost_learnlog.jsonl'
 CHAT_VERSION = 1
 
+# ── Majors (Spec A / B6): a major = corpus + model + learnlog triple. ──────
+# The default major is the command router (original files, untouched paths).
+MAJORS = {
+    'commands': {'corpus': 'ghost_corpus.json',
+                 'model': 'ghost_model.json',
+                 'learnlog': 'ghost_learnlog.jsonl',
+                 'seed_from_templates': True},
+    'surfaces': {'corpus': 'ghost_corpus_surfaces.json',
+                 'model': 'ghost_major_surfaces.json',
+                 'learnlog': 'ghost_learnlog_surfaces.jsonl',
+                 'seed_from_templates': False},
+}
+
 
 class HarnessError(ValueError):
     pass
@@ -67,20 +80,29 @@ class HarnessError(ValueError):
 # Curriculum (corpus persistence)
 # ═══════════════════════════════════════════════════════════════════════════
 
-def load_corpus(fs=None) -> dict:
-    """{class: [template, ...]} — seeded from ghost_train.TEMPLATES on
-    first run so the shipped curriculum is the starting syllabus."""
+def load_corpus(fs=None, major='commands') -> dict:
+    """{class: [template, ...]}. The commands major seeds from
+    ghost_train.TEMPLATES on first run (the shipped syllabus); other
+    majors seed from their corpus file in the repo (copied into the fs
+    root on first use)."""
     fs = fs or _fs_mod.get_fs()
-    if fs.exists(CORPUS_FILE):
-        return json.loads(fs.read(CORPUS_FILE))
-    corpus = {k: list(v) for k, v in G.TEMPLATES.items()}
-    save_corpus(corpus, fs)
+    m = MAJORS[major]
+    if fs.exists(m['corpus']):
+        return json.loads(fs.read(m['corpus']))
+    if m.get('seed_from_templates'):
+        corpus = {k: list(v) for k, v in G.TEMPLATES.items()}
+    else:
+        repo_seed = os.path.join(_HERE, m['corpus'])
+        if not os.path.exists(repo_seed):
+            raise HarnessError(f"no corpus for major {major!r}")
+        corpus = json.loads(open(repo_seed).read())
+    save_corpus(corpus, fs, major)
     return corpus
 
 
-def save_corpus(corpus: dict, fs=None) -> None:
+def save_corpus(corpus: dict, fs=None, major='commands') -> None:
     fs = fs or _fs_mod.get_fs()
-    fs.save(CORPUS_FILE, json.dumps(corpus, indent=1))
+    fs.save(MAJORS[major]['corpus'], json.dumps(corpus, indent=1))
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -88,12 +110,22 @@ def save_corpus(corpus: dict, fs=None) -> None:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class Harness:
-    def __init__(self, fs=None, emulator=_EMU):
+    def __init__(self, fs=None, emulator=_EMU, major='commands'):
+        if major not in MAJORS:
+            raise HarnessError(f"unknown major {major!r} — one of: "
+                               + ', '.join(sorted(MAJORS)))
+        self.major = major
+        self._files = MAJORS[major]
         self.fs = fs or _fs_mod.get_fs()
         self.emulator = emulator
-        self.corpus = load_corpus(self.fs)
-        self.model = (json.loads(self.fs.read(MODEL_FILE))
-                      if self.fs.exists(MODEL_FILE) else None)
+        self.corpus = load_corpus(self.fs, major)
+        model_path = self._files['model']
+        if self.fs.exists(model_path):
+            self.model = json.loads(self.fs.read(model_path))
+        elif major != 'commands' and os.path.exists(os.path.join(_HERE, model_path)):
+            self.model = json.loads(open(os.path.join(_HERE, model_path)).read())
+        else:
+            self.model = None
         self.turns = []                 # current session, for .chat save
 
     # ── !learn ───────────────────────────────────────────────────────────
@@ -113,7 +145,7 @@ class Harness:
         if phrase in self.corpus[cls]:
             return f"already known: {cls} ← {phrase!r}"
         self.corpus[cls].append(phrase)
-        save_corpus(self.corpus, self.fs)
+        save_corpus(self.corpus, self.fs, self.major)
         self._log({'op': 'learn', 'class': cls, 'phrase': phrase,
                    'ts': int(time.time())})
         return (f"learned: {cls} ← {phrase!r}   "
@@ -126,7 +158,7 @@ class Harness:
                 cls, phrase = e['class'], e['phrase']
                 if phrase in self.corpus.get(cls, []):
                     self.corpus[cls].remove(phrase)
-                    save_corpus(self.corpus, self.fs)
+                    save_corpus(self.corpus, self.fs, self.major)
                 self._log({'op': 'undo', 'class': cls, 'phrase': phrase,
                            'ts': int(time.time())})
                 return f"unlearned: {cls} ← {phrase!r}"
@@ -143,15 +175,15 @@ class Harness:
         return '\n'.join(lines)
 
     def _log(self, entry: dict) -> None:
-        self.fs.append(LEARNLOG_FILE, json.dumps(entry) + '\n')
+        self.fs.append(self._files['learnlog'], json.dumps(entry) + '\n')
 
     def _log_entries(self):
-        if not self.fs.exists(LEARNLOG_FILE):
+        if not self.fs.exists(self._files['learnlog']):
             return []
         out = []
         undone_pairs = set()
         raw = [json.loads(l) for l in
-               self.fs.read(LEARNLOG_FILE).splitlines() if l.strip()]
+               self.fs.read(self._files['learnlog']).splitlines() if l.strip()]
         for e in raw:
             if e['op'] == 'undo':
                 undone_pairs.add((e['class'], e['phrase']))
@@ -165,29 +197,31 @@ class Harness:
     def train(self, seed=27) -> dict:
         """Retrain from the live curriculum.  Returns the report card and
         persists the new model (the golden suite re-verifies it)."""
-        saved = G.TEMPLATES
+        saved_t, saved_c = G.TEMPLATES, G.CLASSES
+        classes = ['none'] + sorted(k for k in self.corpus if k != 'none')
         try:
             G.TEMPLATES = {k: list(v) for k, v in self.corpus.items()}
+            G.CLASSES = classes
             W1, W2, held = G.train(seed=seed)
             acc = G.accuracy(held, W1, W2)
         finally:
-            G.TEMPLATES = saved
+            G.TEMPLATES, G.CLASSES = saved_t, saved_c
         self.model = {'nfeat': G.NFEAT, 'nhid': G.NHID,
-                      'classes': G.CLASSES, 'margin': G.MARGIN,
+                      'classes': classes, 'margin': G.MARGIN,
                       'W1': W1, 'W2': W2}
-        self.fs.save(MODEL_FILE, json.dumps(self.model))
+        self.fs.save(self._files['model'], json.dumps(self.model))
         confusion = {}
         for text, y in held:
-            got, _m = G.route(text, W1, W2)
-            want = G.CLASSES[y]
+            got, _m = self._route_host(text, W1, W2, classes)
+            want = classes[y]
             if got != want:
                 pair = f"{want} → {got}"
                 confusion[pair] = confusion.get(pair, 0) + 1
         worst = sorted(confusion.items(), key=lambda kv: -kv[1])[:5]
         refusals_ok = sum(1 for t in
                           self.corpus.get('none', [])[:10]
-                          if G.route(t.format(*(['x'] * t.count('{}'))),
-                                     W1, W2)[0] == 'none')
+                          if self._route_host(t.format(*(['x'] * t.count('{}'))),
+                                              W1, W2, classes)[0] == 'none')
         report = {'held_out_accuracy': round(acc, 4),
                   'held_out_n': len(held),
                   'refusal_check': f"{refusals_ok}/10",
@@ -197,6 +231,21 @@ class Harness:
         self._log({'op': 'train', 'accuracy': report['held_out_accuracy'],
                    'ts': int(time.time()), 'class': '-', 'phrase': '-'})
         return report
+
+    @staticmethod
+    def _route_host(text, W1, W2, classes):
+        """Host-reference routing with an explicit class list (majors have
+        different class sets than the module-level G.CLASSES)."""
+        saved = G.CLASSES
+        try:
+            G.CLASSES = classes          # ref_forward sizes its output loop
+            cls_idx, margin, _ = G.ref_forward(text, W1, W2)
+        finally:
+            G.CLASSES = saved
+        cls = classes[cls_idx]
+        if cls == 'none' or margin < G.MARGIN:
+            return 'none', margin
+        return cls, margin
 
     # ── routing (native, on the emulator) ────────────────────────────────
     def route(self, text: str):

@@ -57,9 +57,18 @@ class GhostTabView:
         self.C, self.root, self._status = C, root, set_status
         self.harness = H.Harness()
         self._pending_lesson = None
+        self._major_var = None   # set below if tk available
 
         bar = tk.Frame(parent, bg=C['palette'])
         bar.pack(side='top', fill='x')
+        # Spec A (A4): major selector — Commands (router) | Surfaces (advisor)
+        self._major_var = tk.StringVar(value='commands')
+        majors_menu = tk.OptionMenu(bar, self._major_var,
+                                    *sorted(H.MAJORS), command=self._set_major)
+        majors_menu.config(bg=C['palette'], fg=C['text'],
+                           font=('Monospace', 9), relief='flat',
+                           highlightthickness=0)
+        majors_menu.pack(side='left', padx=(2, 8))
         for label, cmd in (('Open .chat', self.open_chat),
                            ('Save', self.save_chat),
                            ('Save As', self.save_chat_as),
@@ -169,6 +178,23 @@ class GhostTabView:
             self._say('ghost: ', self.harness.chat(line))
         except (H.HarnessError, OSError) as e:
             self._say('ghost: ', f'error: {e}')
+
+    def _set_major(self, major):
+        """Swap the live harness to another major; refresh all panes."""
+        try:
+            self.harness = H.Harness(major=major)
+        except H.HarnessError as e:
+            self._status(f'major switch failed: {e}')
+            return
+        self.cls_list.delete(0, 'end')
+        for cls in sorted(self.harness.corpus):
+            self.cls_list.insert('end', cls)
+        self.phrases.delete('1.0', 'end')
+        self.report.delete('1.0', 'end')
+        self.report.insert('end', f'({major} major — press Train for a report card)')
+        self._brain_scan()
+        self._say('ghost: ', f'now majoring in {major}')
+        self._status(f'GHOST major: {major}')
 
     # ── curriculum ────────────────────────────────────────────────────────
     def _show_class(self, _e=None):

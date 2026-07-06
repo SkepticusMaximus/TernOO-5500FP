@@ -379,6 +379,19 @@ class Repl:
             if not os.path.exists(mpath):
                 raise ReplError("ghost model missing — run ghost_train.py")
             model = _json.load(open(mpath))
+            # Spec A (A3): hierarchical routing — consult the surfaces
+            # major first; only shell-shaped tasks fall through to the
+            # command router. Other surfaces get a signpost reply.
+            H = _load('ghost_harness')
+            spath = os.path.join(_HERE, H.MAJORS['surfaces']['model'])
+            if os.path.exists(spath):
+                surf = H.Harness(fs=self.fs, major='surfaces')
+                s_cls, s_margin = surf.route(text)
+                if s_cls not in ('surface_shell', 'none'):
+                    tab = s_cls[len('surface_'):].upper() if s_cls == 'surface_gui' else s_cls[len('surface_'):].capitalize()
+                    return (f"ghost: that's shaped like a job for the "
+                            f"{tab} tab  (margin {s_margin})\n"
+                            f"ghost: offer the tool that fits the rule")
             GEN = _load('gen_ghost_t5asm')
             asm = GEN.emit_forward(text, model)
             with tempfile.NamedTemporaryFile('w', suffix='.t5asm',

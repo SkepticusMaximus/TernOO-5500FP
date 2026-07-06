@@ -128,6 +128,54 @@ class TestChatFormat(unittest.TestCase):
 
 
 @unittest.skipUnless(_EMU_OK, "emulator binary not built")
+class TestMajors(unittest.TestCase):
+    """Spec A: majors mechanism + the Surface Advisor (Major #1)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.d = tempfile.mkdtemp()
+        cls.h = H.Harness(fs=FS.HostFileSystem(cls.d), major='surfaces')
+
+    def test_unknown_major_rejected(self):
+        with self.assertRaises(H.HarnessError):
+            H.Harness(fs=FS.HostFileSystem(self.d), major='astrology')
+
+    def test_surfaces_corpus_seeded_from_repo(self):
+        self.assertIn('surface_flow', self.h.corpus)
+        self.assertIn('none', self.h.corpus)
+        self.assertTrue(self.h.fs.exists('ghost_corpus_surfaces.json'))
+
+    def test_repo_model_routes_all_surfaces_natively(self):
+        """The shipped ghost_major_surfaces.json routes one exemplar per
+        surface on the EMULATOR, and refuses out-of-domain."""
+        cases = {"track an order through its states": 'surface_flow',
+                 "monthly totals per region": 'surface_sheet',
+                 "grep then sort these lines": 'surface_shell',
+                 "a settings dialog with two buttons": 'surface_gui',
+                 "draft the readme for the project": 'surface_text',
+                 "solve world hunger": 'none'}
+        for text, want in cases.items():
+            with self.subTest(text=text):
+                got, margin = self.h.route(text)
+                self.assertEqual(got, want)
+
+    def test_majors_are_isolated(self):
+        """A lesson taught to surfaces never leaks into commands."""
+        cmd = H.Harness(fs=FS.HostFileSystem(self.d), major='commands')
+        self.h.learn('surface_flow', 'sequence the ceremony of the keys')
+        self.assertNotIn('sequence the ceremony of the keys',
+                         sum(cmd.corpus.values(), []))
+        self.assertFalse(cmd.fs.exists('ghost_learnlog_surfaces.jsonl')
+                         and 'ceremony' in cmd.learn_log())
+
+    def test_command_major_untouched(self):
+        """Invariant 1 witness: default major still the original files."""
+        cmd = H.Harness(fs=FS.HostFileSystem(self.d), major='commands')
+        self.assertIn('cmd_text_upper', cmd.corpus)
+        self.assertEqual(cmd._files['model'], 'ghost_model.json')
+
+
+@unittest.skipUnless(_EMU_OK, "emulator binary not built")
 class TestAcademy(unittest.TestCase):
     """The slow, real ones: train + native routing + the tribble redemption."""
 
