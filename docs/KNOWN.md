@@ -124,3 +124,13 @@ untested surface. Worth a scripted on-screen pass before public demos.
   whole chain (REPL, rehydrator, dialect, encoders, fixtures) now speaks
   `properties`; the money test exercises real values through the words for the
   first time — a strictly stronger guarantee.
+
+## Cryptography / security scope
+
+- **`ternary_sponge` (MMID digest) threat-model scope.** `ternary_sponge`
+  (MMID digest) is a home-grown ternary construction — measured-good for
+  accident-resistance and local tamper-evidence (avalanche + insert-time
+  full-comparison collision detection). It has NOT been externally
+  cryptanalyzed. Revisit / get external review before MMID is ever used as a
+  security boundary against a remote adversarial attacker, as opposed to its
+  current accident-resistance + local-tamper role.
