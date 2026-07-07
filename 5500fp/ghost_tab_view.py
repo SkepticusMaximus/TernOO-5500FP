@@ -2,23 +2,25 @@
 
 Mounted by flowcode.py:  GhostTabView(parent_frame, C, root, set_status)
 
-A vertically split classroom:
-  * TOP pane  — Professor (Bonsai): sprite zone + placard ("local subprocess ·
-    no network") + the BLACKBOARD (Bonsai's output) + thought/speech vectors.
-  * SEAM      — the training desk: Train control + the GRADING STRIP (belt
-    test, bound to the real report-card accuracy — never a fabricated value).
-  * BOTTOM pane — Student (GHOST): sprite zone + the OPEN BOOK (the .chat log —
-    the kept original made visible) + entry + thought/speech vectors + the
-    curious `?` indicator (pulses while routing or on a `none`).
+A vertically split classroom (measured geometry — CF5-Submit-2026-07-08_004000):
+  * TOP pane  (~44% H) — Professor (Bonsai): sprite zone (~28% pane W, bottom-
+    weighted) + placard ("local subprocess · no network") + the BLACKBOARD
+    (upper ~70% of the pane, right of a 12px gutter) + thought/speech vectors.
+  * SEAM      (~12% H) — the training desk: Train control + the GRADING STRIP
+    (belt test, bound to the REAL report-card accuracy — never fabricated).
+  * BOTTOM pane (~44% H) — Student (GHOST): sprite zone + the OPEN BOOK
+    (the .chat log — the kept original made visible) + entry + curious `?`
+    indicator (pulses while routing / on a `none`) + thought/speech vectors.
 
-The seam IS the humility gate; the layout IS the architecture. All graphics
-bind to REAL harness state. Commissioned raster art arrives later as pure
-overlay — the sprite-zone frames below are the contract with that art; their
-positions/sizes must not change when the PNGs land.
+Cosmetics: live-text regions are BORDERLESS — distinctness is surface colour
+alone (board #0a1410, book #141210, placard lifted-navy #0d1624). No code-drawn
+frames or reliefs; the commissioned sprite art supplies the frames later, and a
+code border would double them. Sprite-zone placeholders keep their dashed
+outlines (scaffolding, they vanish when the art loads). The zone geometry is
+the FROZEN contract with that overlay art.
 
 Harness logic lives in ghost_harness.py (GHOST) and ghost_bonsai.py (the
-Professor plumbing: subprocess + Contract v1 + interim consistency gate +
-consent-gated delegation). This file is furniture.
+Professor plumbing). This file is furniture.
 
 Date: 2026-07-07, Adelaide
 Authors: Stevo (SkepticusMaximus) + Claude (Anthropic)
@@ -47,11 +49,17 @@ PROMPT = 'you: '
 # Sprite/asset home — the contract with the commissioned overlay art.
 ASSETS_DIR = os.path.join(_HERE, '..', 'FlowCode', 'assets', 'academy')
 
-# Dojo-specific colours (dispatch §2). Kept literal so they survive whatever
-# the general palette C carries.
+# ── measured layout geometry (fractions of the client area / pane) ──────────
+PROF_H, SEAM_H, STUD_H = 0.44, 0.12, 0.44     # pane heights (sum = 1.0)
+SPRITE_W = 0.28                                # sprite zone width, per pane
+BOARD_H = 0.70                                 # blackboard height, of prof pane
+BOOK_H = 0.70                                  # open book height, of stud pane
+GUTTER = 12                                    # px gutter around board/book
+
+# ── dojo colours (dispatch §2). Literal so they survive palette variance. ───
 BLACKBOARD_FACE = '#0a1410'
-BLACKBOARD_FRAME = '#2a4a3a'
 BOOK_FACE = '#141210'
+PLACARD_FACE = '#0d1624'          # slightly lifted navy, no outline
 PLACARD_TEXT = 'local subprocess · no network'
 CURIOUS_A = '#7f77dd'   # purple
 CURIOUS_B = '#639922'   # green
@@ -120,6 +128,9 @@ def present_bonsai(gate, resp) -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class GhostTabView:
+    _show_idea = False
+    _prof_pose_name = 'idle'
+
     def __init__(self, parent, C, root, set_status):
         import tkinter as tk
         from tkinter import filedialog, messagebox
@@ -133,6 +144,10 @@ class GhostTabView:
         self._accuracy = None                  # last real report-card accuracy
         self._curious_on = False
         self._curious_job = None
+        self._stud_thought = ''
+        self._stud_speech = ''
+        self._prof_thought = ''
+        self._prof_speech = ''
 
         # Bonsai: cmd from env (no binary yet → stays NOT_RUNNING, graceful).
         bonsai_cmd = os.environ.get('BONSAI_CMD')
@@ -159,65 +174,71 @@ class GhostTabView:
                       fg=C['text'], font=('Monospace', 9), relief='flat',
                       bd=0, padx=8, pady=3, cursor='hand2').pack(side='left')
 
-        # ── TOP: Professor (Bonsai) ──────────────────────────────────────────
-        prof = tk.Frame(parent, bg=C['bg'])
-        prof.pack(side='top', fill='both', expand=True)
-        self.prof_canvas = tk.Canvas(prof, bg=C['bg'], highlightthickness=0,
-                                     width=200)
-        self.prof_canvas.pack(side='left', fill='y')
-        self.prof_canvas.bind('<Configure>', lambda e: self._redraw_prof())
-        board_frame = tk.Frame(prof, bg=BLACKBOARD_FRAME, bd=0)
-        board_frame.pack(side='left', fill='both', expand=True, padx=6, pady=6)
-        self.blackboard = tk.Text(board_frame, bg=BLACKBOARD_FACE, fg='#cfe8d8',
-                                  insertbackground='#cfe8d8', relief='flat',
+        # ── the three placed regions (44 / 12 / 44) ──────────────────────────
+        container = tk.Frame(parent, bg=C['bg'])
+        container.pack(side='top', fill='both', expand=True)
+
+        self.prof_pane = tk.Frame(container, bg=C['bg'])
+        self.prof_pane.place(relx=0, rely=0, relwidth=1, relheight=PROF_H)
+        seam = tk.Frame(container, bg=C['palette'])
+        seam.place(relx=0, rely=PROF_H, relwidth=1, relheight=SEAM_H)
+        self.stud_pane = tk.Frame(container, bg=C['bg'])
+        self.stud_pane.place(relx=0, rely=PROF_H + SEAM_H, relwidth=1,
+                             relheight=STUD_H)
+
+        # ── TOP pane: Professor (Bonsai) — canvas for vectors + borderless board
+        self.prof_canvas = tk.Canvas(self.prof_pane, bg=C['bg'],
+                                     highlightthickness=0)
+        self.prof_canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
+        self.blackboard = tk.Text(self.prof_pane, bg=BLACKBOARD_FACE,
+                                  fg='#cfe8d8', insertbackground='#cfe8d8',
+                                  bd=0, relief='flat', highlightthickness=0,
                                   font=('Monospace', 10), wrap='word',
-                                  padx=10, pady=8, highlightthickness=0,
-                                  state='disabled')
-        self.blackboard.pack(fill='both', expand=True, padx=4, pady=4)
+                                  padx=10, pady=8, state='disabled')
+        self.blackboard.place(relx=SPRITE_W, x=GUTTER, rely=0.0, y=6,
+                              relwidth=1 - SPRITE_W, width=-2 * GUTTER,
+                              relheight=BOARD_H, height=-6)
+        self.prof_pane.bind('<Configure>', lambda e: self._redraw_prof())
 
         # ── SEAM: the training desk ──────────────────────────────────────────
-        seam = tk.Frame(parent, bg=C['palette'], height=70)
-        seam.pack(side='top', fill='x')
-        seam.pack_propagate(False)
         self.train_btn = tk.Button(seam, text='▸ Train (belt test)',
                                    command=self.train, bg=C['palette'],
                                    fg=acc, font=('Monospace', 10, 'bold'),
                                    relief='flat', bd=0, padx=10, cursor='hand2')
         self.train_btn.pack(side='left', padx=8)
         self.grade_canvas = tk.Canvas(seam, bg=C['inspect'], height=22,
-                                     highlightthickness=1,
-                                     highlightbackground=acc)
+                                     highlightthickness=0)      # borderless
         self.grade_canvas.pack(side='left', fill='x', expand=True,
-                               padx=8, pady=(0, 4))
+                               padx=8, pady=6)
         self.grade_canvas.bind('<Configure>', lambda e: self._draw_grade())
         self.consent_lbl = tk.Label(seam, text='', bg=C['palette'],
                                     fg=C['edge_msg'], font=('Monospace', 9))
-        self.consent_lbl.pack(side='bottom', anchor='w', padx=10)
+        self.consent_lbl.pack(side='right', padx=10)
 
-        # ── BOTTOM: Student (GHOST) ──────────────────────────────────────────
-        stud = tk.Frame(parent, bg=C['bg'])
-        stud.pack(side='top', fill='both', expand=True)
-        self.stud_canvas = tk.Canvas(stud, bg=C['bg'], highlightthickness=0,
-                                    width=200)
-        self.stud_canvas.pack(side='left', fill='y')
-        self.stud_canvas.bind('<Configure>', lambda e: self._redraw_student())
-        book_col = tk.Frame(stud, bg=C['bg'])
-        book_col.pack(side='left', fill='both', expand=True, padx=6, pady=6)
-        self.book = tk.Text(book_col, bg=BOOK_FACE, fg='#e6dcc8',
-                            insertbackground='#e6dcc8', relief='flat',
-                            font=('Monospace', 10), wrap='word',
-                            padx=10, pady=8, highlightthickness=0)
-        self.book.pack(fill='both', expand=True)
+        # ── BOTTOM pane: Student (GHOST) — canvas + borderless book + entry ──
+        self.stud_canvas = tk.Canvas(self.stud_pane, bg=C['bg'],
+                                    highlightthickness=0)
+        self.stud_canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
+        self.book = tk.Text(self.stud_pane, bg=BOOK_FACE, fg='#e6dcc8',
+                            insertbackground='#e6dcc8', bd=0, relief='flat',
+                            highlightthickness=0, font=('Monospace', 10),
+                            wrap='word', padx=10, pady=8)
+        self.book.place(relx=SPRITE_W, x=GUTTER, rely=0.0, y=6,
+                        relwidth=1 - SPRITE_W, width=-2 * GUTTER,
+                        relheight=BOOK_H, height=-6)
         self.book.insert('end', 'GHOST Academy — the book is the log. Talk '
                                 'below; teach with !learn <class> "<phrase>", '
                                 '!learn-undo, !learn-log.\n')
-        self.entry = tk.Entry(book_col, bg=C['inspect'], fg=C['text'],
-                             insertbackground=C['text'], relief='flat',
-                             font=('Monospace', 10))
-        self.entry.pack(fill='x', pady=(4, 0))
+        self.entry = tk.Entry(self.stud_pane, bg=C['inspect'], fg=C['text'],
+                             insertbackground=C['text'], relief='flat', bd=0,
+                             highlightthickness=0, font=('Monospace', 10))
+        self.entry.place(relx=SPRITE_W, x=GUTTER, rely=BOOK_H, y=6,
+                         relwidth=1 - SPRITE_W, width=-2 * GUTTER, height=26)
         self.entry.bind('<Return>', self._on_enter)
+        self.stud_pane.bind('<Configure>', lambda e: self._redraw_student())
 
-        self._refresh_professor_presence()
+        self._redraw_prof()
+        self._redraw_student()
         self._draw_grade()
 
     # ── sprite zones + vector overlays (the art contract) ──────────────────
@@ -236,55 +257,66 @@ class GhostTabView:
         self._sprites[name] = img
         return img
 
-    def _placeholder(self, canvas, label):
-        """Dashed sprite-zone frame — the reserved rectangle the overlay art
-        will occupy. Its geometry is the contract; do not resize on art land."""
-        w = canvas.winfo_width() or 200
+    def _sprite_zone(self, canvas, label, sprite_name):
+        """Draw the figure (art if present, else the dashed placeholder) in the
+        left ~28% column, bottom-weighted so figures 'stand'. Returns the zone
+        rect — the FROZEN geometry the overlay art will occupy."""
+        w = canvas.winfo_width() or 400
         h = canvas.winfo_height() or 200
-        pad = 14
-        zone = (pad, pad, w - pad, h - 60)
-        canvas.create_rectangle(*zone, dash=(4, 3), outline=self.C['dim'])
-        cx = (zone[0] + zone[2]) // 2
-        cy = (zone[1] + zone[3]) // 2
-        canvas.create_text(cx, cy, text=label, fill=self.C['dim'],
-                           font=('Monospace', 11))
-        return zone
+        sprite_w = int(w * SPRITE_W)
+        zone = (12, int(h * 0.16), sprite_w - 6, h - 46)
+        img = self._load_sprite(sprite_name)
+        if img is not None:
+            canvas.create_image((zone[0] + zone[2]) // 2, zone[3] - img.height()
+                                // 2, image=img)
+        else:
+            canvas.create_rectangle(*zone, dash=(4, 3), outline=self.C['dim'])
+            canvas.create_text((zone[0] + zone[2]) // 2,
+                               (zone[1] + zone[3]) // 2, text=label,
+                               fill=self.C['dim'], font=('Monospace', 11))
+        return zone, sprite_w
+
+    def _bubble(self, canvas, x, y, text, colour, anchor='nw'):
+        """A borderless annotation (thought/speech). Text only — the art layer
+        will draw the balloon shapes; a code outline would double them."""
+        if text:
+            canvas.create_text(x, y, text=text, fill=colour, anchor=anchor,
+                              font=('Monospace', 8))
 
     def _redraw_prof(self):
         c = self.prof_canvas
         c.delete('all')
-        sprite = self._load_sprite('prof_idle')
-        if sprite is not None:
-            c.create_image(c.winfo_width() // 2, c.winfo_height() // 2 - 30,
-                           image=sprite)
-        else:
-            self._placeholder(c, 'prof')
-        # placard below the figure — live text on a small framed rect
-        w = c.winfo_width() or 200
+        w = c.winfo_width() or 400
         h = c.winfo_height() or 200
+        _, sprite_w = self._sprite_zone(c, 'prof', 'prof_' + self._prof_pose_name)
+        # placard — centred under the sprite zone, filled navy, no outline
         present = self.bonsai.status != B.NOT_RUNNING
         placard = PLACARD_TEXT if present else 'professor not present'
         col = CURIOUS_B if present else self.C['dim']
-        c.create_rectangle(10, h - 46, w - 10, h - 14, outline=col)
-        c.create_text(w // 2, h - 30, text=placard, fill=col,
-                     font=('Monospace', 8))
+        c.create_rectangle(12, h - 40, sprite_w - 6, h - 12,
+                          fill=PLACARD_FACE, outline='')
+        c.create_text((12 + sprite_w - 6) // 2, h - 26, text=placard,
+                     fill=col, font=('Monospace', 8))
+        # thought bubble up-left; speech balloon below-right (lower band, tail
+        # toward the seam below)
+        self._bubble(c, 14, 12, self._prof_thought, self.C['dim'])
+        self._bubble(c, sprite_w + GUTTER + 4, int(h * BOARD_H) + 10,
+                     self._prof_speech, '#cfe8d8')
 
     def _redraw_student(self):
         c = self.stud_canvas
         c.delete('all')
-        sprite = self._load_sprite('ghost_curious')
-        if sprite is not None:
-            c.create_image(c.winfo_width() // 2, c.winfo_height() // 2 - 10,
-                           image=sprite)
-        else:
-            self._placeholder(c, 'ghost')
-        # the curious `?` indicator, up-left of the figure
+        w = c.winfo_width() or 400
+        h = c.winfo_height() or 200
+        _, sprite_w = self._sprite_zone(c, 'ghost', 'ghost_curious')
+        # the curious `?` / idea mark — adjacent to the figure's upper-right
         col = CURIOUS_A if self._curious_on else self.C['dim']
         mark = IDEA_MARK if self._show_idea else '?'
-        c.create_text(28, 26, text=mark, fill=col,
-                     font=('Monospace', 18, 'bold'), tags=('curious',))
-
-    _show_idea = False
+        c.create_text(sprite_w - 14, 22, text=mark, fill=col,
+                     font=('Monospace', 18, 'bold'), anchor='e')
+        # thought bubble up-left; speech balloon below the figure (tail up)
+        self._bubble(c, 14, 12, self._stud_thought, self.C['text'])
+        self._bubble(c, 14, h - 30, self._stud_speech, '#e6dcc8')
 
     def _pulse_curious(self, on: bool):
         """Pulse the `?` while routing / on a none. Single indicator + one
@@ -315,13 +347,7 @@ class GhostTabView:
         self._show_idea = False
         self._redraw_student()
 
-    def _refresh_professor_presence(self):
-        try:
-            self._redraw_prof()
-        except Exception:
-            pass
-
-    # ── the grading strip (belt test) ──────────────────────────────────────
+    # ── the grading strip (belt test) — borderless trough, flat fill ───────
     def _draw_grade(self):
         c = self.grade_canvas
         c.delete('all')
@@ -356,7 +382,6 @@ class GhostTabView:
             return
         self._say(PROMPT, line)
         try:
-            # 1) a pending Bonsai-consent answer?
             if self._pending_delegation is not None:
                 text = self._pending_delegation
                 self._pending_delegation = None
@@ -366,7 +391,6 @@ class GhostTabView:
                 else:
                     self._say('ghost: ', 'refusal stands — I won\'t pretend.')
                 return
-            # 2) a pending !learn confirmation?
             if self._pending_lesson is not None:
                 if line.lower() in ('y', 'yes'):
                     cls, phrase = self._pending_lesson
@@ -376,7 +400,6 @@ class GhostTabView:
                     self._say('ghost: ', 'lesson discarded')
                 self._pending_lesson = None
                 return
-            # 3) a !learn command?
             bang = H.parse_bang(line)
             if bang:
                 if bang[0] == 'undo':
@@ -389,38 +412,26 @@ class GhostTabView:
                     self._say('ghost: ', f'you want me to learn {cls} ← '
                               f'{phrase!r} — confirm? (y/n)')
                 return
-            # 4) an ordinary turn — route natively.
             self._pulse_curious(True)
             self.root.update_idletasks()
             reply = self.harness.chat(line)
             last = self.harness.turns[-1]
-            self._student_state(last['route'], last['margin'])
+            self._stud_thought = student_thought(last['route'], last['margin'])
+            self._stud_speech = reply
+            self._pulse_curious(last['route'] == 'none')
             self._say('ghost: ', reply)
-            # a `none` + a present professor → OFFER (never auto-fire).
             if last['route'] == 'none' and self.bonsai.status != B.NOT_RUNNING:
                 self._pending_delegation = line
                 self.consent_lbl.config(text=B.CONSENT_PROMPT)
-            else:
-                self._pulse_curious(last['route'] == 'none')
         except (H.HarnessError, OSError) as e:
             self._pulse_curious(False)
             self._say('ghost: ', f'error: {e}')
-
-    def _student_state(self, route, margin):
-        """Bind the student's thought bubble + curious `?` to the real route."""
-        self._pulse_curious(route == 'none')
-        # thought text is drawn into the student canvas as a bubble
-        c = self.stud_canvas
-        self._redraw_student()
-        w = c.winfo_width() or 200
-        c.create_text(w - 10, 20, text=student_thought(route, margin),
-                     anchor='e', fill=self.C['text'], font=('Monospace', 8))
 
     def _delegate_to_bonsai(self, text):
         """Cross to the Professor — consent already given. Threaded so the UI
         stays live; the reply passes the interim consistency gate before it
         ever reaches the blackboard."""
-        if not B.should_delegate('none', True):     # defensive: only on none
+        if not B.should_delegate('none', True):
             return
         feats = self.G.features(text)
         route, margin = 'none', 0
@@ -430,6 +441,7 @@ class GhostTabView:
             pass
         req = B.build_request(text, feats, route, margin, self.harness.major)
         self._board('prof, the student is stuck: ' + text)
+        self._prof_thought = prof_thought(0)
         self._prof_pose('writing')
         import threading
         box = {}
@@ -444,13 +456,16 @@ class GhostTabView:
             if t.is_alive():
                 self.root.after(120, _poll)
                 return
+            self._prof_thought = ''
             self._prof_pose('speaking')
             resp, err = box.get('resp'), box.get('err')
             if resp is None:
                 self._board(f'[professor unreachable — {err}]')
             else:
                 gate = B.consistency_gate(resp, route, margin)
-                self._board(present_bonsai(gate, resp))
+                shown = present_bonsai(gate, resp)
+                self._prof_speech = shown.splitlines()[0][:48]
+                self._board(shown)
             self.root.after(1200, lambda: self._prof_pose('idle'))
 
         self.root.after(120, _poll)
@@ -460,8 +475,6 @@ class GhostTabView:
         Drives sprite selection once the art lands; redraws the zone now."""
         self._prof_pose_name = pose
         self._redraw_prof()
-
-    _prof_pose_name = 'idle'
 
     def _set_major(self, major):
         try:
