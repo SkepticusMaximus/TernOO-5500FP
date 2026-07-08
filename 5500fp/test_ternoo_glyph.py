@@ -113,7 +113,7 @@ class TestHouseNormalization(unittest.TestCase):
         G.GROWTH_LEDGER.clear()
 
     def test_curly_and_dashes(self):
-        self.assertEqual(G.normalize_for_house('‘a’—b−c'), "'a'-b-c")
+        self.assertEqual(G.normalize_for_house('‘a’—b–c'), "'a'-b-c")
 
     def test_ellipsis(self):
         self.assertEqual(G.normalize_for_house('a…'), 'a...')
@@ -131,6 +131,15 @@ class TestHouseNormalization(unittest.TestCase):
     def test_normalized_char_not_recorded(self):
         G.to_house_words('café', record=True)      # é → e, representable
         self.assertNotIn('é', G.GROWTH_LEDGER)
+
+    def test_minus_unfolds_renders_distinct(self):
+        # CF5 ruling: '−' (U+2212) keeps its own math glyph; '-' is the hyphen;
+        # the em dash still folds to hyphen.
+        w_minus = G.text_to_words(G.normalize_for_house('−'))[0]
+        w_hyphen = G.text_to_words(G.normalize_for_house('-'))[0]
+        self.assertNotEqual(w_minus, w_hyphen)
+        self.assertEqual(G.get_ordinal(w_minus), G.ORDINAL['−'])
+        self.assertEqual(G.normalize_for_house('—'), '-')       # em → hyphen
 
     def test_shared_projection_front_end(self):
         # tool + live board both go through to_house_words → identical words

@@ -326,7 +326,8 @@ _NORMALIZE = {
     '‘': "'", '’': "'",          # curly single quotes → straight
     '“': '"', '”': '"',          # curly double quotes → straight
     '–': '-', '—': '-',          # en / em dash → hyphen
-    '−': '-',                          # minus sign → hyphen (see report flag)
+    # U+2212 MINUS is NOT folded: it renders its own math-band glyph
+    # (ordinal 39); normalization must never defeat its own font (CF5).
     '…': '...',                        # ellipsis → three periods
     ' ': ' ', ' ': ' ',           # NBSP / figure space → space
     ' ': ' ', ' ': ' ',           # thin / narrow-NBSP → space
