@@ -199,7 +199,7 @@ MAP_AXIS_XY_POS = 19
 # T21-T20 = subtype, T19-T18 = encoding/model
 DATA_SCALAR  = from_trits([-1,-1,0,0])   # T21=-1,T20=-1 in qual field (LSB first)
 DATA_POINTER = from_trits([ 0, 0,0,0])   # T21=0, T20=0
-DATA_STRING  = from_trits([+1,+1,0,0])   # T21=+1,T20=+1
+DATA_STRING  = from_trits([+1,-1,0,0])   # T21=+1,T20=-1 (matches build_string_word/decode_word canon)
 
 # SCALAR encodings (T19-T18 within qualifier)
 SCALAR_FLOAT = -1

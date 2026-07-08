@@ -15,8 +15,8 @@ typing — not a sentinel.
 Word layout (ratified trit map, R4 2026-07-08):
     T23 T22 : primary            DATA          (−1,+1)
     T21 T20 : subtype            STRING        (+1,−1)   [working canon; the
-              DATA_STRING=(+1,+1) constant in v03 is a KNOWN latent bug —
-              left untouched this build, see widget_lib.py:620]
+              v03 DATA_STRING constant now mirrors this (+1,−1) after the
+              housekeeping correction, see widget_lib.py:620]
     T19     : encoding plane      +1 native (== STRING_TERNARY)
     T18     : mode                0 text | +1/−1 signed numeric literal
     --- payload, TEXT mode ---

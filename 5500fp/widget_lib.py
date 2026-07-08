@@ -617,9 +617,11 @@ def _encode_label(text: str) -> List[int]:
     The 'length_or_addr' payload field is repurposed as inline character storage —
     no v03 changes needed.
 
-    CAI flag (v0.4): DATA_STRING constant in v03 has a latent bug (T20=+1) that
-    is inconsistent with build_string_word and decode_word (both use T20=-1).
-    No runtime impact here; flagged for a future cleanup pass.
+    CAI flag (v0.4): DATA_STRING constant in v03 formerly had a latent bug
+    (T20=+1) inconsistent with build_string_word and decode_word (both use
+    T20=-1). Corrected to (+1,-1) in the housekeeping pass — the constant now
+    mirrors the working canon. The constant remains unused (build/decode call
+    _data_qualifier directly); it stands only as an accurate reference.
     """
     words = []
     for i in range(0, max(len(text), 1), 3):
