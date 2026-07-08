@@ -44,6 +44,7 @@ def _load(name):
 H = _load('ghost_harness')
 B = _load('ghost_bonsai')
 GC = _load('glyph_canvas')          # native glyph-plane renderer (chalk + ink)
+GLY = _load('ternoo_glyph')         # glyph words (for the font specimen)
 
 PROMPT = 'you: '
 
@@ -170,7 +171,8 @@ class GhostTabView:
                            ('Save', self.save_chat),
                            ('Copy', self.copy_chat),
                            ('Curriculum', self.open_curriculum),
-                           ('Brain scan', self.open_brain_scan)):
+                           ('Brain scan', self.open_brain_scan),
+                           ('Chars', self.show_specimen)):
             tk.Button(bar, text=label, command=cmd, bg=C['palette'],
                       fg=C['text'], font=('Monospace', 9), relief='flat',
                       bd=0, padx=8, pady=3, cursor='hand2').pack(side='left')
@@ -552,6 +554,25 @@ class GhostTabView:
                                     f"   raw={w}\n")
         except Exception as e:
             brain.insert('end', f'(brain scan failed: {e})')
+
+    # ── font specimen (print the whole house font to the board) ────────────
+    def show_specimen(self):
+        """Render the full house-font character set to the board — for
+        reviewing the glyphs, the math band, and the stroke smoothness."""
+        for line in ('THE HOUSE FONT ~ SPECIMEN',
+                     'A B C D E F G H I J K L M N O P Q R S T U V W X Y Z',
+                     'a b c d e f g h i j k l m n o p q r s t u v w x y z',
+                     '0 1 2 3 4 5 6 7 8 9',
+                     '. , : ; ! ? - \' " ( )',
+                     '+ - × ÷ = ≠ < > ≤ ≥ ± / \\ * ^ % · _ | #',
+                     '[ ] { } → π √ Δ ° ∑ ∫ ∞'):
+            self.board.append_text(line)
+        # the marks that aren't single typeable characters
+        space = GLY.make_glyph(GLY.ORDINAL[' '])
+        self.board.append_words([GLY.make_glyph(GLY.ANSWER_ORD), space,
+                                 GLY.make_glyph(GLY.IDEA_ORD), space,
+                                 GLY.make_glyph(GLY.PLACEHOLDER_ORD)])
+        self._status('house-font specimen printed to the board')
 
     # ── file furniture ──────────────────────────────────────────────────────
     def save_chat(self):
