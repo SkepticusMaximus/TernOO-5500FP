@@ -197,7 +197,7 @@ class GhostTabView:
         self.blackboard.place(relx=SPRITE_W, x=GUTTER, rely=0.0, y=6,
                               relwidth=1 - SPRITE_W, width=-2 * GUTTER,
                               relheight=BOARD_H, height=-6)
-        self.board = GC.GlyphSurface(self.blackboard, voice='chalk', size=16)
+        self.board = GC.GlyphSurface(self.blackboard, voice='chalk', size=18)
         self.blackboard.bind('<Configure>', lambda e: self.board.redraw())
         self.prof_pane.bind('<Configure>', lambda e: self._redraw_prof())
 
@@ -226,7 +226,7 @@ class GhostTabView:
         self.book_canvas.place(relx=SPRITE_W, x=GUTTER, rely=0.0, y=6,
                                relwidth=1 - SPRITE_W, width=-2 * GUTTER,
                                relheight=BOOK_H, height=-6)
-        self.book = GC.GlyphSurface(self.book_canvas, voice='ink', size=16)
+        self.book = GC.GlyphSurface(self.book_canvas, voice='ink', size=18)
         self.book_canvas.bind('<Configure>', lambda e: self.book.redraw())
         self._book_shadow = []           # plain-text mirror for Copy
         self._book_append('GHOST ACADEMY — THE BOOK IS THE LOG. TALK BELOW; '

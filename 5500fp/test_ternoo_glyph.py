@@ -57,6 +57,10 @@ class TestConversion(unittest.TestCase):
         s = 'Trit Vague, 42!'
         self.assertEqual(G.words_to_text(G.text_to_words(s)), s)
 
+    def test_math_roundtrip(self):
+        s = 'E = M×C^2 ± √2 → ∞'
+        self.assertEqual(G.words_to_text(G.text_to_words(s)), s)
+
     def test_unknown_strict_raises(self):
         with self.assertRaises(G.GlyphError):
             G.text_to_words('cost €5')

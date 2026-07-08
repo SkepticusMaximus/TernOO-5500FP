@@ -240,6 +240,15 @@ ORDINAL.update({                          # negative band: punctuation & marks
     '~': -9,                              # placeholder mark — founding resident
     '-': -10, "'": -11, '"': -12, '(': -13, ')': -14,
 })
+# Technical / MATH band (38+). House-DEFAULT convention, revisable under O4 —
+# this is CF5's char-map charter's raw material, not a decree. So much of the
+# curriculum is arithmetic that a well-appointed operator set earns its keep.
+ORDINAL.update({
+    '+': 38, '−': 39, '×': 40, '÷': 41, '=': 42, '≠': 43, '<': 44, '>': 45,
+    '≤': 46, '≥': 47, '±': 48, '/': 49, '\\': 50, '*': 51, '^': 52, '%': 53,
+    '·': 54, '_': 55, '|': 56, '#': 57, '[': 58, ']': 59, '{': 60, '}': 61,
+    '→': 62, 'π': 63, '√': 64, 'Δ': 65, '°': 66, '∑': 67, '∫': 68, '∞': 69,
+})
 ANSWER_ORD, IDEA_ORD, PLACEHOLDER_ORD = -7, -8, -9
 
 # reverse: ordinal → representative character (upper-case for letters)

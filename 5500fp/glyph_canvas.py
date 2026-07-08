@@ -159,13 +159,17 @@ class GlyphSurface:
                                         tags='glyph')
                 continue
             flat = [c for p in pts for c in p]
+            # smooth=True splines the polyline — curves flow instead of facet,
+            # which suits a chalk/ink hand. capstyle/joinstyle keep ends soft.
             if cfg['dust']:
                 self.canvas.create_line(*flat, fill=cfg['color'],
                                         width=cfg['width'] + 1, tags='glyph',
-                                        capstyle='round', joinstyle='round')
+                                        capstyle='round', joinstyle='round',
+                                        smooth=True)
             self.canvas.create_line(*flat, fill=cfg['color'],
                                     width=cfg['width'], tags='glyph',
-                                    capstyle='round', joinstyle='round')
+                                    capstyle='round', joinstyle='round',
+                                    smooth=True)
 
     def redraw(self):
         """Re-lay the retained history (first map / resize rewrap)."""
