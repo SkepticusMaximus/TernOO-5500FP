@@ -169,6 +169,7 @@ class GhostTabView:
         majors_menu.pack(side='left', padx=(2, 8))
         for label, cmd in (('Open .chat', self.open_chat),
                            ('Save', self.save_chat),
+                           ('Save As', self.save_chat_as),
                            ('Copy', self.copy_chat),
                            ('Curriculum', self.open_curriculum),
                            ('Brain scan', self.open_brain_scan),
@@ -650,6 +651,13 @@ class GhostTabView:
             return
         self.harness.save_chat('session.chat')
         self._status('saved session.chat')
+
+    def save_chat_as(self):
+        p = self.fd.asksaveasfilename(title='Save chat as',
+                                      defaultextension='.chat')
+        if p:
+            self.harness.save_chat(p)
+            self._status(f'saved {os.path.basename(p)}')
 
     def open_chat(self):
         p = self.fd.askopenfilename(title='Open .chat')

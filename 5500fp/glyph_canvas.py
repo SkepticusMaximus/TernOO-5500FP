@@ -135,11 +135,13 @@ class GlyphSurface:
 
     def _draw_glyph(self, word, ox, baseline, line_index):
         try:
-            _, case, strokes, _ph = resolve_glyph(word)
+            ordv, case, strokes, ph = resolve_glyph(word)
         except G.GlyphError:
             raise                              # literal reaching the renderer
         scale = scale_for(self.size, case)
         cfg = VOICES[self.voice]
+        # selective smoothing: spline curved glyphs, keep angular ones crisp
+        smooth = True if ph else S.is_curved(ordv)
         rng = random.Random(line_index * 1009 + int(ox))
         jit = cfg['jitter']
 
@@ -166,11 +168,11 @@ class GlyphSurface:
                 self.canvas.create_line(*flat, fill=cfg['color'],
                                         width=cfg['width'] + 1, tags='glyph',
                                         capstyle='round', joinstyle='round',
-                                        smooth=True)
+                                        smooth=smooth)
             self.canvas.create_line(*flat, fill=cfg['color'],
                                     width=cfg['width'], tags='glyph',
                                     capstyle='round', joinstyle='round',
-                                    smooth=True)
+                                    smooth=smooth)
 
     def redraw(self):
         """Re-lay the retained history (first map / resize rewrap)."""

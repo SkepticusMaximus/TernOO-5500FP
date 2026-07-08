@@ -162,3 +162,17 @@ def strokes_for_ordinal(ordinal: int):
 
 def has_glyph(ordinal: int) -> bool:
     return strokes_for_ordinal(ordinal) is not None
+
+
+# Glyphs whose forms are genuinely curved — the renderer splines only these,
+# keeping the angular ones crisp-cornered (Stevo's selective-smoothing call).
+CURVED = {
+    'B', 'C', 'D', 'G', 'J', 'O', 'P', 'Q', 'R', 'S', 'U',
+    '0', '2', '3', '5', '6', '8', '9',
+    '(', ')', '{', '}', '~', 'answer', 'idea', '∞', '°', '?',
+    'comma', 'semicolon', '√',
+}
+
+
+def is_curved(ordinal: int) -> bool:
+    return _ORD_TO_KEY.get(ordinal) in CURVED
