@@ -769,6 +769,18 @@ def run_gui():
     _run_toggle_hdr.bind('<Button-1>', _toggle_output_panel)
     _run_toggle_lbl.bind('<Button-1>', _toggle_output_panel)
 
+    def _apply_output_relevance(is_flow):
+        """The Output panel is the Flow execution trace — nothing else writes
+        it. Show it only on the Flow tab (relevance matrix); hidden elsewhere,
+        not merely collapsed."""
+        if is_flow:
+            _run_toggle_hdr.pack(side='bottom', fill='x')
+            if not _output_collapsed[0]:
+                _run_panel.pack(side='bottom', fill='x', before=_run_toggle_hdr)
+        else:
+            _run_panel.pack_forget()
+            _run_toggle_hdr.pack_forget()
+
     notebook = ttk.Notebook(right_outer)
     notebook.pack(fill='both',expand=True)
 
@@ -1085,6 +1097,13 @@ def run_gui():
     tk.Frame(_pal_actions_frame, bg=C['dim'], height=1).pack(fill='x', padx=6, pady=4)
     _pal_section("ACTIONS", parent=_pal_actions_frame)
 
+    # Relevance matrix (CF5 RFC §2): these 7 actions operate the Flow canvas —
+    # shown only on the Flow tab. The other six (Save/Open/Import/Clear/Undo/
+    # Redo) stay global. Driven off _on_tab_change, same pattern as TOOLS.
+    _FLOW_ONLY_ACTIONS = {'⬇ Word Dump', '▶ Load→EMU', '▶ Step',
+                          '▶▶ Run', '⬛ Stop', '🧠 Learn', '💡 Suggest'}
+    _action_buttons = []          # (button, label), in packed order
+
     def _action_btn(label, cmd, fg=None, icon_key=None):
         btn = tk.Button(_pal_actions_frame, text=label, command=cmd,
                         bg=C['pal_btn'], fg=fg or C['text'],
@@ -1093,7 +1112,18 @@ def run_gui():
                         activeforeground=C['text'],
                         cursor='hand2', padx=4, pady=4)
         btn.pack(fill='x', padx=6, pady=2)
+        _action_buttons.append((btn, label))
         return btn
+
+    def _apply_action_relevance(is_flow):
+        """Re-pack the actions in their original order, skipping the Flow-only
+        ones when not on the Flow tab (order preserved — no scramble)."""
+        for btn, _label in _action_buttons:
+            btn.pack_forget()
+        for btn, label in _action_buttons:
+            if label in _FLOW_ONLY_ACTIONS and not is_flow:
+                continue
+            btn.pack(fill='x', padx=6, pady=2)
 
     def do_run():
         """▶ Step — run the flow via the Python interpreter; output goes to the panel."""
@@ -7541,34 +7571,44 @@ def run_gui():
         tk.Label(_pal_tools_frame, text='(read-only)', bg=C['palette'], fg=C['dim'],
                  font=('Monospace', 7), pady=2).pack(fill='x', padx=4)
 
+    def _build_empty_tools():
+        """Text + Academy mount their own UI; the sidebar tools slot is empty
+        (relevance fix — both were wrongly falling through to gristmill's
+        '(read-only)' tools)."""
+        for w in _pal_tools_frame.winfo_children():
+            w.destroy()
+
     def _rebuild_sidebar_tools():
-        """Rebuild the tab-aware tools section for the currently active tab.
-        Tab order (Stage 8-1): Flow | GUI | Sheet | Shell | Connectors | Lingo."""
+        """Rebuild the tab-aware tools section for the active tab. Real 8-tab
+        order: Flow0 GUI1 Sheet2 Text3 Shell4 Connectors5 Babble-Fish6 Academy7."""
         idx = notebook.index('current')
         if idx == 0:   _build_flow_tools()
         elif idx == 1: _build_gui_tools()
-        elif idx == 2: _build_sheet_tools()        # spreadsheet grid
-        elif idx == 3: _build_shell_tools()        # three-pane builder
-        elif idx == 4: _build_connectors_tools()   # cmd_* canvas
-        else:          _build_gristmill_tools()    # Lingo vocabulary explorer
+        elif idx == 2: _build_sheet_tools()          # spreadsheet grid
+        elif idx == 4: _build_shell_tools()          # Shell — three-pane builder
+        elif idx == 5: _build_connectors_tools()     # Connectors — cmd_* canvas
+        elif idx == 6: _build_gristmill_tools()      # Babble-Fish — vocab explorer
+        else:          _build_empty_tools()          # Text (3) + Academy (7)
 
     def _on_tab_change(event):
         idx = notebook.index('current')
-        _rebuild_sidebar_tools()   # ← Bundle 17 A8: rebuild tools per tab
-        _update_zoom_indicator()   # ← Bundle 18: refresh zoom % for active canvas
+        _rebuild_sidebar_tools()            # tab-aware TOOLS
+        _apply_action_relevance(idx == 0)   # Flow-only ACTIONS shown only on Flow
+        _apply_output_relevance(idx == 0)   # Output panel is the Flow trace only
+        _update_zoom_indicator()            # refresh zoom % for active canvas
         # Destroy any GHOST-panel tooltip that survived the tab switch
         if _guic_active_tip[0]:
             try: _guic_active_tip[0].destroy()
             except Exception: pass
             _guic_active_tip[0] = None
-        if idx == 1:   guic_redraw()
-        elif idx == 2: _sheet_redraw()  # Sheet grid
-        elif idx == 4: _sh_redraw()    # Connectors canvas
-        elif idx == 5:
-            # Lingo (vocabulary explorer) — force refresh on switch
+        if idx == 0:   redraw()             # Flow canvas
+        elif idx == 1: guic_redraw()        # GUI canvas
+        elif idx == 2: _sheet_redraw()      # Sheet grid
+        elif idx == 5: _sh_redraw()         # Connectors canvas (idx 5)
+        elif idx == 6:
+            # Babble-Fish (vocabulary explorer) — force refresh on switch
             try: _gristmill_view._rebuild_program()
             except Exception: pass
-        elif idx == 0: redraw()
     notebook.bind('<<NotebookTabChanged>>', _on_tab_change)
 
     root.after(200, guic_redraw)
