@@ -43,6 +43,7 @@ def _load(name):
 
 H = _load('ghost_harness')
 B = _load('ghost_bonsai')
+GC = _load('glyph_canvas')          # native glyph-plane renderer (chalk + ink)
 
 PROMPT = 'you: '
 
@@ -190,14 +191,14 @@ class GhostTabView:
         self.prof_canvas = tk.Canvas(self.prof_pane, bg=C['bg'],
                                      highlightthickness=0)
         self.prof_canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
-        self.blackboard = tk.Text(self.prof_pane, bg=BLACKBOARD_FACE,
-                                  fg='#cfe8d8', insertbackground='#cfe8d8',
-                                  bd=0, relief='flat', highlightthickness=0,
-                                  font=('Monospace', 10), wrap='word',
-                                  padx=10, pady=8, state='disabled')
+        # the blackboard is a GlyphSurface (native glyph plane, chalk voice)
+        self.blackboard = tk.Canvas(self.prof_pane, bg=BLACKBOARD_FACE,
+                                    bd=0, highlightthickness=0)
         self.blackboard.place(relx=SPRITE_W, x=GUTTER, rely=0.0, y=6,
                               relwidth=1 - SPRITE_W, width=-2 * GUTTER,
                               relheight=BOARD_H, height=-6)
+        self.board = GC.GlyphSurface(self.blackboard, voice='chalk', size=16)
+        self.blackboard.bind('<Configure>', lambda e: self.board.redraw())
         self.prof_pane.bind('<Configure>', lambda e: self._redraw_prof())
 
         # ── SEAM: the training desk ──────────────────────────────────────────
@@ -219,16 +220,17 @@ class GhostTabView:
         self.stud_canvas = tk.Canvas(self.stud_pane, bg=C['bg'],
                                     highlightthickness=0)
         self.stud_canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
-        self.book = tk.Text(self.stud_pane, bg=BOOK_FACE, fg='#e6dcc8',
-                            insertbackground='#e6dcc8', bd=0, relief='flat',
-                            highlightthickness=0, font=('Monospace', 10),
-                            wrap='word', padx=10, pady=8)
-        self.book.place(relx=SPRITE_W, x=GUTTER, rely=0.0, y=6,
-                        relwidth=1 - SPRITE_W, width=-2 * GUTTER,
-                        relheight=BOOK_H, height=-6)
-        self.book.insert('end', 'GHOST Academy — the book is the log. Talk '
-                                'below; teach with !learn <class> "<phrase>", '
-                                '!learn-undo, !learn-log.\n')
+        # the open book is a GlyphSurface (native glyph plane, ink voice)
+        self.book_canvas = tk.Canvas(self.stud_pane, bg=BOOK_FACE,
+                                     bd=0, highlightthickness=0)
+        self.book_canvas.place(relx=SPRITE_W, x=GUTTER, rely=0.0, y=6,
+                               relwidth=1 - SPRITE_W, width=-2 * GUTTER,
+                               relheight=BOOK_H, height=-6)
+        self.book = GC.GlyphSurface(self.book_canvas, voice='ink', size=16)
+        self.book_canvas.bind('<Configure>', lambda e: self.book.redraw())
+        self._book_shadow = []           # plain-text mirror for Copy
+        self._book_append('GHOST ACADEMY — THE BOOK IS THE LOG. TALK BELOW; '
+                          'TEACH WITH !LEARN.')
         self.entry = tk.Entry(self.stud_pane, bg=C['inspect'], fg=C['text'],
                              insertbackground=C['text'], relief='flat', bd=0,
                              highlightthickness=0, font=('Monospace', 10))
@@ -365,14 +367,14 @@ class GhostTabView:
 
     # ── blackboard / book writers ──────────────────────────────────────────
     def _board(self, text):
-        self.blackboard.config(state='normal')
-        self.blackboard.insert('end', text + '\n')
-        self.blackboard.see('end')
-        self.blackboard.config(state='disabled')
+        self.board.append_text(text)
+
+    def _book_append(self, line):
+        self._book_shadow.append(line)
+        self.book.append_text(line)
 
     def _say(self, who, text):
-        self.book.insert('end', f'{who}{text}\n')
-        self.book.see('end')
+        self._book_append(f'{who}{text}')
 
     # ── chat + !learn + consent-gated delegation ───────────────────────────
     def _on_enter(self, _e=None):
@@ -568,7 +570,7 @@ class GhostTabView:
         except H.HarnessError as e:
             self._status(f'open failed: {e}')
             return
-        self.book.insert('end', f'--- {os.path.basename(p)} ---\n')
+        self._book_append(f'--- {os.path.basename(p)} ---')
         for t in turns:
             self._say(PROMPT, t['user'])
             self._say('ghost: ', t['ghost'])
@@ -576,7 +578,7 @@ class GhostTabView:
 
     def copy_chat(self):
         self.root.clipboard_clear()
-        self.root.clipboard_append(self.book.get('1.0', 'end-1c'))
+        self.root.clipboard_append('\n'.join(self._book_shadow))
         self._status('book copied to clipboard')
 
     def close(self):

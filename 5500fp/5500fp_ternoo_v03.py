@@ -490,6 +490,25 @@ def build_io_word(direction: int, buffering: int, blocking: int,
 
 # ── Universal decoder ─────────────────────────────────────────────────────
 
+_GLYPH_MOD = None
+def _glyph_module():
+    """Lazily load ternoo_glyph for native-plane payload interpretation. The
+    generic decoder only RECOGNISES the plane; the plane's module reads it
+    (CF5 ruling 2, 2026-07-08). Fully guarded — never breaks decode_word."""
+    global _GLYPH_MOD
+    if _GLYPH_MOD is None:
+        try:
+            import importlib.util as _ilu, os as _os
+            _p = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                               'ternoo_glyph.py')
+            _s = _ilu.spec_from_file_location('ternoo_glyph', _p)
+            _GLYPH_MOD = _ilu.module_from_spec(_s)
+            _s.loader.exec_module(_GLYPH_MOD)
+        except Exception:
+            _GLYPH_MOD = False
+    return _GLYPH_MOD or None
+
+
 def decode_word(w: int) -> dict:
     """Fully decode any TernOO word."""
     prim = get_primary(w)
@@ -513,8 +532,13 @@ def decode_word(w: int) -> dict:
             return {'type':'SCALAR','encoding':enc,'value':pay}
 
         elif t21 == +1 and t20 == -1:  # STRING
-            enc = {STRING_UNICODE:'unicode',STRING_ASCII:'ascii',
-                   STRING_TERNARY:'ternary'}.get(t19,'?')
+            if t19 == STRING_TERNARY:   # native glyph plane — delegate (ruling 2)
+                gm = _glyph_module()
+                if gm is not None:
+                    return {'type':'STRING','encoding':'ternary',
+                            'plane':'native','glyph':gm.describe(w)}
+                return {'type':'STRING','encoding':'ternary','plane':'native'}
+            enc = {STRING_UNICODE:'unicode',STRING_ASCII:'ascii'}.get(t19,'?')
             return {'type':'STRING','encoding':enc,'length_or_addr':pay}
 
         else:  # POINTER — model from T21,T20 of qualifier
