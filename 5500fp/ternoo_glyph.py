@@ -35,6 +35,7 @@ Authors: Stevo (SkepticusMaximus) + Claude (Anthropic)
 from __future__ import annotations
 
 import os
+import unicodedata
 import importlib.util as _ilu
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -311,3 +312,56 @@ def describe(word: int) -> dict:
     return {'mode': 'text', 'ordinal': ordinal, 'case': case,
             'position': get_position(word), 'font': get_font(word),
             'char': char}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# House normalization + growth ledger (saddle-dispatch §1) — the SHARED
+# projection front-end. Both the Translate tool and the live board path run
+# through normalize_for_house so the two can never drift. Everything surviving
+# normalization that still lacks a house glyph becomes ~ (R1) AND is recorded
+# to the growth ledger — the O4 charter intake. Nothing silently vanishes.
+# ═══════════════════════════════════════════════════════════════════════════
+
+_NORMALIZE = {
+    '‘': "'", '’': "'",          # curly single quotes → straight
+    '“': '"', '”': '"',          # curly double quotes → straight
+    '–': '-', '—': '-',          # en / em dash → hyphen
+    '−': '-',                          # minus sign → hyphen (see report flag)
+    '…': '...',                        # ellipsis → three periods
+    ' ': ' ', ' ': ' ',           # NBSP / figure space → space
+    ' ': ' ', ' ': ' ',           # thin / narrow-NBSP → space
+}
+
+
+def normalize_for_house(text: str) -> str:
+    """Fold common non-house Unicode toward house-representable forms. Explicit
+    map for curly quotes / dashes / ellipsis / exotic spaces; accented Latin
+    strips to its base letter via NFKD. Pure; shared by tool and live path."""
+    out = []
+    for ch in text:
+        if ch in _NORMALIZE:
+            out.append(_NORMALIZE[ch])
+            continue
+        base = ''.join(c for c in unicodedata.normalize('NFKD', ch)
+                       if not unicodedata.combining(c))
+        out.append(base if base else ch)
+    return ''.join(out)
+
+
+def house_representable(ch: str) -> bool:
+    """Does the house font have a glyph for this single character?"""
+    return ch == '\n' or ch in ORDINAL or ('A' <= ch.upper() <= 'Z')
+
+
+GROWTH_LEDGER = {}          # original char → count of times it hit ~ (O4 feed)
+
+
+def to_house_words(text: str, record: bool = True) -> list:
+    """The shared entry point: normalize, then project to glyph words
+    (strict=False → ~ on the unrepresentable). Records each ORIGINAL char that
+    still lacks a house glyph, by its original identity (saddle §1)."""
+    if record:
+        for ch in text:
+            if any(not house_representable(c) for c in normalize_for_house(ch)):
+                GROWTH_LEDGER[ch] = GROWTH_LEDGER.get(ch, 0) + 1
+    return text_to_words(normalize_for_house(text), strict=False)

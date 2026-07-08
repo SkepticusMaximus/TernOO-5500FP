@@ -126,11 +126,12 @@ class GlyphSurface:
         self._scroll_into_view()
 
     def append_text(self, text):
-        """Convenience: project text to words (strict=False → '~' on unknown)
-        and draw, one logical line per newline. Screen path only; a newline is
-        a line break, never a glyph. Never persisted."""
+        """Convenience: normalize + project to glyph words (the shared
+        to_house_words front-end — saddle §1), one logical line per newline.
+        A newline is a line break, never a glyph. Screen path only; the ~
+        placeholder always leaves a paper trail in the growth ledger."""
         for line in text.split('\n'):
-            self.append_words(G.text_to_words(line, strict=False))
+            self.append_words(G.to_house_words(line))
 
     def _draw_glyph(self, word, ox, baseline, line_index):
         try:

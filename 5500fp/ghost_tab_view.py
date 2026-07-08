@@ -618,20 +618,26 @@ class GhostTabView:
 
         def translate(*_):
             text = inp.get('1.0', 'end-1c')
-            unknown = sorted({c for c in text if c != '\n'
-                              and c not in GLY.ORDINAL
-                              and not ('A' <= c.upper() <= 'Z')})
+            # unknowns AFTER normalization, reported by ORIGINAL identity
+            unknown, seen = [], set()
+            for c in text:
+                if c == '\n' or c in seen:
+                    continue
+                if any(not GLY.house_representable(n)
+                       for n in GLY.normalize_for_house(c)):
+                    unknown.append(c); seen.add(c)
             v = voice.get()
             s_chalk.clear(); s_ink.clear()
             for ln in text.split('\n'):
                 if v in ('chalk', 'both'):
-                    s_chalk.append_text(ln)
+                    s_chalk.append_text(ln)          # normalizes + ledgers
                 if v in ('ink', 'both'):
                     s_ink.append_text(ln)
-            n = len(GLY.text_to_words(text.replace('\n', ' '), strict=False))
-            msg = f'{n} glyph words'
+            n = len(GLY.to_house_words(text.replace('\n', ' '), record=False))
+            msg = f'{n} glyph words (normalized)'
             if unknown:
-                msg += '  ·  no house glyph (→ ~, feeds O4): ' + ' '.join(unknown)
+                msg += '  ·  no house glyph → ~ (logged to O4 ledger): ' \
+                       + ' '.join(unknown)
             status.config(text=msg)
 
         tk.Button(row, text='Translate', command=translate, bg=C['palette'],

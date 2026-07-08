@@ -108,5 +108,36 @@ class TestDecoderRecognition(unittest.TestCase):
         self.assertEqual(d['length_or_addr'], 123)
 
 
+class TestHouseNormalization(unittest.TestCase):
+    def setUp(self):
+        G.GROWTH_LEDGER.clear()
+
+    def test_curly_and_dashes(self):
+        self.assertEqual(G.normalize_for_house('‘a’—b−c'), "'a'-b-c")
+
+    def test_ellipsis(self):
+        self.assertEqual(G.normalize_for_house('a…'), 'a...')
+
+    def test_accented_strips_to_base(self):
+        self.assertEqual(G.normalize_for_house('café Å ñ'), 'cafe A n')
+
+    def test_nbsp_to_space(self):
+        self.assertEqual(G.normalize_for_house('a\xa0b'), 'a b')
+
+    def test_ledger_records_original_identity(self):
+        G.to_house_words('cost 5€', record=True)
+        self.assertIn('€', G.GROWTH_LEDGER)
+
+    def test_normalized_char_not_recorded(self):
+        G.to_house_words('café', record=True)      # é → e, representable
+        self.assertNotIn('é', G.GROWTH_LEDGER)
+
+    def test_shared_projection_front_end(self):
+        # tool + live board both go through to_house_words → identical words
+        s = 'A “quote” — é'
+        self.assertEqual(G.to_house_words(s, record=False),
+                         G.text_to_words(G.normalize_for_house(s), strict=False))
+
+
 if __name__ == '__main__':
     unittest.main()
