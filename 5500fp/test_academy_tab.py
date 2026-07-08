@@ -1,4 +1,4 @@
-"""test_academy_tab.py — the dojo's pure presentation laws (UI-free).
+"""test_academy_tab.py — the classroom's pure presentation laws (UI-free).
 
 The tab itself is furniture (verified on-screen by Stevo); these pin the
 pure helpers that decide what the thought bubbles, grading strip, and

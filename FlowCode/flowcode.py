@@ -837,7 +837,7 @@ def run_gui():
     #    class lives in 5500fp/ghost_tab_view.py; mounted at the bottom of
     #    this file alongside the Text/Translator mounts.
     academy_tab = tk.Frame(notebook, bg=C['bg'])
-    notebook.add(academy_tab, text='  GHOST  ')
+    notebook.add(academy_tab, text='  Academy  ')
     # Piece 2: Lingo hosts two views — Vocabulary (GristMillTabView, as
     # before) and Translator (multi-dialect projections). Toggle header:
     _lingo_hdr = tk.Frame(gm_tab, bg=C['palette'])

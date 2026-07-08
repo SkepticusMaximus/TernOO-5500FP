@@ -2,7 +2,7 @@
 
 The Professor behind the seam. GHOST (the Student) stays the conscience;
 Bonsai is the optional local back-end brain GHOST may consult ONLY when it
-is honest about needing to. Everything the dojo tab does with Bonsai, minus
+is honest about needing to. Everything the classroom tab does with Bonsai, minus
 pixels — so the plumbing is unit-testable without a display.
 
 Five invariants held structurally here (CAI Two-Mind arch; CF5 Spec B):
@@ -203,7 +203,7 @@ def should_delegate(ghost_route: str, consent: bool) -> bool:
 
 class BonsaiProcess:
     """Owns spawn / timeout / kill of the local Bonsai runner. If no binary
-    is configured or present, stays NOT_RUNNING — the dojo degrades to
+    is configured or present, stays NOT_RUNNING — the classroom degrades to
     GHOST-only and the Professor zone shows `professor not present`."""
 
     def __init__(self, cmd=None):

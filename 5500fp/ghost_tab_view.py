@@ -1,4 +1,4 @@
-"""ghost_tab_view.py — the GHOST Academy DOJO tab (Front 1: dojo UI + Bonsai).
+"""ghost_tab_view.py — the GHOST Academy classroom tab (Front 1: classroom UI + Bonsai).
 
 Mounted by flowcode.py:  GhostTabView(parent_frame, C, root, set_status)
 
@@ -58,7 +58,7 @@ BOARD_H = 0.70                                 # blackboard height, of prof pane
 BOOK_H = 0.70                                  # open book height, of stud pane
 GUTTER = 12                                    # px gutter around board/book
 
-# ── dojo colours (dispatch §2). Literal so they survive palette variance. ───
+# ── classroom colours (dispatch §2). Literal so they survive palette variance. ───
 BLACKBOARD_FACE = '#0a1410'
 BOOK_FACE = '#141210'
 PLACARD_FACE = '#0d1624'          # slightly lifted navy, no outline
@@ -126,7 +126,7 @@ def present_bonsai(gate, resp) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# The dojo tab (furniture)
+# The classroom tab (furniture)
 # ═══════════════════════════════════════════════════════════════════════════
 
 class GhostTabView:
@@ -223,17 +223,19 @@ class GhostTabView:
         self.stud_canvas = tk.Canvas(self.stud_pane, bg=C['bg'],
                                     highlightthickness=0)
         self.stud_canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
-        # the open book is a GlyphSurface (native glyph plane, ink voice)
-        self.book_canvas = tk.Canvas(self.stud_pane, bg=BOOK_FACE,
-                                     bd=0, highlightthickness=0)
-        self.book_canvas.place(relx=SPRITE_W, x=GUTTER, rely=0.0, y=6,
-                               relwidth=1 - SPRITE_W, width=-2 * GUTTER,
-                               relheight=BOOK_H, height=-6)
-        self.book = GC.GlyphSurface(self.book_canvas, voice='ink', size=18)
-        self.book_canvas.bind('<Configure>', lambda e: self.book.redraw())
-        self._book_shadow = []           # plain-text mirror for Copy
-        self._book_append('GHOST ACADEMY — THE BOOK IS THE LOG. TALK BELOW; '
-                          'TEACH WITH !LEARN.')
+        # the open book renders in NORMAL text (captain's call) — the native
+        # glyph font is showcased on the professor's board; the book stays a
+        # readable log. Same borderless surface tone.
+        self.book = tk.Text(self.stud_pane, bg=BOOK_FACE, fg='#e6dcc8',
+                            insertbackground='#e6dcc8', bd=0, relief='flat',
+                            highlightthickness=0, font=('Monospace', 11),
+                            wrap='word', padx=10, pady=8)
+        self.book.place(relx=SPRITE_W, x=GUTTER, rely=0.0, y=6,
+                        relwidth=1 - SPRITE_W, width=-2 * GUTTER,
+                        relheight=BOOK_H, height=-6)
+        self.book.insert('end', 'Academy — the book is the log. Talk below; '
+                                'teach with !learn <class> "<phrase>", '
+                                '!learn-undo, !learn-log.\n')
         self.entry = tk.Entry(self.stud_pane, bg=C['inspect'], fg=C['text'],
                              insertbackground=C['text'], relief='flat', bd=0,
                              highlightthickness=0, font=('Monospace', 10))
@@ -372,12 +374,9 @@ class GhostTabView:
     def _board(self, text):
         self.board.append_text(text)
 
-    def _book_append(self, line):
-        self._book_shadow.append(line)
-        self.book.append_text(line)
-
     def _say(self, who, text):
-        self._book_append(f'{who}{text}')
+        self.book.insert('end', f'{who}{text}\n')
+        self.book.see('end')
 
     # ── chat + !learn + consent-gated delegation ───────────────────────────
     def _on_enter(self, _e=None):
@@ -504,8 +503,8 @@ class GhostTabView:
         self._board('report card:\n' + format_report(report))
         self._status(f"GHOST trained — {self._accuracy:.1%} held-out")
 
-    # ── curriculum + brain scan (preserved from the pre-dojo tab) ──────────
-    # NOTE: these two panes were in the single-pane tab; the dojo spec doesn't
+    # ── curriculum + brain scan (preserved from the pre-classroom tab) ──────────
+    # NOTE: these two panes were in the single-pane tab; the classroom spec doesn't
     # place them, so they're preserved on-demand in Toplevels rather than
     # dropped. Flagged for Stevo/CF5: keep here, relocate, or retire.
     def open_curriculum(self):
@@ -566,17 +565,15 @@ class GhostTabView:
                       '[ ] { } → π √ Δ ° ∑ ∫ ∞')
 
     def show_specimen(self):
-        """Render the full house-font set in BOTH voices — chalk on the board,
-        ink in the book — so the two hands can be compared side by side."""
+        """Print the full house-font set to the chalk board for review (the
+        board is the native-font showcase; the book renders normal text)."""
         space = GLY.make_glyph(GLY.ORDINAL[' '])
-        marks = [GLY.make_glyph(GLY.ANSWER_ORD), space,
-                 GLY.make_glyph(GLY.IDEA_ORD), space,
-                 GLY.make_glyph(GLY.PLACEHOLDER_ORD)]
-        for surface in (self.board, self.book):
-            for line in self.SPECIMEN_LINES:
-                surface.append_text(line)
-            surface.append_words(marks)
-        self._status('house-font specimen printed — chalk (board) + ink (book)')
+        for line in self.SPECIMEN_LINES:
+            self.board.append_text(line)
+        self.board.append_words([GLY.make_glyph(GLY.ANSWER_ORD), space,
+                                 GLY.make_glyph(GLY.IDEA_ORD), space,
+                                 GLY.make_glyph(GLY.PLACEHOLDER_ORD)])
+        self._status('house-font specimen printed to the board')
 
     # ── ASCII/Unicode → TernOO glyph-string word translator ────────────────
     def open_translator(self):
@@ -663,7 +660,7 @@ class GhostTabView:
         except H.HarnessError as e:
             self._status(f'open failed: {e}')
             return
-        self._book_append(f'--- {os.path.basename(p)} ---')
+        self.book.insert('end', f'--- {os.path.basename(p)} ---\n')
         for t in turns:
             self._say(PROMPT, t['user'])
             self._say('ghost: ', t['ghost'])
@@ -671,7 +668,7 @@ class GhostTabView:
 
     def copy_chat(self):
         self.root.clipboard_clear()
-        self.root.clipboard_append('\n'.join(self._book_shadow))
+        self.root.clipboard_append(self.book.get('1.0', 'end-1c'))
         self._status('book copied to clipboard')
 
     def close(self):
