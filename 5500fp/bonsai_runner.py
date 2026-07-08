@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -50,15 +51,21 @@ class BackendError(RuntimeError):
 # Contract v1 shaping (pure — pinned in tests, and cross-checked by ghost_bonsai)
 # ═══════════════════════════════════════════════════════════════════════════
 
+# The persona goes in as a REAL system prompt (-sys, single-turn chat mode)
+# so the chat template assigns the roles — as raw completion text the model
+# read "You are Bonsai" as the USER's claim and had an identity crisis on
+# the board (first contact, 2026-07-10). /no_think is qwen3's soft switch:
+# keep the reasoning in his head, not in the chalk (harmless elsewhere).
+SYSTEM_PROMPT = ("You are Bonsai, a local assistant consulted by GHOST when "
+                 "a question is beyond GHOST's own competence. Answer the "
+                 "user's question plainly and honestly; if you do not know, "
+                 "say so. /no_think")
+
+
 def build_prompt(req: dict) -> str:
-    """Compose the model prompt from a Contract v1 request. GHOST delegates
-    only what it couldn't answer, so we frame it as an honest ask. The exact
-    template is Stevo's to tune against the real model (flagged)."""
-    text = req.get('text', '')
-    return ("You are Bonsai, a local assistant consulted by GHOST when a "
-            "question is beyond GHOST's own competence. Answer plainly and "
-            "honestly; if you do not know, say so.\n\n"
-            f"Question: {text}\nAnswer:")
+    """The USER turn: just the delegated question. The persona rides in
+    SYSTEM_PROMPT via -sys — never mixed into the user text again."""
+    return req.get('text', '')
 
 
 def build_response(text: str, req: dict,
@@ -79,6 +86,22 @@ def build_response(text: str, req: dict,
 # ═══════════════════════════════════════════════════════════════════════════
 # Backends
 # ═══════════════════════════════════════════════════════════════════════════
+
+_THINK_RE = re.compile(r'<think>.*?</think>', re.DOTALL)
+
+
+def clean_reply(text: str) -> str:
+    """Strip <think>…</think> reasoning from a reply (qwen3-style models
+    emit it even when asked nicely). An UNTERMINATED think block — the token
+    budget ran out mid-thought — is dropped from <think> to the end: better
+    an honest BackendError than the professor's stream of consciousness
+    presented as his answer (first-contact lesson)."""
+    text = _THINK_RE.sub('', text)
+    i = text.find('<think>')
+    if i != -1:
+        text = text[:i]
+    return text.strip()
+
 
 class EchoBackend:
     """Deterministic mock — no model. Lets the classroom and the tests run a
@@ -105,11 +128,15 @@ class LlamaBackend:
         # the KV cache (the default takes the model's full context and can eat
         # hundreds of MB); -t 2 leaves cores for the mouse; --prio -1 makes
         # the professor the lowest-priority process on the box.
-        return [self.llama, '-m', self.model, '-p', prompt,
+        #
+        # -st single-turn chat + -sys persona (the identity-crisis fix): the
+        # gguf's chat template assigns the roles, exactly as Stevo's own
+        # interview script ran it. One turn, then the process exits.
+        return [self.llama, '-m', self.model,
+                '-sys', SYSTEM_PROMPT, '-p', prompt, '-st',
                 '-n', str(self.n_predict), '--temp', '0.2',
                 '-c', str(self.ctx), '-t', str(self.threads),
-                '--prio', '-1',
-                '--no-display-prompt', '-no-cnv']
+                '--prio', '-1', '--no-display-prompt']
 
     def generate(self, prompt: str) -> str:
         """The model's text, or raises BackendError with the REAL reason —
@@ -117,11 +144,16 @@ class LlamaBackend:
         the CUDA-less binary died fast and the board showed a mute professor)."""
         r = subprocess.run(self.argv(prompt), capture_output=True, text=True,
                            timeout=self.timeout)
-        text = r.stdout.strip()
-        if r.returncode != 0 or not text:
+        text = clean_reply(r.stdout)
+        if r.returncode != 0:
             tail = (r.stderr or '').strip().splitlines()[-3:]
             raise BackendError(
                 f"llama exited rc={r.returncode}: " + ' | '.join(tail))
+        if not text:
+            raise BackendError(
+                'professor produced no answer'
+                + (' (only <think> reasoning — raise n_predict in '
+                   'bonsai.json?)' if '<think>' in r.stdout else ''))
         return text
 
 

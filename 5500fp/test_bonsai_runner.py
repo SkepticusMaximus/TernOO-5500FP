@@ -67,14 +67,50 @@ def _stub_binary(path, rc=0):
 
 
 class TestZeroConfigWiring(unittest.TestCase):
-    def test_llama_backend_argv_is_the_proven_command(self):
+    def test_llama_backend_argv_single_turn_chat(self):
         b = R.LlamaBackend('/x/llama-cli', '/y/m.gguf', n_predict=128)
         argv = b.argv('hello')
-        self.assertEqual(argv[:5], ['/x/llama-cli', '-m', '/y/m.gguf',
-                                    '-p', 'hello'])
-        for flag in ('--temp', '--no-display-prompt', '-no-cnv',
+        self.assertEqual(argv[:3], ['/x/llama-cli', '-m', '/y/m.gguf'])
+        # identity-crisis fix: persona as a REAL system prompt, single turn
+        self.assertIn('-sys', argv)
+        self.assertIn(R.SYSTEM_PROMPT, argv)
+        self.assertIn('-st', argv)
+        self.assertNotIn('-no-cnv', argv)          # raw completion retired
+        self.assertEqual(argv[argv.index('-p') + 1], 'hello')
+        for flag in ('--temp', '--no-display-prompt',
                      '-c', '-t', '--prio'):        # memory/desktop kindness
             self.assertIn(flag, argv)
+
+    def test_prompt_is_bare_question_persona_in_system(self):
+        # the user turn carries ONLY the question; "You are Bonsai" lives in
+        # SYSTEM_PROMPT (the board's identity crisis must not recur)
+        p = R.build_prompt({'text': 'what is a tribble?'})
+        self.assertEqual(p, 'what is a tribble?')
+        self.assertNotIn('You are Bonsai', p)
+        self.assertIn('You are Bonsai', R.SYSTEM_PROMPT)
+        self.assertIn('/no_think', R.SYSTEM_PROMPT)
+
+    def test_clean_reply_strips_think_blocks(self):
+        self.assertEqual(
+            R.clean_reply('<think>hmm, x is odd</think>A trit is a '
+                          'balanced-ternary digit.'),
+            'A trit is a balanced-ternary digit.')
+
+    def test_clean_reply_drops_unterminated_think(self):
+        # token budget ran out mid-thought → no answer, not a monologue
+        self.assertEqual(R.clean_reply('<think>maybe it is a placeholder'), '')
+
+    def test_only_thought_raises_with_hint(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            thinker = os.path.join(d, 'llama-completion')
+            with open(thinker, 'w') as f:
+                f.write('#!/bin/sh\necho "<think>endless musing"\nexit 0\n')
+            os.chmod(thinker, 0o755)
+            b = R.LlamaBackend(thinker, os.path.join(d, 'm.gguf'))
+            with self.assertRaises(R.BackendError) as cm:
+                b.generate('hello')
+            self.assertIn('n_predict', str(cm.exception))
 
     def test_discover_finds_binary_and_biggest_gguf(self):
         import tempfile
