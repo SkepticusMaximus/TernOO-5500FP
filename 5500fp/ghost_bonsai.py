@@ -268,6 +268,16 @@ class BonsaiProcess:
         if not raw:
             self.status = NOT_RUNNING
             return None, 'bonsai closed the pipe'
+        # an honest backend failure (runner couldn't get an answer out of the
+        # model) arrives as {"backend_error": ...} — surface the REAL reason
+        # instead of parsing it as a malformed contract.
+        try:
+            obj = json.loads(raw)
+            if isinstance(obj, dict) and 'backend_error' in obj:
+                self.status = READY
+                return None, str(obj['backend_error'])
+        except (ValueError, TypeError):
+            pass
         resp, err = safe_parse_response(raw)
         self.status = READY
         return resp, err

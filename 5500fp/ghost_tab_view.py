@@ -155,11 +155,14 @@ class GhostTabView:
         # override) → bonsai.json → auto-discovery of the local runtime+model.
         # Nothing found → professor-not-present, classroom fully usable.
         bonsai_cmd = os.environ.get('BONSAI_CMD')
+        self._ask_timeout = 2400.0
         if bonsai_cmd:
             cmd = bonsai_cmd.split()
         else:
             try:
-                cmd = _load('bonsai_runner').classroom_command()
+                _runner = _load('bonsai_runner')
+                cmd = _runner.classroom_command()
+                self._ask_timeout = _runner.ask_timeout()
             except Exception:
                 cmd = None
         self.bonsai = B.BonsaiProcess(cmd)
@@ -461,7 +464,10 @@ class GhostTabView:
         box = {}
 
         def _work():
-            box['resp'], box['err'] = self.bonsai.ask(req, timeout=120.0)
+            # timeout from bonsai.json (ask_timeout) — at 0.3 tok/s a real
+            # answer takes minutes; 120s was a fantasy (screen-truth lesson).
+            box['resp'], box['err'] = self.bonsai.ask(
+                req, timeout=self._ask_timeout)
 
         t = threading.Thread(target=_work, daemon=True)
         t.start()

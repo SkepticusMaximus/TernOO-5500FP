@@ -40,6 +40,12 @@ import sys
 CONTRACT_VERSION = 1
 
 
+class BackendError(RuntimeError):
+    """The model runtime failed to produce an answer — carries the REAL
+    reason (rc + stderr tail) so the board never shows a silently mute
+    professor again."""
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Contract v1 shaping (pure — pinned in tests, and cross-checked by ghost_bonsai)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -87,24 +93,36 @@ class LlamaBackend:
     """Shells the proven llama.cpp invocation (from bonsai_interview_sed.py,
     already verified on this machine) — one subprocess per ask, pipes only."""
 
-    def __init__(self, llama: str, model: str, n_predict: int = 400,
-                 threads=None, timeout: float = 1800.0):
+    def __init__(self, llama: str, model: str, n_predict: int = 128,
+                 threads: int = 2, ctx: int = 1024, timeout: float = 2400.0):
         self.llama, self.model = llama, model
-        self.n_predict, self.threads = n_predict, threads
+        self.n_predict, self.threads, self.ctx = n_predict, threads, ctx
         self.timeout = timeout
 
     def argv(self, prompt: str) -> list:
-        cmd = [self.llama, '-m', self.model, '-p', prompt,
-               '-n', str(self.n_predict), '--temp', '0.2',
-               '--no-display-prompt', '-no-cnv']
-        if self.threads:
-            cmd += ['-t', str(self.threads)]
-        return cmd
+        # Memory/desktop kindness (the hard-reboot lesson, 2026-07-09): the
+        # X550LA has ~7.6GB shared with FlowCode + Claude Desktop. So: -c caps
+        # the KV cache (the default takes the model's full context and can eat
+        # hundreds of MB); -t 2 leaves cores for the mouse; --prio -1 makes
+        # the professor the lowest-priority process on the box.
+        return [self.llama, '-m', self.model, '-p', prompt,
+                '-n', str(self.n_predict), '--temp', '0.2',
+                '-c', str(self.ctx), '-t', str(self.threads),
+                '--prio', '-1',
+                '--no-display-prompt', '-no-cnv']
 
     def generate(self, prompt: str) -> str:
+        """The model's text, or raises BackendError with the REAL reason —
+        an empty answer must never ship as silence (screen-truth lesson:
+        the CUDA-less binary died fast and the board showed a mute professor)."""
         r = subprocess.run(self.argv(prompt), capture_output=True, text=True,
                            timeout=self.timeout)
-        return r.stdout.strip()
+        text = r.stdout.strip()
+        if r.returncode != 0 or not text:
+            tail = (r.stderr or '').strip().splitlines()[-3:]
+            raise BackendError(
+                f"llama exited rc={r.returncode}: " + ' | '.join(tail))
+        return text
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -117,7 +135,19 @@ CONFIG_PATH = os.path.join(_HERE, 'bonsai.json')
 # Known local homes for the runtime + model (verified on Stevo's machine).
 SEARCH_ROOTS = [os.path.expanduser('~/LOCAL_AI/Llama'),
                 os.path.expanduser('~/LOCAL_AI')]
-BINARY_NAMES = ('llama-cli', 'llama-completion')
+BINARY_NAMES = ('llama-completion', 'llama-cli')   # completion preferred (one-shot tool)
+
+
+def runnable(path: str, timeout: float = 10.0) -> bool:
+    """Does the binary actually RUN on this machine? (--version loads no
+    model; a wrong-arch/CUDA-less build dies instantly — the exact failure
+    that put an empty professor on the board.)"""
+    try:
+        r = subprocess.run([path, '--version'], capture_output=True,
+                           timeout=timeout)
+        return r.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
 
 
 def load_config(path: str = None) -> dict | None:
@@ -135,7 +165,7 @@ def discover(roots=None) -> dict | None:
     """Find a llama binary + the biggest .gguf under the known homes.
     Returns {'llama': ..., 'model': ...} with absolute paths, or None."""
     roots = SEARCH_ROOTS if roots is None else roots
-    llama = None
+    candidates = []
     ggufs = []
     for root in roots:
         if not os.path.isdir(root):
@@ -143,14 +173,19 @@ def discover(roots=None) -> dict | None:
         for dirpath, _dirs, files in os.walk(root):
             for f in files:
                 p = os.path.join(dirpath, f)
-                if llama is None and f in BINARY_NAMES and os.access(p, os.X_OK):
-                    llama = p
+                if f in BINARY_NAMES and os.access(p, os.X_OK):
+                    candidates.append((BINARY_NAMES.index(f), p))
                 if f.endswith('.gguf'):
                     try:
                         ggufs.append((os.path.getsize(p), p))
                     except OSError:
                         pass
-    if not llama or not ggufs:
+    if not candidates or not ggufs:
+        return None
+    # prefer llama-completion, and only a binary that PROVES it runs here —
+    # a name match isn't enough (the top-level CUDA builds taught us that).
+    llama = next((p for _, p in sorted(candidates) if runnable(p)), None)
+    if llama is None:
         return None
     return {'llama': llama, 'model': max(ggufs)[1]}
 
@@ -167,10 +202,10 @@ def classroom_command(config_path: str = None, roots=None) -> list | None:
         if llama and model and os.path.exists(llama) and os.path.exists(model):
             argv = [sys.executable, os.path.abspath(__file__),
                     '--llama', llama, '--model', model]
-            if cfg.get('n_predict'):
-                argv += ['--n-predict', str(cfg['n_predict'])]
-            if cfg.get('threads'):
-                argv += ['--threads', str(cfg['threads'])]
+            for key, flag in (('n_predict', '--n-predict'),
+                              ('threads', '--threads'), ('ctx', '--ctx')):
+                if cfg.get(key):
+                    argv += [flag, str(cfg[key])]
             return argv
         # config present but paths broken → fall through to discovery
     found = discover(roots)
@@ -197,7 +232,17 @@ def handle_line(line: str, backend) -> str | None:
     except (ValueError, TypeError) as e:
         sys.stderr.write(f"[bonsai_runner] dropped malformed request: {e}\n")
         return None
-    text = backend.generate(build_prompt(req))
+    try:
+        text = backend.generate(build_prompt(req))
+    except BackendError as e:
+        return json.dumps({'backend_error': str(e)}) + '\n'
+    except subprocess.TimeoutExpired as e:
+        return json.dumps({'backend_error':
+                           f'professor timed out after {e.timeout:.0f}s '
+                           f'(the X550LA thinks slowly — raise ask_timeout '
+                           f'in bonsai.json if he needed longer)'}) + '\n'
+    except OSError as e:
+        return json.dumps({'backend_error': f'could not run llama: {e}'}) + '\n'
     return json.dumps(build_response(text, req)) + '\n'
 
 
@@ -226,10 +271,20 @@ def _make_backend(argv) -> object:
         sys.stderr.write("[bonsai_runner] no llama binary/model found; "
                          "falling back to --mock\n")
         return EchoBackend()
-    n_predict = int(_opt(argv, '--n-predict') or 400)
-    threads = _opt(argv, '--threads')
-    return LlamaBackend(llama, model, n_predict,
-                        int(threads) if threads else None)
+    n_predict = int(_opt(argv, '--n-predict') or 128)
+    threads = int(_opt(argv, '--threads') or 2)
+    ctx = int(_opt(argv, '--ctx') or 1024)
+    return LlamaBackend(llama, model, n_predict, threads, ctx)
+
+
+def ask_timeout(config_path: str = None) -> float:
+    """How long the tab waits for one live answer. The classroom's old 120s
+    was a fantasy at 0.3 tok/s — default 2400s, tunable in bonsai.json."""
+    cfg = load_config(config_path) or {}
+    try:
+        return float(cfg.get('ask_timeout', 2400))
+    except (TypeError, ValueError):
+        return 2400.0
 
 
 def main(argv=None) -> None:

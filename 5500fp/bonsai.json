@@ -1,8 +1,10 @@
 {
-  "_comment": "The Professor's wiring — full absolute paths, editable in the Text tab. Set enabled=false to keep him out of the classroom. Delete this file and the Academy auto-discovers under ~/LOCAL_AI instead.",
+  "_comment": "The Professor's wiring — full absolute paths, editable in the Text tab. Set enabled=false to keep him out of the classroom. Delete this file and the Academy auto-discovers under ~/LOCAL_AI instead. Memory-kind defaults for the X550LA (hard-reboot lesson): ctx caps the KV cache, threads 2 leaves cores for the desktop, n_predict 128 ≈ minutes not tens of minutes at 0.3 tok/s, ask_timeout is how long the classroom waits for one answer.",
   "enabled": true,
-  "llama": "/home/steven/LOCAL_AI/Llama/llama-prism-b8846-d104cf1/llama-cli",
+  "llama": "/home/steven/LOCAL_AI/Llama/prism-official/build/bin/llama-completion",
   "model": "/home/steven/LOCAL_AI/Llama/Ternary-Bonsai-8B-Q2_0.gguf",
-  "n_predict": 400,
-  "threads": null
+  "n_predict": 128,
+  "ctx": 1024,
+  "threads": 2,
+  "ask_timeout": 2400
 }
