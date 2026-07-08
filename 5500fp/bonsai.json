@@ -1,0 +1,8 @@
+{
+  "_comment": "The Professor's wiring — full absolute paths, editable in the Text tab. Set enabled=false to keep him out of the classroom. Delete this file and the Academy auto-discovers under ~/LOCAL_AI instead.",
+  "enabled": true,
+  "llama": "/home/steven/LOCAL_AI/Llama/llama-prism-b8846-d104cf1/llama-cli",
+  "model": "/home/steven/LOCAL_AI/Llama/Ternary-Bonsai-8B-Q2_0.gguf",
+  "n_predict": 400,
+  "threads": null
+}

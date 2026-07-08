@@ -151,9 +151,18 @@ class GhostTabView:
         self._prof_thought = ''
         self._prof_speech = ''
 
-        # Bonsai: cmd from env (no binary yet → stays NOT_RUNNING, graceful).
+        # Bonsai — self-wiring, no terminal needed: BONSAI_CMD env (power-user
+        # override) → bonsai.json → auto-discovery of the local runtime+model.
+        # Nothing found → professor-not-present, classroom fully usable.
         bonsai_cmd = os.environ.get('BONSAI_CMD')
-        self.bonsai = B.BonsaiProcess(bonsai_cmd.split() if bonsai_cmd else None)
+        if bonsai_cmd:
+            cmd = bonsai_cmd.split()
+        else:
+            try:
+                cmd = _load('bonsai_runner').classroom_command()
+            except Exception:
+                cmd = None
+        self.bonsai = B.BonsaiProcess(cmd)
         self.bonsai.start()
 
         acc = C.get('accent', '#7ab4ff')

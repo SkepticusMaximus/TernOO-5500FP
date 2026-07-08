@@ -11,14 +11,20 @@ RESPONSE lines on stdout, one full reply per request (ONE-SHOT). The streaming
 saddle (dispatch 103000 §2) layers on top of this once it's dispatched — this
 module is the pipe; §2 is how the water is poured.
 
-Wiring: point the harness at it —
-    BONSAI_CMD="python3 bonsai_runner.py --llama '<your llama.cpp command>'"
-    (or --mock for a binary-less classroom / the tests).
+Wiring — ZERO-CONFIG by design (Stevo is CLI-averse; no terminal needed):
+  1. bonsai.json beside this file (absolute paths, editable in the Text tab)
+     — the control switch: {"enabled": true, "llama": ..., "model": ...}.
+  2. If no config, AUTO-DISCOVERY: known local homes (~/LOCAL_AI/Llama) are
+     searched for a llama-cli/llama-completion binary and the biggest .gguf.
+  3. BONSAI_CMD env stays as a power-user override; --mock for tests.
+The Academy tab calls classroom_command() at startup and wires whatever it
+returns — launch FlowCode normally and the Professor finds his own way in.
 
 Backends:
-  * LlamaBackend — shells to a local llama.cpp runner over the .gguf. Stevo
-    owns the exact command + prompt format for the real model (flagged).
-  * EchoBackend — a deterministic mock (tests + no-binary fallback).
+  * LlamaBackend — shells the PROVEN command from Stevo's own interview
+    script: llama-cli -m <gguf> -p <prompt> -n 400 --temp 0.2
+    --no-display-prompt -no-cnv (one subprocess per ask, pipes only).
+  * EchoBackend — a deterministic mock (tests + binary-less classroom).
 
 Date: 2026-07-09, Adelaide
 Authors: Stevo (SkepticusMaximus) + Claude (Anthropic)
@@ -78,22 +84,100 @@ class EchoBackend:
 
 
 class LlamaBackend:
-    """Shells to a local llama.cpp runner over the .gguf. `cmd` is the token
-    list; a '{PROMPT}' token is substituted with the prompt, else the prompt
-    is appended as the final argument. Stevo sets the exact command."""
+    """Shells the proven llama.cpp invocation (from bonsai_interview_sed.py,
+    already verified on this machine) — one subprocess per ask, pipes only."""
 
-    def __init__(self, cmd, timeout: float = 300.0):
-        self.cmd = list(cmd)
+    def __init__(self, llama: str, model: str, n_predict: int = 400,
+                 threads=None, timeout: float = 1800.0):
+        self.llama, self.model = llama, model
+        self.n_predict, self.threads = n_predict, threads
         self.timeout = timeout
 
+    def argv(self, prompt: str) -> list:
+        cmd = [self.llama, '-m', self.model, '-p', prompt,
+               '-n', str(self.n_predict), '--temp', '0.2',
+               '--no-display-prompt', '-no-cnv']
+        if self.threads:
+            cmd += ['-t', str(self.threads)]
+        return cmd
+
     def generate(self, prompt: str) -> str:
-        if '{PROMPT}' in self.cmd:
-            argv = [a.replace('{PROMPT}', prompt) for a in self.cmd]
-        else:
-            argv = self.cmd + [prompt]
-        r = subprocess.run(argv, capture_output=True, text=True,
+        r = subprocess.run(self.argv(prompt), capture_output=True, text=True,
                            timeout=self.timeout)
         return r.stdout.strip()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Zero-config wiring: bonsai.json → auto-discovery → none
+# ═══════════════════════════════════════════════════════════════════════════
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(_HERE, 'bonsai.json')
+
+# Known local homes for the runtime + model (verified on Stevo's machine).
+SEARCH_ROOTS = [os.path.expanduser('~/LOCAL_AI/Llama'),
+                os.path.expanduser('~/LOCAL_AI')]
+BINARY_NAMES = ('llama-cli', 'llama-completion')
+
+
+def load_config(path: str = None) -> dict | None:
+    """bonsai.json if present and readable, else None. Never raises."""
+    path = path or CONFIG_PATH
+    try:
+        with open(path) as f:
+            cfg = json.load(f)
+        return cfg if isinstance(cfg, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def discover(roots=None) -> dict | None:
+    """Find a llama binary + the biggest .gguf under the known homes.
+    Returns {'llama': ..., 'model': ...} with absolute paths, or None."""
+    roots = SEARCH_ROOTS if roots is None else roots
+    llama = None
+    ggufs = []
+    for root in roots:
+        if not os.path.isdir(root):
+            continue
+        for dirpath, _dirs, files in os.walk(root):
+            for f in files:
+                p = os.path.join(dirpath, f)
+                if llama is None and f in BINARY_NAMES and os.access(p, os.X_OK):
+                    llama = p
+                if f.endswith('.gguf'):
+                    try:
+                        ggufs.append((os.path.getsize(p), p))
+                    except OSError:
+                        pass
+    if not llama or not ggufs:
+        return None
+    return {'llama': llama, 'model': max(ggufs)[1]}
+
+
+def classroom_command(config_path: str = None, roots=None) -> list | None:
+    """The argv the Academy tab spawns for a live Professor, or None (stay
+    professor-not-present). Priority: bonsai.json (enabled + valid paths) →
+    auto-discovery. Pure decision; the tab just wires what this returns."""
+    cfg = load_config(config_path)
+    if cfg is not None:
+        if not cfg.get('enabled', True):
+            return None                       # the OFF switch
+        llama, model = cfg.get('llama'), cfg.get('model')
+        if llama and model and os.path.exists(llama) and os.path.exists(model):
+            argv = [sys.executable, os.path.abspath(__file__),
+                    '--llama', llama, '--model', model]
+            if cfg.get('n_predict'):
+                argv += ['--n-predict', str(cfg['n_predict'])]
+            if cfg.get('threads'):
+                argv += ['--threads', str(cfg['threads'])]
+            return argv
+        # config present but paths broken → fall through to discovery
+    found = discover(roots)
+    if found is None:
+        return None
+    return [sys.executable, os.path.abspath(__file__),
+            '--llama', found['llama'], '--model', found['model']]
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -125,19 +209,27 @@ def serve(stdin, stdout, backend) -> None:
             stdout.flush()
 
 
+def _opt(argv, flag):
+    return argv[argv.index(flag) + 1] if flag in argv else None
+
+
 def _make_backend(argv) -> object:
     if '--mock' in argv:
         return EchoBackend()
-    llama = None
-    if '--llama' in argv:
-        llama = argv[argv.index('--llama') + 1]
-    else:
-        llama = os.environ.get('BONSAI_LLAMA')
-    if not llama:
-        sys.stderr.write("[bonsai_runner] no --llama command and no "
-                         "BONSAI_LLAMA env; falling back to --mock\n")
+    llama = _opt(argv, '--llama')
+    model = _opt(argv, '--model')
+    if not (llama and model):
+        found = discover()
+        if found:
+            llama, model = llama or found['llama'], model or found['model']
+    if not (llama and model):
+        sys.stderr.write("[bonsai_runner] no llama binary/model found; "
+                         "falling back to --mock\n")
         return EchoBackend()
-    return LlamaBackend(llama.split())
+    n_predict = int(_opt(argv, '--n-predict') or 400)
+    threads = _opt(argv, '--threads')
+    return LlamaBackend(llama, model, n_predict,
+                        int(threads) if threads else None)
 
 
 def main(argv=None) -> None:

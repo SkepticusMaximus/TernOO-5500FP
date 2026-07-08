@@ -58,6 +58,64 @@ class TestRoundTripThroughHarness(unittest.TestCase):
             p.stop()
 
 
+class TestZeroConfigWiring(unittest.TestCase):
+    def test_llama_backend_argv_is_the_proven_command(self):
+        b = R.LlamaBackend('/x/llama-cli', '/y/m.gguf', n_predict=400)
+        argv = b.argv('hello')
+        self.assertEqual(argv[:5], ['/x/llama-cli', '-m', '/y/m.gguf',
+                                    '-p', 'hello'])
+        for flag in ('--temp', '--no-display-prompt', '-no-cnv'):
+            self.assertIn(flag, argv)
+
+    def test_discover_finds_binary_and_biggest_gguf(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            bin_p = os.path.join(d, 'llama-cli')
+            with open(bin_p, 'w') as f: f.write('#!x')
+            os.chmod(bin_p, 0o755)
+            with open(os.path.join(d, 'small.gguf'), 'w') as f: f.write('x')
+            with open(os.path.join(d, 'big.gguf'), 'w') as f: f.write('x' * 100)
+            found = R.discover(roots=[d])
+            self.assertEqual(found['llama'], bin_p)
+            self.assertTrue(found['model'].endswith('big.gguf'))
+
+    def test_discover_none_when_empty(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(R.discover(roots=[d]))
+
+    def test_classroom_command_from_config(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            bin_p = os.path.join(d, 'llama-cli')
+            mod_p = os.path.join(d, 'm.gguf')
+            with open(bin_p, 'w') as f: f.write('#!x')
+            os.chmod(bin_p, 0o755)
+            with open(mod_p, 'w') as f: f.write('x')
+            cfg = os.path.join(d, 'bonsai.json')
+            with open(cfg, 'w') as f:
+                json.dump({'enabled': True, 'llama': bin_p,
+                           'model': mod_p, 'n_predict': 128}, f)
+            cmd = R.classroom_command(config_path=cfg, roots=[d])
+            self.assertEqual(cmd[0], sys.executable)
+            self.assertIn('--llama', cmd); self.assertIn(bin_p, cmd)
+            self.assertIn('--n-predict', cmd); self.assertIn('128', cmd)
+
+    def test_classroom_command_respects_off_switch(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            cfg = os.path.join(d, 'bonsai.json')
+            with open(cfg, 'w') as f:
+                json.dump({'enabled': False, 'llama': '/x', 'model': '/y'}, f)
+            self.assertIsNone(R.classroom_command(config_path=cfg, roots=[d]))
+
+    def test_classroom_command_none_when_nothing(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(R.classroom_command(
+                config_path=os.path.join(d, 'nope.json'), roots=[d]))
+
+
 class TestNoNetwork(unittest.TestCase):
     def test_source_has_no_network_surface(self):
         with open(_RUNNER) as f:
