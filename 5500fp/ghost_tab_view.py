@@ -172,7 +172,8 @@ class GhostTabView:
                            ('Copy', self.copy_chat),
                            ('Curriculum', self.open_curriculum),
                            ('Brain scan', self.open_brain_scan),
-                           ('Chars', self.show_specimen)):
+                           ('Chars', self.show_specimen),
+                           ('Translate', self.open_translator)):
             tk.Button(bar, text=label, command=cmd, bg=C['palette'],
                       fg=C['text'], font=('Monospace', 9), relief='flat',
                       bd=0, padx=8, pady=3, cursor='hand2').pack(side='left')
@@ -555,24 +556,89 @@ class GhostTabView:
         except Exception as e:
             brain.insert('end', f'(brain scan failed: {e})')
 
-    # ── font specimen (print the whole house font to the board) ────────────
+    # ── font specimen (print the whole house font in BOTH voices) ──────────
+    SPECIMEN_LINES = ('THE HOUSE FONT ~ SPECIMEN',
+                      'A B C D E F G H I J K L M N O P Q R S T U V W X Y Z',
+                      'a b c d e f g h i j k l m n o p q r s t u v w x y z',
+                      '0 1 2 3 4 5 6 7 8 9',
+                      '. , : ; ! ? - \' " ( )',
+                      '+ - × ÷ = ≠ < > ≤ ≥ ± / \\ * ^ % · _ | #',
+                      '[ ] { } → π √ Δ ° ∑ ∫ ∞')
+
     def show_specimen(self):
-        """Render the full house-font character set to the board — for
-        reviewing the glyphs, the math band, and the stroke smoothness."""
-        for line in ('THE HOUSE FONT ~ SPECIMEN',
-                     'A B C D E F G H I J K L M N O P Q R S T U V W X Y Z',
-                     'a b c d e f g h i j k l m n o p q r s t u v w x y z',
-                     '0 1 2 3 4 5 6 7 8 9',
-                     '. , : ; ! ? - \' " ( )',
-                     '+ - × ÷ = ≠ < > ≤ ≥ ± / \\ * ^ % · _ | #',
-                     '[ ] { } → π √ Δ ° ∑ ∫ ∞'):
-            self.board.append_text(line)
-        # the marks that aren't single typeable characters
+        """Render the full house-font set in BOTH voices — chalk on the board,
+        ink in the book — so the two hands can be compared side by side."""
         space = GLY.make_glyph(GLY.ORDINAL[' '])
-        self.board.append_words([GLY.make_glyph(GLY.ANSWER_ORD), space,
-                                 GLY.make_glyph(GLY.IDEA_ORD), space,
-                                 GLY.make_glyph(GLY.PLACEHOLDER_ORD)])
-        self._status('house-font specimen printed to the board')
+        marks = [GLY.make_glyph(GLY.ANSWER_ORD), space,
+                 GLY.make_glyph(GLY.IDEA_ORD), space,
+                 GLY.make_glyph(GLY.PLACEHOLDER_ORD)]
+        for surface in (self.board, self.book):
+            for line in self.SPECIMEN_LINES:
+                surface.append_text(line)
+            surface.append_words(marks)
+        self._status('house-font specimen printed — chalk (board) + ink (book)')
+
+    # ── ASCII/Unicode → TernOO glyph-string word translator ────────────────
+    def open_translator(self):
+        """Port external ASCII/Unicode text into native TernOO glyph-string
+        words (the same projection the board uses on Bonsai's output), preview
+        it in a chosen voice, and report characters the house font can't yet
+        supply — those feed the O4 char-map charter."""
+        tk = self.tk
+        C = self.C
+        top = tk.Toplevel(self.root, bg=C['bg'])
+        top.title('ASCII / Unicode → TernOO glyph-string')
+
+        tk.Label(top, text='Text in (ASCII/Unicode — e.g. Bonsai output):',
+                 bg=C['bg'], fg=C['text'], font=('Monospace', 9)
+                 ).pack(anchor='w', padx=8, pady=(8, 0))
+        inp = tk.Text(top, height=4, width=70, bg=C['inspect'], fg=C['text'],
+                     insertbackground=C['text'], relief='flat', bd=0,
+                     highlightthickness=0, font=('Monospace', 10), padx=6,
+                     pady=4)
+        inp.pack(fill='x', padx=8)
+        inp.insert('1.0', 'GHOST + Bonsai = the two-mind stack ± humility')
+
+        row = tk.Frame(top, bg=C['bg'])
+        row.pack(fill='x', padx=8, pady=4)
+        voice = tk.StringVar(value='chalk')
+        tk.OptionMenu(row, voice, 'chalk', 'ink', 'both').pack(side='left')
+        status = tk.Label(row, text='', bg=C['bg'], fg=C['dim'],
+                         font=('Monospace', 8))
+        status.pack(side='left', padx=10)
+
+        chalk_cv = tk.Canvas(top, bg=BLACKBOARD_FACE, height=100, bd=0,
+                            highlightthickness=0)
+        ink_cv = tk.Canvas(top, bg=BOOK_FACE, height=100, bd=0,
+                          highlightthickness=0)
+        chalk_cv.pack(fill='x', padx=8, pady=(4, 2))
+        ink_cv.pack(fill='x', padx=8, pady=(0, 8))
+        s_chalk = GC.GlyphSurface(chalk_cv, voice='chalk', size=18)
+        s_ink = GC.GlyphSurface(ink_cv, voice='ink', size=18)
+
+        def translate(*_):
+            text = inp.get('1.0', 'end-1c')
+            unknown = sorted({c for c in text if c != '\n'
+                              and c not in GLY.ORDINAL
+                              and not ('A' <= c.upper() <= 'Z')})
+            v = voice.get()
+            s_chalk.clear(); s_ink.clear()
+            for ln in text.split('\n'):
+                if v in ('chalk', 'both'):
+                    s_chalk.append_text(ln)
+                if v in ('ink', 'both'):
+                    s_ink.append_text(ln)
+            n = len(GLY.text_to_words(text.replace('\n', ' '), strict=False))
+            msg = f'{n} glyph words'
+            if unknown:
+                msg += '  ·  no house glyph (→ ~, feeds O4): ' + ' '.join(unknown)
+            status.config(text=msg)
+
+        tk.Button(row, text='Translate', command=translate, bg=C['palette'],
+                  fg=C.get('accent', '#7ab4ff'), font=('Monospace', 9),
+                  relief='flat', bd=0, padx=10, cursor='hand2').pack(side='left')
+        voice.trace_add('write', translate)
+        top.after(50, translate)          # initial render once mapped
 
     # ── file furniture ──────────────────────────────────────────────────────
     def save_chat(self):
