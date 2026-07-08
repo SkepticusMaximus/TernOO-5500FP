@@ -127,8 +127,10 @@ class GlyphSurface:
 
     def append_text(self, text):
         """Convenience: project text to words (strict=False → '~' on unknown)
-        and draw. Screen path only; never persisted."""
-        self.append_words(G.text_to_words(text, strict=False))
+        and draw, one logical line per newline. Screen path only; a newline is
+        a line break, never a glyph. Never persisted."""
+        for line in text.split('\n'):
+            self.append_words(G.text_to_words(line, strict=False))
 
     def _draw_glyph(self, word, ox, baseline, line_index):
         try:

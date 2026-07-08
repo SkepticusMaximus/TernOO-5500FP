@@ -44,6 +44,33 @@ class TestResolve(unittest.TestCase):
             GC.resolve_glyph(G.make_literal(9))
 
 
+class _FakeCanvas:
+    def winfo_width(self):
+        return 600
+
+    def winfo_height(self):
+        return 300
+
+    def create_line(self, *a, **k):
+        pass
+
+    def create_oval(self, *a, **k):
+        pass
+
+    def delete(self, *a, **k):
+        pass
+
+    def move(self, *a, **k):
+        pass
+
+
+class TestSurface(unittest.TestCase):
+    def test_append_text_breaks_on_newline(self):
+        s = GC.GlyphSurface(_FakeCanvas(), voice='ink', size=16)
+        s.append_text('AB\nCD\nEF')
+        self.assertEqual(len(s._lines), 3)          # newline → line, not ~
+
+
 class TestLayout(unittest.TestCase):
     def test_wrap_produces_multiple_lines(self):
         words = G.text_to_words('A' * 40)
