@@ -7590,11 +7590,21 @@ def run_gui():
         elif idx == 6: _build_gristmill_tools()      # Babble-Fish — vocab explorer
         else:          _build_empty_tools()          # Text (3) + Academy (7)
 
+    def _apply_sidebar_relevance(idx):
+        """Self-contained tabs carry their own UI, so the global sidebar is dead
+        weight there — hide the whole palette. Text (3) mounts its own editor;
+        Academy (7) has its own toolbar. Every other tab keeps it."""
+        if idx in (3, 7):
+            palette_frame.pack_forget()
+        else:
+            palette_frame.pack(side='left', fill='y', before=right_outer)
+
     def _on_tab_change(event):
         idx = notebook.index('current')
         _rebuild_sidebar_tools()            # tab-aware TOOLS
         _apply_action_relevance(idx == 0)   # Flow-only ACTIONS shown only on Flow
         _apply_output_relevance(idx == 0)   # Output panel is the Flow trace only
+        _apply_sidebar_relevance(idx)       # whole sidebar hidden on Academy/Text
         _update_zoom_indicator()            # refresh zoom % for active canvas
         # Destroy any GHOST-panel tooltip that survived the tab switch
         if _guic_active_tip[0]:
