@@ -2,15 +2,26 @@
 
 Mounted by flowcode.py:  GhostTabView(parent_frame, C, root, set_status)
 
-A vertically split classroom (measured geometry — CF5-Submit-2026-07-08_004000):
+A vertically split classroom (measured geometry — CF5-Submit-2026-07-08_004000,
+amended by CF5-Submit-2026-07-09_164000):
   * TOP pane  (~44% H) — Professor (Bonsai): sprite zone (~28% pane W, bottom-
     weighted) + placard ("local subprocess · no network") + the BLACKBOARD
-    (upper ~70% of the pane, right of a 12px gutter) + thought/speech vectors.
+    (upper ~70% of the pane, right of a 12px gutter) + thought bubble.
   * SEAM      (~12% H) — the training desk: Train control + the GRADING STRIP
     (belt test, bound to the REAL report-card accuracy — never fabricated).
   * BOTTOM pane (~44% H) — Student (GHOST): sprite zone + the OPEN BOOK
     (the .chat log — the kept original made visible) + entry + curious `?`
-    indicator (pulses while routing / on a `none`) + thought/speech vectors.
+    indicator (pulses while routing / on a `none`) + thought bubble.
+  * BACKSTAGE PANEL (right edge, ~30% tab W, hidden by default) — the corridor
+    conversation, not the classroom performance: direct consoles to the
+    Professor (ungated at our layer) and to GHOST (no curriculum side effects).
+    When open, the classroom panes compress to the remaining width; the art-
+    contract percentages apply to the CLASSROOM AREA, not the tab.
+
+Geometry contract note (art commission): SPEECH BALLOONS ARE CUT — the board
+and the book ARE the utterances (captain's ruling, 2026-07-09); their reserved
+positions are RELEASED. THOUGHT-BUBBLE positions stay FROZEN (introspection
+only: professor generation status; GHOST margin self-talk + the curious ?).
 
 Cosmetics: live-text regions are BORDERLESS — distinctness is surface colour
 alone (board #0a1410, book #141210, placard lifted-navy #0d1624). No code-drawn
@@ -70,6 +81,24 @@ CURIOUS_B = '#639922'   # green
 # ternary-glyph-plane original of this mark is a SEPARATE future work item
 # (Stevo's char-map charter) — this Unicode projection is the v1 rendering.
 IDEA_MARK = '⸮?'
+
+# ── the Backstage Panel (CF5-Submit-2026-07-09_164000) ──────────────────────
+BACKSTAGE_W = 0.30                 # of the tab client area, when open
+BACKSTAGE_TEACHING_NOTICE = ('teaching happens in class — use the classroom, '
+                             'not the corridor')
+BACKSTAGE_PROF_LOG = 'backstage-prof.log'
+BACKSTAGE_GHOST_LOG = 'backstage-ghost.log'
+
+
+def backstage_ghost_text(route: str, margin) -> str:
+    """The GHOST console's reply line — same engine and phrasing as the
+    classroom, but composed here so the corridor NEVER touches harness.turns
+    (the .chat stream) or any teaching state. The corridor is not the
+    curriculum."""
+    if route == 'none':
+        return f"I'm sorry, I can't do that — yet.  (margin {margin})"
+    short = route[4:] if route.startswith('cmd_') else route
+    return f"that sounds like {short}  (margin {margin}) — try `{short}(...)`"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -146,10 +175,9 @@ class GhostTabView:
         self._accuracy = None                  # last real report-card accuracy
         self._curious_on = False
         self._curious_job = None
-        self._stud_thought = ''
-        self._stud_speech = ''
-        self._prof_thought = ''
-        self._prof_speech = ''
+        self._stud_thought = ''            # thought bubbles stay (introspection);
+        self._prof_thought = ''            # speech balloons are CUT (164000 §0)
+        self._backstage_open = False       # per-session only, not persisted
 
         # Bonsai — self-wiring, no terminal needed: BONSAI_CMD env (power-user
         # override) → bonsai.json → auto-discovery of the local runtime+model.
@@ -186,7 +214,8 @@ class GhostTabView:
                            ('Curriculum', self.open_curriculum),
                            ('Brain scan', self.open_brain_scan),
                            ('Chars', self.show_specimen),
-                           ('Translate', self.open_translator)):
+                           ('Translate', self.open_translator),
+                           ('Backstage', self.toggle_backstage)):
             tk.Button(bar, text=label, command=cmd, bg=C['palette'],
                       fg=C['text'], font=('Monospace', 9), relief='flat',
                       bd=0, padx=8, pady=3, cursor='hand2').pack(side='left')
@@ -194,14 +223,13 @@ class GhostTabView:
         # ── the three placed regions (44 / 12 / 44) ──────────────────────────
         container = tk.Frame(parent, bg=C['bg'])
         container.pack(side='top', fill='both', expand=True)
+        self._container = container
 
         self.prof_pane = tk.Frame(container, bg=C['bg'])
-        self.prof_pane.place(relx=0, rely=0, relwidth=1, relheight=PROF_H)
-        seam = tk.Frame(container, bg=C['palette'])
-        seam.place(relx=0, rely=PROF_H, relwidth=1, relheight=SEAM_H)
+        self.seam = tk.Frame(container, bg=C['palette'])
         self.stud_pane = tk.Frame(container, bg=C['bg'])
-        self.stud_pane.place(relx=0, rely=PROF_H + SEAM_H, relwidth=1,
-                             relheight=STUD_H)
+        seam = self.seam
+        self._reflow()          # places the three panes (full width, no panel)
 
         # ── TOP pane: Professor (Bonsai) — canvas for vectors + borderless board
         self.prof_canvas = tk.Canvas(self.prof_pane, bg=C['bg'],
@@ -257,9 +285,157 @@ class GhostTabView:
         self.entry.bind('<Return>', self._on_enter)
         self.stud_pane.bind('<Configure>', lambda e: self._redraw_student())
 
+        self._build_backstage(container)
         self._redraw_prof()
         self._redraw_student()
         self._draw_grade()
+
+    # ── layout: classroom ⟷ backstage reflow ────────────────────────────────
+    def _reflow(self):
+        """Place the classroom panes across whatever width the backstage
+        panel leaves. The art-contract percentages (sprite 28%, board 70%…)
+        are fractions of the CLASSROOM AREA, not the tab — pane-relative
+        placement makes that automatic (164000 §5)."""
+        w = 1 - BACKSTAGE_W if self._backstage_open else 1
+        self.prof_pane.place(relx=0, rely=0, relwidth=w, relheight=PROF_H)
+        self.seam.place(relx=0, rely=PROF_H, relwidth=w, relheight=SEAM_H)
+        self.stud_pane.place(relx=0, rely=PROF_H + SEAM_H, relwidth=w,
+                             relheight=STUD_H)
+
+    # ── the Backstage Panel — the corridor, not the classroom ───────────────
+    def _build_backstage(self, container):
+        """Two stacked consoles (Professor above, GHOST below, 50/50 sash),
+        hidden by default. Backstage renders PLAIN UTF-8 Tk text, deliberately
+        — fast and unceremonious; the native-font showcase is the classroom's
+        job. Do NOT 'upgrade' this to GlyphSurface without a ruling (164000)."""
+        tk = self.tk
+        C = self.C
+        self.backstage = tk.Frame(container, bg=C['palette'])
+        pw = tk.PanedWindow(self.backstage, orient='vertical', bg=C['palette'],
+                            sashwidth=4)
+        pw.pack(fill='both', expand=True, padx=(4, 0))
+
+        def _console(parent_pw, title):
+            frame = tk.Frame(parent_pw, bg=C['bg'])
+            tk.Label(frame, text=title, bg=C['bg'], fg=C['dim'],
+                     font=('Monospace', 8, 'bold'), anchor='w'
+                     ).pack(fill='x', padx=4, pady=(4, 0))
+            txt = tk.Text(frame, bg=C['inspect'], fg=C['text'],
+                          insertbackground=C['text'], bd=0, relief='flat',
+                          highlightthickness=0, font=('Monospace', 9),
+                          wrap='word', padx=6, pady=4, state='disabled')
+            txt.pack(fill='both', expand=True, padx=4, pady=2)
+            ent = tk.Entry(frame, bg=C['inspect'], fg=C['text'],
+                           insertbackground=C['text'], relief='flat', bd=0,
+                           highlightthickness=0, font=('Monospace', 9))
+            ent.pack(fill='x', padx=4, pady=(0, 4))
+            parent_pw.add(frame, minsize=80)
+            return txt, ent
+
+        self._bs_prof_txt, self._bs_prof_ent = _console(
+            pw, 'PROFESSOR — corridor (ungated at our layer)')
+        self._bs_ghost_txt, self._bs_ghost_ent = _console(
+            pw, 'GHOST — corridor (no curriculum side effects)')
+        self._bs_prof_ent.bind('<Return>', self._backstage_send_prof)
+        self._bs_ghost_ent.bind('<Return>', self._backstage_send_ghost)
+        if self.bonsai.status == B.NOT_RUNNING:
+            self._console_write(self._bs_prof_txt, '(professor not present)')
+            self._bs_prof_ent.config(state='disabled')
+
+    def toggle_backstage(self):
+        self._backstage_open = not self._backstage_open
+        if self._backstage_open:
+            self.backstage.place(relx=1 - BACKSTAGE_W, rely=0,
+                                 relwidth=BACKSTAGE_W, relheight=1)
+        else:
+            self.backstage.place_forget()
+        self._reflow()
+        self._status('backstage ' + ('open' if self._backstage_open
+                                     else 'closed'))
+
+    def _console_write(self, txt, line):
+        txt.config(state='normal')
+        txt.insert('end', line + '\n')
+        txt.see('end')
+        txt.config(state='disabled')
+
+    def _backstage_log(self, path, who, text):
+        """Raw UTF-8, kept-original — to the corridor's OWN files. Nothing
+        from the panel enters any .chat curriculum document, the Academy
+        ledger, or training state, ever, by construction — not filtered out,
+        never wired in. The corridor is not the curriculum."""
+        try:
+            self.harness.fs.append(path, f'{who}: {text}\n')
+        except Exception:
+            pass
+
+    def _backstage_send_prof(self, _e=None):
+        """Corridor line to the Professor. UNGATED BY US: no consistency
+        gate, no consent ceremony, no routing through GHOST — prompt in,
+        subprocess, text out. Nothing here strips or works around the model's
+        own trained behaviour (Qwen's character rides inside the GGUF); we
+        remove OUR gates only. The no-socket construction is absolute and
+        unchanged — the one rail that never comes off."""
+        line = self._bs_prof_ent.get().strip()
+        if not line:
+            return
+        self._bs_prof_ent.delete(0, 'end')
+        self._console_write(self._bs_prof_txt, f'you: {line}')
+        self._backstage_log(BACKSTAGE_PROF_LOG, 'you', line)
+        if self.bonsai.status == B.NOT_RUNNING:
+            self._console_write(self._bs_prof_txt, '(professor not present)')
+            return
+        # the corridor does not consult the student: zero feature vector,
+        # route tagged 'backstage' — contract shape kept, gate NOT applied.
+        req = B.build_request(line, [0] * 81, 'backstage', 0,
+                              self.harness.major)
+        self._console_write(self._bs_prof_txt, '(professor is thinking…)')
+        import threading
+        box = {}
+
+        def _work():
+            box['resp'], box['err'] = self.bonsai.ask(
+                req, timeout=self._ask_timeout)
+
+        t = threading.Thread(target=_work, daemon=True)
+        t.start()
+
+        def _poll():
+            if t.is_alive():
+                self.root.after(150, _poll)
+                return
+            resp, err = box.get('resp'), box.get('err')
+            if resp is None:
+                self._console_write(self._bs_prof_txt,
+                                    f'[professor unreachable — {err}]')
+            else:
+                text = resp.get('text', '')
+                self._console_write(self._bs_prof_txt, f'prof: {text}')
+                self._backstage_log(BACKSTAGE_PROF_LOG, 'prof', text)
+
+        self.root.after(150, _poll)
+
+    def _backstage_send_ghost(self, _e=None):
+        """Corridor line to GHOST: text in → router → routed reply / none.
+        Same engine as the classroom, but nothing appends to harness.turns
+        (the .chat stream) and teaching commands are refused — the backstage
+        must never silently mutate the student."""
+        line = self._bs_ghost_ent.get().strip()
+        if not line:
+            return
+        self._bs_ghost_ent.delete(0, 'end')
+        self._console_write(self._bs_ghost_txt, f'you: {line}')
+        self._backstage_log(BACKSTAGE_GHOST_LOG, 'you', line)
+        if line.startswith('!learn'):      # every teaching form, incl. malformed
+            reply = BACKSTAGE_TEACHING_NOTICE
+        else:
+            try:
+                route, margin = self.harness.route(line)
+                reply = backstage_ghost_text(route, margin)
+            except (H.HarnessError, OSError) as e:
+                reply = f'error: {e}'
+        self._console_write(self._bs_ghost_txt, f'ghost: {reply}')
+        self._backstage_log(BACKSTAGE_GHOST_LOG, 'ghost', reply)
 
     # ── sprite zones + vector overlays (the art contract) ──────────────────
     def _load_sprite(self, name):
@@ -297,8 +473,9 @@ class GhostTabView:
         return zone, sprite_w
 
     def _bubble(self, canvas, x, y, text, colour, anchor='nw'):
-        """A borderless annotation (thought/speech). Text only — the art layer
-        will draw the balloon shapes; a code outline would double them."""
+        """A borderless THOUGHT annotation (introspection only — speech
+        balloons are cut; the board/book are the utterances). Text only —
+        the art layer draws the bubble shape; a code outline would double it."""
         if text:
             canvas.create_text(x, y, text=text, fill=colour, anchor=anchor,
                               font=('Monospace', 8))
@@ -317,11 +494,8 @@ class GhostTabView:
                           fill=PLACARD_FACE, outline='')
         c.create_text((12 + sprite_w - 6) // 2, h - 26, text=placard,
                      fill=col, font=('Monospace', 8))
-        # thought bubble up-left; speech balloon below-right (lower band, tail
-        # toward the seam below)
+        # thought bubble up-left (frozen position) — the introspection window
         self._bubble(c, 14, 12, self._prof_thought, self.C['dim'])
-        self._bubble(c, sprite_w + GUTTER + 4, int(h * BOARD_H) + 10,
-                     self._prof_speech, '#cfe8d8')
 
     def _redraw_student(self):
         c = self.stud_canvas
@@ -334,9 +508,8 @@ class GhostTabView:
         mark = IDEA_MARK if self._show_idea else '?'
         c.create_text(sprite_w - 14, 22, text=mark, fill=col,
                      font=('Monospace', 18, 'bold'), anchor='e')
-        # thought bubble up-left; speech balloon below the figure (tail up)
+        # thought bubble up-left (frozen position) — the introspection window
         self._bubble(c, 14, 12, self._stud_thought, self.C['text'])
-        self._bubble(c, 14, h - 30, self._stud_speech, '#e6dcc8')
 
     def _pulse_curious(self, on: bool):
         """Pulse the `?` while routing / on a none. Single indicator + one
@@ -434,7 +607,6 @@ class GhostTabView:
             reply = self.harness.chat(line)
             last = self.harness.turns[-1]
             self._stud_thought = student_thought(last['route'], last['margin'])
-            self._stud_speech = reply
             self._pulse_curious(last['route'] == 'none')
             self._say('ghost: ', reply)
             if last['route'] == 'none' and self.bonsai.status != B.NOT_RUNNING:
@@ -483,9 +655,7 @@ class GhostTabView:
                 self._board(f'[professor unreachable — {err}]')
             else:
                 gate = B.consistency_gate(resp, route, margin)
-                shown = present_bonsai(gate, resp)
-                self._prof_speech = shown.splitlines()[0][:48]
-                self._board(shown)
+                self._board(present_bonsai(gate, resp))
             self.root.after(1200, lambda: self._prof_pose('idle'))
 
         self.root.after(120, _poll)
