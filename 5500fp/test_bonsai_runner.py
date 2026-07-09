@@ -108,7 +108,7 @@ class TestZeroConfigWiring(unittest.TestCase):
                 f.write('#!/bin/sh\necho "<think>endless musing"\nexit 0\n')
             os.chmod(thinker, 0o755)
             b = R.LlamaBackend(thinker, os.path.join(d, 'm.gguf'))
-            with self.assertRaises(R.BackendError) as cm:
+            with _RoomIsBig(), self.assertRaises(R.BackendError) as cm:
                 b.generate('hello')
             self.assertIn('n_predict', str(cm.exception))
 
@@ -179,6 +179,56 @@ class TestZeroConfigWiring(unittest.TestCase):
                 config_path=os.path.join(d, 'nope.json'), roots=[d]))
 
 
+class _RoomIsBig:
+    """Pin mem_available_mb high so stub-generate tests don't depend on the
+    test machine's RAM of the moment."""
+
+    def __enter__(self):
+        self._real = R.mem_available_mb
+        R.mem_available_mb = lambda: 999999
+        return self
+
+    def __exit__(self, *a):
+        R.mem_available_mb = self._real
+
+
+class TestRoomCheck(unittest.TestCase):
+    def test_guard_refuses_when_room_too_small(self):
+        real = R.mem_available_mb
+        R.mem_available_mb = lambda: 1200          # 1.2GB free
+        try:
+            msg = R.mem_guard('/nonexistent.gguf')  # auto → ~2300+800 needed
+            self.assertIsNotNone(msg)
+            self.assertIn('1200 MB available', msg)
+        finally:
+            R.mem_available_mb = real
+
+    def test_guard_passes_when_room_is_big(self):
+        with _RoomIsBig():
+            self.assertIsNone(R.mem_guard('/nonexistent.gguf'))
+
+    def test_guard_honours_explicit_threshold(self):
+        real = R.mem_available_mb
+        R.mem_available_mb = lambda: 500
+        try:
+            self.assertIsNone(R.mem_guard('/x.gguf', min_free_mb=400))
+            self.assertIsNotNone(R.mem_guard('/x.gguf', min_free_mb=600))
+        finally:
+            R.mem_available_mb = real
+
+    def test_generate_refuses_before_spawning(self):
+        # the whole point: refuse > thrash — no llama process is even run
+        real = R.mem_available_mb
+        R.mem_available_mb = lambda: 100
+        try:
+            b = R.LlamaBackend('/nonexistent/llama', '/nonexistent.gguf')
+            with self.assertRaises(R.BackendError) as cm:
+                b.generate('hello')
+            self.assertIn('MB available', str(cm.exception))
+        finally:
+            R.mem_available_mb = real
+
+
 class _FailingBackend:
     def generate(self, prompt):
         raise R.BackendError('llama exited rc=127: libcudart.so.12 missing')
@@ -218,7 +268,7 @@ class TestHonestFailure(unittest.TestCase):
             quiet = os.path.join(d, 'llama-completion')
             _stub_binary(quiet, rc=0)                  # prints nothing
             b = R.LlamaBackend(quiet, os.path.join(d, 'm.gguf'))
-            with self.assertRaises(R.BackendError):
+            with _RoomIsBig(), self.assertRaises(R.BackendError):
                 b.generate('hello')
 
 

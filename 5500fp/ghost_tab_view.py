@@ -389,7 +389,9 @@ class GhostTabView:
         # route tagged 'backstage' — contract shape kept, gate NOT applied.
         req = B.build_request(line, [0] * 81, 'backstage', 0,
                               self.harness.major)
-        self._console_write(self._bs_prof_txt, '(professor is thinking…)')
+        self._console_write(self._bs_prof_txt,
+                            '(professor is thinking… minutes, not seconds, '
+                            'at 0.3 tok/s)')
         import threading
         box = {}
 

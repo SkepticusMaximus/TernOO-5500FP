@@ -87,6 +87,46 @@ def build_response(text: str, req: dict,
 # Backends
 # ═══════════════════════════════════════════════════════════════════════════
 
+# ── the room check (the frozen-mouse lesson, 2026-07-10) ────────────────────
+# An 8B whose weights don't fit in FREE RAM doesn't fail — it thrashes the
+# page cache and freezes the whole desktop. -c/-t/--prio can't cap the
+# weights themselves, so the professor CHECKS THE ROOM before entering and
+# refuses honestly if he won't fit (the humility gate, applied to memory).
+
+MEM_HEADROOM_MB = 800          # beyond the model file: KV/compute + slack
+
+
+def mem_available_mb():
+    """MemAvailable from /proc/meminfo, in MB. None if unreadable (non-Linux)."""
+    try:
+        with open('/proc/meminfo') as f:
+            for line in f:
+                if line.startswith('MemAvailable:'):
+                    return int(line.split()[1]) // 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
+def mem_guard(model_path: str, min_free_mb=None):
+    """None if it's safe to wake the professor, else the honest refusal
+    message (with the real numbers, so the captain knows what to close)."""
+    avail = mem_available_mb()
+    if avail is None:
+        return None                        # can't tell — proceed
+    if min_free_mb is None:
+        try:
+            model_mb = os.path.getsize(model_path) // (1024 * 1024)
+        except OSError:
+            model_mb = 2300                # the 8B's ballpark
+        min_free_mb = model_mb + MEM_HEADROOM_MB
+    if avail < min_free_mb:
+        return (f'professor needs ~{min_free_mb} MB free to think safely; '
+                f'only {avail} MB available right now — close something '
+                f'heavy (browser? video?) and ask again')
+    return None
+
+
 _THINK_RE = re.compile(r'<think>.*?</think>', re.DOTALL)
 
 
@@ -117,10 +157,12 @@ class LlamaBackend:
     already verified on this machine) — one subprocess per ask, pipes only."""
 
     def __init__(self, llama: str, model: str, n_predict: int = 128,
-                 threads: int = 2, ctx: int = 1024, timeout: float = 2400.0):
+                 threads: int = 2, ctx: int = 1024, timeout: float = 2400.0,
+                 min_free_mb=None):
         self.llama, self.model = llama, model
         self.n_predict, self.threads, self.ctx = n_predict, threads, ctx
         self.timeout = timeout
+        self.min_free_mb = min_free_mb     # None = auto (model size + headroom)
 
     def argv(self, prompt: str) -> list:
         # Memory/desktop kindness (the hard-reboot lesson, 2026-07-09): the
@@ -142,6 +184,9 @@ class LlamaBackend:
         """The model's text, or raises BackendError with the REAL reason —
         an empty answer must never ship as silence (screen-truth lesson:
         the CUDA-less binary died fast and the board showed a mute professor)."""
+        refusal = mem_guard(self.model, self.min_free_mb)
+        if refusal:
+            raise BackendError(refusal)    # refuse > thrash the whole desktop
         r = subprocess.run(self.argv(prompt), capture_output=True, text=True,
                            timeout=self.timeout)
         text = clean_reply(r.stdout)
@@ -235,7 +280,8 @@ def classroom_command(config_path: str = None, roots=None) -> list | None:
             argv = [sys.executable, os.path.abspath(__file__),
                     '--llama', llama, '--model', model]
             for key, flag in (('n_predict', '--n-predict'),
-                              ('threads', '--threads'), ('ctx', '--ctx')):
+                              ('threads', '--threads'), ('ctx', '--ctx'),
+                              ('min_free_mb', '--min-free-mb')):
                 if cfg.get(key):
                     argv += [flag, str(cfg[key])]
             return argv
@@ -306,7 +352,9 @@ def _make_backend(argv) -> object:
     n_predict = int(_opt(argv, '--n-predict') or 128)
     threads = int(_opt(argv, '--threads') or 2)
     ctx = int(_opt(argv, '--ctx') or 1024)
-    return LlamaBackend(llama, model, n_predict, threads, ctx)
+    min_free = _opt(argv, '--min-free-mb')
+    return LlamaBackend(llama, model, n_predict, threads, ctx,
+                        min_free_mb=int(min_free) if min_free else None)
 
 
 def ask_timeout(config_path: str = None) -> float:
