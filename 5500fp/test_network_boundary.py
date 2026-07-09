@@ -38,7 +38,7 @@ NETWORK_MODULES = {
 # Repo-relative POSIX paths permitted to import the network. EMPTY today. The
 # socket organ (step 4) adds exactly one path. The `<= 1` assertion below is
 # Engelbart's one-limb rule, enforced by CI: you cannot grow a second organ.
-NETWORK_ALLOWLIST = set()      # e.g. {"5500fp/p2pcp_socket.py"} when step 4 lands
+NETWORK_ALLOWLIST = {"5500fp/p2pcp_socket.py"}   # the ONE organ (§1.5), step 4
 
 # Roots walked. The whole TernOO/P2PCP tree, not one module.
 ROOTS = ("5500fp", "FlowCode")

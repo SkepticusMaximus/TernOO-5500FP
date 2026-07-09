@@ -509,12 +509,16 @@ single-node, zero network risk**; build the wire first and payment gets bolted o
    non-delivering worker, as fixtures, *before* the happy path.
 3. **Receipts + burn ledger** — local, signed, inspectable, **offline.** (block-lattice
    §5, TCM §8, TIME §6, privacy §7.)
-4. **Socket organ + daemon skeleton** — the I/O primary's first citizen (§1.5). **Landed
-   before it: the tree-wide import-boundary guard** (`test_network_boundary.py`) — the
-   no-socket invariant, rewritten from per-module pins into "exactly one module may import
-   the network," proven by **walking the imports** (AST). The `allow-list ≤ 1` assertion
-   makes Engelbart's one-limb rule mechanical; the organ lands by adding its module to that
-   list, so the invariant *strengthens* across the transition instead of vanishing.
+4. **Socket organ + daemon skeleton** ✓ — the I/O primary's first citizen (§1.5).
+   `p2pcp_socket.py` is the ONE network module (length-prefixed framed transport, trustless
+   `accept`, one mode, frame-size cap); `p2pcp_daemon.py` owns keys + ledger + organ and
+   completes a signed **HELLO** handshake — *verified identity over the wire, from any
+   stranger* — with a marked seam (`_serve_peer`) where step 5's paid wire contract plugs
+   in. Guarded by the tree-wide **import-boundary** test (`test_network_boundary.py`):
+   exactly one module may import the network, proven by **walking the imports** (AST), the
+   `allow-list ≤ 1` assertion making Engelbart's one-limb rule mechanical — so the invariant
+   *strengthened* across the transition instead of vanishing. Loopback is today's substrate;
+   the wire is byte-identical for a remote peer. (47 P2PCP tests green.)
 5. **Worker adapter over the wire** — and **the first job that crosses between two boxes is
    already a paid job, settled against the step-3 ledger.** A stronger milestone than an
    unpaid packet, and cheaper because the data model is already hard.
