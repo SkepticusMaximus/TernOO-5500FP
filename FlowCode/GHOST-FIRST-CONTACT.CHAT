@@ -1,0 +1,4 @@
+TernOO Shell — type help for commands; Ctrl+P captures the last pipeline
+> ghost "Pack up your tribbles in your old trit bag and smile smile smile" 
+ghost: that sounds like math_round  (margin 28, cls_idx=13)
+ghost: try `math_round(...)` — or `help` for its parameters.
