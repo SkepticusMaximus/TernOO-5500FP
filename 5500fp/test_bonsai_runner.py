@@ -257,6 +257,8 @@ class TestIntern(unittest.TestCase):
         self.assertEqual(argv[0], '/x/bin/llama-completion')
         self.assertIn('-st', argv)
         self.assertNotIn('-md', argv)
+        # the tenure lesson: thinking is off at the engine level
+        self.assertEqual(argv[argv.index('--reasoning') + 1], 'off')
 
     def test_extract_drafted_reply_strips_echo_and_end(self):
         raw = (R.qwen3_prompt('sys', 'q') +

@@ -228,9 +228,13 @@ class LlamaBackend:
         # -st single-turn chat + -sys persona (the identity-crisis fix): the
         # gguf's chat template assigns the roles, exactly as Stevo's own
         # interview script ran it. One turn, then the process exits.
+        # --reasoning off (verified on this build): the tenure lesson — the
+        # ternarized Qwen3 ignored the /no_think soft switch and spent all
+        # 128 tokens thinking; this kills <think> at the template level so
+        # the whole budget goes to the ANSWER.
         return ([self.llama, '-m', self.model,
                  '-sys', SYSTEM_PROMPT, '-p', prompt, '-st',
-                 '--no-display-prompt'] + caps)
+                 '--reasoning', 'off', '--no-display-prompt'] + caps)
 
     def generate(self, prompt: str) -> str:
         """The model's text, or raises BackendError with the REAL reason —
