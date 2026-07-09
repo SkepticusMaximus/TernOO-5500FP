@@ -108,9 +108,10 @@ def mem_available_mb():
     return None
 
 
-def mem_guard(model_path: str, min_free_mb=None):
+def mem_guard(model_path: str, min_free_mb=None, draft_path=None):
     """None if it's safe to wake the professor, else the honest refusal
-    message (with the real numbers, so the captain knows what to close)."""
+    message (with the real numbers, so the captain knows what to close).
+    A draft model (the intern) adds its own residency to the bill."""
     avail = mem_available_mb()
     if avail is None:
         return None                        # can't tell — proceed
@@ -119,12 +120,51 @@ def mem_guard(model_path: str, min_free_mb=None):
             model_mb = os.path.getsize(model_path) // (1024 * 1024)
         except OSError:
             model_mb = 2300                # the 8B's ballpark
+        if draft_path:
+            try:
+                model_mb += os.path.getsize(draft_path) // (1024 * 1024)
+            except OSError:
+                model_mb += 450            # small-draft ballpark
         min_free_mb = model_mb + MEM_HEADROOM_MB
     if avail < min_free_mb:
         return (f'professor needs ~{min_free_mb} MB free to think safely; '
                 f'only {avail} MB available right now — close something '
                 f'heavy (browser? video?) and ask again')
     return None
+
+
+# ── the intern (speculative decoding — EXPERIMENTAL until measured) ─────────
+# DSpark at laptop scale: a small same-family draft model proposes tokens,
+# Bonsai verifies them in one batch. On CPU the win is memory bandwidth —
+# verifying k drafted tokens reads the 2.2GB of weights ONCE instead of k
+# times. Lossless by construction: the boss model has the final say.
+# llama-completion has no local -md flag, so the drafted path runs the
+# SIBLING binary llama-speculative — which has no -st chat mode, so we
+# hand-roll Qwen3's documented chat template (the identity-crisis fix must
+# not regress) and strip the prompt echo ourselves.
+
+ASSISTANT_MARK = '<|im_start|>assistant\n'
+
+
+def speculative_binary(llama_path: str) -> str:
+    """llama-speculative living beside the configured llama binary."""
+    return os.path.join(os.path.dirname(llama_path), 'llama-speculative')
+
+
+def qwen3_prompt(system: str, user: str) -> str:
+    """Qwen3's chat template, hand-rolled for the non-conversational
+    speculative binary. Deterministic text; format per Qwen3's public spec."""
+    return (f'<|im_start|>system\n{system}<|im_end|>\n'
+            f'<|im_start|>user\n{user}<|im_end|>\n'
+            + ASSISTANT_MARK)
+
+
+def extract_drafted_reply(stdout: str) -> str:
+    """llama-speculative can't suppress the prompt echo — take everything
+    after the LAST assistant marker if echoed, and cut at the end-of-turn."""
+    if ASSISTANT_MARK in stdout:
+        stdout = stdout.rsplit(ASSISTANT_MARK, 1)[1]
+    return stdout.split('<|im_end|>')[0]
 
 
 _THINK_RE = re.compile(r'<think>.*?</think>', re.DOTALL)
@@ -158,11 +198,13 @@ class LlamaBackend:
 
     def __init__(self, llama: str, model: str, n_predict: int = 128,
                  threads: int = 2, ctx: int = 1024, timeout: float = 2400.0,
-                 min_free_mb=None):
+                 min_free_mb=None, draft_model=None, draft_max: int = 12):
         self.llama, self.model = llama, model
         self.n_predict, self.threads, self.ctx = n_predict, threads, ctx
         self.timeout = timeout
         self.min_free_mb = min_free_mb     # None = auto (model size + headroom)
+        self.draft_model = draft_model     # the intern (None = classic path)
+        self.draft_max = draft_max
 
     def argv(self, prompt: str) -> list:
         # Memory/desktop kindness (the hard-reboot lesson, 2026-07-09): the
@@ -171,25 +213,36 @@ class LlamaBackend:
         # hundreds of MB); -t 2 leaves cores for the mouse; --prio -1 makes
         # the professor the lowest-priority process on the box.
         #
+        caps = ['-n', str(self.n_predict), '--temp', '0.2',
+                '-c', str(self.ctx), '-t', str(self.threads),
+                '--prio', '-1']
+        if self.draft_model:
+            # drafted path: the sibling llama-speculative (no -st chat mode,
+            # no prompt suppression) — hand-rolled Qwen3 template + echo strip
+            # keep the identity-crisis fix intact. Flags verified against the
+            # binary's --help on this machine (2026-07-10).
+            return ([speculative_binary(self.llama), '-m', self.model,
+                     '-md', self.draft_model,
+                     '--draft-max', str(self.draft_max), '--draft-min', '2',
+                     '-p', qwen3_prompt(SYSTEM_PROMPT, prompt)] + caps)
         # -st single-turn chat + -sys persona (the identity-crisis fix): the
         # gguf's chat template assigns the roles, exactly as Stevo's own
         # interview script ran it. One turn, then the process exits.
-        return [self.llama, '-m', self.model,
-                '-sys', SYSTEM_PROMPT, '-p', prompt, '-st',
-                '-n', str(self.n_predict), '--temp', '0.2',
-                '-c', str(self.ctx), '-t', str(self.threads),
-                '--prio', '-1', '--no-display-prompt']
+        return ([self.llama, '-m', self.model,
+                 '-sys', SYSTEM_PROMPT, '-p', prompt, '-st',
+                 '--no-display-prompt'] + caps)
 
     def generate(self, prompt: str) -> str:
         """The model's text, or raises BackendError with the REAL reason —
         an empty answer must never ship as silence (screen-truth lesson:
         the CUDA-less binary died fast and the board showed a mute professor)."""
-        refusal = mem_guard(self.model, self.min_free_mb)
+        refusal = mem_guard(self.model, self.min_free_mb, self.draft_model)
         if refusal:
             raise BackendError(refusal)    # refuse > thrash the whole desktop
         r = subprocess.run(self.argv(prompt), capture_output=True, text=True,
                            timeout=self.timeout)
-        text = clean_reply(r.stdout)
+        out = extract_drafted_reply(r.stdout) if self.draft_model else r.stdout
+        text = clean_reply(out)
         if r.returncode != 0:
             tail = (r.stderr or '').strip().splitlines()[-3:]
             raise BackendError(
@@ -281,9 +334,14 @@ def classroom_command(config_path: str = None, roots=None) -> list | None:
                     '--llama', llama, '--model', model]
             for key, flag in (('n_predict', '--n-predict'),
                               ('threads', '--threads'), ('ctx', '--ctx'),
-                              ('min_free_mb', '--min-free-mb')):
+                              ('min_free_mb', '--min-free-mb'),
+                              ('draft_max', '--draft-max')):
                 if cfg.get(key):
                     argv += [flag, str(cfg[key])]
+            # the intern rides only if its file is really there
+            draft = cfg.get('draft_model')
+            if draft and os.path.exists(draft):
+                argv += ['--draft-model', draft]
             return argv
         # config present but paths broken → fall through to discovery
     found = discover(roots)
@@ -354,7 +412,9 @@ def _make_backend(argv) -> object:
     ctx = int(_opt(argv, '--ctx') or 1024)
     min_free = _opt(argv, '--min-free-mb')
     return LlamaBackend(llama, model, n_predict, threads, ctx,
-                        min_free_mb=int(min_free) if min_free else None)
+                        min_free_mb=int(min_free) if min_free else None,
+                        draft_model=_opt(argv, '--draft-model'),
+                        draft_max=int(_opt(argv, '--draft-max') or 12))
 
 
 def ask_timeout(config_path: str = None) -> float:

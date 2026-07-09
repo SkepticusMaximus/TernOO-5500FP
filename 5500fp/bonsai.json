@@ -1,6 +1,8 @@
 {
   "_comment": "The Professor's wiring — full absolute paths, editable in the Text tab. Set enabled=false to keep him out of the classroom. Delete this file and the Academy auto-discovers under ~/LOCAL_AI instead. Memory-kind defaults for the X550LA (hard-reboot lesson): ctx caps the KV cache, threads 2 leaves cores for the desktop, n_predict 128 ≈ minutes not tens of minutes at 0.3 tok/s, ask_timeout is how long the classroom waits for one answer. min_free_mb: the ROOM CHECK — the professor refuses to think unless this much RAM is free (null = auto: model size + 800MB headroom); refusing beats freezing the whole desktop.",
   "min_free_mb": null,
+  "draft_model": null,
+  "_draft_comment": "THE INTERN (speculative decoding, experimental): set draft_model to the absolute path of a small same-family gguf (e.g. Qwen3-0.6B Q4_K_M in ~/LOCAL_AI/Llama) and the professor verifies its drafts in batches — plausibly 1.5-3x on CPU, lossless (the boss has final say). null = classic path. Runs via the sibling llama-speculative binary; room check bills for both models.",
   "enabled": true,
   "llama": "/home/steven/LOCAL_AI/Llama/prism-official/build/bin/llama-completion",
   "model": "/home/steven/LOCAL_AI/Llama/Ternary-Bonsai-8B-Q2_0.gguf",

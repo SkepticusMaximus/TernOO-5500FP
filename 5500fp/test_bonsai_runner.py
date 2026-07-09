@@ -229,6 +229,88 @@ class TestRoomCheck(unittest.TestCase):
             R.mem_available_mb = real
 
 
+class TestIntern(unittest.TestCase):
+    """Speculative-decoding wiring (the intern). Experimental until measured
+    on the real model — these pin the deterministic parts: argv assembly,
+    template, echo-stripping, room-check billing, config gating."""
+
+    def test_drafted_argv_uses_sibling_binary_and_md(self):
+        b = R.LlamaBackend('/x/bin/llama-completion', '/y/m.gguf',
+                           draft_model='/y/intern.gguf')
+        argv = b.argv('hello')
+        self.assertEqual(argv[0], '/x/bin/llama-speculative')
+        self.assertIn('-md', argv)
+        self.assertIn('/y/intern.gguf', argv)
+        self.assertIn('--draft-max', argv)
+        self.assertNotIn('-st', argv)              # sibling has no chat mode…
+        self.assertNotIn('-sys', argv)
+        prompt = argv[argv.index('-p') + 1]
+        self.assertIn('<|im_start|>system', prompt)   # …so template is ours
+        self.assertIn('You are Bonsai', prompt)
+        self.assertIn('hello', prompt)
+        for flag in ('-c', '-t', '--prio', '-n', '--temp'):  # caps still on
+            self.assertIn(flag, argv)
+
+    def test_undrafted_argv_unchanged(self):
+        b = R.LlamaBackend('/x/bin/llama-completion', '/y/m.gguf')
+        argv = b.argv('hello')
+        self.assertEqual(argv[0], '/x/bin/llama-completion')
+        self.assertIn('-st', argv)
+        self.assertNotIn('-md', argv)
+
+    def test_extract_drafted_reply_strips_echo_and_end(self):
+        raw = (R.qwen3_prompt('sys', 'q') +
+               'A trit is a balanced-ternary digit.<|im_end|>\nnoise')
+        self.assertEqual(R.extract_drafted_reply(raw),
+                         'A trit is a balanced-ternary digit.')
+
+    def test_extract_drafted_reply_no_echo_passthrough(self):
+        self.assertEqual(R.extract_drafted_reply('plain answer'),
+                         'plain answer')
+
+    def test_room_check_bills_for_the_intern(self):
+        import tempfile
+        real = R.mem_available_mb
+        R.mem_available_mb = lambda: 999999
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                m = os.path.join(d, 'm.gguf')
+                dr = os.path.join(d, 'intern.gguf')
+                with open(m, 'wb') as f:
+                    f.write(b'\0' * (10 * 1024 * 1024))      # 10 MB
+                with open(dr, 'wb') as f:
+                    f.write(b'\0' * (5 * 1024 * 1024))       # 5 MB
+                R.mem_available_mb = lambda: 10 + R.MEM_HEADROOM_MB + 2
+                self.assertIsNone(R.mem_guard(m))             # fits alone
+                self.assertIsNotNone(R.mem_guard(m, draft_path=dr))  # not both
+        finally:
+            R.mem_available_mb = real
+
+    def test_classroom_command_gates_draft_on_existence(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            bin_p = os.path.join(d, 'llama-cli')
+            mod_p = os.path.join(d, 'm.gguf')
+            _stub_binary(bin_p)
+            with open(mod_p, 'w') as f:
+                f.write('x')
+            cfg = os.path.join(d, 'bonsai.json')
+            with open(cfg, 'w') as f:
+                json.dump({'enabled': True, 'llama': bin_p, 'model': mod_p,
+                           'draft_model': os.path.join(d, 'ghost.gguf')}, f)
+            cmd = R.classroom_command(config_path=cfg, roots=[d])
+            self.assertNotIn('--draft-model', cmd)   # file absent → no intern
+            dr = os.path.join(d, 'intern.gguf')
+            with open(dr, 'w') as f:
+                f.write('x')
+            with open(cfg, 'w') as f:
+                json.dump({'enabled': True, 'llama': bin_p, 'model': mod_p,
+                           'draft_model': dr}, f)
+            cmd = R.classroom_command(config_path=cfg, roots=[d])
+            self.assertIn('--draft-model', cmd)
+            self.assertIn(dr, cmd)
+
+
 class _FailingBackend:
     def generate(self, prompt):
         raise R.BackendError('llama exited rc=127: libcudart.so.12 missing')
