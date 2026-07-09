@@ -6,7 +6,9 @@
 **Derivation:** `docs/comms/2026-07-10-RFC-P2PCP-v0.1-for-CAI.md` (the RFC) +
 `private/CAI-RFC-Reply-P2PCP-v0.1.md` (the long-arc's one-shot reply, accepted in full
 by the captain 2026-07-10). This document folds the RFC and every accepted revision into
-one canon.
+one canon. A **second CAI pass** (2026-07-10, relayed by the captain) is folded in below:
+the **Q3 weight-bearing correction** (§10), the **receipt output-commitment + challenge-
+reveal** (§7/§12.4), and the **tree-wide import-boundary guard** before step 4 (§14).
 **Status:** v0.1 working spec. Normative where marked. Revisable at v0.2 *before* any
 third-party interop is claimed.
 
@@ -121,7 +123,9 @@ Rules:
 **Determinism becomes a market price signal.** Replayable work is cheaper to trust, so it
 earns a better price; the mesh's incentives pull the whole population toward native
 integer execution **without any mandate.** Hospitable infrastructure, applied to
-economics.
+economics. And it does not stop at price: **only replay-class work is weight-bearing**
+(§10), so the same signal runs up into governance — native-integer execution earns *votes*,
+float earns only rent.
 
 ---
 
@@ -257,6 +261,15 @@ consensus only when they move the ledger"). Promoted here to **four hard rules:*
    node cannot hold both full weight and full unlinkability. **This is an open problem
    (Appendix B), written as an open problem — not papered over.** It is the natural home of
    the CGP research arc.
+5. **The blinding nonce is also the reveal key — privacy by default, audit on demand.**
+   Receipts are pairwise, so they carry the *raw* job MMID **and output MMID**; both parties
+   already know what was computed, so nothing leaks. The ledger carries only
+   `H(job_MMID ‖ nonce)`. A third party audits by **challenge**: a node that has burned
+   weight-bearing credit, when challenged, must **open** the commitment — produce the nonce,
+   the job MMID and the output MMID — and the challenger **replays** (§10). Refuse to open,
+   or open wrongly, and the burn is **void and the stake slashed** (§9). One word does both
+   jobs — which is the sort of coincidence that suggests the data model is shaped right
+   rather than merely decorated.
 
 ---
 
@@ -358,10 +371,34 @@ running with a population of two (§1.2 intact).
 joining in year ten pays exactly what the founders paid. (Bitcoin conspicuously lacks this;
 we get it for free by refusing the lottery.)
 
-**No self-burn** (residual, ruled): a node may not burn its **own** cycles directly for
-weight. That is where a data centre buys the vote with money instead of usefulness.
-Requiring burned credit to have been **earned from a counterparty** makes weight proof that
-**strangers wanted what you had** — proof-of-usefulness, not proof-of-expenditure.
+**Weight is priced in verifiable cycles — and in nothing else** (CAI's Q3 correction,
+2026-07-10). The earlier claim that weight proves *strangers* wanted your work was too
+strong and is withdrawn: "earned from a counterparty" cannot prove the counterparty was a
+stranger, because a **sockpuppet pair can sign receipts to each other**, and a
+permissionless system has no trusted notion of distinct persons — so no protocol can.
+**Debit-abandonment and the sockpuppet-weight attack are the same attack**, and a balance
+floor is the wrong instrument for it. The honest, narrower, defensible rule:
+
+- **Only replay-class work mints weight-bearing credit.** A receipt commits to **both the
+  job MMID and the output MMID** (§7/§12.4); any peer can audit by **replaying the job and
+  comparing the output commitment bit-for-bit**. A forger who signed for work it never did
+  cannot produce the right output commitment, and every peer is a potential auditor, so the
+  probability of surviving indefinitely goes to zero. Credit carries a `weight_bearing`
+  flag set at receipt time by verification class; **burn accepts nothing else.**
+- **Float work earns money, never a vote.** `vclass = −1` (quorum) credit is spendable but
+  never weight-bearing. The determinism moat (§3) thus runs all the way up into the
+  franchise: **native-integer execution earns votes, float earns rent** — the §7 market
+  signal governing governance, so the mesh drifts toward TernOO's own arithmetic without
+  the protocol ever mandating it.
+- **What survives, stated plainly:** Sybil-neutrality (splitting weight does not multiply
+  it), founder-privilege-dies-by-decay, and the constant-forever price all hold. **But a
+  data centre can buy the franchise with real cycles, exactly as under any PoW/PoS.** The
+  mitigation is **decay + supermajority thresholds (§6), not immunity** — and we claim only
+  that, so no reviewer can land the punch.
+
+**No self-burn** still holds: a node may not burn its own un-earned cycles for weight.
+Self-minted credit is not weight-bearing, so it cannot be laundered into a vote — directly,
+or via a transfer hop.
 
 ---
 
@@ -395,7 +432,13 @@ against strangers before hostile review: the classic graveyard. The reconciliati
 **Normative rules:**
 1. **Every cryptographic word carries a versioned `alg` selector.** `alg = 0` = **ed25519**
    (signatures) / a **gauntlet-grade digest** (wire MMIDs). `alg = 1` = **reserved for the
-   ternary-native form.** Unknown `alg` → **graceful reject** (§4).
+   ternary-native form.** Unknown `alg` → **graceful reject** (§4). The selector sits at a
+   **fixed offset, parseable before verification** (you must know which primitive to verify
+   *with*), yet is itself **inside the signed envelope** so it cannot be downgraded —
+   reading it first is a parse step, not a trust step. CI exercises an **unknown third
+   `alg`** and proves graceful rejection; defining slots 0 and 1 is not enough, the
+   rejection path must be exercised or the negotiation is multihash's structure with git's
+   fate.
 2. **Both slots are defined in v0.1 and the negotiation path is exercised in CI** even
    while slot 1 is a stub. *A migration path that is never exercised does not work.* Git
    baked SHA-1 into its structure in 2005 and is still migrating twenty years later;
@@ -412,6 +455,12 @@ against strangers before hostile review: the classic graveyard. The reconciliati
      MMID collision lets an adversary **substitute cargo** — a *remote-adversarial* threat
      the sponge is explicitly **not rated for.** So the wire uses ed25519-class /
      SHA-3-class hashing (`alg=0`) until a ternary-native digest passes the gauntlet.
+   - **Receipt commitments are Wire MMIDs.** The job **and output** MMIDs a receipt commits
+     to (§7/§10) are wire-facing and adversarial — a forged collision on an output
+     commitment would let a worker sign for output it never produced and survive audit. So
+     receipts draw from the **wire** side of the `alg` table, never the store sponge. Do not
+     "unify" the two digests later: the sponge addresses the store, the gauntlet digest
+     addresses the wire, and a receipt is on the wire.
 
 **`KNOWN.md`'s ternary_sponge caveat is hereby on the critical path.** The external-gauntlet
 arc (the DM-consultation pattern from the MMID saga) is the road to `alg=1`.
@@ -438,7 +487,9 @@ everything to **verify.** Targets are **integrity, not secrecy** — *except* th
 | Receipt replay | re-post a stale receipt-hash | monotonic height + single-use (§6.1) |
 | Sybil swarm | N identities split from one | weight conserved under splitting (§10) |
 | Deadbeat worker | takes job, returns nothing | settlement granularity (§11) |
-| Debit abandonment | consume work, abandon a negative identity | settlement granularity + standing floor (§5/§11) — *open* |
+| Debit abandonment | consume work, abandon a negative identity | settlement granularity (§11); *same attack as sockpuppet-weight* (§10) |
+| Sockpuppet weight | two owned identities sign receipts to each other | only replay-class work is weight-bearing; audit-by-replay (§10) |
+| Forged output | sign a receipt for output never produced | output-MMID commitment + replay challenge (§7/§10) |
 | Clock skew | timestamp hours off | ±tolerance reject (§6.2) |
 | Unknown `alg` | word tagged with an unimplemented primitive | graceful reject (§12.1) |
 | Correlation via MMID | same job on two chains | blinded commitment `H(MMID‖nonce)` (§7.3) |
@@ -458,7 +509,12 @@ single-node, zero network risk**; build the wire first and payment gets bolted o
    non-delivering worker, as fixtures, *before* the happy path.
 3. **Receipts + burn ledger** — local, signed, inspectable, **offline.** (block-lattice
    §5, TCM §8, TIME §6, privacy §7.)
-4. **Socket organ + daemon skeleton** — the I/O primary's first citizen (§1.5).
+4. **Socket organ + daemon skeleton** — the I/O primary's first citizen (§1.5). **Landed
+   before it: the tree-wide import-boundary guard** (`test_network_boundary.py`) — the
+   no-socket invariant, rewritten from per-module pins into "exactly one module may import
+   the network," proven by **walking the imports** (AST). The `allow-list ≤ 1` assertion
+   makes Engelbart's one-limb rule mechanical; the organ lands by adding its module to that
+   list, so the invariant *strengthens* across the transition instead of vanishing.
 5. **Worker adapter over the wire** — and **the first job that crosses between two boxes is
    already a paid job, settled against the step-3 ledger.** A stronger milestone than an
    unpaid packet, and cheaper because the data model is already hard.
@@ -504,15 +560,19 @@ Binding on no one; TernOO's home-ISA speed, listed so it is never mistaken for p
 ## Appendix B — open problems (named, not papered)
 
 1. **Identity/privacy vs weight persistence** (§7.4). Weight wants persistence; privacy
-   wants ephemerality; weight is conserved under splitting. No v0.1 resolution. Home of the
-   CGP research arc.
+   wants ephemerality; weight is conserved under splitting. Acknowledged limit (§10): weight
+   is priced in verifiable cycles, so a data centre *can* buy the franchise with real cycles
+   — mitigated by decay + supermajority, not eliminated. No v0.1 resolution. Home of the CGP
+   research arc.
 2. **Ternary-native primitives** (`alg=1`). Signatures and a wire digest that pass external
    cryptanalysis. Until then, `alg=0` (ed25519 / SHA-3-class) is normative.
 3. **`ternary_sponge` remote-adversarial rating** (`KNOWN.md`). Proven for store-side
    accident-resistance and local tamper-evidence; **not** rated against a remote adversary.
    On the critical path.
-4. **Debit abandonment & eclipse** (§13). Mitigated by settlement granularity, standing
-   floors, and peer diversity; not eliminated.
+4. **Debit abandonment & eclipse** (§13). The *weight* variant (sockpuppet-weight) is
+   **closed** by the weight-bearing rule (§10); the *spendable-credit* variant is bounded
+   (not eliminated) by settlement granularity (§11). Eclipse stays mitigated-not-eliminated
+   by peer diversity.
 
 ## Appendix C — CRYPTO qualifier grammar (reference wire encoding, v0.1)
 
@@ -525,7 +585,7 @@ constant rather than hardcoding the pair.
 | KIND | role | inline body (payload T17–T0) | trailing / referenced |
 |---|---|---|---|
 | `OPEN` | account genesis | height(0), alg | PUBKEY word(s) |
-| `SETTLE` | work settlement | ±amount (signed), alg | counterparty id, `H(MMID‖nonce)`, receipt-hash |
+| `SETTLE` | work settlement | ±amount (signed), vclass, weight_bearing | counterparty id, `H(job_commit‖nonce)`, receipt-hash |
 | `TRANSFER` | credit move | ±amount (signed) | counterparty id, send/receive ref |
 | `BURN` | credit→weight | amount, alg | signed timestamp |
 | `SIG` | signature header | alg, length | signature octets (by MMID if long) |
@@ -534,7 +594,7 @@ constant rather than hardcoding the pair.
 | `NONCE` | freshness | nonce value | — |
 | `JOB` | job request | vclass, k (settlement granularity) | cargo MMID, route, margin |
 | `RESULT` | job result | self_confidence, claimed_class | result MMID |
-| `RECEIPT` | pairwise settlement (**off-ledger**) | ±amount | both signatures, job ref |
+| `RECEIPT` | pairwise settlement (**off-ledger**) | ±amount, vclass | both signatures, job-commit + output-commit (wire MMIDs) |
 
 ---
 

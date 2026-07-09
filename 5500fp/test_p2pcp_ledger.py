@@ -58,10 +58,10 @@ class TestForgedReceipt(unittest.TestCase):
 
     def test_forged_receipt_rejected(self):
         led, worker, requester = fresh_pair()
-        job = P.store_mmid([1, 2, 3, 4])
         # The worker forges the requester's signature (signs it himself).
-        r = P.Receipt(worker.account_id, requester.account_id, 5, job,
-                      nonce=b"n" * 16)
+        r = P.Receipt(worker.account_id, requester.account_id, 5,
+                      P.wire_mmid(b"job"), P.wire_mmid(b"out"),
+                      P.VCLASS_NATIVE, nonce=b"n" * 16)
         msg = r.signing_bytes()
         r.worker_sig = worker.sign(msg)
         r.requester_sig = worker.sign(msg)            # forgery — wrong key
@@ -105,7 +105,7 @@ class TestSelfBurn(unittest.TestCase):
         led = P.Ledger()
         x = ident(b"loner")
         led.open_account(x)
-        r = P.make_receipt(x, x, 50, P.store_mmid([9, 9, 9, 9]), nonce=b"z" * 16)
+        r = P.make_receipt(x, x, 50, b"job", b"out", nonce=b"z" * 16)
         led.post(P.build_settle_record(x, led.chains[x.account_id], r), r)
         self.assertEqual(led.balance(x.account_id), 50)
         self.assertEqual(led.burnable(x.account_id), 0)     # self-earned ≠ earned
@@ -139,8 +139,7 @@ class TestReceiptReplay(unittest.TestCase):
 
     def test_receipt_replay_rejected(self):
         led, worker, requester = fresh_pair()
-        job = P.store_mmid([7, 7, 7, 7])
-        r = P.make_receipt(worker, requester, 20, job, nonce=b"once")
+        r = P.make_receipt(worker, requester, 20, b"job7", b"out7", nonce=b"once")
         chain = led.chains[worker.account_id]
         led.post(P.build_settle_record(worker, chain, r), r)     # first use — ok
         # Re-post the SAME receipt at the next (valid-link) height.
@@ -269,20 +268,27 @@ class TestBlindedCommitment(unittest.TestCase):
     Defence: blinded commitment H(MMID‖nonce) with a per-receipt nonce (§7.3)."""
 
     def test_same_job_two_nonces_do_not_correlate(self):
-        job = P.store_mmid([42, 42, 42, 42])
-        c1 = P.blinded_commitment(job, b"nonce-one")
-        c2 = P.blinded_commitment(job, b"nonce-two")
+        job_commit = P.wire_mmid(b"the-same-job-cargo")
+        c1 = P.blinded_commitment(job_commit, b"nonce-one")
+        c2 = P.blinded_commitment(job_commit, b"nonce-two")
         self.assertNotEqual(c1, c2)                       # cannot be linked
-        # And the commitment is never the bare MMID.
-        self.assertNotEqual(c1, P._mmid_bytes(job))
+        self.assertNotEqual(c1, job_commit)               # never the bare commit
+        # The nonce is ALSO the reveal key (§7): opening reproduces the
+        # commitment, so privacy-by-default and audit-on-demand share one word.
+        self.assertTrue(P.open_commitment(c1, job_commit, b"nonce-one"))
+        self.assertFalse(P.open_commitment(c1, job_commit, b"nonce-two"))
 
     def test_ledger_stores_blinded_not_bare_mmid(self):
         led, worker, requester = fresh_pair()
-        led.settle_work(worker, requester, 5, job_words=[1, 1, 1, 1])
+        led.settle_work(worker, requester, 5, job=b"secret-job",
+                        output=b"secret-output")
         body = led.chains[worker.account_id].records[-1].body
         self.assertIn("blinded", body)
         self.assertIn("receipt_hash", body)
-        self.assertNotIn("job_mmid", body)                # bare MMID never on-ledger
+        # Neither the job nor the output commitment appears on-ledger (§7): the
+        # raw references live only in the pairwise receipt.
+        self.assertNotIn("job_commit", body)
+        self.assertNotIn("output_commit", body)
 
 
 class TestWireMmidSubstitution(unittest.TestCase):
@@ -310,6 +316,83 @@ class TestCryptoPrimaryInhabited(unittest.TestCase):
         # The escape slot (+,+,+,+) is reserved (Word Spec P4) — no KIND uses it.
         self.assertNotIn(P.V.from_trits([1, 1, 1, 1]),
                          P.CRYPTO_KIND_QUAL.values())
+
+
+class TestWeightBearingFranchise(unittest.TestCase):
+    """CAI's Q3 correction (2026-07-10): weight is priced in VERIFIABLE CYCLES,
+    not in counterparty signatures. Only replay-class work mints weight-bearing
+    credit; float earns money, never a vote (§3/§10). Debit-abandonment and the
+    sockpuppet-weight attack are one attack, closed by audit-by-replay — not a
+    balance floor."""
+
+    def test_float_work_earns_credit_but_never_weight(self):
+        led, worker, customer = fresh_pair()
+        led.settle_work(worker, customer, 10, vclass=P.VCLASS_FLOAT)
+        self.assertEqual(led.balance(worker.account_id), +10)   # money, yes
+        self.assertEqual(led.burnable(worker.account_id), 0)    # a vote, no
+        rec = P.build_burn_record(worker, led.chains[worker.account_id], 1, NOW)
+        with self.assertRaises(P.ValidationError) as cm:
+            led.post(rec, now=NOW)
+        self.assertEqual(cm.exception.reason, "unearned")
+
+    def test_replay_work_is_weight_bearing(self):
+        led, worker, customer = fresh_pair()
+        led.settle_work(worker, customer, 10, vclass=P.VCLASS_NATIVE)
+        self.assertEqual(led.burnable(worker.account_id), 10)   # replay → weight
+        led.burn(worker, 4, timestamp=NOW, now=NOW)
+        self.assertGreater(led.weight(worker.account_id, NOW), 0.0)
+
+    def test_forged_output_fails_replay_challenge(self):
+        # A worker signs a native (replay-class) receipt but commits to output it
+        # never produced. Any peer replays the job and catches it (§7/§9).
+        w, r = ident(b"w"), ident(b"r")
+        honest = P.make_receipt(w, r, 5, job=b"job", output=b"HONEST-OUTPUT",
+                                vclass=P.VCLASS_NATIVE, nonce=b"n" * 16)
+        self.assertTrue(P.challenge_receipt(honest, b"HONEST-OUTPUT"))
+        forged = P.make_receipt(w, r, 5, job=b"job", output=b"A-LIE",
+                                vclass=P.VCLASS_NATIVE, nonce=b"n" * 16)
+        with self.assertRaises(P.WireMmidError):
+            P.challenge_receipt(forged, b"HONEST-OUTPUT")   # replay ≠ commitment
+
+    def test_float_receipt_is_not_replay_auditable(self):
+        w, r = ident(b"w2"), ident(b"r2")
+        fl = P.make_receipt(w, r, 5, job=b"j", output=b"o",
+                            vclass=P.VCLASS_FLOAT, nonce=b"n" * 16)
+        with self.assertRaises(P.ValidationError) as cm:
+            P.challenge_receipt(fl, b"o")
+        self.assertEqual(cm.exception.reason, "not-replay-class")
+
+    def test_vclass_mislabel_rejected(self):
+        # A node cannot dress float work as native to steal a vote: the record's
+        # vclass/weight_bearing must match the receipt (§3/§10).
+        led, worker, customer = fresh_pair()
+        receipt = P.make_receipt(worker, customer, 7, job=b"j", output=b"o",
+                                 vclass=P.VCLASS_FLOAT, nonce=b"m" * 16)
+        rec = P.build_settle_record(worker, led.chains[worker.account_id], receipt)
+        rec.body["weight_bearing"] = True             # the lie...
+        rec.body["vclass"] = P.VCLASS_NATIVE
+        rec.sign(worker)                              # ...re-signed over the lie
+        with self.assertRaises(P.ValidationError) as cm:
+            led.post(rec, receipt)
+        self.assertIn(cm.exception.reason, ("vclass", "weight-bearing"))
+
+
+class TestWireCommitments(unittest.TestCase):
+    """Receipts commit with the gauntlet-grade WIRE digest, never the store
+    sponge (§12.4): the output commitment is wire-facing and adversarial, so a
+    forged sponge collision must not be able to substitute committed output."""
+
+    def test_receipt_uses_wire_digest_not_sponge(self):
+        w, r = ident(b"cw"), ident(b"cr")
+        receipt = P.make_receipt(w, r, 3, job=b"J", output=b"O",
+                                 vclass=P.VCLASS_NATIVE, nonce=b"n" * 16)
+        # 32-byte SHA3 wire digests, matching the wire primitive exactly...
+        self.assertEqual(receipt.job_commit, P.wire_mmid(b"J"))
+        self.assertEqual(receipt.output_commit, P.wire_mmid(b"O"))
+        self.assertEqual(len(receipt.output_commit), 32)
+        # ...and NOT the sponge store digest (a tuple of lanes, store-only role).
+        self.assertNotIsInstance(receipt.job_commit, tuple)
+        self.assertIsInstance(P.store_mmid([1, 1, 1, 1]), tuple)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

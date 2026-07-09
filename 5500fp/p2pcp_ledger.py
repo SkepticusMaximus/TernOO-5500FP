@@ -206,6 +206,41 @@ def get_alg(alg: int):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# SECTION 2b — verification classes and the WEIGHT-BEARING rule (§3/§9/§10).
+#
+# CAI's Q3 correction (2026-07-10): "earned from a counterparty" does NOT prove
+# the counterparty was a stranger — a sockpuppet pair can sign receipts to each
+# other, and a permissionless system has no trusted notion of distinct persons,
+# so no protocol can. Debit-abandonment and the sockpuppet-weight attack are the
+# SAME attack wearing two hats; a balance floor is the wrong instrument. The
+# right one: weight is priced in VERIFIABLE CYCLES and nothing else. Only
+# replay-class (deterministic) work can be audited by replay, so only replay-
+# class work mints WEIGHT-BEARING credit. Float work earns money, never a vote.
+# The determinism moat (§3) thus runs all the way up into the franchise:
+# native-integer execution earns votes, float earns rent — the market signal
+# governs, unmandated. (A data centre can still buy the franchise with real
+# cycles, exactly as under any PoW/PoS; the mitigation is decay + supermajority
+# thresholds, not immunity. We claim that plainly.)
+# ═══════════════════════════════════════════════════════════════════════════
+
+VCLASS_TCM: int = 0         # ledger validation — replay, exact
+VCLASS_NATIVE: int = 1      # native integer model — replay, exact (the flagship)
+VCLASS_FLOAT: int = -1      # float-accumulating worker — quorum only, never replay
+
+
+def is_replay_class(vclass: int) -> bool:
+    """Replay-class = deterministic = bit-exactly auditable by a stranger who
+    re-runs the job. Float (−1) is not: two honest nodes get different bits."""
+    return vclass != VCLASS_FLOAT
+
+
+def is_weight_bearing(vclass: int) -> bool:
+    """Only replay-class compute mints weight-bearing credit (§10). Float work
+    earns spendable credit but NEVER a vote."""
+    return is_replay_class(vclass)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # SECTION 3 — canonical serialization, digests, MMIDs (§12.4).
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -233,17 +268,27 @@ def wire_mmid(data: bytes, alg: int = ALG_ED25519) -> bytes:
     return get_alg(alg).wire_digest(data)
 
 
-def _mmid_bytes(mmid) -> bytes:
-    """Deterministic bytes for a 54-trit store MMID (9 lanes, each 0..728)."""
-    return b"".join(int(x).to_bytes(2, "big") for x in mmid)
+def blinded_commitment(job_commit: bytes, nonce: bytes,
+                       alg: int = ALG_ED25519) -> bytes:
+    """The on-ledger, unlinkable job reference (§7.3): ``H(job_commit ‖ nonce)``
+    with a per-receipt nonce, over the WIRE (gauntlet) job commitment. Same job
+    on two chains under two nonces yields two different commitments — content-
+    addressing's dedupe virtue is denied to a correlation attacker. Costs one
+    word; buys unlinkability.
+
+    The nonce is ALSO the reveal key (§7): a challenged burner opens the
+    commitment by producing (job_commit, output_commit, nonce), and the
+    challenger replays. Privacy by default, auditability on demand — one word
+    doing both jobs."""
+    return wire_mmid(job_commit + nonce, alg)
 
 
-def blinded_commitment(job_mmid, nonce: bytes, alg: int = ALG_ED25519) -> bytes:
-    """The on-ledger, unlinkable job reference (§7.3): ``H(MMID ‖ nonce)`` with a
-    per-receipt nonce. Same job on two chains under two nonces yields two
-    different commitments — content-addressing's dedupe virtue is denied to a
-    correlation attacker. Costs one word; buys unlinkability."""
-    return wire_mmid(_mmid_bytes(tuple(job_mmid)) + nonce, alg)
+def open_commitment(commitment: bytes, job_commit: bytes, nonce: bytes,
+                    alg: int = ALG_ED25519) -> bool:
+    """Verify a challenge opening (§7): the revealed (job_commit, nonce) must
+    reproduce the on-ledger blinded commitment. A burner who refuses to open, or
+    opens wrongly, has its burn voided and its stake slashed (§9)."""
+    return blinded_commitment(job_commit, nonce, alg) == commitment
 
 
 def verify_wire_cargo(claimed_mmid: bytes, data: bytes,
@@ -297,18 +342,29 @@ class Receipt:
     worker_id: bytes            # the account credited +amount
     requester_id: bytes         # the account debited −amount
     amount: int                 # magnitude N (> 0); the ± is applied per chain
-    job_mmid: Tuple[int, ...]   # the REAL job store-MMID — stays OFF-ledger (§7)
-    nonce: bytes                # per-receipt blinding nonce (§7.3)
+    job_commit: bytes           # WIRE (gauntlet) digest of the job cargo (§12.4)
+    output_commit: bytes        # WIRE digest of the output MMOE — the audit key (§7)
+    vclass: int                 # verification class (§3); sets weight-bearing (§10)
+    nonce: bytes                # per-receipt blinding nonce / reveal key (§7.3)
     alg: int = ALG_ED25519
     worker_sig: bytes = b""     # both parties sign the SAME canonical bytes
     requester_sig: bytes = b""
 
     def signing_payload(self) -> dict:
+        # The receipt commits to BOTH the job and the output (§7): any peer can
+        # audit by replaying the job and refolding the output. Both commitments
+        # are WIRE (gauntlet) digests, never the store sponge (§12.4) — a forged
+        # sponge collision on an output commitment would let a worker sign for
+        # output it never produced. The raw commitments stay HERE, off-ledger:
+        # the pairwise parties already know what was computed, so nothing leaks;
+        # only the blinded H(job_commit‖nonce) and the receipt-hash reach a chain.
         return {
             "worker": self.worker_id.hex(),
             "requester": self.requester_id.hex(),
             "amount": self.amount,
-            "job_mmid": list(self.job_mmid),
+            "job_commit": self.job_commit.hex(),
+            "output_commit": self.output_commit.hex(),
+            "vclass": self.vclass,
             "nonce": self.nonce.hex(),
             "alg": self.alg,
         }
@@ -321,22 +377,25 @@ class Receipt:
         return wire_mmid(self.signing_bytes(), self.alg)
 
     def blinded(self) -> bytes:
-        return blinded_commitment(self.job_mmid, self.nonce, self.alg)
+        return blinded_commitment(self.job_commit, self.nonce, self.alg)
 
 
 def make_receipt(worker: Identity, requester: Identity, amount: int,
-                 job_mmid, nonce: Optional[bytes] = None,
+                 job: bytes, output: bytes, vclass: int = VCLASS_NATIVE,
+                 nonce: Optional[bytes] = None,
                  alg: int = ALG_ED25519) -> Receipt:
     """Build a both-signed receipt for delivered work. Credit is minted ONLY
-    here, and only with the counterparty's signature (§5). ``amount`` is the
-    positive magnitude; the double-entry ± is applied when the two settlement
-    records are built."""
+    here, and only with the counterparty's signature (§5). ``job`` and
+    ``output`` are the raw cargo octets; the receipt commits to their WIRE
+    (gauntlet) digests (§12.4). ``vclass`` sets whether the minted credit is
+    weight-bearing (§10). ``amount`` is the positive magnitude; the double-entry
+    ± is applied when the two settlement records are built."""
     if amount <= 0:
         raise ValueError("receipt amount must be positive")
     if nonce is None:
         nonce = os.urandom(16)
     r = Receipt(worker.account_id, requester.account_id, amount,
-                tuple(job_mmid), nonce, alg)
+                wire_mmid(job, alg), wire_mmid(output, alg), vclass, nonce, alg)
     msg = r.signing_bytes()
     r.worker_sig = worker.sign(msg, alg)
     r.requester_sig = requester.sign(msg, alg)
@@ -384,6 +443,30 @@ def make_transfer_auth(sender: Identity, receiver: Identity, amount: int,
     a.sender_sig = sender.sign(msg, alg)
     a.receiver_sig = receiver.sign(msg, alg)
     return a
+
+
+# ── audit-by-replay: the challenge that prices weight in verifiable cycles ────
+
+def challenge_receipt(receipt: "Receipt", replayed_output: bytes) -> bool:
+    """Audit a weight-bearing receipt by REPLAY (§7/§9). An auditor (any peer)
+    re-runs the job and refolds the output; the receipt's output commitment must
+    equal the WIRE digest of that replayed output. A worker who signed for output
+    it never produced cannot survive this — and every peer is a potential
+    auditor, so the probability of a forged output surviving indefinitely goes to
+    zero. This is what makes weight priced in *verifiable* cycles rather than in
+    mere counterparty signatures (CAI's Q3 correction).
+
+    Returns True on a clean audit; raises WireMmidError on a forged output
+    commitment (burn void, stake slashed — §9), or ValidationError for a non-
+    replay-class (float/quorum) receipt, which is not replay-auditable at all."""
+    if not is_replay_class(receipt.vclass):
+        raise ValidationError("not-replay-class",
+                              "float/quorum receipts are not replay-auditable "
+                              "(they earn money, never weight — §3/§10)")
+    if wire_mmid(replayed_output, receipt.alg) != receipt.output_commit:
+        raise WireMmidError("replayed output does not match the receipt's output "
+                            "commitment — forged work (burn void, slash §9)")
+    return True
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -470,8 +553,10 @@ def build_settle_record(identity: Identity, chain: "Chain", receipt: Receipt,
     body = {
         "amount": amount,
         "counterparty": counterparty.hex(),
-        "blinded": receipt.blinded().hex(),        # H(MMID‖nonce), not the MMID
+        "blinded": receipt.blinded().hex(),        # H(job_commit‖nonce), not bare
         "receipt_hash": receipt.hash().hex(),
+        "vclass": receipt.vclass,                  # §3 verification class
+        "weight_bearing": is_weight_bearing(receipt.vclass),  # §10 franchise gate
     }
     rec = Record(acct, chain.height + 1, chain.head_id, KIND_SETTLE, body, alg)
     return rec.sign(identity)
@@ -524,15 +609,18 @@ class Chain:
     head_id: bytes = b""                               # digest of the head
     used_refs: set = field(default_factory=set)        # receipt/transfer hashes
     balance: int = 0                                   # §5 net (signed ± − burns)
-    earned_ctp: int = 0                                # earned FROM a counterparty
+    earned_ctp: int = 0                                # WEIGHT-BEARING pool (§10):
+    #                                                  # replay-class, from another
+    #                                                  # account — see _append
     burned_total: int = 0
     burns: List[Tuple[int, int]] = field(default_factory=list)  # (amount, ts)
 
     @property
     def burnable(self) -> int:
-        """Credit that may be burned for weight (§10): earned-from-counterparty,
-        less what has already been burned. Deliberately NOT the §5 net balance
-        (see the note in `_validate_burn`)."""
+        """Credit that may be burned for weight (§10): the weight-bearing pool
+        (replay-class work from a counterparty), less what has already been
+        burned. Deliberately NOT the §5 net balance, and NOT float credit (see
+        the notes in `_append` and `_validate_burn`)."""
         return self.earned_ctp - self.burned_total
 
     def _append(self, record: Record, ref: Optional[bytes]) -> None:
@@ -546,10 +634,16 @@ class Chain:
         if k == KIND_SETTLE:
             amt = record.body["amount"]
             self.balance += amt
-            # Earned-from-counterparty: a positive settlement whose counterparty
-            # is a DIFFERENT account (§10). A self-counterparty settle earns no
-            # burnable weight — that is the "no self-burn" rule, enforced here.
-            if amt > 0 and record.body["counterparty"] != record.account.hex():
+            # The WEIGHT-BEARING pool (§10). A positive settlement adds to it only
+            # when it is (a) from a DIFFERENT account (never self-dealing) AND
+            # (b) REPLAY-CLASS work (weight_bearing) — float credit is spendable
+            # but never votes (§3). This is the instrument that closes the
+            # sockpuppet-weight / debit-abandonment attack: weight is priced in
+            # verifiable cycles, auditable by replay (challenge_receipt), so
+            # signing receipts you never earned buys spendable IOUs, not a vote.
+            if (amt > 0
+                    and record.body["counterparty"] != record.account.hex()
+                    and record.body.get("weight_bearing")):
                 self.earned_ctp += amt
         elif k == KIND_TRANSFER:
             # Moved credit changes the net balance but does NOT add to the
@@ -628,6 +722,14 @@ def _validate_settle(record: Record, chain: Chain, receipt: Optional[Receipt],
     # Blinded commitment well-formed, and the bare MMID is absent (§7).
     if record.body.get("blinded") != receipt.blinded().hex():
         raise ValidationError("blinded", "blinded commitment malformed")
+
+    # Verification class and weight-bearing flag must match the receipt (§3/§10):
+    # a node cannot mislabel float work as replay-class to steal a vote.
+    if record.body.get("vclass") != receipt.vclass:
+        raise ValidationError("vclass", "record vclass does not match the receipt")
+    if record.body.get("weight_bearing") != is_weight_bearing(receipt.vclass):
+        raise ValidationError("weight-bearing",
+                              "weight_bearing flag inconsistent with vclass")
 
     # Single-use receipt-hash per chain (§6.1): replay is rejected by
     # construction; height already forbids re-ordering.
@@ -773,17 +875,23 @@ class Ledger:
 
     # ── high-level operations ──────────────────────────────────────────────
     def settle_work(self, worker: Identity, requester: Identity, amount: int,
-                    job_words=None, nonce: Optional[bytes] = None,
+                    job: bytes = b"", output: Optional[bytes] = None,
+                    vclass: int = VCLASS_NATIVE, nonce: Optional[bytes] = None,
                     alg: int = ALG_ED25519) -> Receipt:
         """Post a mutual-credit settlement for delivered work (§5): +amount on
         the worker's chain, −amount on the requester's chain, both referencing
         one both-signed receipt. Returns the (off-ledger) receipt. This is the
-        ONLY way credit is minted, and it always nets to zero across the pair."""
-        if job_words is None:
-            # A tiny piece of cargo whose STORE MMID identifies the job (§12.4).
-            job_words = [amount & 0x3ffff, 0, 0, 1]
-        job_mmid = store_mmid(job_words)
-        receipt = make_receipt(worker, requester, amount, job_mmid, nonce, alg)
+        ONLY way credit is minted, and it always nets to zero across the pair.
+
+        ``job``/``output`` are the raw cargo octets the receipt commits to by
+        WIRE digest (§12.4); ``vclass`` (default native, replay-class) decides
+        whether the minted credit is weight-bearing (§10)."""
+        if output is None:
+            # A deterministic placeholder output for the tests/happy path; a real
+            # worker supplies the actual output MMOE octets here.
+            output = b"out:" + amount.to_bytes(8, "big") + job
+        receipt = make_receipt(worker, requester, amount, job, output,
+                               vclass, nonce, alg)
 
         wchain = self.chains[worker.account_id]
         self.post(build_settle_record(worker, wchain, receipt, alg), receipt)
@@ -815,7 +923,9 @@ class Ledger:
         return self.chains[account_id].balance
 
     def earned(self, account_id: bytes) -> int:
-        """Credit earned FROM counterparties (the burnable-source, §10)."""
+        """Weight-bearing credit (replay-class work from a counterparty) — the
+        burnable source (§10). Float earnings are spendable but never counted
+        here, so they never become a vote (§3)."""
         return self.chains[account_id].earned_ctp
 
     def burnable(self, account_id: bytes) -> int:
