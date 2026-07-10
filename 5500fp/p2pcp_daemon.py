@@ -32,6 +32,7 @@ import json
 import os
 import queue
 import threading
+import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -411,6 +412,26 @@ class Daemon:
                                        r.signing_bytes())
 
     # -- requester role -------------------------------------------------------
+    def _dial(self, host, port, retries=2, backoff=0.03):
+        """Connect + HELLO, with a bounded retry for a TRANSIENT dial failure — a
+        peer that just started listening, or a brief blip. The retry covers only
+        connect+handshake, never a mid-job step, so it can never double-deliver or
+        double-pay: no JOB has been sent yet. Raises the last error if all attempts
+        fail (the caller's contract is unchanged from a single connect)."""
+        last = None
+        for attempt in range(retries + 1):
+            peer = None
+            try:
+                peer = self.organ.connect(host, port, timeout=self.timeout)
+                return peer, self._handshake_outbound(peer)
+            except (SOCK.OrganError, ValueError) as e:
+                last = e
+                if peer is not None:
+                    peer.close()
+                if attempt < retries:
+                    time.sleep(backoff * (attempt + 1))
+        raise last
+
     def request_job(self, host, port, job: bytes, n_chunks: int, k: int,
                     vclass=L.VCLASS_NATIVE, audit=None):
         """Dial a worker, stream a JOB, and pay per delivered+verified chunk.
@@ -419,12 +440,11 @@ class Daemon:
         paying — the determinism moat as a pre-payment check (§3/§10); a forged
         output is never paid for. Exposure is bounded to one chunk of k (§11)."""
         self._ensure_open()
-        peer = self.organ.connect(host, port, timeout=self.timeout)
+        peer, worker_id = self._dial(host, port)
         settled = 0
         receipts = []
         outputs = []
         try:
-            worker_id = self._handshake_outbound(peer)
             job_mmid = L.wire_mmid(job, self.alg)
             peer.send(W.encode({"t": W.JOB, "job": job.hex(),
                                 "job_mmid": job_mmid.hex(), "n_chunks": n_chunks,

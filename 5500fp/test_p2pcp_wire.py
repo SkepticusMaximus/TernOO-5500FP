@@ -269,6 +269,51 @@ class TestAdmissionControl(unittest.TestCase):
             client.stop()
 
 
+class TestDialRetry(unittest.TestCase):
+    """A transient dial failure is retried; a job still settles (§ resilience)."""
+
+    def test_request_job_retries_a_transient_dial_failure(self):
+        node = D.Daemon(ident(b"retry-node"), worker=WK.DeterministicWorker())
+        addr = node.start()
+        client = D.Daemon(ident(b"retry-client"))
+        real = client.organ.connect
+        calls = {"n": 0}
+
+        def flaky(host, port, timeout=10.0):
+            calls["n"] += 1
+            if calls["n"] == 1:                        # first dial "blips"
+                raise D.SOCK.OrganError("transient: peer not ready")
+            return real(host, port, timeout=timeout)
+
+        client.organ.connect = flaky
+        try:
+            res = client.request_job(addr[0], addr[1], b"job", 1, 2,
+                                     vclass=L.VCLASS_NATIVE,
+                                     audit=WK.DeterministicWorker())
+            self.assertEqual(res["settled_chunks"], 1)  # settled despite the blip
+            self.assertGreaterEqual(calls["n"], 2)      # it retried
+        finally:
+            node.stop()
+            client.stop()
+
+    def test_request_job_raises_when_every_dial_fails(self):
+        # A persistent failure still propagates — the retry only masks blips, and
+        # it never fires after a job is underway (no double-pay).
+        client = D.Daemon(ident(b"noconn"))
+
+        def dead(host, port, timeout=10.0):
+            raise D.SOCK.OrganError("refused")
+
+        client.organ.connect = dead
+        try:
+            with self.assertRaises(D.SOCK.OrganError):
+                client.request_job("127.0.0.1", 1, b"j", 1, 1,
+                                   vclass=L.VCLASS_NATIVE,
+                                   audit=WK.DeterministicWorker())
+        finally:
+            client.stop()
+
+
 class TestFunctionWorker(unittest.TestCase):
     """Any function becomes a mesh worker (extensibility)."""
 
