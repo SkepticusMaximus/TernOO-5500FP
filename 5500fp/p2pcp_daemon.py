@@ -76,6 +76,15 @@ MAX_SEEN = 100_000               # gossip dedup cap (bounded memory under flood)
 # PER IDENTITY — Sybil resistance (cheap fresh keys) still needs reputation/stake.
 MAX_UNPAID_PER_PEER = 3
 
+# Reputation (§9.1 defence-in-depth vs Sybil). Admission control's per-identity cap
+# is the floor EVERYONE starts at; a peer that actually PAYS earns a higher in-flight
+# cap (smoother service for good customers), while a stranger or a serial abandoner
+# stays at the floor — they never rise, because only settled work builds standing.
+# This is not a trusted tier (§2.2): a fresh key gets exactly the floor, no less and
+# no more, so it can't buy trust it hasn't earned; it just can't be starved either.
+TRUST_GRANT_PER = 4        # +1 to the cap per this many settled chunks
+TRUST_BONUS_MAX = 5        # ...up to this bonus over the floor
+
 # Peer-book health (§9.3). A peer that fails to answer repeatedly is pruned so the
 # book stays live — but only after MAX_PEER_FAILS *consecutive* misses (a single
 # blip resets on the next success), and NEVER an anchor (the honest bootstrap an
@@ -167,6 +176,9 @@ class Daemon:
         self._chunks_served = 0
         self.max_unpaid_per_peer = MAX_UNPAID_PER_PEER
         self._unpaid = {}                      # requester_id -> delivered-unsettled (§9.1)
+        self.trust_grant_per = TRUST_GRANT_PER
+        self.trust_bonus_max = TRUST_BONUS_MAX
+        self._settled_total = {}               # requester_id -> chunks paid (reputation)
         self.max_peer_fails = MAX_PEER_FAILS
         self._peer_fails = {}                  # addr -> consecutive misses (§9.3)
         self._lock = threading.Lock()
@@ -358,8 +370,9 @@ class Daemon:
         for i in range(n_chunks):
             # Admission control (§9.1): refuse to reveal another free chunk to a
             # peer that already owes us too many unsettled ones — a deadbeat is cut
-            # off, an honest (paying) requester never reaches the cap.
-            if self._unpaid_count(requester_id) >= self.max_unpaid_per_peer:
+            # off; a paying requester's cap grows with its reputation, so it never
+            # reaches it.
+            if self._unpaid_count(requester_id) >= self._effective_cap(requester_id):
                 peer.send(W.encode({"t": W.DONE, "reason": "trust-exhausted"}))
                 return
             try:
@@ -388,6 +401,9 @@ class Daemon:
             except L.P2PCPError:
                 return
             self._add_unpaid(requester_id, -1)     # paid → debt cleared
+            with self._lock:                       # ...and reputation earned (§9.1)
+                self._settled_total[requester_id] = \
+                    self._settled_total.get(requester_id, 0) + 1
             self._chunks_served += 1
             peer.send(W.encode({"t": W.RECEIPT_ACK,
                                 "receipt": W.receipt_to_dict(receipt)}))
@@ -397,6 +413,22 @@ class Daemon:
     def _unpaid_count(self, requester_id):
         with self._lock:
             return self._unpaid.get(requester_id, 0)
+
+    def _effective_cap(self, requester_id):
+        """A requester's unpaid-trust cap: the floor everyone starts at, plus a
+        bonus earned by settled work (reputation, §9.1). A stranger gets exactly
+        the floor; a proven payer gets more in-flight headroom."""
+        with self._lock:
+            settled = self._settled_total.get(requester_id, 0)
+        bonus = min(self.trust_bonus_max, settled // self.trust_grant_per)
+        return self.max_unpaid_per_peer + bonus
+
+    def reputation(self, requester_id):
+        """A peer's standing with us: chunks it has settled and the trust cap that
+        has earned it. Observability for admission control (§9.1)."""
+        with self._lock:
+            settled = self._settled_total.get(requester_id, 0)
+        return {"settled": settled, "cap": self._effective_cap(requester_id)}
 
     def _add_unpaid(self, requester_id, delta):
         """Track a peer's delivered-but-unsettled chunks (§9.1 admission control)."""

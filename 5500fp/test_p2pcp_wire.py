@@ -269,6 +269,49 @@ class TestAdmissionControl(unittest.TestCase):
             client.stop()
 
 
+class TestReputation(unittest.TestCase):
+    """Settled work earns a higher trust cap; a stranger gets only the floor."""
+
+    def test_paying_earns_a_higher_trust_cap(self):
+        node = D.Daemon(ident(b"rep-node"), worker=WK.DeterministicWorker())
+        node.max_unpaid_per_peer = 2                # the floor everyone starts at
+        node.trust_grant_per = 2                    # +1 cap per 2 settled chunks
+        node.trust_bonus_max = 3
+        addr = node.start()
+        client = D.Daemon(ident(b"rep-client"))
+        cid = client.account_id
+        try:
+            self.assertEqual(node.reputation(cid)["cap"], 2)    # stranger = floor
+            self.assertEqual(node.reputation(cid)["settled"], 0)
+            res = client.request_job(addr[0], addr[1], b"j", 4, 1,
+                                     vclass=L.VCLASS_NATIVE,
+                                     audit=WK.DeterministicWorker())
+            self.assertEqual(res["settled_chunks"], 4)          # paid for 4
+            rep = node.reputation(cid)
+            self.assertEqual(rep["settled"], 4)
+            self.assertEqual(rep["cap"], 4)                     # 2 floor + 2 earned
+        finally:
+            node.stop()
+            client.stop()
+
+    def test_a_deadbeat_never_rises_above_the_floor(self):
+        # A requester that never settles stays at the floor forever — reputation
+        # only relaxes the cap for peers who actually pay (no free Sybil trust).
+        node = D.Daemon(ident(b"rep-floor"), worker=WK.DeterministicWorker())
+        node.max_unpaid_per_peer = 3
+        addr = node.start()
+        client = D.Daemon(ident(b"rep-deadbeat"))
+        try:
+            for _ in range(3):
+                self.assertEqual(_deadbeat_job(client, *addr)[0], W.RESULT)
+            self.assertEqual(_deadbeat_job(client, *addr), (W.DONE, "trust-exhausted"))
+            self.assertEqual(node.reputation(client.account_id),
+                             {"settled": 0, "cap": 3})          # never rose
+        finally:
+            node.stop()
+            client.stop()
+
+
 class TestDialRetry(unittest.TestCase):
     """A transient dial failure is retried; a job still settles (§ resilience)."""
 
