@@ -33,6 +33,7 @@ DONE = "DONE"
 VOTE = "VOTE"                  # a signed conflict-vote (§9 / step 6)
 PEERS_REQ = "PEERS_REQ"        # ask a peer for its known listen-addresses (v0.2)
 PEERS = "PEERS"                # response: a list of [host, port] listen-addresses
+RECORD = "RECORD"              # a gossiped ledger record (v0.2 — witness a branch)
 
 
 def encode(frame: dict) -> bytes:
@@ -59,6 +60,32 @@ def receipt_to_dict(r) -> dict:
         "worker_sig": r.worker_sig.hex(),
         "requester_sig": r.requester_sig.hex(),
     }
+
+
+def record_to_dict(r) -> dict:
+    """Flatten a ledger Record for gossip (v0.2). Its body is already JSON-safe
+    (ints + hex strings). The receiver re-validates the self-signature."""
+    return {
+        "account": r.account.hex(),
+        "height": r.height,
+        "prev": r.prev.hex(),
+        "kind": r.kind,
+        "body": r.body,
+        "alg": r.alg,
+        "sig": r.sig.hex(),
+    }
+
+
+def record_from_dict(Record, d) -> "Record":
+    return Record(
+        bytes.fromhex(d["account"]),
+        int(d["height"]),
+        bytes.fromhex(d["prev"]),
+        d["kind"],
+        d["body"],
+        int(d["alg"]),
+        bytes.fromhex(d["sig"]),
+    )
 
 
 def receipt_from_dict(Receipt, d) -> "Receipt":

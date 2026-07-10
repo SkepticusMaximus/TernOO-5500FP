@@ -32,6 +32,7 @@ C = D.C                         # consensus (Fork) — the daemon's own view
 ACCT = b"a" * 32
 X = b"X" * 32
 Y = b"Y" * 32                   # the two conflicting fork branches (vote choices)
+NOW = 1_800_000_000
 
 
 def ident(tag: bytes):
@@ -205,6 +206,78 @@ class TestQuorumAssembly(unittest.TestCase):
             hub.stop()
             for v in (v1, v2):
                 v.stop()
+
+
+class TestRecordGossip(unittest.TestCase):
+    """Records gossip so a node witnesses branches; a node detects a fork from
+    gossiped records it did not originate, and votes first-seen (v0.2 slice 4)."""
+
+    def _fork_records(self):
+        # A real fork: account A's OPEN + two conflicting records at height 1,
+        # each self-signed by A (a double-spend it cannot deny).
+        led = L.Ledger()
+        a = ident(b"dbl-spender")
+        led.open_account(a)
+        chain = led.chains[a.account_id]
+        ra = L.build_burn_record(a, chain, 1, NOW)
+        rb = L.build_burn_record(a, chain, 2, NOW)
+        return a, ra, rb
+
+    def test_record_gossips_and_relays_to_non_adjacent(self):
+        a, ra, _rb = self._fork_records()
+        c = D.Daemon(ident(b"rr-c"))
+        b = D.Daemon(ident(b"rr-b"))
+        s = D.Daemon(ident(b"rr-s"))
+        c_addr, b_addr = c.start(), b.start()
+        b.add_peer(*c_addr)                              # B → C
+        try:
+            s.add_peer(*b_addr)                          # S → B (S never meets C)
+            s.gossip_record(ra)
+            got = c.next_record(5.0)                     # reached C purely by relay
+            self.assertEqual(got.record_id(), ra.record_id())
+            self.assertEqual(c.first_seen(a.account_id, 1), ra.record_id())
+        finally:
+            b.stop()
+            c.stop()
+            s.stop()
+
+    def test_forged_record_is_dropped(self):
+        a, ra, _rb = self._fork_records()
+        ra.sig = b"\x00" * 64                            # break the self-signature
+        h = D.Daemon(ident(b"fr-h"))
+        s = D.Daemon(ident(b"fr-s"))
+        h_addr = h.start()
+        try:
+            s.add_peer(*h_addr)
+            s.gossip_record(ra)
+            with self.assertRaises(queue.Empty):         # never ingested / relayed
+                h.next_record(0.5)
+        finally:
+            h.stop()
+            s.stop()
+
+    def test_fork_detected_from_gossip_and_votes_first_seen(self):
+        a, ra, rb = self._fork_records()
+        h = D.Daemon(ident(b"fk-h"))
+        h_addr = h.start()
+        w1 = D.Daemon(ident(b"fk-w1"))
+        w2 = D.Daemon(ident(b"fk-w2"))
+        w1.add_peer(*h_addr)
+        w2.add_peer(*h_addr)
+        try:
+            w1.gossip_record(ra)                         # H sees branch a first...
+            self.assertEqual(h.next_record(5.0).record_id(), ra.record_id())
+            w2.gossip_record(rb)                         # ...then the conflict
+            h.next_record(5.0)
+            self.assertIn((a.account_id, 1), h.detected_forks())
+            votes = h.votes_for(a.account_id, 1)
+            self.assertEqual(len(votes), 1)
+            self.assertEqual(votes[0].choice, ra.record_id())   # first-seen wins
+            self.assertEqual(votes[0].voter, h.account_id)
+        finally:
+            h.stop()
+            w1.stop()
+            w2.stop()
 
 
 if __name__ == "__main__":

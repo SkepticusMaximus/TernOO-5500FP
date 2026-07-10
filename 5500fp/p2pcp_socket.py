@@ -186,12 +186,15 @@ class SocketOrgan:
 
     def accept(self, timeout=None) -> Peer:
         """Accept ONE inbound connection — from anyone (§2.1). Raises
-        OrganTimeout if none arrives within `timeout`."""
-        if self._listener is None:
+        OrganTimeout if none arrives within `timeout`. Snapshots the listener into
+        a local so a concurrent close() (the accept-loop shutdown race) surfaces as
+        a clean OrganError, never an AttributeError on a None listener."""
+        lsock = self._listener
+        if lsock is None:
             raise OrganError("accept before listen")
-        self._listener.settimeout(timeout)
         try:
-            csock, addr = self._listener.accept()
+            lsock.settimeout(timeout)
+            csock, addr = lsock.accept()
         except socket.timeout as e:
             raise OrganTimeout(f"accept timed out after {timeout}s") from e
         except OSError as e:

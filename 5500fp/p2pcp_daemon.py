@@ -87,6 +87,9 @@ class Daemon:
         self._peer_book = set()                # known peer LISTEN addresses (v0.2)
         self._seen = set()                     # gossip dedup keys (v0.2 flood)
         self._vote_pool = {}                   # (account,height) -> [votes] (v0.2)
+        self._seen_records = {}                # (account,height) -> first-seen id
+        self._forks = {}                       # (account,height) -> (id_a,id_b)
+        self._record_events = queue.Queue()    # gossiped records, for observers
         self._lock = threading.Lock()
         self._running = False
         self._accept_thread = None
@@ -242,6 +245,8 @@ class Daemon:
             self._work_job(peer, peer_id, frame)
         elif t == W.VOTE:
             self._collect_vote(frame)
+        elif t == W.RECORD:
+            self._collect_record(frame)
         elif t == W.PEERS_REQ:
             self._send_peer_book(peer)
 
@@ -374,14 +379,30 @@ class Daemon:
         (§6) — the vote carries the claim, not the weight."""
         return C.sign_vote(self.identity, account, height, choice, self.alg)
 
-    def send_vote(self, host, port, vote):
-        """Carry a signed vote to a peer over the one organ."""
+    def _send_frame(self, host, port, frame):
+        """Dial a peer, HELLO, send one frame, close — the unit of gossip."""
         peer = self.organ.connect(host, port, timeout=self.timeout)
         try:
             self._handshake_outbound(peer)
-            peer.send(W.encode({"t": W.VOTE, "vote": vote.to_dict()}))
+            peer.send(W.encode(frame))
         finally:
             peer.close()
+
+    def _fanout_frame(self, frame):
+        """Send a frame to every peer in the book; a dead peer is skipped, not
+        fatal. Returns the count reached."""
+        sent = 0
+        for host, port in list(self._peer_book):
+            try:
+                self._send_frame(host, port, frame)
+                sent += 1
+            except SOCK.OrganError:
+                continue
+        return sent
+
+    def send_vote(self, host, port, vote):
+        """Carry a signed vote to a peer over the one organ."""
+        self._send_frame(host, port, {"t": W.VOTE, "vote": vote.to_dict()})
 
     def _collect_vote(self, frame):
         vote = C.Vote.from_dict(frame["vote"])
@@ -451,14 +472,7 @@ class Daemon:
         return L.wire_mmid(payload, self.alg)
 
     def _fanout_vote(self, vote):
-        sent = 0
-        for host, port in list(self._peer_book):
-            try:
-                self.send_vote(host, port, vote)
-                sent += 1
-            except SOCK.OrganError:
-                continue                   # a dead peer is skipped, not fatal
-        return sent
+        return self._fanout_frame({"t": W.VOTE, "vote": vote.to_dict()})
 
     def broadcast_vote(self, vote):
         """Originate a vote to the mesh (v0.2): count it locally, mark it seen (so
@@ -508,3 +522,59 @@ class Daemon:
             slashed = set()
         return C.resolve(fork, self.votes_for(fork.account, fork.height),
                          weights, slashed)
+
+    # ── record + fork gossip (v0.2 slice 4) ──────────────────────────────────
+    # Records gossip so a node can WITNESS branches it did not originate. A node
+    # remembers the FIRST record it sees at each (account, height); a later,
+    # different record at the same slot is a FORK — a double-spend, since both are
+    # self-signed by that account. On detecting one, the node votes for its
+    # first-seen branch (the block-lattice rule) and that vote joins the quorum
+    # flood (slice 3). A record that fails its self-signature is never relayed.
+
+    def gossip_record(self, record):
+        """Originate a record to the mesh: ingest locally, then flood it."""
+        rid = record.record_id()
+        if rid not in self._seen:
+            self._seen.add(rid)
+            self._ingest_record(record)
+        self._fanout_frame({"t": W.RECORD, "record": W.record_to_dict(record)})
+
+    def _collect_record(self, frame):
+        record = W.record_from_dict(L.Record, frame["record"])
+        # A record must be validly self-signed by its own account (§5/§8); a
+        # forged record is dropped and never relayed.
+        try:
+            if not L.get_alg(record.alg).verify(record.account, record.sig,
+                                                record.signing_bytes()):
+                return
+        except L.AlgError:
+            return
+        rid = record.record_id()
+        if rid in self._seen:
+            return                             # dedup — heard it, don't re-relay
+        self._seen.add(rid)
+        self._ingest_record(record)
+        self._fanout_frame({"t": W.RECORD, "record": frame["record"]})   # relay
+
+    def _ingest_record(self, record):
+        key = (record.account, record.height)
+        rid = record.record_id()
+        seen = self._seen_records.get(key)
+        if seen is None:
+            self._seen_records[key] = rid      # first-seen for this slot
+        elif seen != rid and key not in self._forks:
+            # a different record at the same (account, height) — a FORK detected
+            # from gossip. Vote for our FIRST-SEEN branch; the vote joins the
+            # quorum flood (slice 3) and burn-weight resolves it.
+            self._forks[key] = tuple(sorted((seen, rid)))
+            self.announce_fork(record.account, record.height, seen)
+        self._record_events.put(record)        # observe LAST — state has settled
+
+    def first_seen(self, account, height):
+        return self._seen_records.get((account, height))
+
+    def detected_forks(self):
+        return dict(self._forks)
+
+    def next_record(self, timeout=DEFAULT_TIMEOUT):
+        return self._record_events.get(timeout=timeout)
