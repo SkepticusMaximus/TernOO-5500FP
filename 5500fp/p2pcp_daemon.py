@@ -545,6 +545,30 @@ class Daemon:
         (§6) — the vote carries the claim, not the weight."""
         return C.sign_vote(self.identity, account, height, choice, self.alg)
 
+    def burn_for_weight(self, amount, timestamp=None, now=None):
+        """Convert earned (weight-bearing) credit into governance weight (§10): only
+        replay-class earnings can be burned, so a vote's weight traces back to
+        deterministic work the mesh could audit — never float rent (§3). Wall-clock
+        stamps the burn unless pinned (tests pin it). Returns the burn record."""
+        self._ensure_open()
+        ts = int(time.time()) if timestamp is None else timestamp
+        nw = ts if now is None else now
+        return self.ledger.burn(self.identity, amount, timestamp=ts, now=nw,
+                                alg=self.alg)
+
+    def my_weight(self, now=None):
+        """Our own decayed-burn voting weight at `now` (§6/§10) — 0 until we burn."""
+        nw = int(time.time()) if now is None else now
+        acct = self.account_id
+        return self.ledger.weight(acct, nw) if acct in self.ledger.chains else 0.0
+
+    def franchise_weights(self, now=None):
+        """The franchise this node would tally with: every account's decayed-burn
+        weight in our ledger view (§6). Weights from REAL burns, not hand-set — a
+        float-only account has zero franchise, so rent never buys a vote (§10)."""
+        nw = int(time.time()) if now is None else now
+        return C.ledger_weights(self.ledger, nw)
+
     def _send_frame(self, host, port, frame):
         """Dial a peer, HELLO, send one frame, close — the unit of gossip."""
         peer = self.organ.connect(host, port, timeout=self.timeout)

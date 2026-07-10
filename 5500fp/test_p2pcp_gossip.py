@@ -393,6 +393,69 @@ class TestPeerBookPersistence(unittest.TestCase):
         self.assertEqual(d.known_peers(), set())
 
 
+class TestGovernanceFromRealBurns(unittest.TestCase):
+    """The economic → governance loop, end to end: earn native credit, burn it for
+    weight, and let REAL burns (not hand-set numbers) decide a fork — while float
+    rent buys no vote (§10)."""
+
+    def test_node_earns_then_burns_into_weight(self):
+        WK = _load("p2pcp_worker")
+        node = D.Daemon(ident(b"franchise-earner"), worker=WK.DeterministicWorker())
+        addr = node.start()
+        client = D.Daemon(ident(b"franchise-client"))
+        try:
+            self.assertEqual(node.my_weight(now=NOW), 0.0)     # no burn yet → no vote
+            client.request_job(addr[0], addr[1], b"j", 3, 5,   # earn 15 weight-bearing
+                               vclass=L.VCLASS_NATIVE, audit=WK.DeterministicWorker())
+            self.assertEqual(node.ledger.burnable(node.account_id), 15)
+            node.burn_for_weight(10, timestamp=NOW, now=NOW)   # earn → burn → franchise
+            self.assertGreater(node.my_weight(now=NOW), 0.0)
+        finally:
+            node.stop()
+            client.stop()
+
+    def test_fork_resolves_from_real_burns_rent_cannot_vote(self):
+        # The hub's ledger stands in for the tallier's gossip-assembled view. Two
+        # validators earned NATIVE credit and burned it (weight); a rent-farmer
+        # earned only FLOAT (money, no weight). The fork resolves from those real
+        # burns, and money buys no franchise.
+        hub = D.Daemon(ident(b"gov-hub"))
+        led = hub.ledger
+        payer = ident(b"gov-payer")
+        va, vb, rent = ident(b"gov-va"), ident(b"gov-vb"), ident(b"gov-rent")
+        for acct in (va, vb, rent, payer):
+            led.open_account(acct)
+        led.settle_work(va, payer, 6, vclass=L.VCLASS_NATIVE)
+        led.burn(va, 5, timestamp=NOW, now=NOW)
+        led.settle_work(vb, payer, 6, vclass=L.VCLASS_NATIVE)
+        led.burn(vb, 5, timestamp=NOW, now=NOW)
+        led.settle_work(rent, payer, 9, vclass=L.VCLASS_FLOAT)   # money, never weight
+
+        weights = hub.franchise_weights(now=NOW)
+        self.assertGreater(weights.get(va.account_id, 0), 0)
+        self.assertGreater(weights.get(vb.account_id, 0), 0)
+        self.assertEqual(weights.get(rent.account_id, 0), 0)     # rent → no franchise
+
+        hub_addr = hub.start()
+        va_d, vb_d, rent_d = D.Daemon(va), D.Daemon(vb), D.Daemon(rent)
+        for d in (va_d, vb_d, rent_d):
+            d.add_peer(*hub_addr)
+        try:
+            va_d.announce_fork(ACCT, 1, X)               # honest branch
+            vb_d.announce_fork(ACCT, 1, X)
+            rent_d.announce_fork(ACCT, 1, Y)             # rent-farmer backs the bad one
+            for _ in range(3):
+                hub.next_vote(5.0)
+            fork = C.Fork(ACCT, 1, tuple(sorted((X, Y))))
+            slashed = set()
+            self.assertEqual(hub.resolve_fork(fork, weights, slashed), X)  # burns decide
+            self.assertIn(ACCT, slashed)                 # the double-signer is slashed
+        finally:
+            hub.stop()
+            for d in (va_d, vb_d, rent_d):
+                d.stop()
+
+
 class TestBoundedSeen(unittest.TestCase):
     """Gossip dedup memory is bounded (DM's note) — oldest keys evict (v0.2)."""
 
