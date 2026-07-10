@@ -45,6 +45,7 @@ def _load(name):
 SOCK = _load("p2pcp_socket")      # the ONE network organ (no socket import here)
 L = _load("p2pcp_ledger")         # Identity, Ledger, the alg table (§12)
 W = _load("p2pcp_wire")           # the wire contract frames (§4 L2)
+C = _load("p2pcp_consensus")      # the conflict-vote (§9 / step 6)
 
 HELLO_TYPE = "P2PCP-HELLO-v0.1"
 DEFAULT_TIMEOUT = 5.0             # a bound passed to recv — never a clock read
@@ -82,6 +83,7 @@ class Daemon:
         self.organ = SOCK.SocketOrgan()
         self._peers = {}                       # verified account_id -> Peer
         self._events = queue.Queue()           # verified account_ids, for observers
+        self._votes = queue.Queue()            # verified conflict-votes (§9)
         self._lock = threading.Lock()
         self._running = False
         self._accept_thread = None
@@ -222,17 +224,18 @@ class Daemon:
                                                self.alg), receipt)
 
     # -- worker role (runs in the accept loop, after inbound HELLO) ------------
-    def _serve_peer(self, peer, requester_id):
-        """Seam filled (step 5). A daemon carrying a worker adapter runs the JOB
-        it is offered; a bare daemon stays a step-4 relay (does nothing)."""
-        if self.worker is None:
-            return
+    def _serve_peer(self, peer, peer_id):
+        """Seam filled (steps 5-6). Dispatch on the peer's first frame: a JOB is
+        run if we carry a worker adapter; a VOTE is verified and collected (§9)."""
         try:
             frame = W.decode(peer.recv(timeout=self.timeout))
         except (SOCK.OrganError, ValueError):
             return
-        if frame.get("t") == W.JOB:
-            self._work_job(peer, requester_id, frame)
+        t = frame.get("t")
+        if t == W.JOB and self.worker is not None:
+            self._work_job(peer, peer_id, frame)
+        elif t == W.VOTE:
+            self._collect_vote(frame)
 
     def _work_job(self, peer, requester_id, job):
         self._ensure_open()
@@ -355,3 +358,28 @@ class Daemon:
                     "paid": settled * k, "receipts": receipts}
         finally:
             peer.close()
+
+    # ── consensus votes (§9 / step 6) ────────────────────────────────────────
+    def cast_vote(self, account: bytes, height: int, choice: bytes):
+        """Sign a vote on a fork of `account` at `height`, backing record `choice`
+        (§9). The voter's weight is its decayed burn, computed by whoever tallies
+        (§6) — the vote carries the claim, not the weight."""
+        return C.sign_vote(self.identity, account, height, choice, self.alg)
+
+    def send_vote(self, host, port, vote):
+        """Carry a signed vote to a peer over the one organ."""
+        peer = self.organ.connect(host, port, timeout=self.timeout)
+        try:
+            self._handshake_outbound(peer)
+            peer.send(W.encode({"t": W.VOTE, "vote": vote.to_dict()}))
+        finally:
+            peer.close()
+
+    def _collect_vote(self, frame):
+        vote = C.Vote.from_dict(frame["vote"])
+        if C.verify_vote(vote):            # a forged/unsigned vote is dropped (§9)
+            self._votes.put(vote)
+
+    def next_vote(self, timeout=DEFAULT_TIMEOUT):
+        """Block until the next verified vote arrives; return it."""
+        return self._votes.get(timeout=timeout)

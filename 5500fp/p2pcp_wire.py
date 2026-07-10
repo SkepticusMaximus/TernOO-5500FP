@@ -30,6 +30,7 @@ RESULT = "RESULT"
 RECEIPT = "RECEIPT"
 RECEIPT_ACK = "RECEIPT_ACK"
 DONE = "DONE"
+VOTE = "VOTE"                  # a signed conflict-vote (§9 / step 6)
 
 
 def encode(frame: dict) -> bytes:

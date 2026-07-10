@@ -51,6 +51,15 @@ P2PCP exists so that **anybody** can transact compute for AI models without data
 or monopoly rent. Global consensus among mutually-distrusting strangers with no
 coordinator is not a cost we accept — it is the product we are buying.
 
+**The scaling reversal (why the mesh wins where the data centre drowns).** A centralized
+network is *sublinear*: every node added is another mouth at the same trough, so per-node
+capacity falls as demand rises — the very load that eventually sinks it. P2PCP is
+*superadditive*: a node arrives **bearing compute, not just demand**, so total capacity
+grows at least linearly with participation while load-per-node stays flat. The graph gets
+**stronger as it grows** — antifragile to the exact load a data centre cannot survive. The
+whole is greater than the sum of its parts, and that is a structural property of the
+topology, not a slogan.
+
 The five non-negotiables (captain's rulings, defended against pressure by the long arc):
 
 1. **Public and trustless. Strangers are the point.** No allow-list, no invitation, no
@@ -529,9 +538,18 @@ single-node, zero network risk**; build the wire first and payment gets bolted o
    requester **replay-audits** each chunk before paying (§3): a forged output is never paid
    (and is slashable later by challenge, §7); a deadbeat leaves undelivered chunks with zero
    footprint; float work earns money but never weight (§10). (54 P2PCP tests green.)
-6. **Consensus** (§9) — the conflict-vote path.
+6. **Consensus** ✓ (§9) — the conflict-vote path. `p2pcp_consensus.py`: `detect_fork` (two
+   records at one height = a provable, self-signed double-spend), a **burn-weighted
+   supermajority tally** (≥⅔ of participating decayed weight — a bare majority never
+   decides, §6), `resolve` (void the loser, **slash** the double-spender), and the other
+   slashable offence — a replay-class receipt that fails a replay challenge (§7). Signed
+   votes cross the one organ (a forged vote is dropped). Sybil-neutral (weighs weight, not
+   heads); the honest limits — eclipse (§9.3) and multi-node gossip / quorum assembly — are
+   **named for v0.2, not faked**.
 
-Steps 2–3 are **offline and buildable now.** They are v0.1's first code.
+Steps 2–3 were **offline and buildable now**; they were v0.1's first code. **All six steps
+are now landed and green (74 P2PCP tests) — v0.1 is code-complete on loopback.** Cross-box
+is the second machine; the wire is byte-identical.
 
 ---
 
