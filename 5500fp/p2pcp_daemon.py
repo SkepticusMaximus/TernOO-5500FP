@@ -58,6 +58,12 @@ DEFAULT_TIMEOUT = 5.0             # a bound passed to recv — never a clock rea
 PROTOCOL_VERSION = "0.2"
 BASE_CAPS = ("compucoin",)       # the CompuCoin ledger capability; CGP adds more
 
+# Eclipse resistance (§9.3). A bounded book with un-evictable ANCHORS + a cap on
+# how many peers one informant can teach us per fetch, so an attacker cannot flood
+# out our honest peers or fill our whole view from a single source.
+MAX_PEERS = 64
+MAX_LEARN_PER_FETCH = 8
+
 
 class DaemonError(Exception):
     """Base for daemon-level failures."""
@@ -89,6 +95,9 @@ class Daemon:
         self.timeout = timeout
         self.worker = worker                   # a WorkerAdapter, or None (§3/§5)
         self.caps = tuple(caps) if caps else BASE_CAPS   # advertised capabilities
+        self.max_peers = MAX_PEERS                        # eclipse resistance (§9.3)
+        self.max_learn_per_fetch = MAX_LEARN_PER_FETCH
+        self._anchors = set()                             # never-evicted peers
         self.organ = SOCK.SocketOrgan()
         self._peers = {}                       # verified account_id -> Peer
         self._events = queue.Queue()           # verified account_ids, for observers
@@ -442,11 +451,28 @@ class Daemon:
     # multi-hop relay + dedup flooding, and quorum assembly on a fork, are the
     # next slices.
 
-    def add_peer(self, host, port):
-        """Seed or learn a peer's listen address. Never books ourselves."""
+    def add_anchor(self, host, port):
+        """Add a sticky, never-evicted peer (eclipse resistance §9.3). Anchors are
+        the honest bootstrap an attacker cannot flood out — NOT a trusted tier
+        (§2.2): an anchor can still lie; it just cannot be silently evicted."""
         addr = (host, int(port))
         if addr != self.organ.address:
-            self._peer_book.add(addr)
+            self._anchors.add(addr)
+            self.add_peer(host, port)
+
+    def add_peer(self, host, port):
+        """Seed or learn a peer's listen address (never ourselves). Bounded: at
+        the cap a NON-anchor is evicted to make room; anchors are never evicted,
+        so an attacker flooding addresses cannot push out our honest peers."""
+        addr = (host, int(port))
+        if addr == self.organ.address or addr in self._peer_book:
+            return
+        if len(self._peer_book) >= self.max_peers and addr not in self._anchors:
+            evictable = self._peer_book - self._anchors
+            if not evictable:
+                return                         # book full of anchors — refuse
+            self._peer_book.discard(next(iter(evictable)))
+        self._peer_book.add(addr)
 
     def known_peers(self):
         return set(self._peer_book)
@@ -468,8 +494,11 @@ class Daemon:
             pass
 
     def fetch_peers(self, host, port):
-        """Discovery: ask a peer for its book and merge it into ours. Returns the
-        newly-learned addresses. The mesh self-assembles from a seed (v0.2)."""
+        """Discovery: ask a peer for its book and merge it, but learn at most
+        `max_learn_per_fetch` new peers from this ONE informant — so a single
+        (possibly malicious) source cannot fill our whole book (eclipse resistance
+        §9.3). Returns the newly-learned addresses. The mesh still self-assembles
+        from a seed, just not from a single mouth."""
         peer = self.organ.connect(host, port, timeout=self.timeout)
         learned = set()
         try:
@@ -478,9 +507,11 @@ class Daemon:
             resp = W.decode(peer.recv(timeout=self.timeout))
             if resp.get("t") == W.PEERS:
                 for hp in resp.get("peers", []):
+                    if len(learned) >= self.max_learn_per_fetch:
+                        break
                     addr = (hp[0], int(hp[1]))
                     if addr != self.organ.address and addr not in self._peer_book:
-                        self._peer_book.add(addr)
+                        self.add_peer(*addr)
                         learned.add(addr)
         finally:
             peer.close()

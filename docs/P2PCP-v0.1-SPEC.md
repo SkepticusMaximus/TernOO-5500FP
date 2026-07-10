@@ -460,10 +460,14 @@ against strangers before hostile review: the classic graveyard. The reconciliati
    - **Store MMID** — the local content store's 54-trit `ternary_sponge` digest. Faces
      accident-resistance and *local* tamper-evidence only. `KNOWN.md`'s caveat holds; the
      sponge is proven for this and **kept.**
-   - **Wire MMID** — a **gauntlet-grade digest** under the `alg` field. On the wire a forged
-     MMID collision lets an adversary **substitute cargo** — a *remote-adversarial* threat
-     the sponge is explicitly **not rated for.** So the wire uses ed25519-class /
-     SHA-3-class hashing (`alg=0`) until a ternary-native digest passes the gauntlet.
+   - **Wire MMID** — **SHA3-256** under the `alg` field (`alg=0`), **permanently.** On the
+     wire a forged MMID collision lets an adversary **substitute cargo** — a *remote-
+     adversarial* threat the sponge is explicitly **not rated for.** External cryptanalysis
+     (DM, 2026-07-10) **ruled out** a ternary-native wire digest: the sponge's mod-3
+     filtration plus its char-3 state-size degeneracy (`45 = 3²·5` → a non-semisimple
+     circulant algebra) make it a ground-up redesign whose *year-zero* cryptanalysis risk on
+     a live wire is never worth the elegance. SHA3 is globally audited and structurally immune
+     to these algebraic-alignment failures. **This is a settled decision, not an interim.**
    - **Receipt commitments are Wire MMIDs.** The job **and output** MMIDs a receipt commits
      to (§7/§10) are wire-facing and adversarial — a forged collision on an output
      commitment would let a worker sign for output it never produced and survive audit. So

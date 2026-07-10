@@ -280,5 +280,35 @@ class TestRecordGossip(unittest.TestCase):
             w2.stop()
 
 
+class TestEclipseMitigation(unittest.TestCase):
+    """A poisoned peer book can't push out honest peers, and no single informant
+    can fill the whole book (§9.3 eclipse resistance, v0.2 slice 5)."""
+
+    def test_anchor_survives_address_flood(self):
+        d = D.Daemon(ident(b"eclipse-victim"))
+        d.max_peers = 5
+        anchor = ("127.0.0.1", 9999)
+        d.add_anchor(*anchor)                            # our one honest peer
+        for i in range(50):                              # attacker floods addresses
+            d.add_peer("10.0.0.%d" % (i % 200 + 1), 6000 + i)
+        book = d.known_peers()
+        self.assertLessEqual(len(book), 5)               # book stayed bounded
+        self.assertIn(anchor, book)                      # the anchor was NOT evicted
+
+    def test_one_informant_cannot_fill_the_book(self):
+        b = D.Daemon(ident(b"gossipy"))
+        b_addr = b.start()
+        for i in range(20):                              # B advertises many peers
+            b.add_peer("10.1.0.%d" % (i + 1), 7000 + i)
+        a = D.Daemon(ident(b"eclipse-a"))
+        a.max_learn_per_fetch = 3
+        try:
+            learned = a.fetch_peers(*b_addr)
+            self.assertLessEqual(len(learned), 3)        # capped per informant
+        finally:
+            b.stop()
+            a.stop()
+
+
 if __name__ == "__main__":
     unittest.main()
