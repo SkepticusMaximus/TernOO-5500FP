@@ -309,5 +309,54 @@ class TestMalformedFrameResilience(unittest.TestCase):
             probe.stop()
 
 
+class TestLedgerConcurrency(unittest.TestCase):
+    """A node that BOTH serves and buys posts to its own chain from two threads;
+    serialized ledger mutation must keep the chain fork-free (§5)."""
+
+    def test_concurrent_serve_and_buy_does_not_self_fork(self):
+        import threading as T
+        WK = _load("p2pcp_worker")
+        A = D.Daemon(ident(b"both-A"), worker=WK.DeterministicWorker())
+        B = D.Daemon(ident(b"both-B"), worker=WK.DeterministicWorker())
+        a_addr, b_addr = A.start(), B.start()
+        C = D.Daemon(ident(b"buyer-C"))
+        errors = []
+
+        def buy_from_A():                              # A serves → A's accept thread posts
+            try:
+                for _ in range(5):
+                    C.request_job(a_addr[0], a_addr[1], b"j", 1, 1,
+                                  vclass=L.VCLASS_NATIVE,
+                                  audit=WK.DeterministicWorker())
+            except Exception as e:                     # noqa: BLE001
+                errors.append(e)
+
+        def A_buys_B():                                # A buys → A's caller thread posts
+            try:
+                for _ in range(5):
+                    A.request_job(b_addr[0], b_addr[1], b"j", 1, 1,
+                                  vclass=L.VCLASS_NATIVE,
+                                  audit=WK.DeterministicWorker())
+            except Exception as e:                     # noqa: BLE001
+                errors.append(e)
+
+        threads = ([T.Thread(target=buy_from_A) for _ in range(3)]
+                   + [T.Thread(target=A_buys_B) for _ in range(3)])
+        try:
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            self.assertEqual(errors, [])               # no exception bubbled up
+            # A's chain took posts from its accept thread AND three buyer threads —
+            # it must still verify (no self-fork) and reload cleanly.
+            self.assertTrue(A.ledger.chains[A.account_id].verify())
+            self.assertTrue(A.ledger.verify())
+        finally:
+            A.stop()
+            B.stop()
+            C.stop()
+
+
 if __name__ == "__main__":
     unittest.main()

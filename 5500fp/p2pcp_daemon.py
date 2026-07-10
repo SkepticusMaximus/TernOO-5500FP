@@ -182,6 +182,10 @@ class Daemon:
         self.max_peer_fails = MAX_PEER_FAILS
         self._peer_fails = {}                  # addr -> consecutive misses (§9.3)
         self._lock = threading.Lock()
+        self._ledger_lock = threading.Lock()   # serializes chain mutation (§5): a
+        #   node that BOTH serves (accept thread) and buys (caller thread) posts to
+        #   its own chain from two threads — un-serialized, that self-forks the chain
+        #   (then verify() refuses to restart it) or drops a settlement.
         self._running = False
         self._accept_thread = None
 
@@ -325,14 +329,17 @@ class Daemon:
     # the receipt commits to job+output MMID so any peer can challenge later (§7).
 
     def _ensure_open(self):
-        if self.account_id not in self.ledger.chains:
-            self.ledger.open_account(self.identity, self.alg)
+        with self._ledger_lock:                # check-then-open must be atomic
+            if self.account_id not in self.ledger.chains:
+                self.ledger.open_account(self.identity, self.alg)
 
     def _post_settle(self, receipt):
-        """Post our own side of a both-signed receipt to our chain (§5)."""
-        chain = self.ledger.chains[self.account_id]
-        self.ledger.post(L.build_settle_record(self.identity, chain, receipt,
-                                               self.alg), receipt)
+        """Post our own side of a both-signed receipt to our chain (§5). Serialized
+        so concurrent worker/requester posts can't self-fork the chain."""
+        with self._ledger_lock:
+            chain = self.ledger.chains[self.account_id]
+            self.ledger.post(L.build_settle_record(self.identity, chain, receipt,
+                                                   self.alg), receipt)
 
     # -- worker role (runs in the accept loop, after inbound HELLO) ------------
     def _serve_peer(self, peer, peer_id):
@@ -565,8 +572,9 @@ class Daemon:
         self._ensure_open()
         ts = int(time.time()) if timestamp is None else timestamp
         nw = ts if now is None else now
-        return self.ledger.burn(self.identity, amount, timestamp=ts, now=nw,
-                                alg=self.alg)
+        with self._ledger_lock:                # serialize with settle posts (§5)
+            return self.ledger.burn(self.identity, amount, timestamp=ts, now=nw,
+                                    alg=self.alg)
 
     def my_weight(self, now=None):
         """Our own decayed-burn voting weight at `now` (§6/§10) — 0 until we burn."""
