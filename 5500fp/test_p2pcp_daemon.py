@@ -282,6 +282,14 @@ class TestMalformedFrameResilience(unittest.TestCase):
         finally:
             peer.close()
 
+    def _send_bytes(self, client, host, port, raw):
+        peer = client.organ.connect(host, port, timeout=client.timeout)
+        try:
+            client._handshake_outbound(peer)
+            peer.send(raw)                             # arbitrary, un-encoded payload
+        finally:
+            peer.close()
+
     def test_malformed_frames_do_not_kill_the_accept_thread(self):
         WK = _load("p2pcp_worker")
         W = D.W
@@ -295,6 +303,8 @@ class TestMalformedFrameResilience(unittest.TestCase):
                         {"t": W.JOB, "job": "zz"},         # bad hex → ValueError
                         {"t": W.JOB}):                     # no 'job' → KeyError
                 self._send_raw(attacker, addr[0], addr[1], bad)
+            for raw in (b"[1,2,3]", b"42", b'"hi"', b"garbage", b"\xff\xff"):
+                self._send_bytes(attacker, addr[0], addr[1], raw)   # non-dict payloads
             # The node still serves — the accept thread survived every bad frame.
             st = probe.fetch_status(*addr)
             self.assertEqual(st["account"], node.account_id.hex())

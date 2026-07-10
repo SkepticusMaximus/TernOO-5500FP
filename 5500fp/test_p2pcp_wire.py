@@ -71,6 +71,15 @@ class TestWirePure(unittest.TestCase):
         f = {"t": W.JOB, "job": "aa", "job_mmid": "bb", "n_chunks": 3, "k": 2}
         self.assertEqual(W.decode(W.encode(f)), f)
 
+    def test_decode_rejects_non_object_and_garbage(self):
+        # decode's contract: a dict, or a ValueError — never a surprise type that
+        # trips frame.get(...) downstream (the trustless input surface, §2.1).
+        for bad in (b"[1,2,3]", b"42", b'"hi"', b"true", b"null",
+                    b"not json", b"", b"\xff\xff", b"{bad", b"3.14"):
+            with self.assertRaises(ValueError):
+                W.decode(bad)
+        self.assertEqual(W.decode(b'{"t":1}'), {"t": 1})     # a real object works
+
     def test_receipt_dict_roundtrip(self):
         rec = L.make_receipt(ident(b"w"), ident(b"r"), 4, b"job", b"out",
                              vclass=L.VCLASS_NATIVE, nonce=b"n" * 16)

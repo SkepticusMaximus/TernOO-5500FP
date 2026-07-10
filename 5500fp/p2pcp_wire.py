@@ -44,7 +44,14 @@ def encode(frame: dict) -> bytes:
 
 
 def decode(payload: bytes) -> dict:
-    return json.loads(payload)
+    """Parse a frame. Contract: returns a dict, or raises ValueError — so a hostile
+    payload that is valid JSON but NOT an object (e.g. ``[1,2]`` or ``42``) is
+    rejected here, not later as an AttributeError on ``frame.get(...)``. json's
+    JSONDecodeError is already a ValueError subclass, so callers catch one type."""
+    frame = json.loads(payload)
+    if not isinstance(frame, dict):
+        raise ValueError("frame must be a JSON object")
+    return frame
 
 
 def receipt_to_dict(r) -> dict:
