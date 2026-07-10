@@ -309,6 +309,11 @@ class Daemon:
                 self._serve_peer(peer, account)
             except (HandshakeError, SOCK.OrganError):
                 peer.close()                   # a stranger who fails HELLO is dropped
+            except Exception:                  # noqa: BLE001
+                # A malformed frame from ANYONE (trustless accept, §2.1) must drop
+                # that peer, NEVER the single accept thread — else one bad frame is a
+                # permanent inbound DoS. Contain per-peer faults here.
+                peer.close()
 
     # ── the wire contract (§4 L2 / §14 step 5) ───────────────────────────────
     # The PAID job. A requester streams a JOB; the worker runs it through its

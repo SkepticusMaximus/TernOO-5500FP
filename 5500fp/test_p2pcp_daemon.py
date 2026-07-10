@@ -270,5 +270,44 @@ class TestObservability(unittest.TestCase):
             good.stop()
 
 
+class TestMalformedFrameResilience(unittest.TestCase):
+    """A malformed frame from any peer must drop that peer, NEVER the single accept
+    thread — else one bad frame is a permanent inbound DoS (trustless accept §2.1)."""
+
+    def _send_raw(self, client, host, port, frame):
+        peer = client.organ.connect(host, port, timeout=client.timeout)
+        try:
+            client._handshake_outbound(peer)
+            peer.send(D.W.encode(frame))
+        finally:
+            peer.close()
+
+    def test_malformed_frames_do_not_kill_the_accept_thread(self):
+        WK = _load("p2pcp_worker")
+        W = D.W
+        node = D.Daemon(ident(b"resilient"), worker=WK.DeterministicWorker())
+        addr = node.start()
+        attacker = D.Daemon(ident(b"malformer"))
+        probe = D.Daemon(ident(b"prober"))
+        try:
+            for bad in ({"t": W.VOTE},                     # no 'vote' → KeyError
+                        {"t": W.RECORD},                   # no 'record' → KeyError
+                        {"t": W.JOB, "job": "zz"},         # bad hex → ValueError
+                        {"t": W.JOB}):                     # no 'job' → KeyError
+                self._send_raw(attacker, addr[0], addr[1], bad)
+            # The node still serves — the accept thread survived every bad frame.
+            st = probe.fetch_status(*addr)
+            self.assertEqual(st["account"], node.account_id.hex())
+            # ...and a real paid job still settles afterward.
+            res = probe.request_job(addr[0], addr[1], b"job", 1, 2,
+                                    vclass=L.VCLASS_NATIVE,
+                                    audit=WK.DeterministicWorker())
+            self.assertEqual(res["settled_chunks"], 1)
+        finally:
+            node.stop()
+            attacker.stop()
+            probe.stop()
+
+
 if __name__ == "__main__":
     unittest.main()
