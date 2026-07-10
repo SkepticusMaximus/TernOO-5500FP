@@ -354,6 +354,13 @@ class Daemon:
         cargo = bytes.fromhex(job["job"])
         job_mmid = bytes.fromhex(job["job_mmid"])
         n_chunks, k, vclass = int(job["n_chunks"]), int(job["k"]), int(job["vclass"])
+        # Terms must be positive. A non-positive price would INVERT the settlement
+        # (the requester becomes the +side, minting weight-bearing credit while the
+        # worker is drained), so refuse before doing any work — belt to the TCM's
+        # own positivity guard in _validate_settle (§5/§8).
+        if k <= 0 or n_chunks <= 0:
+            peer.send(W.encode({"t": W.DONE, "reason": "bad-terms"}))
+            return
         # Verify-on-fetch on the wire (§12.4): the cargo must match its wire MMID.
         try:
             L.verify_wire_cargo(job_mmid, cargo, self.alg)

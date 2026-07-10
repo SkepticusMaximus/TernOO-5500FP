@@ -71,6 +71,38 @@ class TestForgedReceipt(unittest.TestCase):
         self.assertEqual(cm.exception.reason, "receipt-requester-sig")
 
 
+class TestNonPositiveSettle(unittest.TestCase):
+    """Threat: a wire-built receipt (which bypasses make_receipt) carries a
+    non-positive amount, INVERTING the double-entry — the requester mints credit
+    (and, if native, a vote) while the worker is drained. Defence: the TCM refuses
+    any settle whose receipt amount ≤ 0 (§5)."""
+
+    def _signed_receipt(self, worker, requester, amount):
+        r = P.Receipt(worker.account_id, requester.account_id, amount,
+                      P.wire_mmid(b"job"), P.wire_mmid(b"out"),
+                      P.VCLASS_NATIVE, nonce=b"n" * 16)
+        msg = r.signing_bytes()
+        r.worker_sig = worker.sign(msg)
+        r.requester_sig = requester.sign(msg)         # both genuinely sign it
+        return r
+
+    def test_negative_amount_settle_rejected(self):
+        led, worker, requester = fresh_pair()
+        r = self._signed_receipt(worker, requester, -5)
+        rec = P.build_settle_record(worker, led.chains[worker.account_id], r)
+        with self.assertRaises(P.ValidationError) as cm:
+            led.post(rec, r)
+        self.assertEqual(cm.exception.reason, "amount-nonpositive")
+
+    def test_zero_amount_settle_rejected(self):
+        led, worker, requester = fresh_pair()
+        r = self._signed_receipt(worker, requester, 0)
+        rec = P.build_settle_record(worker, led.chains[worker.account_id], r)
+        with self.assertRaises(P.ValidationError) as cm:
+            led.post(rec, r)
+        self.assertEqual(cm.exception.reason, "amount-nonpositive")
+
+
 class TestSelfMinting(unittest.TestCase):
     """Threat: one operator signs across two owned identities.
     Defence: net-zero double-entry (§5) — printing money is structural-impossible."""

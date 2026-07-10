@@ -753,6 +753,12 @@ def _validate_settle(record: Record, chain: Chain, receipt: Optional[Receipt],
                      alg) -> Optional[bytes]:
     if receipt is None:
         raise ValidationError("missing-receipt", "SETTLE needs its receipt")
+    # Amount is a positive magnitude (§5). A non-positive receipt would invert the
+    # double-entry — the requester minting credit (and, if native, a vote) while the
+    # worker is drained. make_receipt guards this, but the wire path builds Receipt
+    # directly, so the TCM (the one validator every settle passes through) must too.
+    if not isinstance(receipt.amount, int) or receipt.amount <= 0:
+        raise ValidationError("amount-nonpositive", "settle amount must be positive")
     _check_link(record, chain)
 
     # Counterparty signature (§8): the receipt must be BOTH-signed. This is the

@@ -171,6 +171,36 @@ class TestPaidJob(unittest.TestCase):
             r.stop()
 
 
+class TestNegativePrice(unittest.TestCase):
+    """A malicious requester offers a NEGATIVE price to invert the settlement —
+    draining the worker and minting itself weight-bearing credit. Refused."""
+
+    def test_negative_price_settles_nothing_and_inverts_no_balances(self):
+        node = D.Daemon(ident(b"np-worker"), worker=WK.DeterministicWorker())
+        addr = node.start()
+        attacker = D.Daemon(ident(b"np-attacker"))
+        try:
+            res = attacker.request_job(addr[0], addr[1], b"job", n_chunks=1, k=-5,
+                                       vclass=L.VCLASS_NATIVE,
+                                       audit=WK.DeterministicWorker())
+            self.assertEqual(res["settled_chunks"], 0)     # worker declines bad terms
+
+            def bal(d):
+                return (d.ledger.balance(d.account_id)
+                        if d.account_id in d.ledger.chains else 0)
+
+            def burn(d):
+                return (d.ledger.burnable(d.account_id)
+                        if d.account_id in d.ledger.chains else 0)
+
+            self.assertEqual(bal(node), 0)                 # worker not drained
+            self.assertEqual(bal(attacker), 0)             # attacker minted no money
+            self.assertEqual(burn(attacker), 0)            # ...and no forged franchise
+        finally:
+            node.stop()
+            attacker.stop()
+
+
 class TestMultiWorker(unittest.TestCase):
     """One node can serve MULTIPLE verification classes, dispatching by vclass."""
 
