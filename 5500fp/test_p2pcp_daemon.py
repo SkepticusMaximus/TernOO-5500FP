@@ -136,5 +136,30 @@ class TestDaemonWiring(unittest.TestCase):
         d.stop()                                       # idempotent, no hang
 
 
+class TestForwardCompat(unittest.TestCase):
+    """Capability negotiation (§15): a plain-CompuCoin node coexists with a peer
+    advertising a capability it doesn't understand — the CGP forward-compat seam.
+    NOT pre-shaping: v0.1 records the cap and ignores it, never acts on it."""
+
+    def test_unknown_capability_is_recorded_and_coexists(self):
+        base = D.Daemon(ident(b"base"))                # caps default ("compucoin",)
+        future = D.Daemon(ident(b"future"), caps=("compucoin", "citicoin"))
+        addr = base.start()
+        try:
+            self.assertEqual(future.connect(*addr), base.account_id)  # handshake OK
+            self.assertEqual(base.next_verified_peer(timeout=5.0),
+                             future.account_id)
+            # base learns future's caps but does not (cannot) act on "citicoin".
+            fc = base.peer_capabilities(future.account_id)
+            self.assertEqual(fc["version"], D.PROTOCOL_VERSION)
+            self.assertIn("citicoin", fc["caps"])
+            # future sees base as plain CompuCoin — coexistence, not rejection.
+            bc = future.peer_capabilities(base.account_id)
+            self.assertEqual(bc["caps"], ["compucoin"])
+        finally:
+            base.stop()
+            future.stop()
+
+
 if __name__ == "__main__":
     unittest.main()

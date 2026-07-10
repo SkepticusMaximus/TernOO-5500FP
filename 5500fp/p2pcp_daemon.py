@@ -50,6 +50,14 @@ C = _load("p2pcp_consensus")      # the conflict-vote (§9 / step 6)
 HELLO_TYPE = "P2PCP-HELLO-v0.1"
 DEFAULT_TIMEOUT = 5.0             # a bound passed to recv — never a clock read
 
+# Forward-compat / CGP coexistence (spec §15). A node advertises its protocol
+# version and capabilities in HELLO; a peer records them but acts only on the
+# ones it understands. This is the negotiation SEAM that lets a future CGP-aware
+# node (advertising e.g. "citicoin") find its peers and coexist with plain
+# CompuCoin nodes — WITHOUT pre-shaping CGP's (unfinished) geometry into v0.1.
+PROTOCOL_VERSION = "0.2"
+BASE_CAPS = ("compucoin",)       # the CompuCoin ledger capability; CGP adds more
+
 
 class DaemonError(Exception):
     """Base for daemon-level failures."""
@@ -74,12 +82,13 @@ class Daemon:
     announced on an event queue. The wire contract plugs in at ``_serve_peer``."""
 
     def __init__(self, identity, ledger=None, alg=L.ALG_ED25519,
-                 timeout=DEFAULT_TIMEOUT, worker=None):
+                 timeout=DEFAULT_TIMEOUT, worker=None, caps=None):
         self.identity = identity
         self.ledger = ledger if ledger is not None else L.Ledger()
         self.alg = alg
         self.timeout = timeout
         self.worker = worker                   # a WorkerAdapter, or None (§3/§5)
+        self.caps = tuple(caps) if caps else BASE_CAPS   # advertised capabilities
         self.organ = SOCK.SocketOrgan()
         self._peers = {}                       # verified account_id -> Peer
         self._events = queue.Queue()           # verified account_ids, for observers
@@ -90,6 +99,7 @@ class Daemon:
         self._seen_records = {}                # (account,height) -> first-seen id
         self._forks = {}                       # (account,height) -> (id_a,id_b)
         self._record_events = queue.Queue()    # gossiped records, for observers
+        self._peer_caps = {}                   # account -> {version, caps} (§15)
         self._lock = threading.Lock()
         self._running = False
         self._accept_thread = None
@@ -149,7 +159,8 @@ class Daemon:
     def _hello_frame(self) -> bytes:
         nonce = os.urandom(16)
         msg = {"type": HELLO_TYPE, "account": self.account_id.hex(),
-               "nonce": nonce.hex(), "alg": self.alg}
+               "nonce": nonce.hex(), "alg": self.alg,
+               "version": PROTOCOL_VERSION, "caps": list(self.caps)}
         sig = self.identity.sign(_canon(msg), self.alg)
         return _canon({"msg": msg, "sig": sig.hex()})
 
@@ -172,6 +183,11 @@ class Daemon:
             raise HandshakeError(f"HELLO alg refused: {e}") from e
         if not ok:
             raise HandshakeError("HELLO signature invalid — key not controlled")
+        # Record the peer's advertised version + capabilities (forward-compat,
+        # §15): unknown caps are KEPT but not acted on, so a v0.1 node coexists
+        # with a future CGP-aware peer without understanding "citicoin"/"cgp".
+        self._peer_caps[account] = {"version": msg.get("version"),
+                                    "caps": list(msg.get("caps", []))}
         return account
 
     def _handshake_outbound(self, peer) -> bytes:
@@ -434,6 +450,11 @@ class Daemon:
 
     def known_peers(self):
         return set(self._peer_book)
+
+    def peer_capabilities(self, account):
+        """The protocol version + capabilities a peer advertised in HELLO (§15
+        forward-compat / CGP coexistence). None if we have not handshaked it."""
+        return self._peer_caps.get(account)
 
     def _send_peer_book(self, peer):
         """Answer a PEERS_REQ with our book plus our own listen address, so the

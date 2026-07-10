@@ -573,6 +573,37 @@ The **ten-year regret test** decided it: pre-shape and be wrong → the geometry
 into every conforming ledger on earth, unfixable without a fork; stay minimal and need more
 → add a record kind. **Take the soft regret.**
 
+### §15.1 Forward-compatibility contract (CompuCoin backs CitiCoin)
+
+CompuCoin (this protocol's `CompuToken`) is intended as the **backing token for CitiCoin**
+in the three-way CGP governance trilogy. That relationship must be able to layer on **when
+CGP emerges, without a fork** — which is *forward-compatibility*, and is distinct from the
+*pre-shaping* §15 refuses. The line: **v0.1 keeps the door open and negotiates coexistence;
+it does not model CGP's economics.** What is guaranteed now:
+
+1. **CompuCoin is a sound, readable, extensible base.** A backing token needs its collateral
+   to be sound (net-zero mutual credit — no inflation, §5), **readable** (balances and burns
+   are on-ledger and replayable — a CGP layer can verify backing without trusting anyone),
+   non-forgeable (§8), and extensible (§4 typed self-describing words). These are already
+   normative; CGP inherits them unchanged.
+2. **CGP is a SEPARATE OVER-LAYER, never interleaved into v0.1 records.** A CGP-aware node
+   *reads* the CompuCoin ledger and maintains CitiCoin + the tri-token state in its **own
+   record space** (new `CRYPTO`-qualifier KINDs; the primary has ample reserved slots,
+   Appendix C). A v0.1 node runs the CompuCoin ledger and **ignores** the CGP layer. CGP
+   MUST NOT require modifying or re-validating any v0.1 record kind — that is the rule that
+   keeps a v0.1 node conforming forever.
+3. **Capability negotiation is normative (the coexistence seam).** Every node advertises a
+   `version` and a `caps` list in its HELLO; a peer **records** capabilities it does not
+   understand and **acts only on the ones it does**. `caps = ["compucoin"]` is the base; a
+   CGP node advertises additional capabilities (e.g. `"citicoin"`) and finds its peers
+   without excluding plain-CompuCoin nodes. Unknown caps are coexistence, never rejection.
+
+**Explicitly deferred to CGP's own design (needs its algebra, not guessable here):** the
+*mechanics* of the backing — collateralisation vs peg vs redemption, lock/escrow of
+CompuCoin as backing, and the Möbius tri-token relationship. Building those against an
+unfinished algebra **would be** the pre-shaping §15 forbids. The seams above make them
+*addable*; defining them is the CGP design's job (Appendix B open problem).
+
 ---
 
 ## Appendix A — reference-implementation advantages (NON-NORMATIVE)
