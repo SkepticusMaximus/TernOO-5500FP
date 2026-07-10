@@ -16,11 +16,24 @@ Authors: Stevo (SkepticusMaximus) + Claude (Anthropic)
 import argparse
 import hashlib
 import importlib.util as _ilu
+import json
 import os
 import sys
 import threading
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = os.path.join(_HERE, "p2pcp.json")
+
+
+def load_node_config(path=None):
+    """Node defaults from p2pcp.json (host, port, keyfile, peers, mock, seed) —
+    drop the file and run `p2pcp_node.py professor` with no flags. Never raises."""
+    try:
+        with open(path or CONFIG_FILE) as f:
+            cfg = json.load(f)
+        return cfg if isinstance(cfg, dict) else {}
+    except (OSError, ValueError):
+        return {}
 
 
 def _load(name):
@@ -187,23 +200,28 @@ def join_mesh(node, peers):
 
 
 def main(argv=None):
+    cfg = load_node_config()
     ap = argparse.ArgumentParser(prog="p2pcp_node",
                                  description="Launch a P2PCP node.")
     sub = ap.add_subparsers(dest="cmd", required=True)
     pp = sub.add_parser("professor", help="run a Professor worker node")
-    pp.add_argument("--host", default="127.0.0.1")
-    pp.add_argument("--port", type=int, default=0)
-    pp.add_argument("--seed", default="professor")
-    pp.add_argument("--mock", action="store_true",
+    pp.add_argument("--host", default=cfg.get("host", "127.0.0.1"))
+    pp.add_argument("--port", type=int, default=cfg.get("port", 0))
+    pp.add_argument("--seed", default=cfg.get("seed", "professor"))
+    pp.add_argument("--mock", action="store_true", default=cfg.get("mock", False),
                     help="run a mock professor (EchoBackend) — no model needed")
-    pp.add_argument("--keyfile", help="persist node identity + earnings here")
-    pp.add_argument("--peers", help="bootstrap peers, host:port,host:port")
+    pp.add_argument("--keyfile", default=cfg.get("keyfile"),
+                    help="persist node identity + earnings here")
+    pp.add_argument("--peers", default=cfg.get("peers"),
+                    help="bootstrap peers, host:port,host:port")
     pg = sub.add_parser("ghost", help="run a GHOST classifier worker node")
-    pg.add_argument("--host", default="127.0.0.1")
-    pg.add_argument("--port", type=int, default=0)
-    pg.add_argument("--seed", default="ghost")
-    pg.add_argument("--keyfile", help="persist node identity + earnings here")
-    pg.add_argument("--peers", help="bootstrap peers, host:port,host:port")
+    pg.add_argument("--host", default=cfg.get("host", "127.0.0.1"))
+    pg.add_argument("--port", type=int, default=cfg.get("port", 0))
+    pg.add_argument("--seed", default=cfg.get("seed", "ghost"))
+    pg.add_argument("--keyfile", default=cfg.get("keyfile"),
+                    help="persist node identity + earnings here")
+    pg.add_argument("--peers", default=cfg.get("peers"),
+                    help="bootstrap peers, host:port,host:port")
     pa = sub.add_parser("ask", help="ask a Professor node a question (paid)")
     pa.add_argument("prompt")
     pa.add_argument("--host", default="127.0.0.1")

@@ -61,6 +61,17 @@ class TestNode(unittest.TestCase):
                          [("1.2.3.4", 9000), ("127.0.0.1", 9001)])
         self.assertEqual(N.parse_peers(""), [])
 
+    def test_load_node_config(self):
+        import json
+        import tempfile
+        p = os.path.join(tempfile.mkdtemp(), "p2pcp.json")
+        with open(p, "w") as f:
+            json.dump({"port": 9000, "mock": True, "peers": "1.2.3.4:9000"}, f)
+        cfg = N.load_node_config(p)
+        self.assertEqual(cfg["port"], 9000)
+        self.assertTrue(cfg["mock"])
+        self.assertEqual(N.load_node_config("/nope/x.json"), {})    # absent -> {}
+
     def test_join_mesh_bootstraps_and_discovers(self):
         c = D.Daemon(N.identity_from_seed("boot-c"))
         b = D.Daemon(N.identity_from_seed("boot-b"))
