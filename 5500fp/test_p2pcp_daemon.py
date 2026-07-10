@@ -218,6 +218,27 @@ class TestObservability(unittest.TestCase):
         # A buy-only node advertises neither.
         self.assertNotIn("compute:native", D.Daemon(ident(b"buyonly")).caps)
 
+    def test_find_providers_picks_the_class_you_need(self):
+        # Two nodes on the mesh; a buyer discovers WHICH serves native — no blind
+        # trial job, just STATUS + the advertised cap.
+        WK = _load("p2pcp_worker")
+
+        class FloatDet(WK.DeterministicWorker):
+            vclass = WK.VCLASS_FLOAT
+
+        native = D.Daemon(ident(b"prov-native"), worker=WK.DeterministicWorker())
+        floaty = D.Daemon(ident(b"prov-float"), worker=FloatDet())
+        n_addr, f_addr = native.start(), floaty.start()
+        buyer = D.Daemon(ident(b"prov-buyer"))
+        try:
+            cands = [n_addr, f_addr, ("127.0.0.1", 1)]     # last is dead → skipped
+            self.assertEqual(buyer.find_providers("compute:native", cands), [n_addr])
+            self.assertEqual(buyer.find_providers("compute:float", cands), [f_addr])
+            self.assertEqual(buyer.find_providers("compute:native", []), [])
+        finally:
+            native.stop()
+            floaty.stop()
+
 
 if __name__ == "__main__":
     unittest.main()

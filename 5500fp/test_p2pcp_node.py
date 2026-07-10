@@ -88,6 +88,16 @@ class TestNode(unittest.TestCase):
             b.stop()
             c.stop()
 
+    def test_find_providers_discovers_by_class(self):
+        prof = D.Daemon(N.identity_from_seed("find-prof"),
+                        worker=P.BonsaiWorker(backend=B.EchoBackend()))  # float
+        addr = prof.start()
+        try:
+            self.assertEqual(N.find_providers("compute:float", [addr]), [addr])
+            self.assertEqual(N.find_providers("compute:native", [addr]), [])
+        finally:
+            prof.stop()
+
     def test_ask_returns_the_professors_answer(self):
         prof = D.Daemon(N.identity_from_seed("prof-test"),
                         worker=P.BonsaiWorker(backend=B.EchoBackend()))

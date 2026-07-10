@@ -174,6 +174,12 @@ def node_status(host, port, seed="observer"):
     return D.Daemon(identity_from_seed(seed)).fetch_status(host, int(port))
 
 
+def find_providers(cap, peers, seed="finder"):
+    """Scan `peers` for nodes advertising compute class `cap` (e.g.
+    'compute:native'). Returns matching (host, port) — discovery, not a buy."""
+    return D.Daemon(identity_from_seed(seed)).find_providers(cap, peers)
+
+
 def parse_peers(peers_csv):
     """'host:port,host:port' -> [(host, port), ...]."""
     out = []
@@ -239,6 +245,11 @@ def main(argv=None):
     ps = sub.add_parser("status", help="query a node's public status")
     ps.add_argument("--host", default="127.0.0.1")
     ps.add_argument("--port", type=int, required=True)
+    pf = sub.add_parser("find", help="find mesh nodes serving a compute class")
+    pf.add_argument("--class", dest="klass", choices=["native", "float"],
+                    required=True, help="native (replay/GHOST) or float (Professor)")
+    pf.add_argument("--peers", required=True,
+                    help="candidate nodes, host:port,host:port")
     args = ap.parse_args(argv)
 
     if args.cmd == "professor":
@@ -259,6 +270,14 @@ def main(argv=None):
             sys.exit(1)
         for k in ("account", "workers", "version", "caps", "peers", "jobs_served"):
             print(f"{k}: {st.get(k)}")
+    elif args.cmd == "find":
+        cap = "compute:" + args.klass
+        hits = find_providers(cap, parse_peers(args.peers))
+        if not hits:
+            print(f"[find] no node advertising {cap}", file=sys.stderr)
+            sys.exit(1)
+        for h, p in hits:
+            print(f"{h}:{p}")
     elif args.cmd in ("ask", "classify"):
         if args.cmd == "ask":
             client, res = ask(args.host, args.port, args.prompt, args.k, args.seed)

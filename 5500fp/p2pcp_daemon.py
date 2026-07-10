@@ -566,6 +566,26 @@ class Daemon:
         finally:
             peer.close()
 
+    def find_providers(self, cap, candidates=None):
+        """Pick a provider WITHOUT a blind trial job: query STATUS of each
+        candidate (host, port) and return those advertising `cap` — e.g.
+        'compute:native' for GHOST or 'compute:float' for a Professor (§15). With
+        `candidates=None`, scans the known peer book. A dead/kicking candidate is
+        skipped, not fatal. Order-preserving; de-duplicates."""
+        seen, out = set(), []
+        for host, port in (candidates if candidates is not None else self.known_peers()):
+            addr = (host, int(port))
+            if addr in seen:
+                continue
+            seen.add(addr)
+            try:
+                st = self.fetch_status(host, port)
+            except Exception:                          # a dead candidate is skipped
+                st = None
+            if st and cap in (st.get("caps") or []):
+                out.append(addr)
+        return out
+
     def _send_peer_book(self, peer):
         """Answer a PEERS_REQ with our book plus our own listen address, so the
         asker discovers the mesh from a seed (v0.2)."""
