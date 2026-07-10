@@ -197,6 +197,27 @@ class TestObservability(unittest.TestCase):
             wnode.stop()
             client.stop()
 
+    def test_node_auto_advertises_its_compute_class(self):
+        # A worker node's caps mirror the adapters installed, so a peer can
+        # DISCOVER the offer from STATUS (§15) without a blind trial job.
+        WK = _load("p2pcp_worker")
+
+        class FloatDet(WK.DeterministicWorker):
+            vclass = WK.VCLASS_FLOAT
+
+        node = D.Daemon(ident(b"advertise"),
+                        workers=[WK.DeterministicWorker(), FloatDet()])
+        addr = node.start()
+        buyer = D.Daemon(ident(b"buyer"))
+        try:
+            caps = buyer.fetch_status(*addr)["caps"]
+            self.assertIn("compute:native", caps)      # replay-class on offer
+            self.assertIn("compute:float", caps)       # quorum-class on offer
+        finally:
+            node.stop()
+        # A buy-only node advertises neither.
+        self.assertNotIn("compute:native", D.Daemon(ident(b"buyonly")).caps)
+
 
 if __name__ == "__main__":
     unittest.main()

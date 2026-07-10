@@ -125,6 +125,14 @@ class Daemon:
         for w in (list(workers) if workers else ([worker] if worker else [])):
             self._workers[w.vclass] = w
         self.caps = tuple(caps) if caps else BASE_CAPS   # advertised capabilities
+        # Auto-advertise which compute classes we serve, so a peer can DISCOVER a
+        # node's offer from HELLO/STATUS (§15) instead of asking blind. Honest by
+        # construction: the caps mirror the worker adapters actually installed.
+        _cap_of = {L.VCLASS_NATIVE: "compute:native", L.VCLASS_FLOAT: "compute:float"}
+        for _vc in self._workers:
+            _c = _cap_of.get(_vc)
+            if _c and _c not in self.caps:
+                self.caps = self.caps + (_c,)
         self.max_peers = MAX_PEERS                        # eclipse resistance (§9.3)
         self.max_learn_per_fetch = MAX_LEARN_PER_FETCH
         self._anchors = set()                             # never-evicted peers
