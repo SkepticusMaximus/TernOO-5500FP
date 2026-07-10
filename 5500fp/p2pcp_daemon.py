@@ -86,6 +86,7 @@ class Daemon:
         self._votes = queue.Queue()            # verified conflict-votes (§9)
         self._peer_book = set()                # known peer LISTEN addresses (v0.2)
         self._seen = set()                     # gossip dedup keys (v0.2 flood)
+        self._vote_pool = {}                   # (account,height) -> [votes] (v0.2)
         self._lock = threading.Lock()
         self._running = False
         self._accept_thread = None
@@ -390,7 +391,7 @@ class Daemon:
         if mid in self._seen:              # already heard it — drop, do NOT re-relay
             return                         # dedup: this is what stops a broadcast storm
         self._seen.add(mid)
-        self._votes.put(vote)
+        self._pool_vote(vote)              # collect into the observer queue + fork pool
         self._fanout_vote(vote)            # relay onward — the flood (v0.2)
 
     def next_vote(self, timeout=DEFAULT_TIMEOUT):
@@ -460,13 +461,50 @@ class Daemon:
         return sent
 
     def broadcast_vote(self, vote):
-        """Originate a vote to the mesh (v0.2): mark it seen (so an echo back is
-        deduped), then fan it out. Recipients RELAY it onward — the flood — and
-        dedup stops it circulating forever, so it reaches non-adjacent nodes
-        without a broadcast storm. Returns the count of direct peers reached.
+        """Originate a vote to the mesh (v0.2): count it locally, mark it seen (so
+        an echo back is deduped), then fan it out. Recipients RELAY it onward — the
+        flood — and dedup stops it circulating forever, so it reaches non-adjacent
+        nodes without a broadcast storm. Returns the count of direct peers reached.
 
-        (NB v0.2: `_seen` is unbounded here; a bounded/expiring seen-set is a
-        later hardening. Fan-out excludes-sender is a later optimization — dedup
-        already makes an echo harmless.)"""
-        self._seen.add(self._gossip_id(vote.signing_bytes()))
+        (NB v0.2: `_seen`/`_vote_pool` are unbounded here; a bounded/expiring
+        seen-set is a later hardening. Fan-out excludes-sender is a later
+        optimization — dedup already makes an echo harmless.)"""
+        mid = self._gossip_id(vote.signing_bytes())
+        if mid not in self._seen:
+            self._seen.add(mid)
+            self._pool_vote(vote)          # count our OWN vote in our own pool
         return self._fanout_vote(vote)
+
+    # ── distributed quorum assembly on a fork (v0.2 slice 3) ──────────────────
+    # Votes are GOSSIPED (slice 2), never POLLED — so there is no solicitation
+    # loop to DDOS a peer book with (the throttle is the architecture): a node
+    # announces its vote ONCE (deduped), the flood delivers it, and every node
+    # accumulates the votes it hears into a per-fork pool and tallies LOCALLY with
+    # the step-6 rule. Consensus converges because the tally is deterministic —
+    # same votes + same weights -> same verdict, at every node.
+
+    def _pool_vote(self, vote):
+        """Record a verified vote on the observer queue AND in the per-fork pool
+        keyed by (account, height)."""
+        self._votes.put(vote)
+        self._vote_pool.setdefault((vote.account, vote.height), []).append(vote)
+
+    def votes_for(self, account, height):
+        """The votes this node has heard for a fork (account @ height)."""
+        return list(self._vote_pool.get((account, height), []))
+
+    def announce_fork(self, account, height, choice):
+        """Cast this node's vote for `choice` on a fork and gossip it — no polling,
+        the flood does the delivery. Returns the vote."""
+        vote = self.cast_vote(account, height, choice)
+        self.broadcast_vote(vote)
+        return vote
+
+    def resolve_fork(self, fork, weights, slashed=None):
+        """Tally the votes heard for this fork with the step-6 rule (§9): a branch
+        wins iff it holds >= 2/3 of participating decayed weight, else None
+        (undecided — optimistic wait). A decided fork slashes its author."""
+        if slashed is None:
+            slashed = set()
+        return C.resolve(fork, self.votes_for(fork.account, fork.height),
+                         weights, slashed)

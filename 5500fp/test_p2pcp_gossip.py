@@ -27,9 +27,11 @@ def _load(name):
 
 D = _load("p2pcp_daemon")
 L = D.L
+C = D.C                         # consensus (Fork) — the daemon's own view
 
 ACCT = b"a" * 32
 X = b"X" * 32
+Y = b"Y" * 32                   # the two conflicting fork branches (vote choices)
 
 
 def ident(tag: bytes):
@@ -153,6 +155,56 @@ class TestGossipFlood(unittest.TestCase):
         finally:
             b.stop()
             a.stop()
+
+
+class TestQuorumAssembly(unittest.TestCase):
+    """Distributed fork resolution (v0.2 slice 3): votes gossip to a collector,
+    which assembles the quorum from what it HEARD (no polling) and resolves with
+    the step-6 tally."""
+
+    def _hub_and_voters(self, hub_tag, voter_tags):
+        hub = D.Daemon(ident(hub_tag))
+        hub_addr = hub.start()
+        voters = [D.Daemon(ident(t)) for t in voter_tags]
+        for v in voters:
+            v.add_peer(*hub_addr)
+        return hub, voters
+
+    def test_hub_assembles_quorum_and_resolves(self):
+        hub, (v1, v2, v3) = self._hub_and_voters(b"hub", [b"qv1", b"qv2", b"qv3"])
+        try:
+            weights = {v1.account_id: 5.0, v2.account_id: 3.0, v3.account_id: 1.0}
+            v1.announce_fork(ACCT, 1, X)             # X: 5
+            v2.announce_fork(ACCT, 1, X)             # X: +3 = 8
+            v3.announce_fork(ACCT, 1, Y)             # Y: 1
+            for _ in range(3):                       # wait until the hub heard all 3
+                hub.next_vote(5.0)
+            self.assertEqual(len(hub.votes_for(ACCT, 1)), 3)
+            fork = C.Fork(ACCT, 1, tuple(sorted((X, Y))))
+            slashed = set()
+            self.assertEqual(hub.resolve_fork(fork, weights, slashed), X)  # 8/9 ≥ ⅔
+            self.assertIn(ACCT, slashed)             # the fork's author is slashed
+        finally:
+            hub.stop()
+            for v in (v1, v2, v3):
+                v.stop()
+
+    def test_dead_heat_is_undecided(self):
+        hub, (v1, v2) = self._hub_and_voters(b"hub2", [b"uv1", b"uv2"])
+        try:
+            weights = {v1.account_id: 5.0, v2.account_id: 5.0}
+            v1.announce_fork(ACCT, 1, X)
+            v2.announce_fork(ACCT, 1, Y)
+            for _ in range(2):
+                hub.next_vote(5.0)
+            fork = C.Fork(ACCT, 1, tuple(sorted((X, Y))))
+            slashed = set()
+            self.assertIsNone(hub.resolve_fork(fork, weights, slashed))  # 50/50
+            self.assertNotIn(ACCT, slashed)          # nothing decided → no slash
+        finally:
+            hub.stop()
+            for v in (v1, v2):
+                v.stop()
 
 
 if __name__ == "__main__":
