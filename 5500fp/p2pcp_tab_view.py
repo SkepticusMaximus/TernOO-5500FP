@@ -89,6 +89,22 @@ class MeshTabView:
         self._meshstat.pack(side="left", padx=12)
         btn(wf, "Refresh", self._refresh_wallet, side="right")
 
+        # peers — join a node, watch the book (auto-refreshed)
+        pf = tk.LabelFrame(parent, text=" Peers ", bg=C["bg"], fg=C["text"],
+                           font=mono)
+        pf.pack(side="top", fill="x", padx=8, pady=6)
+        prow = tk.Frame(pf, bg=C["bg"])
+        prow.pack(side="top", fill="x", pady=2)
+        tk.Label(prow, text="join host:port", bg=C["bg"], fg=C["dim"], font=mono
+                 ).pack(side="left", padx=(6, 2))
+        self._joinentry = entry(prow, "127.0.0.1:9000", width=22)
+        self._joinentry.pack(side="left", padx=2)
+        btn(prow, "Join", self._join)
+        self._peerlist = tk.Listbox(pf, height=4, bg=C["bg"], fg=C["text"],
+                                    font=mono, relief="flat", highlightthickness=0,
+                                    selectbackground=C["palette"])
+        self._peerlist.pack(side="top", fill="x", padx=6, pady=4)
+
         # buy compute
         bf = tk.LabelFrame(parent, text=" Buy compute from the mesh ", bg=C["bg"],
                            fg=C["text"], font=mono)
@@ -105,6 +121,8 @@ class MeshTabView:
         brow.pack(side="top", fill="x")
         btn(brow, "Ask (Professor)", lambda: self._buy("ask"))
         btn(brow, "Classify (GHOST)", lambda: self._buy("classify"))
+        btn(brow, "Ask (mesh)", lambda: self._buy_mesh("ask"))
+        btn(brow, "Classify (mesh)", lambda: self._buy_mesh("classify"))
         self._result = tk.Text(bf, height=6, bg=C["bg"], fg=C["text"],
                                insertbackground=C["text"], relief="flat",
                                font=mono, wrap="word")
@@ -154,6 +172,58 @@ class MeshTabView:
         self._meshstat.config(
             text=(f"peers: {s.get('peers', 0)}    served: {s.get('jobs_served', 0)}"
                   if running else ""))
+        self._peerlist.delete(0, "end")                # live peer book
+        for host, port in (self.svc.known_peers() if running else []):
+            self._peerlist.insert("end", f"{host}:{port}")
+
+    def _join(self):
+        if not (self.svc and self.svc.running):
+            self._status("Start a node first.")
+            return
+        host, _, port = self._joinentry.get().strip().rpartition(":")
+        try:
+            addr = (host or "127.0.0.1", int(port))
+        except ValueError:
+            self._status("Bad host:port.")
+            return
+        n = self.svc.join([addr])
+        self._refresh_wallet()
+        self._status(f"Joined; know {n} peer(s).")
+
+    def _buy_mesh(self, kind):
+        """Buy from ANY provider on the mesh — discover + fall through, no target
+        typed. Shows which node served."""
+        if not (self.svc and self.svc.running):
+            self._status("Start a node first.")
+            return
+        text = self._prompt.get()
+        self._result.delete("1.0", "end")
+        self._result.insert("end", "(discovering a provider…)")
+        self._status(f"Buying {kind} from the mesh…")
+
+        def work():
+            err = where = ans = None
+            try:
+                where, ans = (self.svc.ask_mesh(text) if kind == "ask"
+                              else self.svc.classify_mesh(text))
+            except Exception as e:                      # noqa: BLE001 — surfaced
+                err = str(e)
+            self.root.after(0, lambda: self._show_mesh(where, ans, err))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _show_mesh(self, where, ans, err):
+        self._result.delete("1.0", "end")
+        if err:
+            self._result.insert("end", f"error: {err}")
+            self._status("Mesh buy failed.")
+        elif not where or ans is None:
+            self._result.insert("end", "(no provider on the mesh settled)")
+            self._status("No mesh provider settled.")
+        else:
+            self._result.insert("end", f"{ans}\n\n— served by {where}")
+            self._refresh_wallet()
+            self._status(f"Bought from {where}.")
 
     def _buy(self, kind):
         if not (self.svc and self.svc.running):
