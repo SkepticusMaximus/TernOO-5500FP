@@ -515,6 +515,17 @@ class Record:
         payload["sig"] = self.sig.hex()
         return wire_mmid(_canon(payload), self.alg)
 
+    def to_dict(self) -> dict:
+        return {"account": self.account.hex(), "height": self.height,
+                "prev": self.prev.hex(), "kind": self.kind, "body": self.body,
+                "alg": self.alg, "sig": self.sig.hex()}
+
+    @classmethod
+    def from_dict(cls, d) -> "Record":
+        return cls(bytes.fromhex(d["account"]), int(d["height"]),
+                   bytes.fromhex(d["prev"]), d["kind"], d["body"],
+                   int(d["alg"]), bytes.fromhex(d["sig"]))
+
 
 # ── record builders — public so adversarial tests can craft raw records ──────
 
@@ -622,6 +633,28 @@ class Chain:
         burned. Deliberately NOT the §5 net balance, and NOT float credit (see
         the notes in `_append` and `_validate_burn`)."""
         return self.earned_ctp - self.burned_total
+
+    def to_dict(self) -> dict:
+        return {"account": self.account.hex(),
+                "records": [r.to_dict() for r in self.records],
+                "height": self.height, "head_id": self.head_id.hex(),
+                "used_refs": [x.hex() for x in self.used_refs],
+                "balance": self.balance, "earned_ctp": self.earned_ctp,
+                "burned_total": self.burned_total,
+                "burns": [list(b) for b in self.burns]}
+
+    @classmethod
+    def from_dict(cls, d) -> "Chain":
+        c = cls(bytes.fromhex(d["account"]))
+        c.records = [Record.from_dict(r) for r in d["records"]]
+        c.height = int(d["height"])
+        c.head_id = bytes.fromhex(d["head_id"])
+        c.used_refs = {bytes.fromhex(x) for x in d["used_refs"]}
+        c.balance = int(d["balance"])
+        c.earned_ctp = int(d["earned_ctp"])
+        c.burned_total = int(d["burned_total"])
+        c.burns = [tuple(b) for b in d["burns"]]
+        return c
 
     def _append(self, record: Record, ref: Optional[bytes]) -> None:
         """Apply a *validated* record and update aggregates. The only mutator."""
@@ -948,6 +981,28 @@ class Ledger:
 
     def total_burned(self) -> int:
         return sum(c.burned_total for c in self.chains.values())
+
+    # ── persistence (a node keeps its full state across restarts) ────────────
+    def to_dict(self) -> dict:
+        return {"transfer_floor": self.transfer_floor,
+                "chains": {a.hex(): c.to_dict()
+                           for a, c in self.chains.items()}}
+
+    @classmethod
+    def from_dict(cls, d) -> "Ledger":
+        led = cls(transfer_floor=d.get("transfer_floor"))
+        for a_hex, cd in d["chains"].items():
+            led.chains[bytes.fromhex(a_hex)] = Chain.from_dict(cd)
+        return led
+
+    def save(self, path: str) -> None:
+        with open(path, "w") as f:
+            json.dump(self.to_dict(), f)
+
+    @classmethod
+    def load(cls, path: str) -> "Ledger":
+        with open(path) as f:
+            return cls.from_dict(json.load(f))
 
 
 # ═══════════════════════════════════════════════════════════════════════════

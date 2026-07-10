@@ -38,13 +38,42 @@ L = D.L
 
 def identity_from_seed(seed: str):
     """A stable identity from a seed phrase (repeatable runs). A production node
-    would persist its ed25519 key; this derives one deterministically."""
+    persists its ed25519 key instead — see load_or_create_identity."""
     return L.Identity.from_seed(hashlib.sha256(seed.encode("utf-8")).digest())
 
 
-def _serve_worker(worker, label, host, port, seed):
-    """Run a worker node (Professor or GHOST) until interrupted."""
-    node = D.Daemon(identity_from_seed(seed), worker=worker)
+def load_or_create_identity(path):
+    """A node's PERSISTENT identity: load its ed25519 key from `path`, or create
+    and save one (owner-only perms). A node keeps its account — and its earned
+    CompuCoin — across restarts. This is host-app config (like an ssh key), not
+    TernOO-internal content: P2PCP is host-agnostic (spec §0), no native key path."""
+    if os.path.exists(path):
+        with open(path) as f:
+            return L.Identity.from_seed(bytes.fromhex(f.read().strip()))
+    idn = L.Identity.generate()
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(bytes(idn.signing_key).hex())
+    return idn
+
+
+def node_identity(seed=None, keyfile=None):
+    """A node's identity: from a persistent keyfile if given, else a seed phrase."""
+    if keyfile:
+        return load_or_create_identity(keyfile)
+    return identity_from_seed(seed or "node")
+
+
+def _serve_worker(worker, label, host, port, identity, ledger_path=None):
+    """Run a worker node (Professor or GHOST) until interrupted. If `ledger_path`
+    is given, the node's full state (chain + earnings) is loaded on start and
+    saved on stop, so it survives restarts."""
+    ledger = (L.Ledger.load(ledger_path)
+              if ledger_path and os.path.exists(ledger_path) else None)
+    node = D.Daemon(identity, worker=worker, ledger=ledger)
     h, p = node.start(host, port)
     print(f"[{label}] listening on {h}:{p}", flush=True)
     print(f"[{label}] account {node.account_id.hex()[:16]}… — selling compute "
@@ -56,22 +85,30 @@ def _serve_worker(worker, label, host, port, seed):
         pass
     finally:
         node.stop()
+        if ledger_path:
+            node.ledger.save(ledger_path)          # keep earnings across restarts
         earned = (node.ledger.balance(node.account_id)
                   if node.account_id in node.ledger.chains else 0)
         print(f"\n[{label}] stopped. earned {earned} CompuCoin.", flush=True)
 
 
-def run_professor(host="127.0.0.1", port=0, seed="professor", mock=False):
+def run_professor(host="127.0.0.1", port=0, seed="professor", mock=False,
+                  keyfile=None):
     """Start a Professor (Bonsai, float-class) node. `mock` runs the EchoBackend
-    — a present-but-fake professor with no model, for demo/CI."""
+    — a present-but-fake professor with no model, for demo/CI. `keyfile` persists
+    the node's identity + earnings across restarts."""
     backend = _load("bonsai_runner").EchoBackend() if mock else None
     label = "professor (mock)" if mock else "professor"
-    _serve_worker(P.BonsaiWorker(backend=backend), label, host, port, seed)
+    _serve_worker(P.BonsaiWorker(backend=backend), label, host, port,
+                  node_identity(seed, keyfile),
+                  ledger_path=(keyfile + ".ledger") if keyfile else None)
 
 
-def run_ghost(host="127.0.0.1", port=0, seed="ghost"):
+def run_ghost(host="127.0.0.1", port=0, seed="ghost", keyfile=None):
     """Start a GHOST (native, replay-class, weight-bearing) classifier node."""
-    _serve_worker(GH.GhostWorker(), "ghost", host, port, seed)
+    _serve_worker(GH.GhostWorker(), "ghost", host, port,
+                  node_identity(seed, keyfile),
+                  ledger_path=(keyfile + ".ledger") if keyfile else None)
 
 
 def ask(host, port, prompt, k=5, seed="client"):
@@ -102,10 +139,12 @@ def main(argv=None):
     pp.add_argument("--seed", default="professor")
     pp.add_argument("--mock", action="store_true",
                     help="run a mock professor (EchoBackend) — no model needed")
+    pp.add_argument("--keyfile", help="persist node identity + earnings here")
     pg = sub.add_parser("ghost", help="run a GHOST classifier worker node")
     pg.add_argument("--host", default="127.0.0.1")
     pg.add_argument("--port", type=int, default=0)
     pg.add_argument("--seed", default="ghost")
+    pg.add_argument("--keyfile", help="persist node identity + earnings here")
     pa = sub.add_parser("ask", help="ask a Professor node a question (paid)")
     pa.add_argument("prompt")
     pa.add_argument("--host", default="127.0.0.1")
@@ -121,9 +160,9 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     if args.cmd == "professor":
-        run_professor(args.host, args.port, args.seed, args.mock)
+        run_professor(args.host, args.port, args.seed, args.mock, args.keyfile)
     elif args.cmd == "ghost":
-        run_ghost(args.host, args.port, args.seed)
+        run_ghost(args.host, args.port, args.seed, args.keyfile)
     elif args.cmd in ("ask", "classify"):
         if args.cmd == "ask":
             client, res = ask(args.host, args.port, args.prompt, args.k, args.seed)

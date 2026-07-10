@@ -462,5 +462,28 @@ class TestGenesisHappyPath(unittest.TestCase):
         self.assertEqual(led.total_supply(), before)      # a transfer conserves
 
 
+class TestPersistence(unittest.TestCase):
+    """A node keeps its full ledger state across a save/reload (restart)."""
+
+    def test_ledger_roundtrips_balance_weight_and_chain(self):
+        import tempfile
+        led = P.Ledger()
+        a, cust = ident(b"saver"), ident(b"cust")
+        led.open_account(a)
+        led.open_account(cust)
+        led.settle_work(a, cust, 10)                 # a earns weight-bearing 10
+        led.burn(a, 4, timestamp=NOW, now=NOW)       # burns 4 for weight
+        path = os.path.join(tempfile.mkdtemp(), "ledger.json")
+        led.save(path)
+        back = P.Ledger.load(path)
+        self.assertEqual(back.balance(a.account_id), led.balance(a.account_id))
+        self.assertEqual(back.burnable(a.account_id), led.burnable(a.account_id))
+        self.assertEqual(back.weight(a.account_id, NOW),
+                         led.weight(a.account_id, NOW))
+        self.assertEqual(back.total_supply(), led.total_supply())
+        self.assertEqual(back.chains[a.account_id].head_id,          # chain intact
+                         led.chains[a.account_id].head_id)
+
+
 if __name__ == "__main__":
     unittest.main()

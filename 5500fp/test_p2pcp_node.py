@@ -33,6 +33,14 @@ class TestNode(unittest.TestCase):
         self.assertNotEqual(N.identity_from_seed("x").account_id,
                             N.identity_from_seed("y").account_id)
 
+    def test_persistent_identity_survives_reload(self):
+        import tempfile
+        path = os.path.join(tempfile.mkdtemp(), "keys", "node.key")
+        created = N.load_or_create_identity(path)        # creates key + parent dir
+        reloaded = N.load_or_create_identity(path)        # same key back
+        self.assertEqual(created.account_id, reloaded.account_id)
+        self.assertEqual(oct(os.stat(path).st_mode)[-3:], "600")   # owner-only
+
     def test_ask_returns_the_professors_answer(self):
         prof = D.Daemon(N.identity_from_seed("prof-test"),
                         worker=P.BonsaiWorker(backend=B.EchoBackend()))
