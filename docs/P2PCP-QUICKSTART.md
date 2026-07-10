@@ -20,11 +20,11 @@ vote** — printing discovery and every wallet. No model, no config, no second b
 
 ```
 cd 5500fp
-python3 -m unittest test_p2pcp_ledger test_p2pcp_socket test_p2pcp_daemon \
-  test_p2pcp_wire test_p2pcp_consensus test_p2pcp_gossip test_p2pcp_bonsai \
-  test_p2pcp_ghost test_p2pcp_node test_p2pcp_service test_p2pcp_emulator \
-  test_p2pcp_demo test_sponge_mod3_attack test_network_boundary
+python3 run_p2pcp_tests.py          # every P2PCP suite, one command + summary
 ```
+
+Or invoke the fourteen suites directly with `python3 -m unittest test_p2pcp_ledger
+test_p2pcp_socket … test_network_boundary` if you want to pick a subset.
 
 ## The workers, all on the mesh
 
