@@ -46,6 +46,7 @@ def _load(name):
 D = _load("p2pcp_daemon")
 P = _load("p2pcp_bonsai")
 GH = _load("p2pcp_ghost")
+EM = _load("p2pcp_emulator")
 L = D.L
 
 
@@ -133,6 +134,27 @@ def run_ghost(host="127.0.0.1", port=0, seed="ghost", keyfile=None, peers=None):
                   node_identity(seed, keyfile),
                   ledger_path=(keyfile + ".ledger") if keyfile else None,
                   peers=peers)
+
+
+def run_emulator(host="127.0.0.1", port=0, seed="emulator", keyfile=None,
+                 peers=None):
+    """Start a 5500FP emulator (native, replay-class, weight-bearing) worker node —
+    it sells REAL ternary compute: a program in, bit-exact registers out."""
+    _serve_worker(EM.EmulatorWorker(), "emulator", host, port,
+                  node_identity(seed, keyfile),
+                  ledger_path=(keyfile + ".ledger") if keyfile else None,
+                  peers=peers)
+
+
+def compute(host, port, spec, chunks=1, k=3, seed="computer"):
+    """Buy 5500FP native compute: run a program spec over inputs 0..chunks-1 and
+    REPLAY-AUDIT each result with our own emulator (pay only for work we
+    re-derive, §3). `spec` is a dict {program, in, out}. Returns (client, result)."""
+    client = D.Daemon(identity_from_seed(seed))
+    cargo = EM.program_job(spec["program"], spec.get("in", 1), spec.get("out", [3]))
+    res = client.request_job(host, int(port), cargo, n_chunks=int(chunks), k=k,
+                             vclass=L.VCLASS_NATIVE, audit=EM.EmulatorWorker())
+    return client, res
 
 
 def ask(host, port, prompt, k=5, seed="client"):
@@ -248,6 +270,26 @@ def main(argv=None):
                     help="persist node identity + earnings here")
     pg.add_argument("--peers", default=cfg.get("peers"),
                     help="bootstrap peers, host:port,host:port")
+    pe = sub.add_parser("emulator", help="run a 5500FP native-compute worker node")
+    pe.add_argument("--host", default=cfg.get("host", "127.0.0.1"))
+    pe.add_argument("--port", type=int, default=cfg.get("port", 0))
+    pe.add_argument("--seed", default=cfg.get("seed", "emulator"))
+    pe.add_argument("--keyfile", default=cfg.get("keyfile"),
+                    help="persist node identity + earnings here")
+    pe.add_argument("--peers", default=cfg.get("peers"),
+                    help="bootstrap peers, host:port,host:port")
+    pk = sub.add_parser("compute",
+                        help="buy 5500FP native compute (paid, replay-audited)")
+    pk.add_argument("--host", default="127.0.0.1")
+    pk.add_argument("--port", type=int, required=True)
+    pk.add_argument("--program-file", dest="program_file",
+                    help="JSON {program:[words], in:R, out:[R]} — else --demo")
+    pk.add_argument("--demo", action="store_true",
+                    help="run the built-in demo program (R3 = R1 + 100)")
+    pk.add_argument("--chunks", type=int, default=1,
+                    help="map the program over inputs 0..chunks-1")
+    pk.add_argument("--k", type=int, default=3)
+    pk.add_argument("--seed", default="computer")
     pa = sub.add_parser("ask", help="ask a Professor node a question (paid)")
     pa.add_argument("prompt")
     pa.add_argument("--host", default="127.0.0.1")
@@ -280,6 +322,31 @@ def main(argv=None):
     elif args.cmd == "ghost":
         run_ghost(args.host, args.port, args.seed, args.keyfile,
                   parse_peers(args.peers))
+    elif args.cmd == "emulator":
+        run_emulator(args.host, args.port, args.seed, args.keyfile,
+                     parse_peers(args.peers))
+    elif args.cmd == "compute":
+        if args.program_file:
+            with open(args.program_file) as f:
+                spec = json.load(f)
+        elif args.demo:
+            prog, in_reg, out = EM.demo_program()
+            spec = {"program": prog, "in": in_reg, "out": out}
+        else:
+            ap.error("compute: give --program-file or --demo")
+        client, res = compute(args.host, args.port, spec, args.chunks, args.k,
+                              args.seed)
+        try:
+            if res["settled_chunks"] < 1:
+                print("[compute] nothing settled (node offline, refused, or audit "
+                      "failed).", file=sys.stderr)
+                sys.exit(1)
+            for i, out in enumerate(res["outputs"]):
+                print(f"input {i}: {out.decode('utf-8', 'replace')}")
+            print(f"\n[compute] paid {res['paid']} CompuCoin to "
+                  f"{res['worker'].hex()[:16]}…", file=sys.stderr)
+        finally:
+            client.stop()
     elif args.cmd == "wallet":
         w = wallet(args.keyfile)
         print(f"account:        {w['account']}")

@@ -77,3 +77,11 @@ def program_job(program, in_reg=1, out_regs=(3,)):
         {"program": [int(w) for w in program],
          "in": int(in_reg), "out": [int(r) for r in out_regs]},
         separators=(",", ":")).encode("utf-8")
+
+
+def demo_program():
+    """A tiny runnable program for the CLI/demos: R3 = R1 + 100; HLT — where R1 is
+    the per-chunk input the mesh injects. Returns (program_words, in_reg, out_regs)."""
+    cpu = E.CPU5500FP()
+    asm = E.Asm(cpu)
+    return [asm.LDI(2, 100), asm.ADD(3, 1, 2), asm.HLT()], 1, [3]

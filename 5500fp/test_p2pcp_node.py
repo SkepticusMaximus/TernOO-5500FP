@@ -98,6 +98,23 @@ class TestNode(unittest.TestCase):
         finally:
             prof.stop()
 
+    def test_compute_buys_native_emulator_work(self):
+        node = D.Daemon(N.identity_from_seed("emu-serve"),
+                        worker=N.EM.EmulatorWorker())
+        addr = node.start()
+        client = None
+        try:
+            prog, in_reg, out = N.EM.demo_program()
+            spec = {"program": prog, "in": in_reg, "out": out}
+            client, res = N.compute(addr[0], addr[1], spec, chunks=3, k=2, seed="ct")
+            self.assertEqual(res["settled_chunks"], 3)
+            self.assertEqual(res["outputs"], [b"[100]", b"[101]", b"[102]"])
+            self.assertEqual(node.ledger.burnable(node.account_id), 6)  # native=votes
+        finally:
+            if client is not None:
+                client.stop()
+            node.stop()
+
     def test_ask_mesh_discovers_a_professor_among_peers(self):
         prof = D.Daemon(N.identity_from_seed("mesh-prof"),
                         worker=P.BonsaiWorker(backend=B.EchoBackend()))
