@@ -71,8 +71,13 @@ def _serve_worker(worker, label, host, port, identity, ledger_path=None,
                   peers=None):
     """Run a worker node (Professor or GHOST) until interrupted. `ledger_path`
     persists state across restarts; `peers` bootstraps into a mesh."""
-    ledger = (L.Ledger.load(ledger_path)
-              if ledger_path and os.path.exists(ledger_path) else None)
+    ledger = None
+    if ledger_path and os.path.exists(ledger_path):
+        ledger = L.Ledger.load(ledger_path)
+        if not ledger.verify():
+            print(f"[{label}] REFUSING TO START: ledger integrity check failed "
+                  f"({ledger_path})", flush=True)
+            return
     node = D.Daemon(identity, worker=worker, ledger=ledger)
     h, p = node.start(host, port)
     print(f"[{label}] listening on {h}:{p}", flush=True)

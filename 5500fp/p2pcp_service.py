@@ -60,6 +60,8 @@ class MeshService:
         ledger = None
         if self.keyfile and os.path.exists(self.keyfile + ".ledger"):
             ledger = L.Ledger.load(self.keyfile + ".ledger")
+            if not ledger.verify():                    # never run on tampered state
+                raise ValueError("persisted ledger failed integrity check")
         self._node = D.Daemon(identity, worker=self._make_worker(), ledger=ledger)
         self._addr = self._node.start(host, port)
         return self._addr

@@ -67,5 +67,33 @@ class TestMeshService(unittest.TestCase):
             buyer.stop()
 
 
+class TestLedgerIntegrityOnStart(unittest.TestCase):
+    def test_refuses_a_tampered_persisted_ledger(self):
+        import json
+        import tempfile
+        key = os.path.join(tempfile.mkdtemp(), "n.key")
+        seller = S.MeshService(worker_kind="professor", mock=True, keyfile=key,
+                               seed="tamper-s")
+        addr = seller.start()
+        buyer = S.MeshService(worker_kind=None, seed="tamper-b")
+        buyer.start()
+        try:
+            buyer.ask(addr[0], addr[1], "q")             # seller earns -> chain grows
+        finally:
+            seller.stop()                                # persists key + .ledger
+            buyer.stop()
+        lp = key + ".ledger"
+        with open(lp) as f:
+            d = json.load(f)
+        for chain in d["chains"].values():               # break every signature
+            for rec in chain["records"]:
+                rec["sig"] = "00" * 64
+        with open(lp, "w") as f:
+            json.dump(d, f)
+        svc = S.MeshService(worker_kind="professor", mock=True, keyfile=key)
+        with self.assertRaises(ValueError):              # refuses tampered state
+            svc.start()
+
+
 if __name__ == "__main__":
     unittest.main()
