@@ -31,6 +31,8 @@ RECEIPT = "RECEIPT"
 RECEIPT_ACK = "RECEIPT_ACK"
 DONE = "DONE"
 VOTE = "VOTE"                  # a signed conflict-vote (§9 / step 6)
+PEERS_REQ = "PEERS_REQ"        # ask a peer for its known listen-addresses (v0.2)
+PEERS = "PEERS"                # response: a list of [host, port] listen-addresses
 
 
 def encode(frame: dict) -> bytes:

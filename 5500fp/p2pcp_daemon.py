@@ -84,6 +84,7 @@ class Daemon:
         self._peers = {}                       # verified account_id -> Peer
         self._events = queue.Queue()           # verified account_ids, for observers
         self._votes = queue.Queue()            # verified conflict-votes (§9)
+        self._peer_book = set()                # known peer LISTEN addresses (v0.2)
         self._lock = threading.Lock()
         self._running = False
         self._accept_thread = None
@@ -133,7 +134,10 @@ class Daemon:
 
     def _record(self, account_id: bytes, peer):
         with self._lock:
+            old = self._peers.get(account_id)
             self._peers[account_id] = peer
+        if old is not None and old is not peer:
+            old.close()                        # a reconnect replaces & closes the old
         self._events.put(account_id)
 
     # ── HELLO handshake (§4 wire, identity only) ─────────────────────────────
@@ -236,6 +240,8 @@ class Daemon:
             self._work_job(peer, peer_id, frame)
         elif t == W.VOTE:
             self._collect_vote(frame)
+        elif t == W.PEERS_REQ:
+            self._send_peer_book(peer)
 
     def _work_job(self, peer, requester_id, job):
         self._ensure_open()
@@ -383,3 +389,61 @@ class Daemon:
     def next_vote(self, timeout=DEFAULT_TIMEOUT):
         """Block until the next verified vote arrives; return it."""
         return self._votes.get(timeout=timeout)
+
+    # ── the mesh: peer book, discovery, broadcast (v0.2 gossip substrate) ─────
+    # v0.1 was strictly point-to-point; v0.2 makes a node reach a SET of peers.
+    # The book holds only reachable LISTEN addresses (never an inbound peer's
+    # ephemeral port). A diverse book is the first line against eclipse (§9.3);
+    # multi-hop relay + dedup flooding, and quorum assembly on a fork, are the
+    # next slices.
+
+    def add_peer(self, host, port):
+        """Seed or learn a peer's listen address. Never books ourselves."""
+        addr = (host, int(port))
+        if addr != self.organ.address:
+            self._peer_book.add(addr)
+
+    def known_peers(self):
+        return set(self._peer_book)
+
+    def _send_peer_book(self, peer):
+        """Answer a PEERS_REQ with our book plus our own listen address, so the
+        asker discovers the mesh from a seed (v0.2)."""
+        addrs = [[h, p] for (h, p) in self._peer_book]
+        if self.organ.address is not None:
+            addrs.append([self.organ.address[0], self.organ.address[1]])
+        try:
+            peer.send(W.encode({"t": W.PEERS, "peers": addrs}))
+        except SOCK.OrganError:
+            pass
+
+    def fetch_peers(self, host, port):
+        """Discovery: ask a peer for its book and merge it into ours. Returns the
+        newly-learned addresses. The mesh self-assembles from a seed (v0.2)."""
+        peer = self.organ.connect(host, port, timeout=self.timeout)
+        learned = set()
+        try:
+            self._handshake_outbound(peer)
+            peer.send(W.encode({"t": W.PEERS_REQ}))
+            resp = W.decode(peer.recv(timeout=self.timeout))
+            if resp.get("t") == W.PEERS:
+                for hp in resp.get("peers", []):
+                    addr = (hp[0], int(hp[1]))
+                    if addr != self.organ.address and addr not in self._peer_book:
+                        self._peer_book.add(addr)
+                        learned.add(addr)
+        finally:
+            peer.close()
+        return learned
+
+    def broadcast_vote(self, vote):
+        """Fan a signed vote out to every peer in the book (v0.2). One-hop; a dead
+        peer is skipped, not fatal. Returns the count reached."""
+        sent = 0
+        for host, port in list(self._peer_book):
+            try:
+                self.send_vote(host, port, vote)
+                sent += 1
+            except SOCK.OrganError:
+                continue
+        return sent
