@@ -125,6 +125,29 @@ class MeshService:
                                          audit=GH.GhostWorker())
         return self._answer(res)
 
+    def ask_mesh(self, prompt, k=5, candidates=None):
+        """Buy inference from ANY Professor on the mesh: discover a compute:float
+        provider and fall through if one is down. `candidates=None` scans the
+        node's known peers. Returns (host:port, answer) or (None, None)."""
+        addr, res = self._client().buy_from_mesh(
+            "compute:float", prompt.encode("utf-8"), 1, k, L.VCLASS_FLOAT,
+            audit=None, candidates=candidates)
+        return self._located(addr, res)
+
+    def classify_mesh(self, text, k=4, candidates=None):
+        """Buy classification from ANY GHOST on the mesh (compute:native),
+        replay-audited. Returns (host:port, class) or (None, None)."""
+        addr, res = self._client().buy_from_mesh(
+            "compute:native", text.encode("utf-8"), 1, k, L.VCLASS_NATIVE,
+            audit=GH.GhostWorker(), candidates=candidates)
+        return self._located(addr, res)
+
+    @classmethod
+    def _located(cls, addr, res):
+        if not addr:
+            return None, None
+        return f"{addr[0]}:{addr[1]}", cls._answer(res)
+
     @staticmethod
     def _answer(res):
         if res["settled_chunks"] < 1:

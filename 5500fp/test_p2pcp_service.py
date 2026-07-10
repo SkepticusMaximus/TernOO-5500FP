@@ -66,6 +66,23 @@ class TestMeshService(unittest.TestCase):
             seller.stop()
             buyer.stop()
 
+    def test_ask_mesh_buys_from_any_professor(self):
+        seller = S.MeshService(worker_kind="professor", mock=True, seed="m-seller")
+        addr = seller.start()
+        buyer = S.MeshService(worker_kind=None, seed="m-buyer")
+        buyer.start()
+        try:
+            where, answer = buyer.ask_mesh("what is ternary?", k=5,
+                                           candidates=[addr])
+            self.assertEqual(where, f"{addr[0]}:{addr[1]}")     # named the provider
+            self.assertIn("echo professor", answer)
+            self.assertEqual(seller.wallet()["balance"], 5)
+            # No provider on the mesh → (None, None), not a crash.
+            self.assertEqual(buyer.ask_mesh("x", candidates=[]), (None, None))
+        finally:
+            seller.stop()
+            buyer.stop()
+
 
 class TestLedgerIntegrityOnStart(unittest.TestCase):
     def test_refuses_a_tampered_persisted_ledger(self):
