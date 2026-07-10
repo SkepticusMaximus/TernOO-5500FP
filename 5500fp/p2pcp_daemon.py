@@ -134,6 +134,8 @@ class Daemon:
         self._forks = {}                       # (account,height) -> (id_a,id_b)
         self._record_events = queue.Queue()    # gossiped records, for observers
         self._peer_caps = {}                   # account -> {version, caps} (§15)
+        self._jobs_served = 0                  # observability counters
+        self._chunks_served = 0
         self._lock = threading.Lock()
         self._running = False
         self._accept_thread = None
@@ -299,6 +301,8 @@ class Daemon:
             self._collect_record(frame)
         elif t == W.PEERS_REQ:
             self._send_peer_book(peer)
+        elif t == W.STATUS_REQ:
+            self._send_status(peer)
 
     def _work_job(self, peer, requester_id, job):
         self._ensure_open()
@@ -341,8 +345,10 @@ class Daemon:
                 self._post_settle(receipt)         # our +k, weight-bearing if native
             except L.P2PCPError:
                 return
+            self._chunks_served += 1
             peer.send(W.encode({"t": W.RECEIPT_ACK,
                                 "receipt": W.receipt_to_dict(receipt)}))
+        self._jobs_served += 1
         peer.send(W.encode({"t": W.DONE, "reason": "complete"}))
 
     def _receipt_ok(self, r, requester_id, job_mmid, output_mmid, k, vclass):
@@ -509,6 +515,41 @@ class Daemon:
         """The protocol version + capabilities a peer advertised in HELLO (§15
         forward-compat / CGP coexistence). None if we have not handshaked it."""
         return self._peer_caps.get(account)
+
+    def stats(self):
+        """This node's own status + metrics (observability)."""
+        acct = self.account_id
+        here = acct in self.ledger.chains
+        return {"account": acct.hex(),
+                "version": PROTOCOL_VERSION, "caps": list(self.caps),
+                "worker": type(self.worker).__name__ if self.worker else None,
+                "peers": len(self._peer_book),
+                "jobs_served": self._jobs_served,
+                "chunks_served": self._chunks_served,
+                "balance": self.ledger.balance(acct) if here else 0,
+                "weight_bearing": self.ledger.burnable(acct) if here else 0}
+
+    def _send_status(self, peer):
+        """Answer a STATUS_REQ with our PUBLIC operational status."""
+        s = self.stats()
+        public = {"account": s["account"], "version": s["version"],
+                  "caps": s["caps"], "worker": s["worker"],
+                  "peers": s["peers"], "jobs_served": s["jobs_served"]}
+        try:
+            peer.send(W.encode({"t": W.STATUS, "status": public}))
+        except SOCK.OrganError:
+            pass
+
+    def fetch_status(self, host, port):
+        """Ask a node for its public status. Returns the dict, or None."""
+        peer = self.organ.connect(host, port, timeout=self.timeout)
+        try:
+            self._handshake_outbound(peer)
+            peer.send(W.encode({"t": W.STATUS_REQ}))
+            resp = W.decode(peer.recv(timeout=self.timeout))
+            return resp.get("status") if resp.get("t") == W.STATUS else None
+        finally:
+            peer.close()
 
     def _send_peer_book(self, peer):
         """Answer a PEERS_REQ with our book plus our own listen address, so the

@@ -161,5 +161,42 @@ class TestForwardCompat(unittest.TestCase):
             future.stop()
 
 
+class TestObservability(unittest.TestCase):
+    """Node metrics + the STATUS wire query."""
+
+    def test_stats_reports_metrics(self):
+        d = D.Daemon(ident(b"stat"))
+        s = d.stats()
+        self.assertEqual(s["account"], d.account_id.hex())
+        self.assertEqual(s["jobs_served"], 0)
+        self.assertIn("compucoin", s["caps"])
+
+    def test_fetch_status_over_the_wire(self):
+        node = D.Daemon(ident(b"stat-node"))
+        addr = node.start()
+        client = D.Daemon(ident(b"stat-client"))
+        try:
+            st = client.fetch_status(*addr)
+            self.assertEqual(st["account"], node.account_id.hex())
+            self.assertEqual(st["jobs_served"], 0)
+            self.assertIn("compucoin", st["caps"])
+        finally:
+            node.stop()
+
+    def test_jobs_and_chunks_served_counters(self):
+        WK = _load("p2pcp_worker")
+        wnode = D.Daemon(ident(b"served"), worker=WK.DeterministicWorker())
+        addr = wnode.start()
+        client = D.Daemon(ident(b"served-client"))
+        try:
+            client.request_job(addr[0], addr[1], b"job", n_chunks=2, k=1,
+                               vclass=L.VCLASS_NATIVE, audit=WK.DeterministicWorker())
+            self.assertEqual(wnode.stats()["jobs_served"], 1)
+            self.assertEqual(wnode.stats()["chunks_served"], 2)
+        finally:
+            wnode.stop()
+            client.stop()
+
+
 if __name__ == "__main__":
     unittest.main()

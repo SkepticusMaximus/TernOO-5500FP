@@ -34,6 +34,8 @@ VOTE = "VOTE"                  # a signed conflict-vote (§9 / step 6)
 PEERS_REQ = "PEERS_REQ"        # ask a peer for its known listen-addresses (v0.2)
 PEERS = "PEERS"                # response: a list of [host, port] listen-addresses
 RECORD = "RECORD"              # a gossiped ledger record (v0.2 — witness a branch)
+STATUS_REQ = "STATUS_REQ"      # ask a node for its public status (observability)
+STATUS = "STATUS"              # response: {account, caps, peers, jobs_served, ...}
 
 
 def encode(frame: dict) -> bytes:

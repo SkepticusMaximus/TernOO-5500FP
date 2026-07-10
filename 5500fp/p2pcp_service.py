@@ -87,6 +87,14 @@ class MeshService:
     def known_peers(self):
         return sorted(self._node.known_peers()) if self._node else []
 
+    def stats(self):
+        """This node's own metrics (jobs served, peers, wallet)."""
+        return self._node.stats() if self._node else None
+
+    def peer_status(self, host, port):
+        """A remote node's public status."""
+        return self._client().fetch_status(host, int(port))
+
     # ── wallet ───────────────────────────────────────────────────────────────
     def wallet(self):
         if self._node is None:

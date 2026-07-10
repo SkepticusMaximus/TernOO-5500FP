@@ -151,6 +151,11 @@ def wallet(keyfile):
     return {"account": acct.hex(), "balance": 0, "weight_bearing": 0}
 
 
+def node_status(host, port, seed="observer"):
+    """Fetch a node's public status (worker, caps, peers, jobs served)."""
+    return D.Daemon(identity_from_seed(seed)).fetch_status(host, int(port))
+
+
 def parse_peers(peers_csv):
     """'host:port,host:port' -> [(host, port), ...]."""
     out = []
@@ -208,6 +213,9 @@ def main(argv=None):
     pc.add_argument("--seed", default="caller")
     pw = sub.add_parser("wallet", help="show a node's account + CompuCoin")
     pw.add_argument("--keyfile", required=True)
+    ps = sub.add_parser("status", help="query a node's public status")
+    ps.add_argument("--host", default="127.0.0.1")
+    ps.add_argument("--port", type=int, required=True)
     args = ap.parse_args(argv)
 
     if args.cmd == "professor":
@@ -221,6 +229,13 @@ def main(argv=None):
         print(f"account:        {w['account']}")
         print(f"balance:        {w['balance']} CompuCoin")
         print(f"weight-bearing: {w['weight_bearing']} (votes-worth, replay-class)")
+    elif args.cmd == "status":
+        st = node_status(args.host, args.port)
+        if not st:
+            print("[status] no response (node offline?)", file=sys.stderr)
+            sys.exit(1)
+        for k in ("account", "worker", "version", "caps", "peers", "jobs_served"):
+            print(f"{k}: {st.get(k)}")
     elif args.cmd in ("ask", "classify"):
         if args.cmd == "ask":
             client, res = ask(args.host, args.port, args.prompt, args.k, args.seed)
