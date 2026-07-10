@@ -12,9 +12,9 @@ python3 p2pcp_demo.py
 ```
 
 Spins up a Professor + a GHOST + a 5500FP-emulator worker and a client on
-loopback, joins them into one mesh, and runs one paid transaction of **each**
-verification class — then prints discovery and every wallet. No model, no config,
-no second box.
+loopback, joins them into one mesh, runs one paid transaction of **each**
+verification class, then a native worker **burns earned credit into a governance
+vote** — printing discovery and every wallet. No model, no config, no second box.
 
 ## Run the tests
 

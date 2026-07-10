@@ -39,9 +39,12 @@ class TestDemo(unittest.TestCase):
         self.assertEqual(r["compute"]["outputs"], ["[100]", "[101]", "[102]"])
         # economics: native minted votes, float minted none
         self.assertEqual(r["wallets"]["Professor"]["weight_bearing"], 0)
-        self.assertEqual(r["wallets"]["GHOST"]["weight_bearing"], 3)
         self.assertEqual(r["wallets"]["Emulator"]["weight_bearing"], 6)
         self.assertEqual(r["wallets"]["Client"]["balance"], -14)   # 5 + 3 + 6
+        # ④ governance: GHOST burned 2 of its earned 3 → 1 burnable left, weight up
+        self.assertEqual(r["wallets"]["GHOST"]["weight_bearing"], 1)
+        self.assertEqual(r["governance"]["weight_before"], 0.0)
+        self.assertGreater(r["governance"]["weight_after"], 0.0)
 
 
 if __name__ == "__main__":

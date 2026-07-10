@@ -112,6 +112,16 @@ def run_demo(verbose=True):
         out["compute"] = {"settled": eres["settled_chunks"], "outputs": vals}
 
         rule()
+        say("④ governance: a native worker burns earned credit into a vote")
+        weight_before = ghost.my_weight()
+        ghost.burn_for_weight(2)                        # GHOST burns 2 of its earned 3
+        weight_after = ghost.my_weight()
+        say(f"   GHOST earned native credit, burns 2  ->  voting weight "
+            f"{weight_after:.3f}  (float rent could never — §10)")
+        out["governance"] = {"weight_before": weight_before,
+                             "weight_after": weight_after}
+
+        rule()
         say("Wallets after the session:")
         wallets = {}
         for name, node in (("Professor", prof), ("GHOST", ghost),
@@ -128,9 +138,12 @@ def run_demo(verbose=True):
         assert gres["settled_chunks"] == 1, "ghost did not settle"
         assert eres["settled_chunks"] == 3, "emulator did not settle"
         assert wallets["Professor"]["weight_bearing"] == 0, "float minted a vote"
-        assert wallets["GHOST"]["weight_bearing"] == 3, "ghost native not a vote"
         assert wallets["Emulator"]["weight_bearing"] == 6, "emulator native not a vote"
-        say("✓ all three classes settled; native minted votes, float did not.")
+        # GHOST burned 2 of its 3 earned credit → 1 burnable left, positive weight.
+        assert wallets["GHOST"]["weight_bearing"] == 1, "ghost burn not reflected"
+        assert weight_before == 0.0 and weight_after > 0.0, "burn did not enfranchise"
+        say("✓ three classes settled; native minted votes, float did not; and "
+            "earned credit burned into a governance vote.")
         return out
     finally:
         for node in (prof, ghost, emu, client):
