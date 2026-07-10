@@ -310,6 +310,48 @@ class TestEclipseMitigation(unittest.TestCase):
             a.stop()
 
 
+class TestPeerHealth(unittest.TestCase):
+    """A peer that stops answering is pruned; a blip is forgiven; an anchor is
+    never dropped (§9.3 book health). Uses a fake probe — no sockets."""
+
+    def test_dead_peer_pruned_after_consecutive_misses(self):
+        d = D.Daemon(ident(b"pruner"))
+        d.max_peer_fails = 3
+        d.add_peer("10.0.0.1", 9000)                     # will be dead
+        d.add_peer("10.0.0.2", 9000)                     # will be alive
+        dead = ("10.0.0.1", 9000)
+        probe = lambda h, p: (h, p) != dead
+        self.assertEqual(d.prune_dead_peers(probe=probe), set())   # miss 1
+        self.assertEqual(d.prune_dead_peers(probe=probe), set())   # miss 2
+        self.assertIn(dead, d.known_peers())             # not yet — under threshold
+        self.assertEqual(d.prune_dead_peers(probe=probe), {dead})  # miss 3 → pruned
+        self.assertNotIn(dead, d.known_peers())
+        self.assertIn(("10.0.0.2", 9000), d.known_peers())         # alive one kept
+
+    def test_a_blip_resets_the_miss_streak(self):
+        d = D.Daemon(ident(b"blip"))
+        d.max_peer_fails = 3
+        d.add_peer("10.0.0.9", 9000)
+        addr, state = ("10.0.0.9", 9000), {"alive": False}
+        probe = lambda h, p: state["alive"]
+        d.prune_dead_peers(probe=probe)                  # miss 1
+        d.prune_dead_peers(probe=probe)                  # miss 2
+        state["alive"] = True
+        d.prune_dead_peers(probe=probe)                  # answered → streak reset
+        state["alive"] = False
+        d.prune_dead_peers(probe=probe)                  # miss 1 (fresh)
+        d.prune_dead_peers(probe=probe)                  # miss 2
+        self.assertIn(addr, d.known_peers())             # 2 < 3 since reset → alive
+
+    def test_anchor_is_never_pruned(self):
+        d = D.Daemon(ident(b"anchored"))
+        d.max_peer_fails = 1                              # prune on first miss
+        d.add_anchor("10.0.0.5", 9000)
+        for _ in range(5):
+            d.prune_dead_peers(probe=lambda h, p: False)  # everything dead
+        self.assertIn(("10.0.0.5", 9000), d.known_peers())  # anchor survives
+
+
 class TestBoundedSeen(unittest.TestCase):
     """Gossip dedup memory is bounded (DM's note) — oldest keys evict (v0.2)."""
 

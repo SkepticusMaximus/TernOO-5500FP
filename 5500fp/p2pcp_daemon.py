@@ -76,6 +76,12 @@ MAX_SEEN = 100_000               # gossip dedup cap (bounded memory under flood)
 # PER IDENTITY — Sybil resistance (cheap fresh keys) still needs reputation/stake.
 MAX_UNPAID_PER_PEER = 3
 
+# Peer-book health (§9.3). A peer that fails to answer repeatedly is pruned so the
+# book stays live — but only after MAX_PEER_FAILS *consecutive* misses (a single
+# blip resets on the next success), and NEVER an anchor (the honest bootstrap an
+# attacker must not be able to knock out by faking unreachability).
+MAX_PEER_FAILS = 3
+
 
 class _BoundedSeen:
     """A bounded FIFO set for gossip dedup — caps memory under sustained flood
@@ -161,6 +167,8 @@ class Daemon:
         self._chunks_served = 0
         self.max_unpaid_per_peer = MAX_UNPAID_PER_PEER
         self._unpaid = {}                      # requester_id -> delivered-unsettled (§9.1)
+        self.max_peer_fails = MAX_PEER_FAILS
+        self._peer_fails = {}                  # addr -> consecutive misses (§9.3)
         self._lock = threading.Lock()
         self._running = False
         self._accept_thread = None
@@ -522,7 +530,9 @@ class Daemon:
             try:
                 self._send_frame(host, port, frame)
                 sent += 1
+                self._note_peer_ok((host, port))       # reachable → reset its streak
             except SOCK.OrganError:
+                self._note_peer_fail((host, port))     # missed → prune if persistent
                 continue
         return sent
 
@@ -577,6 +587,45 @@ class Daemon:
 
     def known_peers(self):
         return set(self._peer_book)
+
+    def _note_peer_ok(self, addr):
+        """A peer answered — clear its miss streak."""
+        with self._lock:
+            self._peer_fails.pop(addr, None)
+
+    def _note_peer_fail(self, addr):
+        """A peer missed. Prune it after max_peer_fails CONSECUTIVE misses, unless
+        it is an anchor. Returns True if this call pruned it."""
+        with self._lock:
+            if addr in self._anchors or addr not in self._peer_book:
+                return False
+            n = self._peer_fails.get(addr, 0) + 1
+            if n >= self.max_peer_fails:
+                self._peer_book.discard(addr)
+                self._peer_fails.pop(addr, None)
+                return True
+            self._peer_fails[addr] = n
+            return False
+
+    def prune_dead_peers(self, probe=None):
+        """Probe every non-anchor peer and prune the ones that miss past the
+        threshold — keeps the book live (§9.3). `probe(host, port)` returns truthy
+        if the peer answered; the default is a STATUS round-trip. Returns the set
+        of addresses pruned by this sweep."""
+        probe = probe or (lambda h, p: self.fetch_status(h, p) is not None)
+        pruned = set()
+        for host, port in sorted(self._peer_book - self._anchors):
+            addr = (host, port)
+            ok = False
+            try:
+                ok = bool(probe(host, port))
+            except Exception:                          # unreachable → a miss
+                ok = False
+            if ok:
+                self._note_peer_ok(addr)
+            elif self._note_peer_fail(addr):
+                pruned.add(addr)
+        return pruned
 
     def peer_capabilities(self, account):
         """The protocol version + capabilities a peer advertised in HELLO (§15
