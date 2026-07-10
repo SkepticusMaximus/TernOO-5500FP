@@ -56,6 +56,27 @@ class TestNode(unittest.TestCase):
         self.assertEqual(w["balance"], 7)
         self.assertEqual(w["weight_bearing"], 7)
 
+    def test_parse_peers(self):
+        self.assertEqual(N.parse_peers("1.2.3.4:9000, :9001"),
+                         [("1.2.3.4", 9000), ("127.0.0.1", 9001)])
+        self.assertEqual(N.parse_peers(""), [])
+
+    def test_join_mesh_bootstraps_and_discovers(self):
+        c = D.Daemon(N.identity_from_seed("boot-c"))
+        b = D.Daemon(N.identity_from_seed("boot-b"))
+        a = D.Daemon(N.identity_from_seed("boot-a"))
+        c_addr, b_addr = c.start(), b.start()
+        b.add_peer(*c_addr)                              # B knows C
+        try:
+            known = N.join_mesh(a, [b_addr])            # A boots off B only
+            self.assertIn(b_addr, a.known_peers())       # knows the seed
+            self.assertIn(c_addr, a.known_peers())       # discovered C via B
+            self.assertGreaterEqual(known, 2)
+        finally:
+            a.stop()
+            b.stop()
+            c.stop()
+
     def test_ask_returns_the_professors_answer(self):
         prof = D.Daemon(N.identity_from_seed("prof-test"),
                         worker=P.BonsaiWorker(backend=B.EchoBackend()))

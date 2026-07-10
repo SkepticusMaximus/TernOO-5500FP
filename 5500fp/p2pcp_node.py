@@ -67,10 +67,10 @@ def node_identity(seed=None, keyfile=None):
     return identity_from_seed(seed or "node")
 
 
-def _serve_worker(worker, label, host, port, identity, ledger_path=None):
-    """Run a worker node (Professor or GHOST) until interrupted. If `ledger_path`
-    is given, the node's full state (chain + earnings) is loaded on start and
-    saved on stop, so it survives restarts."""
+def _serve_worker(worker, label, host, port, identity, ledger_path=None,
+                  peers=None):
+    """Run a worker node (Professor or GHOST) until interrupted. `ledger_path`
+    persists state across restarts; `peers` bootstraps into a mesh."""
     ledger = (L.Ledger.load(ledger_path)
               if ledger_path and os.path.exists(ledger_path) else None)
     node = D.Daemon(identity, worker=worker, ledger=ledger)
@@ -78,6 +78,10 @@ def _serve_worker(worker, label, host, port, identity, ledger_path=None):
     print(f"[{label}] listening on {h}:{p}", flush=True)
     print(f"[{label}] account {node.account_id.hex()[:16]}… — selling compute "
           f"for CompuCoin", flush=True)
+    if peers:
+        known = join_mesh(node, peers)
+        print(f"[{label}] joined mesh via {len(peers)} seed(s); know {known} "
+              f"peers", flush=True)
     print(f"[{label}] Ctrl-C to stop.", flush=True)
     try:
         threading.Event().wait()                   # serve until interrupted
@@ -93,22 +97,24 @@ def _serve_worker(worker, label, host, port, identity, ledger_path=None):
 
 
 def run_professor(host="127.0.0.1", port=0, seed="professor", mock=False,
-                  keyfile=None):
+                  keyfile=None, peers=None):
     """Start a Professor (Bonsai, float-class) node. `mock` runs the EchoBackend
     — a present-but-fake professor with no model, for demo/CI. `keyfile` persists
-    the node's identity + earnings across restarts."""
+    the node's identity + earnings across restarts; `peers` bootstraps a mesh."""
     backend = _load("bonsai_runner").EchoBackend() if mock else None
     label = "professor (mock)" if mock else "professor"
     _serve_worker(P.BonsaiWorker(backend=backend), label, host, port,
                   node_identity(seed, keyfile),
-                  ledger_path=(keyfile + ".ledger") if keyfile else None)
+                  ledger_path=(keyfile + ".ledger") if keyfile else None,
+                  peers=peers)
 
 
-def run_ghost(host="127.0.0.1", port=0, seed="ghost", keyfile=None):
+def run_ghost(host="127.0.0.1", port=0, seed="ghost", keyfile=None, peers=None):
     """Start a GHOST (native, replay-class, weight-bearing) classifier node."""
     _serve_worker(GH.GhostWorker(), "ghost", host, port,
                   node_identity(seed, keyfile),
-                  ledger_path=(keyfile + ".ledger") if keyfile else None)
+                  ledger_path=(keyfile + ".ledger") if keyfile else None,
+                  peers=peers)
 
 
 def ask(host, port, prompt, k=5, seed="client"):
@@ -145,6 +151,31 @@ def wallet(keyfile):
     return {"account": acct.hex(), "balance": 0, "weight_bearing": 0}
 
 
+def parse_peers(peers_csv):
+    """'host:port,host:port' -> [(host, port), ...]."""
+    out = []
+    for item in (peers_csv or "").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        host, _, port = item.rpartition(":")
+        out.append((host or "127.0.0.1", int(port)))
+    return out
+
+
+def join_mesh(node, peers):
+    """Join a mesh: seed the peer book from bootstrap peers, then discover more
+    (best-effort — a dead seed is skipped). Returns the peer count now known."""
+    for host, port in peers:
+        node.add_peer(host, port)
+    for host, port in peers:
+        try:
+            node.fetch_peers(host, port)
+        except Exception:                              # a dead seed is not fatal
+            pass
+    return len(node.known_peers())
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="p2pcp_node",
                                  description="Launch a P2PCP node.")
@@ -156,11 +187,13 @@ def main(argv=None):
     pp.add_argument("--mock", action="store_true",
                     help="run a mock professor (EchoBackend) — no model needed")
     pp.add_argument("--keyfile", help="persist node identity + earnings here")
+    pp.add_argument("--peers", help="bootstrap peers, host:port,host:port")
     pg = sub.add_parser("ghost", help="run a GHOST classifier worker node")
     pg.add_argument("--host", default="127.0.0.1")
     pg.add_argument("--port", type=int, default=0)
     pg.add_argument("--seed", default="ghost")
     pg.add_argument("--keyfile", help="persist node identity + earnings here")
+    pg.add_argument("--peers", help="bootstrap peers, host:port,host:port")
     pa = sub.add_parser("ask", help="ask a Professor node a question (paid)")
     pa.add_argument("prompt")
     pa.add_argument("--host", default="127.0.0.1")
@@ -178,9 +211,11 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     if args.cmd == "professor":
-        run_professor(args.host, args.port, args.seed, args.mock, args.keyfile)
+        run_professor(args.host, args.port, args.seed, args.mock, args.keyfile,
+                      parse_peers(args.peers))
     elif args.cmd == "ghost":
-        run_ghost(args.host, args.port, args.seed, args.keyfile)
+        run_ghost(args.host, args.port, args.seed, args.keyfile,
+                  parse_peers(args.peers))
     elif args.cmd == "wallet":
         w = wallet(args.keyfile)
         print(f"account:        {w['account']}")
