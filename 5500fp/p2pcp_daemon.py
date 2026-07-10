@@ -66,6 +66,15 @@ MAX_PEERS = 64
 MAX_LEARN_PER_FETCH = 8
 MAX_SEEN = 100_000               # gossip dedup cap (bounded memory under flood)
 
+# Admission control (§9.1). A worker reveals a chunk's output BEFORE the receipt
+# arrives (fair-exchange: the requester needs the output to sign it), so a deadbeat
+# requester can take one chunk per job and never pay. We bound that free ride: a
+# peer may hold at most MAX_UNPAID_PER_PEER delivered-but-unsettled chunks before we
+# stop serving it. An honest requester (who pays) oscillates at 0-1 and is never
+# blocked; a deadbeat is cut off after a couple of freebies. NB: this bounds abuse
+# PER IDENTITY — Sybil resistance (cheap fresh keys) still needs reputation/stake.
+MAX_UNPAID_PER_PEER = 3
+
 
 class _BoundedSeen:
     """A bounded FIFO set for gossip dedup — caps memory under sustained flood
@@ -149,6 +158,8 @@ class Daemon:
         self._peer_caps = {}                   # account -> {version, caps} (§15)
         self._jobs_served = 0                  # observability counters
         self._chunks_served = 0
+        self.max_unpaid_per_peer = MAX_UNPAID_PER_PEER
+        self._unpaid = {}                      # requester_id -> delivered-unsettled (§9.1)
         self._lock = threading.Lock()
         self._running = False
         self._accept_thread = None
@@ -336,6 +347,12 @@ class Daemon:
             return
 
         for i in range(n_chunks):
+            # Admission control (§9.1): refuse to reveal another free chunk to a
+            # peer that already owes us too many unsettled ones — a deadbeat is cut
+            # off, an honest (paying) requester never reaches the cap.
+            if self._unpaid_count(requester_id) >= self.max_unpaid_per_peer:
+                peer.send(W.encode({"t": W.DONE, "reason": "trust-exhausted"}))
+                return
             try:
                 output = worker.run_chunk(cargo, i)
             except Exception:                      # adapter cannot deliver more
@@ -344,6 +361,7 @@ class Daemon:
             output_mmid = L.wire_mmid(output, self.alg)
             peer.send(W.encode({"t": W.RESULT, "i": i, "output": output.hex(),
                                 "output_mmid": output_mmid.hex()}))
+            self._add_unpaid(requester_id, +1)     # revealed; not yet settled
             # Settle THIS chunk before delivering the next (exposure ≤ k, §11).
             try:
                 rf = W.decode(peer.recv(timeout=self.timeout))
@@ -360,11 +378,25 @@ class Daemon:
                 self._post_settle(receipt)         # our +k, weight-bearing if native
             except L.P2PCPError:
                 return
+            self._add_unpaid(requester_id, -1)     # paid → debt cleared
             self._chunks_served += 1
             peer.send(W.encode({"t": W.RECEIPT_ACK,
                                 "receipt": W.receipt_to_dict(receipt)}))
         self._jobs_served += 1
         peer.send(W.encode({"t": W.DONE, "reason": "complete"}))
+
+    def _unpaid_count(self, requester_id):
+        with self._lock:
+            return self._unpaid.get(requester_id, 0)
+
+    def _add_unpaid(self, requester_id, delta):
+        """Track a peer's delivered-but-unsettled chunks (§9.1 admission control)."""
+        with self._lock:
+            n = self._unpaid.get(requester_id, 0) + delta
+            if n > 0:
+                self._unpaid[requester_id] = n
+            else:
+                self._unpaid.pop(requester_id, None)   # settled up → forget it
 
     def _receipt_ok(self, r, requester_id, job_mmid, output_mmid, k, vclass):
         """The requester's receipt must bind THIS chunk to us, and its signature

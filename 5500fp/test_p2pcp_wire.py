@@ -214,6 +214,61 @@ class TestMultiWorker(unittest.TestCase):
             client.stop()
 
 
+def _deadbeat_job(client, host, port, job=b"x"):
+    """Raw wire: take one chunk's output, then vanish WITHOUT paying (no receipt).
+    Returns the worker's first response (frame-type, reason)."""
+    peer = client.organ.connect(host, port, timeout=client.timeout)
+    try:
+        client._handshake_outbound(peer)
+        jm = L.wire_mmid(job, client.alg)
+        peer.send(W.encode({"t": W.JOB, "job": job.hex(), "job_mmid": jm.hex(),
+                            "n_chunks": 1, "k": 1, "vclass": L.VCLASS_NATIVE}))
+        rf = W.decode(peer.recv(timeout=client.timeout))
+        return rf.get("t"), rf.get("reason")
+    finally:
+        peer.close()
+
+
+class TestAdmissionControl(unittest.TestCase):
+    """A worker reveals a chunk before it's paid; §9.1 bounds the free ride."""
+
+    def test_deadbeat_requester_is_cut_off_after_the_cap(self):
+        node = D.Daemon(ident(b"admit"), worker=WK.DeterministicWorker())
+        node.max_unpaid_per_peer = 3
+        addr = node.start()
+        client = D.Daemon(ident(b"deadbeat"))
+        try:
+            for _ in range(3):                         # three freebies allowed
+                t, _r = _deadbeat_job(client, *addr)
+                self.assertEqual(t, W.RESULT)
+            t, r = _deadbeat_job(client, *addr)        # the fourth is refused
+            self.assertEqual(t, W.DONE)
+            self.assertEqual(r, "trust-exhausted")
+            # The deadbeat paid nothing — the worker earned zero from it.
+            self.assertEqual(node.ledger.balance(node.account_id), 0)
+        finally:
+            node.stop()
+            client.stop()
+
+    def test_honest_requester_is_never_blocked(self):
+        # Even with a TIGHT cap, a paying requester clears its debt each job and
+        # runs far more jobs than the cap without a refusal — no false positives.
+        node = D.Daemon(ident(b"admit-ok"), worker=WK.DeterministicWorker())
+        node.max_unpaid_per_peer = 2
+        addr = node.start()
+        client = D.Daemon(ident(b"honest"))
+        try:
+            for _ in range(5):
+                res = client.request_job(addr[0], addr[1], b"j", 1, 1,
+                                         vclass=L.VCLASS_NATIVE,
+                                         audit=WK.DeterministicWorker())
+                self.assertEqual(res["settled_chunks"], 1)
+            self.assertEqual(node.ledger.balance(node.account_id), 5)
+        finally:
+            node.stop()
+            client.stop()
+
+
 class TestFunctionWorker(unittest.TestCase):
     """Any function becomes a mesh worker (extensibility)."""
 
