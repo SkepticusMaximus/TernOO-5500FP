@@ -281,41 +281,97 @@ class MeshTabView:
         win.title("Mesh tab — your stall on the CompuCoin market")
         win.configure(bg=C["bg"])
 
-        tk.Label(win, text="The CompuCoin market — your stall on the mesh",
+        tk.Label(win, text="Welcome to your stall on the CompuCoin market",
                  bg=C["bg"], fg=C["text"], font=("Monospace", 12, "bold"),
-                 anchor="w").pack(side="top", fill="x", padx=10, pady=(10, 2))
+                 anchor="w").pack(side="top", fill="x", padx=12, pady=(12, 2))
 
-        prose = (
-            "A market stall + wallet for AI compute. Your machine SELLS spare "
-            "compute to strangers and BUYS it from them, paying in CompuCoin — no "
-            "company in the middle. (Every number reads 0 until someone visits your "
-            "stall.)\n\n"
-            "TOP BAR — your stall's shutter.\n"
-            "  sell : what you offer — professor (the chatty LLM), ghost (the fast\n"
-            "         ternary classifier), or buy-only (just shopping).\n"
-            "  mock : a pretend professor, to test without loading the real model.\n"
-            "  port 0 : grab any free door. Open stall lifts the shutter; the\n"
-            "         address on the right is where buyers knock.\n\n"
-            "YOUR TAKINGS (wallet) — account is your identity; balance is CompuCoin "
-            "earned; votes is governance weight (earned by verifiable work, then "
-            "burned into a vote); peers is stalls you know; served is jobs done.\n\n"
-            "OTHER STALLS (peers) — Join a host:port to swap address books and "
-            "discover the rest of the fair from one neighbour.\n\n"
-            "BUY FROM ANOTHER STALL — type a stall's host:port and Ask / Classify, "
-            "or use the (mesh) buttons to let the fair find a seller for you and "
-            "skip any that are shut."
-        )
-        txt = tk.Text(win, height=18, width=78, bg=C["bg"], fg=C["text"],
-                      relief="flat", font=mono, wrap="word", padx=10, pady=6)
+        prose = "\n\n".join([
+            "Here's the whole idea in one breath: your computer can do small AI "
+            "jobs for other people and get paid in CompuCoin (think of it as "
+            "tokens — fair money), and you can pay other people's computers to do "
+            "jobs for you. No company sits in the middle taking a cut or holding "
+            "your money. It's just stalls at a fair, trading with each other "
+            "directly.",
+
+            "If every number on the tab reads 0, nothing's wrong — it only means "
+            "nobody has wandered over to your stall yet.",
+
+            "Opening up takes about ten seconds: pick what you'd like to sell in "
+            "the 'sell' box and click 'Open stall'. That's the whole ceremony. "
+            "Everything else has a sensible default you can happily ignore until "
+            "you get curious.",
+
+            "What can I sell?  (the 'sell' box)\n"
+            "A 'professor' is a chatty AI that answers questions, a bit like a "
+            "little ChatGPT. A 'ghost' is a quick sorter that files a scrap of "
+            "text into the right category. Or pick 'buy-only' if you don't fancy "
+            "selling anything and just want to shop.",
+
+            "Leave 'mock' ticked to begin with. It means 'pretend professor' — it "
+            "lets you play with the whole tab without first downloading a big AI "
+            "model. Untick it later, once you have the real model set up.",
+
+            "What on earth is a 'port'?  (honestly, don't worry about it)\n"
+            "A port is just a numbered door on your computer that other computers "
+            "knock on to find you. Leave the box at 0 and the program quietly "
+            "picks a free door for you. Once your stall is open, the address shown "
+            "up top (something like 127.0.0.1:45461) is where visitors knock — and "
+            "'127.0.0.1' is simply computer-speak for 'this very machine'.",
+
+            "Your takings  (the wallet strip)\n"
+            "'Account' is your name-badge at the fair (a long code, but it's "
+            "yours). 'Balance' is the CompuCoin you've earned. 'Votes' is your say "
+            "in how the market is run — you earn it by doing honest work that "
+            "anyone can double-check. 'Peers' counts the other stalls you've met, "
+            "and 'served' counts the jobs you've done for others.",
+
+            "Meeting the other stalls  (the 'Other stalls' box)\n"
+            "Type another stall's address, hit 'Join', and your stall strolls "
+            "over, says hello, and they swap little black books of "
+            "who-else-they-know. From one neighbour you slowly get introduced to "
+            "the whole fair.",
+
+            "Buying something  (the 'Buy from another stall' box)\n"
+            "Type a stall's address, write your question, and press 'Ask' or "
+            "'Classify'. Or press one of the '(mesh)' buttons and let the fair "
+            "find a willing seller for you — it'll even skip any stalls that have "
+            "packed up and gone home.",
+
+            "And here's the part that makes all this safe with total strangers — "
+            "see the picture below. When you buy a job, your own computer quietly "
+            "redoes the work itself and checks the answer matches before a single "
+            "coin leaves your wallet. So you never have to trust anyone: try to "
+            "fob someone off with a dud, and you simply don't get paid.",
+        ])
+        # prose on the left, the picture on the right — a landscape window that
+        # fits a laptop screen without the Close button sliding under the taskbar.
+        tk.Button(win, text="Close", command=win.destroy, bg=C["palette"],
+                  fg=C["text"], font=mono, relief="flat", activebackground=C["bg"],
+                  activeforeground=C["text"]).pack(side="bottom", pady=(4, 12))
+
+        mid = tk.Frame(win, bg=C["bg"])
+        mid.pack(side="top", fill="both", expand=True, padx=12, pady=4)
+
+        left = tk.Frame(mid, bg=C["bg"])
+        left.pack(side="left", fill="both", expand=True)
+        sb = tk.Scrollbar(left)
+        sb.pack(side="right", fill="y")
+        txt = tk.Text(left, height=17, width=54, bg=C["bg"], fg=C["text"],
+                      relief="flat", font=mono, wrap="word", padx=6, pady=4,
+                      spacing3=6, yscrollcommand=sb.set)
         txt.insert("1.0", prose)
         txt.config(state="disabled")
-        txt.pack(side="top", fill="x")
+        txt.pack(side="left", fill="both", expand=True)
+        sb.config(command=txt.yview)
 
-        tk.Label(win, text="What happens when you press Ask / Classify:", bg=C["bg"],
-                 fg=C["dim"], font=mono, anchor="w"
-                 ).pack(side="top", fill="x", padx=10, pady=(6, 0))
-        cv = tk.Canvas(win, width=620, height=335, bg=C["bg"], highlightthickness=0)
-        cv.pack(side="top", padx=10, pady=6)
+        right = tk.Frame(mid, bg=C["bg"])
+        right.pack(side="left", fill="y", padx=(14, 0))
+        tk.Label(right, text="The clever bit — how you can trust a stranger:",
+                 bg=C["bg"], fg=C["dim"], font=mono, anchor="w"
+                 ).pack(side="top", fill="x", pady=(2, 4))
+        cv = tk.Canvas(right, width=620, height=335, bg=C["bg"],
+                       highlightthickness=0)
+        cv.pack(side="top")
         self._draw_buy_diagram(cv, C)
 
         tk.Button(win, text="Close", command=win.destroy, bg=C["palette"],
