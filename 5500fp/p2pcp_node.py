@@ -201,6 +201,18 @@ def classify_mesh(peers, text, k=4, seed="caller"):
     return client, addr, res
 
 
+def _load_verified_ledger(ledger_path):
+    """Load a persisted ledger and REFUSE it if integrity fails (§5) — a poisoned
+    dump (e.g. handed over a shared drop) must not mint balance or franchise. An
+    absent file is a fresh empty ledger."""
+    if not os.path.exists(ledger_path):
+        return L.Ledger()
+    ledger = L.Ledger.load(ledger_path)
+    if not ledger.verify():
+        raise ValueError(f"ledger integrity check failed: {ledger_path}")
+    return ledger
+
+
 def wallet(keyfile, now=None):
     """A node's account + CompuCoin, read from its persisted state — no server.
     `balance` is spendable; `weight_bearing` is the replay-class earnings that CAN
@@ -208,9 +220,7 @@ def wallet(keyfile, now=None):
     if not os.path.exists(keyfile):
         raise FileNotFoundError(f"no node key at {keyfile}")
     acct = load_or_create_identity(keyfile).account_id
-    ledger_path = keyfile + ".ledger"
-    ledger = (L.Ledger.load(ledger_path)
-              if os.path.exists(ledger_path) else L.Ledger())
+    ledger = _load_verified_ledger(keyfile + ".ledger")
     nw = int(time.time()) if now is None else now
     if acct in ledger.chains:
         return {"account": acct.hex(), "balance": ledger.balance(acct),
@@ -228,8 +238,7 @@ def burn(keyfile, amount, now=None):
         raise FileNotFoundError(f"no node key at {keyfile}")
     identity = load_or_create_identity(keyfile)
     ledger_path = keyfile + ".ledger"
-    ledger = (L.Ledger.load(ledger_path)
-              if os.path.exists(ledger_path) else L.Ledger())
+    ledger = _load_verified_ledger(ledger_path)
     nw = int(time.time()) if now is None else now
     if identity.account_id not in ledger.chains:
         ledger.open_account(identity)

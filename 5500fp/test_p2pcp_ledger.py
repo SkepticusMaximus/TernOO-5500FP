@@ -71,6 +71,45 @@ class TestForgedReceipt(unittest.TestCase):
         self.assertEqual(cm.exception.reason, "receipt-requester-sig")
 
 
+class TestTamperedAggregates(unittest.TestCase):
+    """verify() must RECONCILE the money/franchise totals against the records — a
+    dump that inflates balance / earned_ctp / burns without matching records is
+    rejected, else a poisoned .ledger forges spendable credit and voting weight."""
+
+    def test_verify_rejects_inflated_balance(self):
+        led, worker, requester = fresh_pair()
+        led.settle_work(worker, requester, 5)              # a real earning
+        self.assertTrue(led.verify())
+        led.chains[worker.account_id].balance += 10**9     # forge spendable credit
+        self.assertFalse(led.verify())
+
+    def test_verify_rejects_forged_franchise(self):
+        led, worker, requester = fresh_pair()
+        led.settle_work(worker, requester, 5)
+        ch = led.chains[worker.account_id]
+        ch.earned_ctp += 10**9                             # forge burnable pool
+        ch.burns.append((10**9, NOW))                      # forge voting weight
+        self.assertFalse(led.verify())
+
+    def test_verify_rejects_crafted_persisted_dump(self):
+        # A hand-crafted dump: the real records, but fabricated totals bolted on.
+        led, worker, requester = fresh_pair()
+        led.settle_work(worker, requester, 5)
+        d = led.to_dict()
+        cd = d["chains"][worker.account_id.hex()]
+        cd["balance"] = 10**9
+        cd["earned_ctp"] = 10**9
+        cd["burns"] = [[10**9, NOW]]
+        forged = P.Ledger.from_dict(d)
+        self.assertFalse(forged.verify())                  # reconciliation catches it
+
+    def test_verify_accepts_a_legitimate_round_trip(self):
+        led, worker, requester = fresh_pair()
+        led.settle_work(worker, requester, 5)
+        led.burn(worker, 3, timestamp=NOW, now=NOW)
+        self.assertTrue(P.Ledger.from_dict(led.to_dict()).verify())  # no false positive
+
+
 class TestNonPositiveSettle(unittest.TestCase):
     """Threat: a wire-built receipt (which bypasses make_receipt) carries a
     non-positive amount, INVERTING the double-entry — the requester mints credit

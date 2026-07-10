@@ -657,12 +657,17 @@ class Chain:
         return c
 
     def verify(self) -> bool:
-        """Structural integrity of the chain: OPEN at height 0 off the genesis
-        marker, monotonic hash-linked heights, every record self-signed by this
-        account. Catches tampering/corruption of persisted or gossiped state
-        (a flipped byte breaks the signature or the link). NOT receipt
+        """Integrity of the chain: OPEN at height 0 off the genesis marker,
+        monotonic hash-linked heights, every record self-signed by this account,
+        AND the money/franchise aggregates RECONCILED against the records. Catches
+        tampering/corruption of persisted or gossiped state — a flipped byte breaks
+        a signature or link, and an inflated balance/earned_ctp/burns that no record
+        justifies is rejected (verify must reconcile the totals, not trust them, or
+        a crafted dump forges spendable credit and voting weight). NOT receipt
         re-validation — receipts are off-ledger (§7)."""
         prev_id = None
+        balance = earned = burned = 0
+        burns = []
         for h, rec in enumerate(self.records):
             if rec.account != self.account or rec.height != h:
                 return False
@@ -675,8 +680,28 @@ class Chain:
                     return False
             except AlgError:
                 return False
+            # Re-fold aggregates from the records themselves (mirrors _append), so a
+            # dump that inflates the totals without matching records is rejected.
+            k = rec.kind
+            if k == KIND_SETTLE:
+                amt = rec.body.get("amount", 0)
+                balance += amt
+                if (amt > 0 and rec.body.get("counterparty") != rec.account.hex()
+                        and rec.body.get("weight_bearing")):
+                    earned += amt
+            elif k == KIND_TRANSFER:
+                balance += rec.body.get("amount", 0)
+            elif k == KIND_BURN:
+                amt = rec.body.get("amount", 0)
+                balance -= amt
+                burned += amt
+                burns.append((amt, rec.body.get("timestamp")))
             prev_id = rec.record_id()
-        return True
+        if (balance != self.balance or earned != self.earned_ctp
+                or burned != self.burned_total or burns != self.burns):
+            return False                                # aggregates don't reconcile
+        head = prev_id if prev_id is not None else b""
+        return self.head_id == head and self.height == len(self.records) - 1
 
     def _append(self, record: Record, ref: Optional[bytes]) -> None:
         """Apply a *validated* record and update aggregates. The only mutator."""
