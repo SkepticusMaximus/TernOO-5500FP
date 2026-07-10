@@ -162,3 +162,66 @@ def patched_permute(state):
     s = SP.permute(state)
     n = len(s)
     return [(s[i] + s[(i - 1) % n] * s[(i - 2) % n]) % MOD for i in range(n)]
+
+
+# ── structural analysis of the mod-3 mixing (answering DM Pro's question on M) ─
+
+def rank_f3(rows):
+    """Rank over GF(3) of a matrix given as a list of rows."""
+    rows = [r[:] for r in rows]
+    R = len(rows)
+    Cn = len(rows[0]) if R else 0
+    r = 0
+    for col in range(Cn):
+        piv = next((i for i in range(r, R) if rows[i][col] % 3), None)
+        if piv is None:
+            continue
+        rows[r], rows[piv] = rows[piv], rows[r]
+        inv = _inv3(rows[r][col])
+        rows[r] = [(x * inv) % 3 for x in rows[r]]
+        for i in range(R):
+            if i != r and rows[i][col] % 3:
+                f = rows[i][col]
+                rows[i] = [(rows[i][k] - f * rows[r][k]) % 3 for k in range(Cn)]
+        r += 1
+        if r == R:
+            break
+    return r
+
+
+def permute_linear_map():
+    """The full 8-round permutation's mod-3 action as a STATE×STATE GF(3) matrix M
+    (M[i][j]), affine constant removed. `permute` is affine mod 3 because nonlin ≡
+    id and theta/sqg/rotation are linear."""
+    n = STATE
+    c = [x % 3 for x in SP.permute([0] * n)]
+    M = [[0] * n for _ in range(n)]
+    for j in range(n):
+        e = [0] * n
+        e[j] = 1
+        fj = [x % 3 for x in SP.permute(e)]
+        for i in range(n):
+            M[i][j] = (fj[i] - c[i]) % 3
+    return M
+
+
+def is_circulant(M):
+    """M[i][j] == M[0][(j-i) mod n]? theta=I+J, sqg=-(I+shift), rotation are all
+    circulant, so their product (the round map, and the 8-round composition) is."""
+    n = len(M)
+    return all(M[i][j] == M[0][(j - i) % n] for i in range(n) for j in range(n))
+
+
+def analyze_mod3_structure():
+    """The facts DM Pro asked for about the mixing matrix M — reproducible."""
+    M = permute_linear_map()
+    Md, _c = build_linear_map(RATE)          # digest map GF(3)^RATE -> GF(3)^DIGEST
+    dig_rank = rank_f3(Md)
+    return {
+        "state_lanes": STATE,                # 45 = 3^2 * 5 (divisible by char 3)
+        "permute_rank": rank_f3(M),          # 45 => full rank (bijective low plane)
+        "permute_circulant": is_circulant(M),
+        "digest_in": RATE, "digest_out": DIGEST,
+        "digest_rank": dig_rank,
+        "collision_dim": RATE - dig_rank,    # nullity: free collision dims per block
+    }

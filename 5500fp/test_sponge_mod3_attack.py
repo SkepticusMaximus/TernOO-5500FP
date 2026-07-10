@@ -57,5 +57,17 @@ class TestFalsificationGate(unittest.TestCase):
         self.assertFalse(A.is_mod3_affine(A.patched_permute, trials=50))
 
 
+class TestStructure(unittest.TestCase):
+    """The mixing matrix M, answering DM Pro's question — reproducible facts."""
+
+    def test_mixing_is_full_rank_circulant_and_leaks_by_truncation(self):
+        s = A.analyze_mod3_structure()
+        self.assertEqual(s["state_lanes"], 45)          # 3^2 * 5 (divisible by 3)
+        self.assertEqual(s["permute_rank"], 45)         # bijective mod 3 — NOT a collapse
+        self.assertTrue(s["permute_circulant"])         # product of circulants
+        # The leak is truncation + linearity: 9 of 45 lanes out => 18-dim kernel.
+        self.assertEqual(s["collision_dim"], 18)        # 3^18 collisions/block by linalg
+
+
 if __name__ == "__main__":
     unittest.main()
