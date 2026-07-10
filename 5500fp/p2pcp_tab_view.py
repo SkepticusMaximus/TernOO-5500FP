@@ -84,7 +84,9 @@ class MeshTabView:
         wf.pack(side="top", fill="x", padx=8, pady=6)
         self._wallet = tk.Label(wf, text=self._wallet_text(None), bg=C["bg"],
                                 fg=C["text"], font=mono, anchor="w", justify="left")
-        self._wallet.pack(side="left", fill="x", padx=6, pady=4)
+        self._wallet.pack(side="left", padx=6, pady=4)
+        self._meshstat = tk.Label(wf, text="", bg=C["bg"], fg=C["dim"], font=mono)
+        self._meshstat.pack(side="left", padx=12)
         btn(wf, "Refresh", self._refresh_wallet, side="right")
 
         # buy compute
@@ -134,13 +136,24 @@ class MeshTabView:
             self._addr.config(text=f"{addr[0]}:{addr[1]}")
             self._startbtn.config(text="Stop node")
             self._refresh_wallet()
+            self.root.after(3000, self._tick)           # live auto-refresh
             self._status(f"Mesh node ({kind}) on {addr[0]}:{addr[1]}.")
         except Exception as e:                          # noqa: BLE001 — surfaced
             self._status(f"Mesh start failed: {e}")
 
+    def _tick(self):
+        if self.svc and self.svc.running:
+            self._refresh_wallet()
+            self.root.after(3000, self._tick)
+
     def _refresh_wallet(self):
-        w = self.svc.wallet() if (self.svc and self.svc.running) else None
+        running = bool(self.svc and self.svc.running)
+        w = self.svc.wallet() if running else None
         self._wallet.config(text=self._wallet_text(w))
+        s = (self.svc.stats() or {}) if running else {}
+        self._meshstat.config(
+            text=(f"peers: {s.get('peers', 0)}    served: {s.get('jobs_served', 0)}"
+                  if running else ""))
 
     def _buy(self, kind):
         if not (self.svc and self.svc.running):
