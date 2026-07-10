@@ -656,6 +656,28 @@ class Chain:
         c.burns = [tuple(b) for b in d["burns"]]
         return c
 
+    def verify(self) -> bool:
+        """Structural integrity of the chain: OPEN at height 0 off the genesis
+        marker, monotonic hash-linked heights, every record self-signed by this
+        account. Catches tampering/corruption of persisted or gossiped state
+        (a flipped byte breaks the signature or the link). NOT receipt
+        re-validation — receipts are off-ledger (§7)."""
+        prev_id = None
+        for h, rec in enumerate(self.records):
+            if rec.account != self.account or rec.height != h:
+                return False
+            expected = genesis_marker(rec.account, rec.alg) if h == 0 else prev_id
+            if rec.prev != expected:
+                return False
+            try:
+                if not get_alg(rec.alg).verify(rec.account, rec.sig,
+                                               rec.signing_bytes()):
+                    return False
+            except AlgError:
+                return False
+            prev_id = rec.record_id()
+        return True
+
     def _append(self, record: Record, ref: Optional[bytes]) -> None:
         """Apply a *validated* record and update aggregates. The only mutator."""
         self.records.append(record)
@@ -1003,6 +1025,11 @@ class Ledger:
     def load(cls, path: str) -> "Ledger":
         with open(path) as f:
             return cls.from_dict(json.load(f))
+
+    def verify(self) -> bool:
+        """Every chain is structurally intact (integrity check for loaded/synced
+        state). See Chain.verify."""
+        return all(c.verify() for c in self.chains.values())
 
 
 # ═══════════════════════════════════════════════════════════════════════════

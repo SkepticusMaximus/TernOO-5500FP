@@ -483,6 +483,18 @@ class TestPersistence(unittest.TestCase):
         self.assertEqual(back.total_supply(), led.total_supply())
         self.assertEqual(back.chains[a.account_id].head_id,          # chain intact
                          led.chains[a.account_id].head_id)
+        self.assertTrue(back.verify())                              # loaded state is intact
+
+    def test_verify_detects_tampering(self):
+        led = P.Ledger()
+        a, cust = ident(b"vf-a"), ident(b"vf-cust")
+        led.open_account(a)
+        led.open_account(cust)
+        led.settle_work(a, cust, 10)
+        led.burn(a, 3, timestamp=NOW, now=NOW)
+        self.assertTrue(led.verify())                              # clean verifies
+        led.chains[a.account_id].records[1].body["amount"] = 999   # tamper
+        self.assertFalse(led.verify())                             # detected
 
 
 if __name__ == "__main__":
