@@ -44,6 +44,7 @@ def _load(name):
 
 SOCK = _load("p2pcp_socket")      # the ONE network organ (no socket import here)
 L = _load("p2pcp_ledger")         # Identity, Ledger, the alg table (§12)
+W = _load("p2pcp_wire")           # the wire contract frames (§4 L2)
 
 HELLO_TYPE = "P2PCP-HELLO-v0.1"
 DEFAULT_TIMEOUT = 5.0             # a bound passed to recv — never a clock read
@@ -72,11 +73,12 @@ class Daemon:
     announced on an event queue. The wire contract plugs in at ``_serve_peer``."""
 
     def __init__(self, identity, ledger=None, alg=L.ALG_ED25519,
-                 timeout=DEFAULT_TIMEOUT):
+                 timeout=DEFAULT_TIMEOUT, worker=None):
         self.identity = identity
         self.ledger = ledger if ledger is not None else L.Ledger()
         self.alg = alg
         self.timeout = timeout
+        self.worker = worker                   # a WorkerAdapter, or None (§3/§5)
         self.organ = SOCK.SocketOrgan()
         self._peers = {}                       # verified account_id -> Peer
         self._events = queue.Queue()           # verified account_ids, for observers
@@ -195,15 +197,161 @@ class Daemon:
             except SOCK.OrganError:
                 break                          # organ closed → stop() in progress
             try:
-                self._handshake_inbound(peer)
-                self._serve_peer(peer)
+                account = self._handshake_inbound(peer)
+                self._serve_peer(peer, account)
             except (HandshakeError, SOCK.OrganError):
                 peer.close()                   # a stranger who fails HELLO is dropped
 
-    def _serve_peer(self, peer):
-        """SEAM for step 5-6. Today: nothing — HELLO done, peer registered. Here
-        the ledger-settled wire contract runs: read JOB/RESULT/RECEIPT frames,
-        validate through the TCM (self.ledger), settle per chunk (settlement
-        granularity, §11), and the first job that crosses is already a PAID job.
-        Left explicitly empty so step 4 lands as a skeleton, not half a step 5."""
-        return None
+    # ── the wire contract (§4 L2 / §14 step 5) ───────────────────────────────
+    # The PAID job. A requester streams a JOB; the worker runs it through its
+    # adapter and streams RESULT chunks; each chunk is SETTLED before the next
+    # (settlement granularity §11), so neither party is exposed for more than one
+    # chunk of k units. The first job that crosses is already a paid job, settled
+    # against the block-lattice (§14). Trust is never assumed: the requester can
+    # REPLAY-AUDIT each chunk before paying (the determinism moat, §3/§10), and
+    # the receipt commits to job+output MMID so any peer can challenge later (§7).
+
+    def _ensure_open(self):
+        if self.account_id not in self.ledger.chains:
+            self.ledger.open_account(self.identity, self.alg)
+
+    def _post_settle(self, receipt):
+        """Post our own side of a both-signed receipt to our chain (§5)."""
+        chain = self.ledger.chains[self.account_id]
+        self.ledger.post(L.build_settle_record(self.identity, chain, receipt,
+                                               self.alg), receipt)
+
+    # -- worker role (runs in the accept loop, after inbound HELLO) ------------
+    def _serve_peer(self, peer, requester_id):
+        """Seam filled (step 5). A daemon carrying a worker adapter runs the JOB
+        it is offered; a bare daemon stays a step-4 relay (does nothing)."""
+        if self.worker is None:
+            return
+        try:
+            frame = W.decode(peer.recv(timeout=self.timeout))
+        except (SOCK.OrganError, ValueError):
+            return
+        if frame.get("t") == W.JOB:
+            self._work_job(peer, requester_id, frame)
+
+    def _work_job(self, peer, requester_id, job):
+        self._ensure_open()
+        cargo = bytes.fromhex(job["job"])
+        job_mmid = bytes.fromhex(job["job_mmid"])
+        n_chunks, k, vclass = int(job["n_chunks"]), int(job["k"]), int(job["vclass"])
+        # Verify-on-fetch on the wire (§12.4): the cargo must match its wire MMID.
+        try:
+            L.verify_wire_cargo(job_mmid, cargo, self.alg)
+        except L.WireMmidError:
+            peer.send(W.encode({"t": W.DONE, "reason": "bad-job-mmid"}))
+            return
+        # Honesty about class (§3): the worker advertises its adapter's TRUE class.
+        if self.worker.vclass != vclass:
+            peer.send(W.encode({"t": W.DONE, "reason": "vclass-mismatch"}))
+            return
+
+        for i in range(n_chunks):
+            try:
+                output = self.worker.run_chunk(cargo, i)
+            except Exception:                      # adapter cannot deliver more
+                peer.send(W.encode({"t": W.DONE, "reason": "worker-halt"}))
+                return
+            output_mmid = L.wire_mmid(output, self.alg)
+            peer.send(W.encode({"t": W.RESULT, "i": i, "output": output.hex(),
+                                "output_mmid": output_mmid.hex()}))
+            # Settle THIS chunk before delivering the next (exposure ≤ k, §11).
+            try:
+                rf = W.decode(peer.recv(timeout=self.timeout))
+            except (SOCK.OrganError, ValueError):
+                return                             # requester vanished → stop
+            if rf.get("t") != W.RECEIPT:
+                return                             # requester won't pay → stop
+            receipt = W.receipt_from_dict(L.Receipt, rf["receipt"])
+            if not self._receipt_ok(receipt, requester_id, job_mmid, output_mmid,
+                                    k, vclass):
+                return
+            receipt.worker_sig = self.identity.sign(receipt.signing_bytes(), self.alg)
+            try:
+                self._post_settle(receipt)         # our +k, weight-bearing if native
+            except L.P2PCPError:
+                return
+            peer.send(W.encode({"t": W.RECEIPT_ACK,
+                                "receipt": W.receipt_to_dict(receipt)}))
+        peer.send(W.encode({"t": W.DONE, "reason": "complete"}))
+
+    def _receipt_ok(self, r, requester_id, job_mmid, output_mmid, k, vclass):
+        """The requester's receipt must bind THIS chunk to us, and its signature
+        must verify — the counterparty-signature check (§8), on the wire."""
+        if r.worker_id != self.account_id or r.requester_id != requester_id:
+            return False
+        if r.amount != k or r.job_commit != job_mmid:
+            return False
+        if r.output_commit != output_mmid or r.vclass != vclass:
+            return False
+        return L.get_alg(r.alg).verify(requester_id, r.requester_sig,
+                                       r.signing_bytes())
+
+    # -- requester role -------------------------------------------------------
+    def request_job(self, host, port, job: bytes, n_chunks: int, k: int,
+                    vclass=L.VCLASS_NATIVE, audit=None):
+        """Dial a worker, stream a JOB, and pay per delivered+verified chunk.
+        Returns a summary dict. If ``audit`` (a deterministic worker adapter of
+        the same class) is supplied, each chunk is REPLAYED and compared before
+        paying — the determinism moat as a pre-payment check (§3/§10); a forged
+        output is never paid for. Exposure is bounded to one chunk of k (§11)."""
+        self._ensure_open()
+        peer = self.organ.connect(host, port, timeout=self.timeout)
+        settled = 0
+        receipts = []
+        try:
+            worker_id = self._handshake_outbound(peer)
+            job_mmid = L.wire_mmid(job, self.alg)
+            peer.send(W.encode({"t": W.JOB, "job": job.hex(),
+                                "job_mmid": job_mmid.hex(), "n_chunks": n_chunks,
+                                "k": k, "vclass": vclass}))
+            for i in range(n_chunks):
+                try:
+                    rf = W.decode(peer.recv(timeout=self.timeout))
+                except (SOCK.OrganError, ValueError):
+                    break
+                if rf.get("t") != W.RESULT:
+                    break                          # DONE / halt → worker stopped
+                output = bytes.fromhex(rf["output"])
+                output_mmid = bytes.fromhex(rf["output_mmid"])
+                # The worker's bytes must match its OWN claimed commitment...
+                if L.wire_mmid(output, self.alg) != output_mmid:
+                    break
+                # ...and if we can replay it, we refuse to pay for a forgery (§3).
+                if audit is not None and audit.run_chunk(job, i) != output:
+                    break
+                nonce = os.urandom(16)
+                receipt = L.Receipt(worker_id, self.account_id, k, job_mmid,
+                                    output_mmid, vclass, nonce, self.alg)
+                receipt.requester_sig = self.identity.sign(receipt.signing_bytes(),
+                                                           self.alg)
+                peer.send(W.encode({"t": W.RECEIPT,
+                                    "receipt": W.receipt_to_dict(receipt)}))
+                try:
+                    af = W.decode(peer.recv(timeout=self.timeout))
+                except (SOCK.OrganError, ValueError):
+                    break
+                if af.get("t") != W.RECEIPT_ACK:
+                    break                          # not co-signed → we don't pay
+                acked = W.receipt_from_dict(L.Receipt, af["receipt"])
+                # The worker must co-sign the SAME terms we signed (§8).
+                if acked.signing_bytes() != receipt.signing_bytes():
+                    break
+                if not L.get_alg(self.alg).verify(worker_id, acked.worker_sig,
+                                                  receipt.signing_bytes()):
+                    break
+                receipt.worker_sig = acked.worker_sig
+                try:
+                    self._post_settle(receipt)     # our −k obligation (§5)
+                except L.P2PCPError:
+                    break
+                receipts.append(receipt)
+                settled += 1
+            return {"worker": worker_id, "settled_chunks": settled,
+                    "paid": settled * k, "receipts": receipts}
+        finally:
+            peer.close()

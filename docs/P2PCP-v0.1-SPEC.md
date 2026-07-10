@@ -519,9 +519,16 @@ single-node, zero network risk**; build the wire first and payment gets bolted o
    `allow-list ≤ 1` assertion making Engelbart's one-limb rule mechanical — so the invariant
    *strengthened* across the transition instead of vanishing. Loopback is today's substrate;
    the wire is byte-identical for a remote peer. (47 P2PCP tests green.)
-5. **Worker adapter over the wire** — and **the first job that crosses between two boxes is
-   already a paid job, settled against the step-3 ledger.** A stronger milestone than an
-   unpaid packet, and cheaper because the data model is already hard.
+5. **Worker adapter over the wire** ✓ — the paid wire contract at `_serve_peer`.
+   `p2pcp_wire.py` (JOB / RESULT / RECEIPT / RECEIPT_ACK / DONE frames) + `p2pcp_worker.py`
+   (pluggable adapters; `DeterministicWorker` is the replay-class testnet stand-in,
+   `bonsai_runner` the float-class real one, behind one interface). A requester streams a
+   JOB; the worker runs it chunk-by-chunk; **each chunk is settled before the next** (§11),
+   so exposure is bounded to *k*. **The first job that crosses is already a paid job, settled
+   against the block-lattice (§5)** — double-entry across the two nodes' ledgers. The
+   requester **replay-audits** each chunk before paying (§3): a forged output is never paid
+   (and is slashable later by challenge, §7); a deadbeat leaves undelivered chunks with zero
+   footprint; float work earns money but never weight (§10). (54 P2PCP tests green.)
 6. **Consensus** (§9) — the conflict-vote path.
 
 Steps 2–3 are **offline and buildable now.** They are v0.1's first code.
