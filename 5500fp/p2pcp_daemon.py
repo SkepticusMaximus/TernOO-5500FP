@@ -586,6 +586,24 @@ class Daemon:
                 out.append(addr)
         return out
 
+    def buy_from_mesh(self, cap, job, n_chunks, k, vclass, audit=None,
+                      candidates=None):
+        """Buy compute WITHOUT naming a node: discover providers advertising `cap`
+        (§15), then try them in order until one settles every chunk. Returns
+        (addr, result) for the provider that settled, or (None, None) if none
+        could — the mesh as a utility, resilient to a down/refusing provider
+        (skip and fall through to the next). The requester still replay-audits
+        native work (`audit`), so a fallback provider is no less trustless."""
+        for host, port in self.find_providers(cap, candidates):
+            try:
+                res = self.request_job(host, port, job, n_chunks=n_chunks, k=k,
+                                       vclass=vclass, audit=audit)
+            except Exception:                          # a flaky provider is skipped
+                continue
+            if res.get("settled_chunks", 0) == n_chunks:
+                return (host, port), res
+        return None, None
+
     def _send_peer_book(self, peer):
         """Answer a PEERS_REQ with our book plus our own listen address, so the
         asker discovers the mesh from a seed (v0.2)."""

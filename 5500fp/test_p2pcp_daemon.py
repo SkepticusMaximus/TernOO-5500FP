@@ -239,6 +239,36 @@ class TestObservability(unittest.TestCase):
             native.stop()
             floaty.stop()
 
+    def test_buy_from_mesh_falls_through_a_broken_provider(self):
+        # Two native providers advertise the class; the FIRST delivers nothing
+        # (broken). buy_from_mesh skips it and settles on the second — resilience
+        # without naming a node, and the buyer still replay-audits (trustless).
+        WK = _load("p2pcp_worker")
+
+        class Broken(WK.DeterministicWorker):          # native cap, 0 delivered
+            def run_chunk(self, job, index):
+                raise RuntimeError("provider down")
+
+        broken = D.Daemon(ident(b"mesh-broken"), worker=Broken())
+        good = D.Daemon(ident(b"mesh-good"), worker=WK.DeterministicWorker())
+        b_addr, g_addr = broken.start(), good.start()
+        buyer = D.Daemon(ident(b"mesh-buyer"))
+        try:
+            addr, res = buyer.buy_from_mesh(
+                "compute:native", b"job", n_chunks=2, k=1, vclass=L.VCLASS_NATIVE,
+                audit=WK.DeterministicWorker(), candidates=[b_addr, g_addr])
+            self.assertEqual(addr, g_addr)             # fell through to the good one
+            self.assertEqual(res["settled_chunks"], 2)
+            self.assertEqual(good.ledger.balance(good.account_id), +2)
+            self.assertEqual(broken.ledger.balance(broken.account_id), 0)  # unpaid
+            # No provider at all → (None, None), not an exception.
+            self.assertEqual(buyer.buy_from_mesh(
+                "compute:native", b"j", 1, 1, L.VCLASS_NATIVE,
+                audit=WK.DeterministicWorker(), candidates=[]), (None, None))
+        finally:
+            broken.stop()
+            good.stop()
+
 
 if __name__ == "__main__":
     unittest.main()
