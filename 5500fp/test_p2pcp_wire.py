@@ -214,5 +214,27 @@ class TestMultiWorker(unittest.TestCase):
             client.stop()
 
 
+class TestFunctionWorker(unittest.TestCase):
+    """Any function becomes a mesh worker (extensibility)."""
+
+    def test_wraps_a_function_as_replay_class_and_is_audited(self):
+        def upper(job, index):
+            return job.upper()
+
+        node = D.Daemon(ident(b"fnw"), worker=WK.FunctionWorker(upper))
+        addr = node.start()
+        client = D.Daemon(ident(b"fnw-client"))
+        try:
+            res = client.request_job(addr[0], addr[1], b"hello", n_chunks=1, k=2,
+                                     vclass=L.VCLASS_NATIVE,
+                                     audit=WK.FunctionWorker(upper))
+            self.assertEqual(res["settled_chunks"], 1)
+            self.assertEqual(res["outputs"][0], b"HELLO")
+            self.assertEqual(node.ledger.burnable(node.account_id), 2)  # a vote
+        finally:
+            node.stop()
+            client.stop()
+
+
 if __name__ == "__main__":
     unittest.main()

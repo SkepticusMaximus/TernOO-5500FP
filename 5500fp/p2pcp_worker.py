@@ -49,3 +49,18 @@ class DeterministicWorker(WorkerAdapter):
 
     def run_chunk(self, job: bytes, index: int) -> bytes:
         return hashlib.sha3_256(job + b"|chunk|" + index.to_bytes(4, "big")).digest()
+
+
+class FunctionWorker(WorkerAdapter):
+    """Wrap any callable ``fn(job: bytes, index: int) -> bytes`` as a mesh worker,
+    so the mesh is extensible beyond the built-in adapters. Declare ``vclass``
+    HONESTLY (§3): native only if the function is deterministic and bit-exactly
+    reproducible (any peer can replay-audit it); float otherwise."""
+
+    def __init__(self, fn, vclass=VCLASS_NATIVE):
+        self._fn = fn
+        self.vclass = vclass
+
+    def run_chunk(self, job: bytes, index: int) -> bytes:
+        out = self._fn(job, index)
+        return out if isinstance(out, (bytes, bytearray)) else str(out).encode("utf-8")
