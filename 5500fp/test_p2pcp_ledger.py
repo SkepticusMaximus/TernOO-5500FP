@@ -141,6 +141,17 @@ class TestNonPositiveSettle(unittest.TestCase):
             led.post(rec, r)
         self.assertEqual(cm.exception.reason, "amount-nonpositive")
 
+    def test_negative_amount_transfer_rejected(self):
+        led, sender, receiver = fresh_pair()
+        a = P.TransferAuth(sender.account_id, receiver.account_id, -5, nonce=b"n" * 16)
+        msg = a.signing_bytes()
+        a.sender_sig = sender.sign(msg)
+        a.receiver_sig = receiver.sign(msg)           # both genuinely sign it
+        rec = P.build_transfer_record(sender, led.chains[sender.account_id], a)
+        with self.assertRaises(P.ValidationError) as cm:
+            led.post(rec, a)
+        self.assertEqual(cm.exception.reason, "amount-nonpositive")
+
 
 class TestSelfMinting(unittest.TestCase):
     """Threat: one operator signs across two owned identities.

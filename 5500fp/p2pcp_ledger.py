@@ -833,6 +833,11 @@ def _validate_transfer(record: Record, chain: Chain, auth: Optional[TransferAuth
                        alg, transfer_floor: Optional[int]) -> Optional[bytes]:
     if auth is None:
         raise ValidationError("missing-auth", "TRANSFER needs its SEND/RECEIVE")
+    # Amount is a positive magnitude (§8) — same invariant the TCM enforces on
+    # SETTLE. make_transfer_auth guards it and no wire path builds one directly
+    # today, but the validator is the choke point, so guard here for consistency.
+    if not isinstance(auth.amount, int) or auth.amount <= 0:
+        raise ValidationError("amount-nonpositive", "transfer amount must be positive")
     _check_link(record, chain)
 
     msg = auth.signing_bytes()
