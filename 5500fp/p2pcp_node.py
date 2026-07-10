@@ -234,7 +234,7 @@ def main(argv=None):
         if not st:
             print("[status] no response (node offline?)", file=sys.stderr)
             sys.exit(1)
-        for k in ("account", "worker", "version", "caps", "peers", "jobs_served"):
+        for k in ("account", "workers", "version", "caps", "peers", "jobs_served"):
             print(f"{k}: {st.get(k)}")
     elif args.cmd in ("ask", "classify"):
         if args.cmd == "ask":

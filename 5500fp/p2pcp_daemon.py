@@ -113,12 +113,17 @@ class Daemon:
     announced on an event queue. The wire contract plugs in at ``_serve_peer``."""
 
     def __init__(self, identity, ledger=None, alg=L.ALG_ED25519,
-                 timeout=DEFAULT_TIMEOUT, worker=None, caps=None):
+                 timeout=DEFAULT_TIMEOUT, worker=None, caps=None, workers=None):
         self.identity = identity
         self.ledger = ledger if ledger is not None else L.Ledger()
         self.alg = alg
         self.timeout = timeout
-        self.worker = worker                   # a WorkerAdapter, or None (§3/§5)
+        self.worker = worker                   # kept for compat; see _workers below
+        # A node can serve MULTIPLE verification classes (§3): one worker per
+        # vclass. `worker=` (single) or `workers=` (iterable) both populate it.
+        self._workers = {}                     # vclass -> WorkerAdapter
+        for w in (list(workers) if workers else ([worker] if worker else [])):
+            self._workers[w.vclass] = w
         self.caps = tuple(caps) if caps else BASE_CAPS   # advertised capabilities
         self.max_peers = MAX_PEERS                        # eclipse resistance (§9.3)
         self.max_learn_per_fetch = MAX_LEARN_PER_FETCH
@@ -293,7 +298,7 @@ class Daemon:
         except (SOCK.OrganError, ValueError):
             return
         t = frame.get("t")
-        if t == W.JOB and self.worker is not None:
+        if t == W.JOB and self._workers:
             self._work_job(peer, peer_id, frame)
         elif t == W.VOTE:
             self._collect_vote(frame)
@@ -315,14 +320,16 @@ class Daemon:
         except L.WireMmidError:
             peer.send(W.encode({"t": W.DONE, "reason": "bad-job-mmid"}))
             return
-        # Honesty about class (§3): the worker advertises its adapter's TRUE class.
-        if self.worker.vclass != vclass:
-            peer.send(W.encode({"t": W.DONE, "reason": "vclass-mismatch"}))
+        # Dispatch by verification class (§3): pick the worker for this vclass —
+        # a node can serve several. No worker for the class → decline honestly.
+        worker = self._workers.get(vclass)
+        if worker is None:
+            peer.send(W.encode({"t": W.DONE, "reason": "vclass-unavailable"}))
             return
 
         for i in range(n_chunks):
             try:
-                output = self.worker.run_chunk(cargo, i)
+                output = worker.run_chunk(cargo, i)
             except Exception:                      # adapter cannot deliver more
                 peer.send(W.encode({"t": W.DONE, "reason": "worker-halt"}))
                 return
@@ -522,7 +529,7 @@ class Daemon:
         here = acct in self.ledger.chains
         return {"account": acct.hex(),
                 "version": PROTOCOL_VERSION, "caps": list(self.caps),
-                "worker": type(self.worker).__name__ if self.worker else None,
+                "workers": [type(w).__name__ for w in self._workers.values()],
                 "peers": len(self._peer_book),
                 "jobs_served": self._jobs_served,
                 "chunks_served": self._chunks_served,
@@ -533,7 +540,7 @@ class Daemon:
         """Answer a STATUS_REQ with our PUBLIC operational status."""
         s = self.stats()
         public = {"account": s["account"], "version": s["version"],
-                  "caps": s["caps"], "worker": s["worker"],
+                  "caps": s["caps"], "workers": s["workers"],
                   "peers": s["peers"], "jobs_served": s["jobs_served"]}
         try:
             peer.send(W.encode({"t": W.STATUS, "status": public}))

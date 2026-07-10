@@ -171,5 +171,48 @@ class TestPaidJob(unittest.TestCase):
             r.stop()
 
 
+class TestMultiWorker(unittest.TestCase):
+    """One node can serve MULTIPLE verification classes, dispatching by vclass."""
+
+    def test_node_serves_both_native_and_float(self):
+        class FloatDet(WK.DeterministicWorker):
+            vclass = WK.VCLASS_FLOAT
+
+        node = D.Daemon(ident(b"multi"),
+                        workers=[WK.DeterministicWorker(), FloatDet()])
+        addr = node.start()
+        client = D.Daemon(ident(b"multi-client"))
+        try:
+            r1 = client.request_job(addr[0], addr[1], b"n", n_chunks=1, k=3,
+                                    vclass=L.VCLASS_NATIVE,
+                                    audit=WK.DeterministicWorker())
+            r2 = client.request_job(addr[0], addr[1], b"f", n_chunks=1, k=2,
+                                    vclass=L.VCLASS_FLOAT, audit=None)
+            self.assertEqual(r1["settled_chunks"], 1)
+            self.assertEqual(r2["settled_chunks"], 1)
+            self.assertEqual(node.ledger.balance(node.account_id), 5)   # 3 + 2
+            self.assertEqual(node.ledger.burnable(node.account_id), 3)  # native only
+        finally:
+            node.stop()
+            client.stop()
+
+    def test_unavailable_class_is_declined(self):
+        # A float-only node declines a native job (no worker for that class).
+        class FloatDet(WK.DeterministicWorker):
+            vclass = WK.VCLASS_FLOAT
+
+        node = D.Daemon(ident(b"float-only"), worker=FloatDet())
+        addr = node.start()
+        client = D.Daemon(ident(b"fo-client"))
+        try:
+            r = client.request_job(addr[0], addr[1], b"n", n_chunks=1, k=1,
+                                   vclass=L.VCLASS_NATIVE,
+                                   audit=WK.DeterministicWorker())
+            self.assertEqual(r["settled_chunks"], 0)     # declined
+        finally:
+            node.stop()
+            client.stop()
+
+
 if __name__ == "__main__":
     unittest.main()
