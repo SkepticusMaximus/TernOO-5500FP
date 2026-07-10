@@ -621,15 +621,20 @@ class Daemon:
         return set(self._peer_book)
 
     def peers_to_dict(self):
-        """The peer book as a serializable dict — plain peers plus which of them are
-        anchors — so a restarted node rejoins the mesh instantly (§9.3)."""
+        """The node's mesh state as a serializable dict — plain peers, which of them
+        are anchors, and earned reputation — so a restarted node rejoins the mesh
+        instantly (§9.3) and remembers who has paid it (§9.1)."""
+        with self._lock:
+            rep = {rid.hex(): n for rid, n in self._settled_total.items()}
         return {"peers": sorted([h, p] for (h, p) in self._peer_book),
-                "anchors": sorted([h, p] for (h, p) in self._anchors)}
+                "anchors": sorted([h, p] for (h, p) in self._anchors),
+                "reputation": rep}
 
     def load_peers_dict(self, d):
-        """Restore a peer book: anchors first (sticky), then plain peers. Skips our
-        own address (add_anchor/add_peer already guard it). Malformed entries are
-        ignored — a corrupt book must not stop a node from starting."""
+        """Restore mesh state: anchors first (sticky), then plain peers, then
+        reputation. Skips our own address (add_anchor/add_peer already guard it).
+        Malformed entries are ignored — a corrupt book must not stop a node from
+        starting."""
         for h, p in d.get("anchors", []):
             try:
                 self.add_anchor(h, int(p))
@@ -638,6 +643,11 @@ class Daemon:
         for h, p in d.get("peers", []):
             try:
                 self.add_peer(h, int(p))
+            except (ValueError, TypeError):
+                continue
+        for hexid, n in d.get("reputation", {}).items():
+            try:
+                self._settled_total[bytes.fromhex(hexid)] = int(n)
             except (ValueError, TypeError):
                 continue
 

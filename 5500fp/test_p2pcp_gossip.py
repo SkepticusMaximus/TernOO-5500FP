@@ -374,6 +374,14 @@ class TestPeerBookPersistence(unittest.TestCase):
             e.add_peer("172.16.0.%d" % (i + 1), 7000 + i)
         self.assertIn(("10.0.0.1", 9000), e.known_peers())
 
+    def test_reputation_persists_with_the_book(self):
+        d = D.Daemon(ident(b"rep-save"))
+        rid = ident(b"a-good-customer").account_id
+        d._settled_total[rid] = 7                          # earned standing
+        e = D.Daemon(ident(b"rep-load"))
+        e.load_peers_dict(d.peers_to_dict())               # restart → reload state
+        self.assertEqual(e.reputation(rid)["settled"], 7)  # standing survived
+
     def test_load_missing_or_corrupt_book_is_noop(self):
         d = D.Daemon(ident(b"robust"))
         d.load_peers("/nonexistent/book.peers")            # absent → no raise
