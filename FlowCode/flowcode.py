@@ -850,6 +850,10 @@ def run_gui():
     #    this file alongside the Text/Translator mounts.
     academy_tab = tk.Frame(notebook, bg=C['bg'])
     notebook.add(academy_tab, text='  Academy  ')
+    # Tab 9: Mesh — P2PCP (sell/buy AI compute for CompuCoin). View class in
+    #   5500fp/p2pcp_tab_view.py; mounted near the GHOST/Text mounts below.
+    mesh_tab = tk.Frame(notebook, bg=C['bg'])
+    notebook.add(mesh_tab, text='  Mesh  ')
     # Piece 2: Lingo hosts two views — Vocabulary (GristMillTabView, as
     # before) and Translator (multi-dialect projections). Toggle header:
     _lingo_hdr = tk.Frame(gm_tab, bg=C['palette'])
@@ -7733,6 +7737,19 @@ def run_gui():
         except Exception as _gtv_err:
             import traceback; traceback.print_exc()
             print(f'[FlowCode] GHOST tab failed to load: {_gtv_err}')
+
+    _mtv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             '../5500fp/p2pcp_tab_view.py')
+    if os.path.exists(_mtv_path):
+        try:
+            import importlib.util as _mtv_u
+            _mtv_spec = _mtv_u.spec_from_file_location('p2pcp_tab_view', _mtv_path)
+            _mtv_mod = _mtv_u.module_from_spec(_mtv_spec)
+            _mtv_spec.loader.exec_module(_mtv_mod)
+            _mtv_mod.MeshTabView(mesh_tab, C, root, guic_set_status)
+        except Exception as _mtv_err:
+            import traceback; traceback.print_exc()
+            print(f'[FlowCode] Mesh tab failed to load: {_mtv_err}')
 
     _trv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              '../5500fp/translator_view.py')
