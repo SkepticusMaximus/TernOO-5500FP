@@ -98,6 +98,22 @@ class TestNode(unittest.TestCase):
         finally:
             prof.stop()
 
+    def test_ask_mesh_discovers_a_professor_among_peers(self):
+        prof = D.Daemon(N.identity_from_seed("mesh-prof"),
+                        worker=P.BonsaiWorker(backend=B.EchoBackend()))
+        addr = prof.start()
+        client = None
+        try:
+            client, served, res = N.ask_mesh([("127.0.0.1", 1), addr],   # 1st dead
+                                             "what is ternary?", k=5, seed="mc")
+            self.assertEqual(served, addr)                 # found & named the prof
+            self.assertEqual(res["settled_chunks"], 1)
+            self.assertIn(b"echo professor", res["outputs"][0])
+        finally:
+            if client is not None:
+                client.stop()
+            prof.stop()
+
     def test_ask_returns_the_professors_answer(self):
         prof = D.Daemon(N.identity_from_seed("prof-test"),
                         worker=P.BonsaiWorker(backend=B.EchoBackend()))

@@ -153,6 +153,26 @@ def classify(host, port, text, k=4, seed="caller"):
     return client, res
 
 
+def ask_mesh(peers, prompt, k=5, seed="client"):
+    """Buy inference from ANY Professor among `peers`: discover a compute:float
+    provider and fall through if one is down. Returns (client, addr, result)."""
+    client = D.Daemon(identity_from_seed(seed))
+    addr, res = client.buy_from_mesh("compute:float", prompt.encode("utf-8"),
+                                     1, k, L.VCLASS_FLOAT, audit=None,
+                                     candidates=peers)
+    return client, addr, res
+
+
+def classify_mesh(peers, text, k=4, seed="caller"):
+    """Buy classification from ANY GHOST among `peers` (compute:native),
+    replay-audited. Returns (client, addr, result)."""
+    client = D.Daemon(identity_from_seed(seed))
+    addr, res = client.buy_from_mesh("compute:native", text.encode("utf-8"),
+                                     1, k, L.VCLASS_NATIVE, audit=GH.GhostWorker(),
+                                     candidates=peers)
+    return client, addr, res
+
+
 def wallet(keyfile):
     """A node's account + CompuCoin, read from its persisted state — no server.
     `balance` is spendable; `weight_bearing` is the replay-class earnings that can
@@ -231,13 +251,15 @@ def main(argv=None):
     pa = sub.add_parser("ask", help="ask a Professor node a question (paid)")
     pa.add_argument("prompt")
     pa.add_argument("--host", default="127.0.0.1")
-    pa.add_argument("--port", type=int, required=True)
+    pa.add_argument("--port", type=int, help="a specific node (else use --peers)")
+    pa.add_argument("--peers", help="discover a Professor among these, host:port,...")
     pa.add_argument("--k", type=int, default=5)
     pa.add_argument("--seed", default="client")
     pc = sub.add_parser("classify", help="ask a GHOST node to classify text (paid)")
     pc.add_argument("text")
     pc.add_argument("--host", default="127.0.0.1")
-    pc.add_argument("--port", type=int, required=True)
+    pc.add_argument("--port", type=int, help="a specific node (else use --peers)")
+    pc.add_argument("--peers", help="discover a GHOST among these, host:port,...")
     pc.add_argument("--k", type=int, default=4)
     pc.add_argument("--seed", default="caller")
     pw = sub.add_parser("wallet", help="show a node's account + CompuCoin")
@@ -279,18 +301,36 @@ def main(argv=None):
         for h, p in hits:
             print(f"{h}:{p}")
     elif args.cmd in ("ask", "classify"):
-        if args.cmd == "ask":
-            client, res = ask(args.host, args.port, args.prompt, args.k, args.seed)
+        served = None
+        if args.peers:                                 # discover across the mesh
+            peers = parse_peers(args.peers)
+            if args.cmd == "ask":
+                client, served, res = ask_mesh(peers, args.prompt, args.k, args.seed)
+            else:
+                client, served, res = classify_mesh(peers, args.text, args.k,
+                                                     args.seed)
+            if res is None:                            # no provider settled
+                print(f"[{args.cmd}] no provider on the mesh settled (all offline, "
+                      f"refused, or failed audit).", file=sys.stderr)
+                client.stop()
+                sys.exit(1)
+        elif args.port is not None:                    # a specific named node
+            if args.cmd == "ask":
+                client, res = ask(args.host, args.port, args.prompt, args.k, args.seed)
+            else:
+                client, res = classify(args.host, args.port, args.text, args.k,
+                                       args.seed)
         else:
-            client, res = classify(args.host, args.port, args.text, args.k, args.seed)
+            ap.error(f"{args.cmd}: give --port (a node) or --peers (discover one)")
         try:
             if res["settled_chunks"] < 1:
                 print(f"[{args.cmd}] nothing settled (node offline, refused, or "
                       f"audit failed).", file=sys.stderr)
                 sys.exit(1)
             print(res["outputs"][0].decode("utf-8", "replace"))
+            where = f" via {served[0]}:{served[1]}" if served else ""
             print(f"\n[{args.cmd}] paid {res['paid']} CompuCoin to "
-                  f"{res['worker'].hex()[:16]}…", file=sys.stderr)
+                  f"{res['worker'].hex()[:16]}…{where}", file=sys.stderr)
         finally:
             client.stop()
 
