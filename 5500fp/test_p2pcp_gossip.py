@@ -382,6 +382,21 @@ class TestPeerBookPersistence(unittest.TestCase):
         e.load_peers_dict(d.peers_to_dict())               # restart → reload state
         self.assertEqual(e.reputation(rid)["settled"], 7)  # standing survived
 
+    def test_poisoned_book_is_bounded_and_reputation_non_negative(self):
+        d = D.Daemon(ident(b"hardened"))
+        d.max_peers = 5
+        victim = ident(b"victim").account_id
+        poisoned = {
+            "anchors": [["10.0.%d.1" % (i // 250), i % 250 + 1] for i in range(1000)],
+            "peers": [],
+            "reputation": {victim.hex(): -999},            # denial-of-service attempt
+        }
+        d.load_peers_dict(poisoned)
+        self.assertLessEqual(len(d.known_peers()), 5)      # anchor flood bounded
+        rep = d.reputation(victim)
+        self.assertEqual(rep["settled"], 0)                # negative clamped to 0
+        self.assertEqual(rep["cap"], d.max_unpaid_per_peer)  # victim NOT denied service
+
     def test_load_missing_or_corrupt_book_is_noop(self):
         d = D.Daemon(ident(b"robust"))
         d.load_peers("/nonexistent/book.peers")            # absent → no raise

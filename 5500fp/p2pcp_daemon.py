@@ -90,6 +90,7 @@ TRUST_BONUS_MAX = 5        # ...up to this bonus over the floor
 # blip resets on the next success), and NEVER an anchor (the honest bootstrap an
 # attacker must not be able to knock out by faking unreachability).
 MAX_PEER_FAILS = 3
+MAX_REPUTATION_ENTRIES = 10_000  # cap loaded reputation rows (poisoned-dump bound)
 
 
 class _BoundedSeen:
@@ -679,19 +680,23 @@ class Daemon:
         reputation. Skips our own address (add_anchor/add_peer already guard it).
         Malformed entries are ignored — a corrupt book must not stop a node from
         starting."""
-        for h, p in d.get("anchors", []):
+        # Bound every list a (possibly poisoned) dump can grow: anchors bypass the
+        # book cap, so an unbounded anchor list is a memory bomb; cap all three.
+        for h, p in list(d.get("anchors", []))[:self.max_peers]:
             try:
                 self.add_anchor(h, int(p))
             except (ValueError, TypeError):
                 continue
-        for h, p in d.get("peers", []):
+        for h, p in list(d.get("peers", []))[:self.max_peers]:
             try:
                 self.add_peer(h, int(p))
             except (ValueError, TypeError):
                 continue
-        for hexid, n in d.get("reputation", {}).items():
+        for hexid, n in list(d.get("reputation", {}).items())[:MAX_REPUTATION_ENTRIES]:
             try:
-                self._settled_total[bytes.fromhex(hexid)] = int(n)
+                # Reputation is a non-negative tally; a negative value from a poisoned
+                # dump would push a victim's cap below the floor and DENY it service.
+                self._settled_total[bytes.fromhex(hexid)] = max(0, int(n))
             except (ValueError, TypeError):
                 continue
 
