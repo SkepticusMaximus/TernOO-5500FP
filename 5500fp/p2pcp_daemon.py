@@ -85,6 +85,7 @@ class Daemon:
         self._events = queue.Queue()           # verified account_ids, for observers
         self._votes = queue.Queue()            # verified conflict-votes (§9)
         self._peer_book = set()                # known peer LISTEN addresses (v0.2)
+        self._seen = set()                     # gossip dedup keys (v0.2 flood)
         self._lock = threading.Lock()
         self._running = False
         self._accept_thread = None
@@ -383,8 +384,14 @@ class Daemon:
 
     def _collect_vote(self, frame):
         vote = C.Vote.from_dict(frame["vote"])
-        if C.verify_vote(vote):            # a forged/unsigned vote is dropped (§9)
-            self._votes.put(vote)
+        if not C.verify_vote(vote):        # a forged/unsigned vote is dropped (§9)
+            return
+        mid = self._gossip_id(vote.signing_bytes())
+        if mid in self._seen:              # already heard it — drop, do NOT re-relay
+            return                         # dedup: this is what stops a broadcast storm
+        self._seen.add(mid)
+        self._votes.put(vote)
+        self._fanout_vote(vote)            # relay onward — the flood (v0.2)
 
     def next_vote(self, timeout=DEFAULT_TIMEOUT):
         """Block until the next verified vote arrives; return it."""
@@ -436,14 +443,30 @@ class Daemon:
             peer.close()
         return learned
 
-    def broadcast_vote(self, vote):
-        """Fan a signed vote out to every peer in the book (v0.2). One-hop; a dead
-        peer is skipped, not fatal. Returns the count reached."""
+    def _gossip_id(self, payload: bytes):
+        """Content-addressed dedup key for a gossiped item — every node derives
+        the SAME id from the same content, so a flooded item is recognized and
+        dropped everywhere it has already been."""
+        return L.wire_mmid(payload, self.alg)
+
+    def _fanout_vote(self, vote):
         sent = 0
         for host, port in list(self._peer_book):
             try:
                 self.send_vote(host, port, vote)
                 sent += 1
             except SOCK.OrganError:
-                continue
+                continue                   # a dead peer is skipped, not fatal
         return sent
+
+    def broadcast_vote(self, vote):
+        """Originate a vote to the mesh (v0.2): mark it seen (so an echo back is
+        deduped), then fan it out. Recipients RELAY it onward — the flood — and
+        dedup stops it circulating forever, so it reaches non-adjacent nodes
+        without a broadcast storm. Returns the count of direct peers reached.
+
+        (NB v0.2: `_seen` is unbounded here; a bounded/expiring seen-set is a
+        later hardening. Fan-out excludes-sender is a later optimization — dedup
+        already makes an echo harmless.)"""
+        self._seen.add(self._gossip_id(vote.signing_bytes()))
+        return self._fanout_vote(vote)

@@ -12,6 +12,7 @@ Run: ``cd 5500fp && python3 -m unittest test_p2pcp_gossip``
 
 import importlib.util as _ilu
 import os
+import queue
 import unittest
 
 _here = os.path.dirname(os.path.abspath(__file__))
@@ -112,6 +113,45 @@ class TestDiscovery(unittest.TestCase):
         finally:
             b.stop()
             c.stop()
+            a.stop()
+
+
+class TestGossipFlood(unittest.TestCase):
+    """Relay + dedup — the actual gossip (v0.2 slice 2)."""
+
+    def test_relay_reaches_non_adjacent_node(self):
+        # Line A → B → C. A knows only B; C knows nobody. A originates a vote to
+        # B; B RELAYS it to C. C hears it though A never contacted C — the flood.
+        c = D.Daemon(ident(b"gc"))
+        b = D.Daemon(ident(b"gb"))
+        a = D.Daemon(ident(b"ga"))
+        c_addr, b_addr = c.start(), b.start()
+        b.add_peer(*c_addr)                              # B → C
+        try:
+            a.add_peer(*b_addr)                          # A → B only
+            a.broadcast_vote(a.cast_vote(ACCT, 1, X))
+            self.assertEqual(b.next_vote(5.0).choice, X)
+            self.assertEqual(c.next_vote(5.0).choice, X)  # reached purely by relay
+        finally:
+            b.stop()
+            c.stop()
+            a.stop()
+
+    def test_duplicate_vote_is_deduped(self):
+        # The same vote delivered twice is collected ONCE — dedup stops the storm.
+        b = D.Daemon(ident(b"gd-b"))
+        a = D.Daemon(ident(b"gd-a"))
+        b_addr = b.start()
+        try:
+            a.add_peer(*b_addr)
+            v = a.cast_vote(ACCT, 1, X)
+            a.broadcast_vote(v)
+            self.assertEqual(b.next_vote(5.0).choice, X)  # collected once
+            a.broadcast_vote(v)                           # same vote again
+            with self.assertRaises(queue.Empty):          # ...not collected twice
+                b.next_vote(0.5)
+        finally:
+            b.stop()
             a.stop()
 
 
