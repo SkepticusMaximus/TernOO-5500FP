@@ -94,13 +94,16 @@ def _serve_worker(worker, label, host, port, identity, ledger_path=None,
             return
     node = D.Daemon(identity, worker=worker, ledger=ledger)
     h, p = node.start(host, port)
+    peers_path = (ledger_path + ".peers") if ledger_path else None
+    if peers_path and os.path.exists(peers_path):
+        node.load_peers(peers_path)                # rejoin last-known mesh instantly
     print(f"[{label}] listening on {h}:{p}", flush=True)
     print(f"[{label}] account {node.account_id.hex()[:16]}… — selling compute "
           f"for CompuCoin", flush=True)
-    if peers:
-        known = join_mesh(node, peers)
-        print(f"[{label}] joined mesh via {len(peers)} seed(s); know {known} "
-              f"peers", flush=True)
+    if peers or node.known_peers():
+        if peers:
+            join_mesh(node, peers)
+        print(f"[{label}] mesh: know {len(node.known_peers())} peer(s)", flush=True)
     print(f"[{label}] Ctrl-C to stop.", flush=True)
     try:
         threading.Event().wait()                   # serve until interrupted
@@ -110,6 +113,8 @@ def _serve_worker(worker, label, host, port, identity, ledger_path=None,
         node.stop()
         if ledger_path:
             node.ledger.save(ledger_path)          # keep earnings across restarts
+        if peers_path:
+            node.save_peers(peers_path)            # keep the mesh view across restarts
         earned = (node.ledger.balance(node.account_id)
                   if node.account_id in node.ledger.chains else 0)
         print(f"\n[{label}] stopped. earned {earned} CompuCoin.", flush=True)

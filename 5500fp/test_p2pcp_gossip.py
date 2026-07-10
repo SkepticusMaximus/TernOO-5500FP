@@ -352,6 +352,39 @@ class TestPeerHealth(unittest.TestCase):
         self.assertIn(("10.0.0.5", 9000), d.known_peers())  # anchor survives
 
 
+class TestPeerBookPersistence(unittest.TestCase):
+    """A node keeps its mesh view across restarts (§9.3) — anchors stay anchors."""
+
+    def test_book_round_trips_and_anchors_stay_anchors(self):
+        import tempfile
+        d = D.Daemon(ident(b"saver"))
+        d.add_anchor("10.0.0.1", 9000)
+        d.add_peer("10.0.0.2", 9001)
+        d.add_peer("10.0.0.3", 9002)
+        path = os.path.join(tempfile.mkdtemp(), "book.peers")
+        d.save_peers(path)
+
+        e = D.Daemon(ident(b"loader"))
+        e.load_peers(path)
+        self.assertEqual(e.known_peers(), {("10.0.0.1", 9000), ("10.0.0.2", 9001),
+                                           ("10.0.0.3", 9002)})
+        # The reloaded anchor is still un-evictable: flood past a tight cap, it stays.
+        e.max_peers = 2
+        for i in range(20):
+            e.add_peer("172.16.0.%d" % (i + 1), 7000 + i)
+        self.assertIn(("10.0.0.1", 9000), e.known_peers())
+
+    def test_load_missing_or_corrupt_book_is_noop(self):
+        d = D.Daemon(ident(b"robust"))
+        d.load_peers("/nonexistent/book.peers")            # absent → no raise
+        import tempfile
+        bad = os.path.join(tempfile.mkdtemp(), "bad.peers")
+        with open(bad, "w") as f:
+            f.write("{not json")
+        d.load_peers(bad)                                  # corrupt → no raise
+        self.assertEqual(d.known_peers(), set())
+
+
 class TestBoundedSeen(unittest.TestCase):
     """Gossip dedup memory is bounded (DM's note) — oldest keys evict (v0.2)."""
 

@@ -588,6 +588,42 @@ class Daemon:
     def known_peers(self):
         return set(self._peer_book)
 
+    def peers_to_dict(self):
+        """The peer book as a serializable dict — plain peers plus which of them are
+        anchors — so a restarted node rejoins the mesh instantly (§9.3)."""
+        return {"peers": sorted([h, p] for (h, p) in self._peer_book),
+                "anchors": sorted([h, p] for (h, p) in self._anchors)}
+
+    def load_peers_dict(self, d):
+        """Restore a peer book: anchors first (sticky), then plain peers. Skips our
+        own address (add_anchor/add_peer already guard it). Malformed entries are
+        ignored — a corrupt book must not stop a node from starting."""
+        for h, p in d.get("anchors", []):
+            try:
+                self.add_anchor(h, int(p))
+            except (ValueError, TypeError):
+                continue
+        for h, p in d.get("peers", []):
+            try:
+                self.add_peer(h, int(p))
+            except (ValueError, TypeError):
+                continue
+
+    def save_peers(self, path):
+        """Persist the peer book to `path` (host-app operational state, like the
+        keyfile/ledger — P2PCP is host-agnostic, spec §0)."""
+        with open(path, "w") as f:
+            json.dump(self.peers_to_dict(), f)
+
+    def load_peers(self, path):
+        """Load a peer book saved by save_peers. Absent/corrupt → no-op (best
+        effort), so a missing or damaged book never blocks startup."""
+        try:
+            with open(path) as f:
+                self.load_peers_dict(json.load(f))
+        except (OSError, ValueError):
+            pass
+
     def _note_peer_ok(self, addr):
         """A peer answered — clear its miss streak."""
         with self._lock:
