@@ -20,6 +20,7 @@ import json
 import os
 import sys
 import threading
+import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(_HERE, "p2pcp.json")
@@ -200,20 +201,41 @@ def classify_mesh(peers, text, k=4, seed="caller"):
     return client, addr, res
 
 
-def wallet(keyfile):
+def wallet(keyfile, now=None):
     """A node's account + CompuCoin, read from its persisted state — no server.
-    `balance` is spendable; `weight_bearing` is the replay-class earnings that can
-    be burned for a vote (§10)."""
+    `balance` is spendable; `weight_bearing` is the replay-class earnings that CAN
+    be burned; `weight` is the decayed voting weight already burned (§10)."""
     if not os.path.exists(keyfile):
         raise FileNotFoundError(f"no node key at {keyfile}")
     acct = load_or_create_identity(keyfile).account_id
     ledger_path = keyfile + ".ledger"
     ledger = (L.Ledger.load(ledger_path)
               if os.path.exists(ledger_path) else L.Ledger())
+    nw = int(time.time()) if now is None else now
     if acct in ledger.chains:
         return {"account": acct.hex(), "balance": ledger.balance(acct),
-                "weight_bearing": ledger.burnable(acct)}
-    return {"account": acct.hex(), "balance": 0, "weight_bearing": 0}
+                "weight_bearing": ledger.burnable(acct),
+                "weight": ledger.weight(acct, nw)}
+    return {"account": acct.hex(), "balance": 0, "weight_bearing": 0, "weight": 0.0}
+
+
+def burn(keyfile, amount, now=None):
+    """Burn `amount` of a node's earned weight-bearing credit into governance
+    weight (§10), persisting the result. Only replay-class earnings can be burned,
+    so a vote's weight traces to auditable work — float rent never can. Returns the
+    wallet after burning."""
+    if not os.path.exists(keyfile):
+        raise FileNotFoundError(f"no node key at {keyfile}")
+    identity = load_or_create_identity(keyfile)
+    ledger_path = keyfile + ".ledger"
+    ledger = (L.Ledger.load(ledger_path)
+              if os.path.exists(ledger_path) else L.Ledger())
+    nw = int(time.time()) if now is None else now
+    if identity.account_id not in ledger.chains:
+        ledger.open_account(identity)
+    ledger.burn(identity, int(amount), timestamp=nw, now=nw)
+    ledger.save(ledger_path)
+    return wallet(keyfile, now=nw)
 
 
 def node_status(host, port, seed="observer"):
@@ -311,6 +333,10 @@ def main(argv=None):
     pc.add_argument("--seed", default="caller")
     pw = sub.add_parser("wallet", help="show a node's account + CompuCoin")
     pw.add_argument("--keyfile", required=True)
+    pb = sub.add_parser("burn",
+                        help="burn earned credit into voting weight (governance)")
+    pb.add_argument("--keyfile", required=True)
+    pb.add_argument("--amount", type=int, required=True)
     ps = sub.add_parser("status", help="query a node's public status")
     ps.add_argument("--host", default="127.0.0.1")
     ps.add_argument("--port", type=int, required=True)
@@ -356,7 +382,16 @@ def main(argv=None):
         w = wallet(args.keyfile)
         print(f"account:        {w['account']}")
         print(f"balance:        {w['balance']} CompuCoin")
-        print(f"weight-bearing: {w['weight_bearing']} (votes-worth, replay-class)")
+        print(f"weight-bearing: {w['weight_bearing']} (burnable, replay-class)")
+        print(f"voting weight:  {w['weight']:.3f} (decayed burn, §10)")
+    elif args.cmd == "burn":
+        try:
+            w = burn(args.keyfile, args.amount)
+        except L.P2PCPError as e:
+            print(f"[burn] refused: {e}", file=sys.stderr)
+            sys.exit(1)
+        print(f"burned {args.amount} → voting weight {w['weight']:.3f}  "
+              f"(weight-bearing left: {w['weight_bearing']})")
     elif args.cmd == "status":
         st = node_status(args.host, args.port)
         if not st:

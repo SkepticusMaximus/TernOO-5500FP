@@ -56,6 +56,29 @@ class TestNode(unittest.TestCase):
         self.assertEqual(w["balance"], 7)
         self.assertEqual(w["weight_bearing"], 7)
 
+    def test_burn_converts_earnings_to_voting_weight(self):
+        import tempfile
+        key = os.path.join(tempfile.mkdtemp(), "gov.key")
+        idn = N.load_or_create_identity(key)
+        led = D.L.Ledger()
+        cust = N.identity_from_seed("gov-cust")
+        led.open_account(idn)
+        led.open_account(cust)
+        led.settle_work(idn, cust, 10)                   # idn earns 10 weight-bearing
+        led.save(key + ".ledger")
+        self.assertEqual(N.wallet(key)["weight"], 0.0)   # earned, not yet burned
+        w = N.burn(key, 6)                               # burn 6 → weight
+        self.assertGreater(w["weight"], 0.0)
+        self.assertEqual(w["weight_bearing"], 4)         # 10 − 6 left burnable
+        self.assertGreater(N.wallet(key)["weight"], 0.0)  # persisted across reload
+
+    def test_burn_more_than_earned_is_refused(self):
+        import tempfile
+        key = os.path.join(tempfile.mkdtemp(), "gov2.key")
+        N.load_or_create_identity(key)                   # fresh: nothing earned
+        with self.assertRaises(N.L.P2PCPError):          # can't burn what you lack
+            N.burn(key, 5)
+
     def test_parse_peers(self):
         self.assertEqual(N.parse_peers("1.2.3.4:9000, :9001"),
                          [("1.2.3.4", 9000), ("127.0.0.1", 9001)])
