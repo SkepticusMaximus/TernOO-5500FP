@@ -41,6 +41,21 @@ class TestNode(unittest.TestCase):
         self.assertEqual(created.account_id, reloaded.account_id)
         self.assertEqual(oct(os.stat(path).st_mode)[-3:], "600")   # owner-only
 
+    def test_wallet_reads_persisted_earnings(self):
+        import tempfile
+        key = os.path.join(tempfile.mkdtemp(), "w.key")
+        idn = N.load_or_create_identity(key)             # persist the key
+        led = D.L.Ledger()
+        cust = N.identity_from_seed("wallet-cust")
+        led.open_account(idn)
+        led.open_account(cust)
+        led.settle_work(idn, cust, 7)                    # idn earns 7 (weight-bearing)
+        led.save(key + ".ledger")
+        w = N.wallet(key)
+        self.assertEqual(w["account"], idn.account_id.hex())
+        self.assertEqual(w["balance"], 7)
+        self.assertEqual(w["weight_bearing"], 7)
+
     def test_ask_returns_the_professors_answer(self):
         prof = D.Daemon(N.identity_from_seed("prof-test"),
                         worker=P.BonsaiWorker(backend=B.EchoBackend()))

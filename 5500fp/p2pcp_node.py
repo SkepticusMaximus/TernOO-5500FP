@@ -129,6 +129,22 @@ def classify(host, port, text, k=4, seed="caller"):
     return client, res
 
 
+def wallet(keyfile):
+    """A node's account + CompuCoin, read from its persisted state — no server.
+    `balance` is spendable; `weight_bearing` is the replay-class earnings that can
+    be burned for a vote (§10)."""
+    if not os.path.exists(keyfile):
+        raise FileNotFoundError(f"no node key at {keyfile}")
+    acct = load_or_create_identity(keyfile).account_id
+    ledger_path = keyfile + ".ledger"
+    ledger = (L.Ledger.load(ledger_path)
+              if os.path.exists(ledger_path) else L.Ledger())
+    if acct in ledger.chains:
+        return {"account": acct.hex(), "balance": ledger.balance(acct),
+                "weight_bearing": ledger.burnable(acct)}
+    return {"account": acct.hex(), "balance": 0, "weight_bearing": 0}
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="p2pcp_node",
                                  description="Launch a P2PCP node.")
@@ -157,12 +173,19 @@ def main(argv=None):
     pc.add_argument("--port", type=int, required=True)
     pc.add_argument("--k", type=int, default=4)
     pc.add_argument("--seed", default="caller")
+    pw = sub.add_parser("wallet", help="show a node's account + CompuCoin")
+    pw.add_argument("--keyfile", required=True)
     args = ap.parse_args(argv)
 
     if args.cmd == "professor":
         run_professor(args.host, args.port, args.seed, args.mock, args.keyfile)
     elif args.cmd == "ghost":
         run_ghost(args.host, args.port, args.seed, args.keyfile)
+    elif args.cmd == "wallet":
+        w = wallet(args.keyfile)
+        print(f"account:        {w['account']}")
+        print(f"balance:        {w['balance']} CompuCoin")
+        print(f"weight-bearing: {w['weight_bearing']} (votes-worth, replay-class)")
     elif args.cmd in ("ask", "classify"):
         if args.cmd == "ask":
             client, res = ask(args.host, args.port, args.prompt, args.k, args.seed)
