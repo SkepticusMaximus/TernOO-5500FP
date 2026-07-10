@@ -310,5 +310,19 @@ class TestEclipseMitigation(unittest.TestCase):
             a.stop()
 
 
+class TestBoundedSeen(unittest.TestCase):
+    """Gossip dedup memory is bounded (DM's note) — oldest keys evict (v0.2)."""
+
+    def test_seen_evicts_oldest_over_cap(self):
+        s = D._BoundedSeen(5)
+        for i in range(20):
+            s.add(("k", i))
+        self.assertEqual(len(s), 5)
+        self.assertIn(("k", 19), s)                     # most recent retained
+        self.assertNotIn(("k", 0), s)                   # oldest evicted
+        s.add(("k", 19))                                # re-adding is a no-op
+        self.assertEqual(len(s), 5)
+
+
 if __name__ == "__main__":
     unittest.main()

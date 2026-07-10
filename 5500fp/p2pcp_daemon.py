@@ -26,6 +26,7 @@ Date: 2026-07-10, Adelaide
 Authors: Stevo (SkepticusMaximus) + Claude (Anthropic)
 """
 
+import collections
 import importlib.util as _ilu
 import json
 import os
@@ -63,6 +64,30 @@ BASE_CAPS = ("compucoin",)       # the CompuCoin ledger capability; CGP adds mor
 # out our honest peers or fill our whole view from a single source.
 MAX_PEERS = 64
 MAX_LEARN_PER_FETCH = 8
+MAX_SEEN = 100_000               # gossip dedup cap (bounded memory under flood)
+
+
+class _BoundedSeen:
+    """A bounded FIFO set for gossip dedup — caps memory under sustained flood
+    (DM's note). Oldest keys are evicted; if an evicted key is re-seen it just
+    re-floods once, which is harmless (dedup is an optimization, not a law)."""
+
+    def __init__(self, cap=MAX_SEEN):
+        self._cap = cap
+        self._d = collections.OrderedDict()
+
+    def __contains__(self, key):
+        return key in self._d
+
+    def add(self, key):
+        if key in self._d:
+            return
+        self._d[key] = None
+        if len(self._d) > self._cap:
+            self._d.popitem(last=False)      # evict the oldest
+
+    def __len__(self):
+        return len(self._d)
 
 
 class DaemonError(Exception):
@@ -103,7 +128,7 @@ class Daemon:
         self._events = queue.Queue()           # verified account_ids, for observers
         self._votes = queue.Queue()            # verified conflict-votes (§9)
         self._peer_book = set()                # known peer LISTEN addresses (v0.2)
-        self._seen = set()                     # gossip dedup keys (v0.2 flood)
+        self._seen = _BoundedSeen(MAX_SEEN)    # gossip dedup, bounded (v0.2 flood)
         self._vote_pool = {}                   # (account,height) -> [votes] (v0.2)
         self._seen_records = {}                # (account,height) -> first-seen id
         self._forks = {}                       # (account,height) -> (id_a,id_b)
