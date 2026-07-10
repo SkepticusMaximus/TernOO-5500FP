@@ -369,6 +369,7 @@ class Daemon:
         peer = self.organ.connect(host, port, timeout=self.timeout)
         settled = 0
         receipts = []
+        outputs = []
         try:
             worker_id = self._handshake_outbound(peer)
             job_mmid = L.wire_mmid(job, self.alg)
@@ -416,9 +417,11 @@ class Daemon:
                 except L.P2PCPError:
                     break
                 receipts.append(receipt)
+                outputs.append(output)             # the delivered, paid-for result
                 settled += 1
             return {"worker": worker_id, "settled_chunks": settled,
-                    "paid": settled * k, "receipts": receipts}
+                    "paid": settled * k, "receipts": receipts,
+                    "outputs": outputs}
         finally:
             peer.close()
 
