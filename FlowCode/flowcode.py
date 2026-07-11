@@ -769,11 +769,11 @@ def run_gui():
     _run_toggle_hdr.bind('<Button-1>', _toggle_output_panel)
     _run_toggle_lbl.bind('<Button-1>', _toggle_output_panel)
 
-    def _apply_output_relevance(is_flow):
+    def _apply_output_relevance(wants_output):
         """The Output panel is the Flow execution trace — nothing else writes
-        it. Show it only on the Flow tab (relevance matrix); hidden elsewhere,
-        not merely collapsed."""
-        if is_flow:
+        it. Shown only where a tab's TAB_CHROME `wants_output` is set (today just
+        Flow); hidden elsewhere, not merely collapsed."""
+        if wants_output:
             _run_toggle_hdr.pack(side='bottom', fill='x')
             if not _output_collapsed[0]:
                 _run_panel.pack(side='bottom', fill='x', before=_run_toggle_hdr)
@@ -784,15 +784,45 @@ def run_gui():
     notebook = ttk.Notebook(right_outer)
     notebook.pack(fill='both',expand=True)
 
-    # ── Global tab-aware Help (docs phase): a ? Help button on a slim bar above
-    #   the notebook, so help is one click from EVERY tab — including self-contained
-    #   tabs (Text/Academy/Docs) where the sidebar is hidden. It opens that tab's
-    #   topic in the shared helpdown viewer (5500fp/help_viewer.py).
-    _help_bar = tk.Frame(right_outer, bg=C['palette'])
-    _help_bar.pack(side='top', fill='x', before=notebook)
-    _HELP_TOPIC = {0: 'flow', 1: 'gui', 2: 'sheet', 3: 'text', 4: 'shell',
-                   5: 'connectors', 6: 'babble-fish', 7: 'academy', 8: 'mesh',
-                   9: 'docs'}
+    # ── TAB_CHROME — the seed of the application manifest. Today its container is
+    #   the tab strip; its future container is a desktop. A tab's chrome declaration
+    #   is a window's constitution — build nothing into the shell that assumes tabs
+    #   are the only container. (CF5 chrome-contract ruling, 2026-07-12.)
+    #   Ordered per the canon: the four faces of a FlowCode program (Flow/GUI/Sheet/
+    #   Connectors) + Shell the operator's door, then the applications (tenants).
+    TAB_CHROME = [
+        {'key': 'flow',        'title': 'Flow',          'help_topic': 'flow',        'wants_sidebar': True,  'wants_output': True},
+        {'key': 'gui',         'title': 'GUI',           'help_topic': 'gui',         'wants_sidebar': True,  'wants_output': False},
+        {'key': 'sheet',       'title': 'Sheet',         'help_topic': 'sheet',       'wants_sidebar': True,  'wants_output': False},
+        {'key': 'connectors',  'title': 'Connectors',    'help_topic': 'connectors',  'wants_sidebar': True,  'wants_output': False},
+        {'key': 'shell',       'title': 'Shell',         'help_topic': 'shell',       'wants_sidebar': True,  'wants_output': False},
+        {'key': 'text',        'title': 'Text',          'help_topic': 'text',        'wants_sidebar': False, 'wants_output': False},
+        {'key': 'babble-fish', 'title': 'Babble-Fish',   'help_topic': 'babble-fish', 'wants_sidebar': True,  'wants_output': False},
+        {'key': 'academy',     'title': 'Academy',       'help_topic': 'academy',     'wants_sidebar': False, 'wants_output': False},
+        {'key': 'mesh',        'title': 'Mesh',          'help_topic': 'mesh',        'wants_sidebar': False, 'wants_output': False},
+        {'key': 'docs',        'title': 'Documentation', 'help_topic': 'docs',        'wants_sidebar': False, 'wants_output': False},
+    ]
+    _tab_by_key = {r['key']: r for r in TAB_CHROME}
+    for _row in TAB_CHROME:                       # create tab frames in manifest order
+        _row['frame'] = tk.Frame(notebook, bg=C['bg'])
+        notebook.add(_row['frame'], text='  ' + _row['title'] + '  ')
+    fc_tab      = _tab_by_key['flow']['frame']
+    ghost_tab   = _tab_by_key['gui']['frame']
+    sheet_tab   = _tab_by_key['sheet']['frame']
+    conn_tab    = _tab_by_key['connectors']['frame']
+    sh_tab      = _tab_by_key['shell']['frame']
+    text_tab    = _tab_by_key['text']['frame']
+    gm_tab      = _tab_by_key['babble-fish']['frame']
+    academy_tab = _tab_by_key['academy']['frame']
+    mesh_tab    = _tab_by_key['mesh']['frame']
+    docs_tab    = _tab_by_key['docs']['frame']
+
+    # ── One tab-aware header strip (replaces the global Help bar). The shell reads
+    #   the current tab's chrome row and renders: title + that tab's ? Help
+    #   (help_button one-liner) + any declared header_actions. _on_tab_change is a
+    #   pure reader of the table.
+    _tab_header = tk.Frame(right_outer, bg=C['palette'])
+    _tab_header.pack(side='top', fill='x', before=notebook)
     try:
         import importlib.util as _help_ilu
 
@@ -806,24 +836,31 @@ def run_gui():
 
         _help_viewer_mod = _help_load('help_viewer')
         _help_topics_mod = _help_load('help_topics')
-
-        def _open_tab_help():
-            topic = _HELP_TOPIC.get(notebook.index('current'), 'welcome')
-            _help_viewer_mod.open_help_window(
-                root, C, _help_topics_mod.HelpTopics(), topic)
-
-        tk.Button(_help_bar, text='?  Help', command=_open_tab_help,
-                  bg=C['palette'], fg=C['text'], font=('Monospace', 9),
-                  relief='flat', activebackground=C['bg'],
-                  activeforeground=C['text']).pack(side='right', padx=6, pady=1)
     except Exception as _help_err:
         import traceback; traceback.print_exc()
-        print(f'[FlowCode] Help button failed to load: {_help_err}')
+        _help_viewer_mod = _help_topics_mod = None
 
-    # ── Tab 1: FlowCode ───────────────────────────────────────────────────────
-    fc_tab = tk.Frame(notebook,bg=C['bg'])
-    notebook.add(fc_tab, text='  Flow  ')
+    def _render_tab_header(row):
+        for _w in _tab_header.winfo_children():
+            _w.destroy()
+        tk.Label(_tab_header, text=row['title'], bg=C['palette'], fg=C['text'],
+                 font=('Monospace', 10, 'bold')).pack(side='left', padx=(8, 4), pady=1)
+        if _help_viewer_mod is not None:
+            def _open(_r=row):
+                _help_viewer_mod.open_help_window(
+                    root, C, _help_topics_mod.HelpTopics(), _r['help_topic'],
+                    extra=_r.get('help_extra'))
+            tk.Button(_tab_header, text='?  Help', command=_open, bg=C['palette'],
+                      fg=C['text'], font=('Monospace', 9), relief='flat',
+                      activebackground=C['bg'], activeforeground=C['text']
+                      ).pack(side='right', padx=6, pady=1)
+        for _act in row.get('header_actions', []):
+            tk.Button(_tab_header, text=_act['label'], command=_act['command'],
+                      bg=C['palette'], fg=C['text'], font=('Monospace', 9),
+                      relief='flat', activebackground=C['bg'],
+                      activeforeground=C['text']).pack(side='right', padx=2, pady=1)
 
+    # ── Tab 1: Flow — the visual programming canvas ──────────────────────────
     # Phase 7c-4: breadcrumb bar (pocket scope path) above the Flow canvas
     _fc_breadcrumb = tk.Frame(fc_tab, bg=C['palette'])
     _fc_breadcrumb.pack(side='top', fill='x')
@@ -852,48 +889,14 @@ def run_gui():
                             font=('Monospace', 8), padx=8)
     _fc_zoom_lbl.pack(side='right', ipady=3)
 
-    # ── Tab 2: GHOST Canvas (built below after FlowCode palette) ─────────────
-    ghost_tab = tk.Frame(notebook,bg=C['bg'])
-    notebook.add(ghost_tab, text='  GUI  ')
-
-    # ── Tab 3: Sheet — spreadsheet grid (Stage 8-1, built below). Internal
-    # symbol sheet_tab; the third leg of the trinity. ─────────────────────────
-    sheet_tab = tk.Frame(notebook,bg=C['bg'])
-    notebook.add(sheet_tab, text='  Sheet  ')
-
-    # ── Text tab — dual-mode editor (text/language bundle Piece 1). View
-    # class lives in 5500fp/text_tab_view.py; mounted after fc_state exists. ──
-    text_tab = tk.Frame(notebook,bg=C['bg'])
-    notebook.add(text_tab, text='  Text  ')
-
-    # ── Tab 4: Shell — three-pane command builder (Bundle 24). Internal symbol
-    # stays sh_tab; the three-pane _lingo_view lives here. ────────────────────
-    sh_tab = tk.Frame(notebook,bg=C['bg'])
-    notebook.add(sh_tab, text='  Shell  ')
-
-    # ── Tab 4: Connectors — Stage 9-0 cmd_* canvas (Bundle 24). Internal symbol
-    # conn_tab; hosts the canvas (_sh_cv_frame etc.). Future: binding graph. ───
-    conn_tab = tk.Frame(notebook,bg=C['bg'])
-    notebook.add(conn_tab, text='  Connectors  ')
-
-    # ── Tab 5: Lingo — OTree/vocabulary explorer (Bundle 13). Internal symbol
-    # stays gm_tab; module is still ternoo_gristmill / GristMill concept. The
-    # "GristMill" name is reserved for the future package-manager arc. ─────────
-    gm_tab = tk.Frame(notebook,bg=C['bg'])
-    notebook.add(gm_tab, text='  Babble-Fish  ')
-    # ── Tab 8: GHOST — the Academy (chat + curriculum + harness). View
-    #    class lives in 5500fp/ghost_tab_view.py; mounted at the bottom of
-    #    this file alongside the Text/Translator mounts.
-    academy_tab = tk.Frame(notebook, bg=C['bg'])
-    notebook.add(academy_tab, text='  Academy  ')
-    # Tab 9: Mesh — P2PCP (sell/buy AI compute for CompuCoin). View class in
-    #   5500fp/p2pcp_tab_view.py; mounted near the GHOST/Text mounts below.
-    mesh_tab = tk.Frame(notebook, bg=C['bg'])
-    notebook.add(mesh_tab, text='  Mesh  ')
-    # Tab 10: Documentation — the Help system (helpdown viewer + index + search).
-    #   View class in 5500fp/help_tab_view.py; mounted with the other views below.
-    docs_tab = tk.Frame(notebook, bg=C['bg'])
-    notebook.add(docs_tab, text='  Docs  ')
+    # Tabs 2-10 (GUI / Sheet / Connectors / Shell / Text / Babble-Fish / Academy /
+    # Mesh / Docs) are created above from TAB_CHROME in manifest order; their content
+    # and view mounts are built below against ghost_tab / sheet_tab / conn_tab /
+    # sh_tab / text_tab / gm_tab / academy_tab / mesh_tab / docs_tab. View classes:
+    # GUI (below after the palette), Sheet (Stage 8-1), Connectors (cmd_* canvas),
+    # Shell (three-pane _lingo_view), Text (text_tab_view.py), Babble-Fish
+    # (ternoo_gristmill + translator), Academy (ghost_tab_view.py), Mesh
+    # (p2pcp_tab_view.py), Docs (help_tab_view.py).
     # Piece 2: Lingo hosts two views — Vocabulary (GristMillTabView, as
     # before) and Translator (multi-dialect projections). Toggle header:
     _lingo_hdr = tk.Frame(gm_tab, bg=C['palette'])
@@ -1298,15 +1301,16 @@ def run_gui():
         _sh_redraw()
 
     def do_clear():
-        # Tab-aware clear (Stage 8-1 order: Flow|GUI|Sheet|Shell|Connectors|Lingo)
-        idx      = notebook.index('current')
+        # Tab-aware clear, keyed off TAB_CHROME (no positional indices — the tab
+        # order lives in one place now, so this can never drift stale again).
+        key      = TAB_CHROME[notebook.index('current')]['key']
         has_flow = bool(fc_state.get('flow_symbols'))
         has_gui  = bool(fc_state.get('widgets'))
 
-        if idx == 5:       # Lingo (vocabulary explorer) — read-only
+        if key == 'babble-fish':   # vocabulary explorer — read-only
             return
 
-        if idx == 2:       # Sheet tab — clears cells only
+        if key == 'sheet':         # Sheet tab — clears cells only
             if not fc_state.get('cells'):
                 _sheet_set_status('Sheet already empty'); return
             if not messagebox.askyesno('Clear Sheet',
@@ -1315,7 +1319,7 @@ def run_gui():
             _clear_sheet()
             return
 
-        if idx == 4:       # Connectors tab — clears cmd_* canvas widgets only
+        if key == 'connectors':    # Connectors tab — clears cmd_* canvas widgets only
             if not fc_state.get('cmd_widgets'):
                 _sh_set_status('Connectors canvas already empty'); return
             if not messagebox.askyesno('Clear Connectors canvas',
@@ -1324,7 +1328,7 @@ def run_gui():
             _clear_shell()
             return
 
-        if idx == 3:       # Shell tab — clears the staged pipeline
+        if key == 'shell':         # Shell tab — clears the staged pipeline
             if not _lingo.get('pipeline'):
                 set_status('Pipeline already empty'); return
             if not messagebox.askyesno('Clear pipeline',
@@ -1334,7 +1338,7 @@ def run_gui():
             set_status('Pipeline cleared')
             return
 
-        if idx == 0:       # Flow tab
+        if key == 'flow':          # Flow tab
             if not has_flow:
                 set_status('Flow canvas already empty'); return
             if has_gui:
@@ -1353,7 +1357,7 @@ def run_gui():
                     return
                 _clear_flow()
 
-        elif idx == 1:     # GUI tab
+        elif key == 'gui':         # GUI tab
             if not has_gui:
                 guic_set_status('GUI canvas already empty'); return
             if has_flow:
@@ -7622,49 +7626,62 @@ def run_gui():
         for w in _pal_tools_frame.winfo_children():
             w.destroy()
 
+    # TOOLS builders + canvas redraws, keyed off TAB_CHROME. A tab absent from a
+    # table mounts its own UI (empty tools slot) / needs no redraw. No positional
+    # indices — the tab order lives only in TAB_CHROME, so these can't drift stale.
+    _TAB_TOOLS = {
+        'flow':        _build_flow_tools,
+        'gui':         _build_gui_tools,
+        'sheet':       _build_sheet_tools,        # spreadsheet grid
+        'shell':       _build_shell_tools,        # Shell — three-pane builder
+        'connectors':  _build_connectors_tools,   # Connectors — cmd_* canvas
+        'babble-fish': _build_gristmill_tools,    # vocabulary explorer
+    }
+
     def _rebuild_sidebar_tools():
-        """Rebuild the tab-aware tools section for the active tab. Real 8-tab
-        order: Flow0 GUI1 Sheet2 Text3 Shell4 Connectors5 Babble-Fish6 Academy7."""
-        idx = notebook.index('current')
-        if idx == 0:   _build_flow_tools()
-        elif idx == 1: _build_gui_tools()
-        elif idx == 2: _build_sheet_tools()          # spreadsheet grid
-        elif idx == 4: _build_shell_tools()          # Shell — three-pane builder
-        elif idx == 5: _build_connectors_tools()     # Connectors — cmd_* canvas
-        elif idx == 6: _build_gristmill_tools()      # Babble-Fish — vocab explorer
-        else:          _build_empty_tools()          # Text (3) + Academy (7)
+        """Rebuild the tab-aware TOOLS section for the active tab (Text/Academy/
+        Mesh/Docs have no builder → empty slot; they mount their own UI)."""
+        _TAB_TOOLS.get(TAB_CHROME[notebook.index('current')]['key'],
+                       _build_empty_tools)()
 
-    def _apply_sidebar_relevance(idx):
+    def _apply_sidebar_relevance(wants_sidebar):
         """Self-contained tabs carry their own UI, so the global sidebar is dead
-        weight there — hide the whole palette. Text (3) mounts its own editor;
-        Academy (7) has its own toolbar; Docs (9) is the Help viewer + index. Every
-        other tab keeps it."""
-        if idx in (3, 7, 9):
-            palette_frame.pack_forget()
-        else:
+        weight there — hide the whole palette. Driven by the tab's TAB_CHROME
+        `wants_sidebar` flag (Text/Academy/Mesh/Docs are False), not an index."""
+        if wants_sidebar:
             palette_frame.pack(side='left', fill='y', before=right_outer)
+        else:
+            palette_frame.pack_forget()
 
-    def _on_tab_change(event):
-        idx = notebook.index('current')
-        _rebuild_sidebar_tools()            # tab-aware TOOLS
-        _apply_action_relevance(idx == 0)   # Flow-only ACTIONS shown only on Flow
-        _apply_output_relevance(idx == 0)   # Output panel is the Flow trace only
-        _apply_sidebar_relevance(idx)       # whole sidebar hidden on Academy/Text
-        _update_zoom_indicator()            # refresh zoom % for active canvas
+    def _redraw_babble():
+        try: _gristmill_view._rebuild_program()   # force refresh on switch
+        except Exception: pass
+
+    _TAB_REDRAW = {
+        'flow':        redraw,          # Flow canvas
+        'gui':         guic_redraw,     # GUI canvas
+        'sheet':       _sheet_redraw,   # Sheet grid
+        'connectors':  _sh_redraw,      # Connectors (cmd_*) canvas
+        'babble-fish': _redraw_babble,  # vocabulary explorer
+    }
+
+    def _on_tab_change(event=None):
+        row = TAB_CHROME[notebook.index('current')]
+        _render_tab_header(row)                         # title + this tab's ? Help + actions
+        _rebuild_sidebar_tools()                        # tab-aware TOOLS
+        _apply_action_relevance(row['key'] == 'flow')   # Flow-only ACTIONS on Flow
+        _apply_output_relevance(row['wants_output'])    # Output = Flow trace only
+        _apply_sidebar_relevance(row['wants_sidebar'])  # palette hidden on self-contained tabs
+        _update_zoom_indicator()                        # refresh zoom % for active canvas
         # Destroy any GHOST-panel tooltip that survived the tab switch
         if _guic_active_tip[0]:
             try: _guic_active_tip[0].destroy()
             except Exception: pass
             _guic_active_tip[0] = None
-        if idx == 0:   redraw()             # Flow canvas
-        elif idx == 1: guic_redraw()        # GUI canvas
-        elif idx == 2: _sheet_redraw()      # Sheet grid
-        elif idx == 5: _sh_redraw()         # Connectors canvas (idx 5)
-        elif idx == 6:
-            # Babble-Fish (vocabulary explorer) — force refresh on switch
-            try: _gristmill_view._rebuild_program()
-            except Exception: pass
+        _redraw = _TAB_REDRAW.get(row['key'])
+        if _redraw: _redraw()
     notebook.bind('<<NotebookTabChanged>>', _on_tab_change)
+    _render_tab_header(_tab_by_key['flow'])   # Flow header (title + ? Help) at startup
 
     root.after(200, guic_redraw)
 
@@ -7787,7 +7804,11 @@ def run_gui():
             _mtv_spec = _mtv_u.spec_from_file_location('p2pcp_tab_view', _mtv_path)
             _mtv_mod = _mtv_u.module_from_spec(_mtv_spec)
             _mtv_spec.loader.exec_module(_mtv_mod)
-            _mtv_mod.MeshTabView(mesh_tab, C, root, guic_set_status)
+            _mesh_view = _mtv_mod.MeshTabView(mesh_tab, C, root, guic_set_status)
+            # The Mesh tab contributes the native trust-diagram button to its shared
+            # Help window — register it as the row's help_extra so the single header
+            # ? Help offers it (no second in-tab Help button). CF5 chrome-contract.
+            _tab_by_key['mesh']['help_extra'] = _mesh_view.help_extra
         except Exception as _mtv_err:
             import traceback; traceback.print_exc()
             print(f'[FlowCode] Mesh tab failed to load: {_mtv_err}')

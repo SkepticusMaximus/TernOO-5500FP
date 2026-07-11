@@ -84,7 +84,9 @@ class MeshTabView:
         self._addr = tk.Label(bar, text="(stall closed)", bg=C["palette"],
                               fg=C["dim"], font=mono)
         self._addr.pack(side="left", padx=6)
-        btn(bar, " ?  Help ", self._show_help, side="right")
+        # No local "? Help" here — the tab's single Help affordance lives in the
+        # shared header strip (TAB_CHROME). flowcode registers help_extra() so that
+        # header ? Help still offers the trust diagram. (Chrome-contract, 2026-07-12.)
 
         # wallet
         wf = tk.LabelFrame(parent, text=" Your takings (wallet) ", bg=C["bg"],
@@ -273,25 +275,20 @@ class MeshTabView:
             self._refresh_wallet()
             self._status("Bought — wallet updated.")
 
-    # ── help: opens the shared helpdown viewer at the 'mesh' topic ─────────────
-    def _show_help(self):
-        """Open the Documentation help viewer at the Mesh topic (docs/help/mesh.md).
-        The buy-handshake diagram stays reachable as a native canvas — multi-surface
-        rendering (diagram inside helpdown) is Pass 2."""
-        HV = _load("help_viewer")
-        HT = _load("help_topics")
+    # ── help_extra: the tab's contribution to the shared Help window ───────────
+    def help_extra(self, win):
+        """Registered into the Mesh row of flowcode's TAB_CHROME so the ONE header
+        `? Help` (which opens the shared helpdown viewer at the 'mesh' topic) also
+        offers the native trust diagram. The buy-handshake diagram stays a native
+        canvas — rendering it inside helpdown is Pass 2. Signature is `(win)` to
+        match open_help_window's `extra(win)` contract."""
+        import tkinter as tk
         C = self.C
-
-        def add_diagram_button(win):
-            import tkinter as tk
-            tk.Button(win, text="Show the trust diagram",
-                      command=self._show_diagram, bg=C["palette"], fg=C["text"],
-                      font=("Monospace", 9), relief="flat",
-                      activebackground=C["bg"], activeforeground=C["text"]
-                      ).pack(side="bottom", pady=(2, 2))
-
-        HV.open_help_window(self.root, C, HT.HelpTopics(), "mesh",
-                            extra=add_diagram_button)
+        tk.Button(win, text="Show the trust diagram",
+                  command=self._show_diagram, bg=C["palette"], fg=C["text"],
+                  font=("Monospace", 9), relief="flat",
+                  activebackground=C["bg"], activeforeground=C["text"]
+                  ).pack(side="bottom", pady=(2, 2))
 
     def _show_diagram(self):
         """Pop the buy-handshake diagram on its own native canvas."""
