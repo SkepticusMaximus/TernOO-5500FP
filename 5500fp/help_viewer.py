@@ -156,18 +156,40 @@ class HelpViewer:
             t.tag_bind(tag, "<Leave>", lambda _e: t.config(cursor="arrow"))
 
 
-def open_help_window(root, C, topics, topic_id, geometry="720x560"):
+def help_button(parent, root, C, topics, topic_id, text="?  Help", **pack):
+    """A ready-to-pack `? Help` button for a tab's local toolbar: opens the shared
+    viewer at `topic_id`. `topics` may be a HelpTopics or a zero-arg factory (so a
+    tab can defer building the store). Any pack() kwargs are applied."""
+    import tkinter as tk
+
+    def _open():
+        tp = topics() if callable(topics) else topics
+        open_help_window(root, C, tp, topic_id)
+
+    b = tk.Button(parent, text=text, command=_open, bg=C["palette"], fg=C["text"],
+                  font=("Monospace", 9), relief="flat", activebackground=C["bg"],
+                  activeforeground=C["text"])
+    if pack:
+        b.pack(**pack)
+    return b
+
+
+def open_help_window(root, C, topics, topic_id, geometry="720x560", extra=None):
     """Pop a standalone Help window showing `topic_id` — the target of a tab's
-    `? Help` button. Returns the Toplevel."""
+    `? Help` button. `extra(win)` is an optional callback to add a control row
+    (e.g. a tab-specific 'Show diagram' button) between the viewer and Close.
+    Returns the Toplevel."""
     import tkinter as tk
     win = tk.Toplevel(root)
     win.title("FlowCode Help")
     win.configure(bg=C["bg"])
     win.geometry(geometry)
-    viewer = HelpViewer(win, C, topics)
-    viewer.show(topic_id)
     tk.Button(win, text="Close", command=win.destroy, bg=C["palette"],
               fg=C["text"], font=("Monospace", 9), relief="flat",
               activebackground=C["bg"], activeforeground=C["text"]
               ).pack(side="bottom", pady=(0, 8))
+    if extra is not None:
+        extra(win)                              # packed bottom, above Close
+    viewer = HelpViewer(win, C, topics)         # fills the rest (top)
+    viewer.show(topic_id)
     return win
