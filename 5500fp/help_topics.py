@@ -6,10 +6,13 @@ and the dead-link report the docs-lint test uses. Format lives in helpdown.py.
 """
 
 import os
-
-import helpdown
+import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:                       # importable when FlowCode execs us
+    sys.path.insert(0, _HERE)
+
+import helpdown                                  # noqa: E402
 DEFAULT_DIR = os.path.abspath(os.path.join(_HERE, "..", "docs", "help"))
 
 

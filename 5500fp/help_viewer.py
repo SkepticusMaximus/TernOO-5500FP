@@ -12,7 +12,14 @@ Date: 2026-07-12, Adelaide
 Authors: Stevo (SkepticusMaximus) + CF5 (helpdown core) + CC (viewer)
 """
 
-import helpdown
+import os as _os
+import sys as _sys
+
+_HERE = _os.path.dirname(_os.path.abspath(__file__))
+if _HERE not in _sys.path:                  # importable when FlowCode execs us
+    _sys.path.insert(0, _HERE)
+
+import helpdown                             # noqa: E402
 
 LINK_FG = "#5aa0e0"        # a readable blue in both light/dark host themes
 

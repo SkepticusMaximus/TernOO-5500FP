@@ -854,6 +854,10 @@ def run_gui():
     #   5500fp/p2pcp_tab_view.py; mounted near the GHOST/Text mounts below.
     mesh_tab = tk.Frame(notebook, bg=C['bg'])
     notebook.add(mesh_tab, text='  Mesh  ')
+    # Tab 10: Documentation — the Help system (helpdown viewer + index + search).
+    #   View class in 5500fp/help_tab_view.py; mounted with the other views below.
+    docs_tab = tk.Frame(notebook, bg=C['bg'])
+    notebook.add(docs_tab, text='  Docs  ')
     # Piece 2: Lingo hosts two views — Vocabulary (GristMillTabView, as
     # before) and Translator (multi-dialect projections). Toggle header:
     _lingo_hdr = tk.Frame(gm_tab, bg=C['palette'])
@@ -7597,8 +7601,9 @@ def run_gui():
     def _apply_sidebar_relevance(idx):
         """Self-contained tabs carry their own UI, so the global sidebar is dead
         weight there — hide the whole palette. Text (3) mounts its own editor;
-        Academy (7) has its own toolbar. Every other tab keeps it."""
-        if idx in (3, 7):
+        Academy (7) has its own toolbar; Docs (9) is the Help viewer + index. Every
+        other tab keeps it."""
+        if idx in (3, 7, 9):
             palette_frame.pack_forget()
         else:
             palette_frame.pack(side='left', fill='y', before=right_outer)
@@ -7750,6 +7755,19 @@ def run_gui():
         except Exception as _mtv_err:
             import traceback; traceback.print_exc()
             print(f'[FlowCode] Mesh tab failed to load: {_mtv_err}')
+
+    _dtv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             '../5500fp/help_tab_view.py')
+    if os.path.exists(_dtv_path):
+        try:
+            import importlib.util as _dtv_u
+            _dtv_spec = _dtv_u.spec_from_file_location('help_tab_view', _dtv_path)
+            _dtv_mod = _dtv_u.module_from_spec(_dtv_spec)
+            _dtv_spec.loader.exec_module(_dtv_mod)
+            _dtv_mod.DocsTabView(docs_tab, C, root, guic_set_status)
+        except Exception as _dtv_err:
+            import traceback; traceback.print_exc()
+            print(f'[FlowCode] Docs tab failed to load: {_dtv_err}')
 
     _trv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              '../5500fp/translator_view.py')

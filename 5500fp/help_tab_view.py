@@ -10,8 +10,15 @@ Date: 2026-07-12, Adelaide
 Authors: Stevo (SkepticusMaximus) + CC
 """
 
-from help_topics import HelpTopics
-from help_viewer import HelpViewer
+import os as _os
+import sys as _sys
+
+_HERE = _os.path.dirname(_os.path.abspath(__file__))
+if _HERE not in _sys.path:                  # importable when FlowCode execs us
+    _sys.path.insert(0, _HERE)
+
+from help_topics import HelpTopics          # noqa: E402
+from help_viewer import HelpViewer          # noqa: E402
 
 
 class DocsTabView:
