@@ -107,6 +107,17 @@ def fake_mainloop(self, *a, **k):
                 except tk.TclError: pass
         else:
             fail(f"Mesh had {len(hb)} live Help buttons, expected 1")
+
+        # Babble-Fish Translator sub-pane must actually render — guards the
+        # exec_module fix (the "Split ⇆" button is unique to TranslatorView; if
+        # the module were left un-exec'd again this drops to False).
+        bf_id = tabs[res["titles"].index("Babble-Fish")]
+        nb.select(bf_id); root.update_idletasks(); root.update()
+        res["translator_pane_live"] = any(
+            isinstance(w, tk.Button) and w.cget("text").strip() == "Split ⇆"
+            for w in all_widgets(root))
+        if not res["translator_pane_live"]:
+            fail("Babble-Fish Translator pane did not render (Split button absent)")
     except Exception:                                     # noqa: BLE001
         fail("smoke crashed:\n" + traceback.format_exc())
     finally:

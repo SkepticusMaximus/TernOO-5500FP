@@ -7833,6 +7833,8 @@ def run_gui():
             import importlib.util as _trv_u
             _trv_spec = _trv_u.spec_from_file_location('translator_view', _trv_path)
             _trv_mod  = _trv_u.module_from_spec(_trv_spec)
+            _trv_spec.loader.exec_module(_trv_mod)   # was missing — module never ran,
+            #   so _trv_mod had no TranslatorView and the pane silently stayed dark
             _translator_view[0] = _trv_mod.TranslatorView(
                 _lingo_trans_frame, C, _dialect_model)
         except Exception as _trv_err:
