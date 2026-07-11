@@ -784,6 +784,42 @@ def run_gui():
     notebook = ttk.Notebook(right_outer)
     notebook.pack(fill='both',expand=True)
 
+    # ── Global tab-aware Help (docs phase): a ? Help button on a slim bar above
+    #   the notebook, so help is one click from EVERY tab — including self-contained
+    #   tabs (Text/Academy/Docs) where the sidebar is hidden. It opens that tab's
+    #   topic in the shared helpdown viewer (5500fp/help_viewer.py).
+    _help_bar = tk.Frame(right_outer, bg=C['palette'])
+    _help_bar.pack(side='top', fill='x', before=notebook)
+    _HELP_TOPIC = {0: 'flow', 1: 'gui', 2: 'sheet', 3: 'text', 4: 'shell',
+                   5: 'connectors', 6: 'babble-fish', 7: 'academy', 8: 'mesh',
+                   9: 'docs'}
+    try:
+        import importlib.util as _help_ilu
+
+        def _help_load(_name):
+            _p = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              '../5500fp/' + _name + '.py')
+            _s = _help_ilu.spec_from_file_location(_name, _p)
+            _m = _help_ilu.module_from_spec(_s)
+            _s.loader.exec_module(_m)
+            return _m
+
+        _help_viewer_mod = _help_load('help_viewer')
+        _help_topics_mod = _help_load('help_topics')
+
+        def _open_tab_help():
+            topic = _HELP_TOPIC.get(notebook.index('current'), 'welcome')
+            _help_viewer_mod.open_help_window(
+                root, C, _help_topics_mod.HelpTopics(), topic)
+
+        tk.Button(_help_bar, text='?  Help', command=_open_tab_help,
+                  bg=C['palette'], fg=C['text'], font=('Monospace', 9),
+                  relief='flat', activebackground=C['bg'],
+                  activeforeground=C['text']).pack(side='right', padx=6, pady=1)
+    except Exception as _help_err:
+        import traceback; traceback.print_exc()
+        print(f'[FlowCode] Help button failed to load: {_help_err}')
+
     # ── Tab 1: FlowCode ───────────────────────────────────────────────────────
     fc_tab = tk.Frame(notebook,bg=C['bg'])
     notebook.add(fc_tab, text='  Flow  ')
