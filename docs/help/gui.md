@@ -1,16 +1,20 @@
 The GUI tab
-section: Tabs
+section: The tabs
 
-GUI is where you lay out the visible parts of a program — windows, buttons, labels, input fields, dialogs. It's the face your program shows the person using it.
+GUI is where you lay out the parts of a program a person actually sees and touches — windows, buttons, labels, text fields, dialogs. If you've ever used a drag-and-drop editor to arrange a form or a screen, this will feel familiar.
 
-## What it's for
+## The face of the program
 
-A program usually needs more than logic; it needs a way for a person to see results and give input. The GUI tab is the canvas for that surface. You arrange widgets the way you want them, and they become part of the same program your [[flow|Flow]] logic drives.
+A program often needs a face: somewhere to show results, somewhere to take input, something to click. The GUI tab is where you build that face. You arrange the controls the way you want them, and they become the visible surface of whatever you're making.
 
-## Widgets and logic, joined
+A face can be a whole thing in its own right — a screen laid out exactly how you like it, ready for the logic to be added later, or even left to simply present something. More often, the screen is one part of a larger program: a button that sets a [[flow|flow]] running, a field that feeds a value in, a label that shows a result coming back out. Paired with the [[sheet|Sheet tab]]'s cells, you can connect what's on screen to what the program computes, without leaving FlowCode.
 
-The GUI you lay out isn't decoration sitting apart from your program — the widgets are wired to the logic. A button can fire a flow; a field can feed a value in; a label can show a result coming back out. Combined with the [[sheet|Sheet tab]]'s cell bindings, you can connect what's on screen to what the program computes without leaving FlowCode.
+## Getting started
 
-Like everything in TernOO, the interface you build is made of the same [[ternoo-words|self-describing words]] as the logic behind it — the surface and the substance are one system, not two.
+Place the controls you want — a button here, a field there, a label to show an answer. Arrange them until the screen looks right. Then wire them to your program's logic: a button to a flow, a field to a value, a result to a label. What you've drawn becomes the part of the program a person meets.
 
-Next: [[sheet|Sheet]] for spreadsheet-style surfaces, or [[flow|Flow]] for the logic behind the buttons.
+## Where to go next
+
+- Give your screen something to do: [[flow|the Flow tab]].
+- Feed it numbers, or show them: [[sheet|the Sheet tab]].
+- Wire the pieces together: [[connectors|Connectors]].

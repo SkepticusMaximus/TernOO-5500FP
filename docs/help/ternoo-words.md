@@ -1,54 +1,38 @@
 What is a TernOO word
-section: Concepts
+section: The big idea
 
-This is the idea the whole system is built on, so it's worth five minutes.
+This is the one idea the whole system is built on. Once you have it, everything else in TernOO makes a certain kind of sense.
 
-## The problem with ordinary words
+## The problem it solves
 
-On a normal computer, a "word" is a fixed run of bits — say 32 or 64 of them — and it is *silent about itself*. The number `1000100101...` might be a letter, a price, a memory address, or part of a picture. The bits don't say. Some program hovering above the hardware has to *remember* what every number means, and if it forgets, or if a different program reads the same bits, you get garbage. The meaning lives in the software, not in the word. The word is dumb ink.
+On an ordinary computer, the smallest useful chunk of information — call it a *word* — is just a run of on/off switches. And here's the catch: those switches are *silent about themselves*. The same pattern of switches might be a letter, a price, a location in memory, or a shade of blue. The switches don't say which. Some program, running above the hardware, has to *remember* what every pattern is supposed to mean — and if it forgets, or if a different program reads the same switches with different expectations, you get nonsense.
 
-## The TernOO word is self-describing
+So on an ordinary machine, the *meaning* of information lives in the software, not in the information itself. The data is dumb; the cleverness is bolted on top, layer after layer, each layer remembering what the one below it meant.
 
-A TernOO word is **24 trits** long and it is *not* silent. It carries its own type, its own role, and its own structure, right there in the word. When the processor reads it, the word says what it is. No hovering program has to remember — the meaning travels *with* the value.
+## What TernOO does differently
 
-A word is divided into three parts — the **2 + 4 + 18** format:
+A TernOO word is not silent. It **describes itself**. Alongside its value, it carries a small amount of information about *what it is* — its kind, its role, its shape — built right into the word. When TernOO reads a word, the word tells the machine what it is. No program hovering above has to remember on its behalf. The meaning travels *with* the value, wherever it goes.
 
-- **Primary (2 trits)** — the broadest category. There are nine possible primaries, because two balanced-ternary trits give nine combinations.
-- **Qualifier (4 trits)** — the finer type: the sub-kind and its flags.
-- **Payload (18 trits)** — the value, address, or data. Eighteen trits is three **tribbles** (a tribble is 6 trits — the ternary cousin of a nibble).
+A word is 24 trits long — a trit being a single three-valued digit — and it's divided into three parts, which you can see above:
 
-## The nine primaries
+- The **primary** (2 trits) is the broadest category — the answer to "what kind of thing is this, roughly?" There are nine possible answers, and you can browse them in [[nine-primaries|The nine kinds of word]].
+- The **qualifier** (4 trits) is the finer detail — the specific type, and any flags it carries.
+- The **payload** (18 trits) is the actual content: the value, the address, the data. Eighteen trits is three groups of six, and a group of six trits has a name of its own — a **tribble**. (Yes, really. The names in TernOO have a sense of humour, and they'll grow on you.)
 
-The two primary trits (call them T23 and T22) name the word's broadest kind:
+## One rule that never bends
 
-```
-EXEC   (−,−)     MAP    (−,0)     DATA   (−,+)
-NEURAL (0,−)     I/O    (0,0)     CRYPTO (0,+)
-OPCODE (+,−)     OPEN_B (+,0)     POOL   (+,+)
-```
+There's a single law underneath all of this, and it's simple: **meaning is read left to right, and never flows backwards.** A part of the word that defines something can shape how you read the parts *to its right* — but nothing on the right can reach back and change what something on the left already meant. By the time you've read a word's defining trits, you know what you're holding. The rest is detail, never disguise.
 
-- **EXEC** — points at code to run
-- **MAP** — spatial/address structure
-- **DATA** — values: numbers, text, symbols
-- **NEURAL** — the substrate GHOST is made of (weights, connections)
-- **I/O** — talking to the outside world
-- **CRYPTO** — signatures, digests, the pieces the compute mesh needs
-- **OPCODE** — an operation, represented as a first-class word
-- **OPEN_B** — reserved for the future
-- **POOL** — the dynamic escape hatch
+That rule is what keeps the self-describing promise honest. A word can't lie about what it is halfway through.
 
-Notice a small elegance: **OPCODE (+,−) is the exact trit-negation of EXEC (−,−)**. EXEC *points at* code somewhere else; OPCODE *is* the operation, right here. In balanced ternary, opposite meanings expressed as a flipped trit is the natural idiom — and you'll see it throughout.
+## Why this changes everything
 
-## The one law that never bends
+When information carries its own meaning, whole layers of software simply stop being necessary. A picture can be drawn straight from the words that describe it. An instruction can be inspected, rearranged, and stored as just another word. The assistant's "mind" is a stream of words you can actually read. You're not climbing a tower of translators, each one remembering what the floor below meant — the meaning is in the ground floor, in the words themselves.
 
-There is a single foundational rule: **meaning flows left to right, and never back.** A trit that defines something may shape how the trits *to its right* are read — but a trit can never reach back and change the meaning of something to its left. And no value buried in the payload is ever allowed to secretly change the word's type. What a word *is* is settled by the time you've read its defining trits; the rest is detail, not disguise.
+That's the whole thesis. Everything else in TernOO — the way programs can be viewed four ways, the way the assistant stays honest, the way the machine can eventually run itself — is this one idea, wearing different clothes.
 
-This is what keeps the self-describing promise honest. Read a word left to right and you always know what you're holding.
+## Where to go next
 
-## Why bother?
-
-Because when the word carries its own meaning, whole layers of software stop being necessary. The picture can be drawn straight from the words. An operation can be composed, inspected, and stored as just another word. The AI's "brain" is a stream of words you can read. You're not fighting a tower of interpreters that each remember what the layer below meant — the meaning is in the substrate, all the way down.
-
-That's TernOO. Everything else is this idea, wearing different clothes.
-
-Next: [[ghost|meet GHOST]], or see how a program is drawn in [[flow|the Flow tab]].
+- Ready to *use* it? [[first-program|Build your first program]].
+- Curious about the nine categories? [[nine-primaries|The nine kinds of word]].
+- Want to meet the assistant built from these words? [[ghost|Meet GHOST]].

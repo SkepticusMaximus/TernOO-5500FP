@@ -1,20 +1,23 @@
 The Babble-Fish tab
-section: Tabs
+section: The tabs
 
-Babble-Fish shows your program projected into other languages — the same logic, rendered in the dialect you find easiest to read. The name is a nod to Douglas Adams' universal translator, and the joke has a serious point underneath it.
+Babble-Fish shows your program rewritten in other languages — the same program, expressed in whichever dialect you find easiest to read. The name tips its hat to Douglas Adams' universal translator, and the joke carries a real idea.
 
-## Many views, one truth
+## One program, seen in many languages
 
-A TernOO program is, underneath, a stream of self-describing [[ternoo-words|words]]. Babble-Fish takes that stream and *projects* it into familiar-looking dialects — several different projections of the one program. If you think best in one style, read it that way; the underlying program is unchanged.
+Underneath, a TernOO program is a stream of self-describing [[ternoo-words|words]]. Babble-Fish takes that stream and renders it into familiar-looking languages — several different renderings of the one program. If a particular style is where you're most fluent, read it there. The program itself doesn't change; only the language you're reading it in does.
 
-## Keep the original
+## Why the original is always kept
 
-Here's the serious point. **Translation between languages is lossy.** Every language makes some ideas easy to say and others awkward — so no translation is ever perfectly faithful. Babble-Fish is honest about this: the projections are *views*, and the stream of TernOO words is always the source of truth. When a projection can't capture something cleanly, you drop back to the original words — you never lose the meaning in the gap between languages.
+Translation between languages loses something. Every language makes some ideas easy to say and others awkward, so no rendering is ever a perfect match for another. Babble-Fish is built around that fact: the renderings are *views*, and the stream of TernOO words remains the real thing. When a rendering can't quite capture something, you drop back to the words themselves — the meaning never goes missing in the gap between two languages.
 
-This is one of TernOO's core disciplines, and it has a name: **keep the original.** A translator that forgets the source and lets the translation become the truth is how meanings get quietly mangled. Babble-Fish keeps the source, always, so its translations can be useful without ever being trusted more than they've earned.
+This is a habit that runs through all of TernOO: **keep the original.** A translator that forgets its source, and lets the translation stand in for the truth, is how meanings quietly drift and break. Babble-Fish keeps the source always, so its translations can be useful without being trusted further than they've earned.
 
 ## Getting started
 
-Open a program and choose a dialect projection to view it in. Switch projections freely — you're changing the lens, not the program. The original words stay exactly as they are.
+Open a program and pick a language to view it in. Switch freely between them — you're changing the lens, not the program. The original words stay exactly as they are.
 
-Next: [[ternoo-words|the words being projected]], or [[text|the Text editor]].
+## Where to go next
+
+- The words being translated: [[ternoo-words|What is a TernOO word]].
+- Work in the written form directly: [[text|the Text tab]].

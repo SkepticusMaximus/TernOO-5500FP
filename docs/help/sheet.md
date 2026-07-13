@@ -1,20 +1,26 @@
 The Sheet tab
-section: Tabs
+section: The tabs
 
-Sheet is a spreadsheet surface — a grid of cells with formulas — and if you've used a spreadsheet before, the basics will feel familiar. What's different is what the grid is connected to.
+Sheet is a spreadsheet — a grid of cells with formulas — and the everyday parts work the way you'd expect. Type values, write a formula that refers to other cells, and the grid recalculates. If you've used a spreadsheet before, you can start right now.
 
-## Familiar on the surface
+## More than a document
 
-Type values into cells, write formulas that reference other cells, and the grid recalculates the way you'd expect. Arithmetic, comparisons, the common functions — they work the way a spreadsheet should.
+Most spreadsheets are documents: they hold numbers, do sums, and sit there. A TernOO sheet can be part of a running program. Its formulas don't get worked out by a calculator off to the side — they become native instructions and run on the machine, the same as any other part of your program. That makes the grid the natural home for the *calculating* part of whatever you're building: the maths, the tallies, the running totals, the conditional sums.
 
-## Different underneath
+Some programs are mostly a sheet — a page of figures with a couple of dialogs to ask for input and show a result. Others use a sheet as one component among several, handing numbers to and from a [[flow|flow]] or a [[gui|screen]]. Either way, the sheet is doing real work, not just recording it.
 
-A TernOO formula isn't interpreted by a spreadsheet engine off to the side — it compiles down to the native machine and runs there, so a formula and a program are ultimately the same kind of thing. The grid is a *view* of computation, not a separate application.
+## Cells that reach into your program
 
-That's why the Sheet tab can do something an ordinary spreadsheet can't: **cells can bind to your program's logic.** A cell can drive a [[flow|flow]], or a flow's result can land in a cell. The spreadsheet becomes a live surface over your program rather than a static table beside it.
+Because a sheet is part of the program rather than a document beside it, cells can connect to your program's logic. A cell can feed a value into a [[flow|flow]], or receive a result back from one. When you wire a cell to a flow, the two move together — change the cell, and the logic it drives responds.
+
+That's the shift worth feeling: the grid stops being a place you *keep* numbers and becomes a place where numbers *do things*.
 
 ## Getting started
 
-Start as you would anywhere — put values in cells, write a formula. When you want a cell to do more than calculate, connect it to a flow through the binding mechanism, and the grid and the logic move together.
+Begin the ordinary way — put some values in cells, write a formula, watch it calculate. When you want a cell to do more than sit and compute, connect it to a flow, and the spreadsheet becomes a live surface over your program.
 
-Next: [[gui|GUI]] for on-screen controls, or [[flow|Flow]] for the logic cells can drive.
+## Where to go next
+
+- Pair it with logic: [[flow|the Flow tab]].
+- Pair it with a screen: [[gui|the GUI tab]].
+- Join sheet, flow, and screen into one program: [[connectors|Connectors]].

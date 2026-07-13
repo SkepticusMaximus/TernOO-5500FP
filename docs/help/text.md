@@ -1,20 +1,24 @@
 The Text tab
-section: Tabs
+section: The tabs
 
-Text is a text editor — and it works two ways, which is the whole point of it.
+Text is a text editor, and it works two ways — which is the point of it.
 
-## An ordinary editor when you want one
+## An ordinary editor, when that's what you need
 
-Open any file, of any kind, and edit it the way you would in any capable text editor. Nothing about TernOO forces you to abandon the plain-text way of working. If you just need to edit a file, edit a file.
+Open a file, any kind, and edit it the way you would anywhere else. Nothing about TernOO forces you to give up plain-text work. If you just want to write or change a file, this is a capable editor and that's all you need it to be.
 
-## A TernOO editor when you want that
+## A TernOO editor, when you want that
 
-The same tab also understands TernOO's own dialects. Switch modes and the editor becomes a way to write and read [[flow|FlowCode]] as text — the same program you might otherwise draw, expressed in words. The visual canvas and the text are two views of the same underlying [[ternoo-words|words]]; the Text tab is where you work in the written view.
+The same tab also reads and writes TernOO's own dialects. Switch modes and it becomes a way to work on a [[flow|FlowCode]] program as text — the written form of a program you might otherwise draw. The drawing and the text are two forms of the same underlying [[ternoo-words|words]]; this is where you work in the written one.
 
-## Why both
+## Why it works both ways
 
-This is a guiding idea of the project made concrete — what it calls **hospitable infrastructure.** Every feature should let someone keep working the way they already know, while making the native TernOO way visible and reachable. The dual-mode Text tab is the clearest example: you can live entirely in plain text if that's your comfort, and the native way is right there when you're ready for it. Nobody is made to switch; everybody is invited.
+This is the guiding idea of the whole project, made small enough to hold: keep working the way you already know, while the TernOO-native way stays a switch away. Nobody is made to change how they work; the native path is simply there, visible and ready, for when it's wanted. If plain text is your comfort, live in plain text — and step across when you're curious.
 
-Underneath, the editor reaches files through TernOO's own filesystem layer — today backed by your host's files, and built so it can move to a native TernOO filesystem later without changing anything about how you edit.
+Underneath, the editor reaches files through TernOO's own file layer, the same foundation the rest of your work sits on.
 
-Next: [[babble-fish|Babble-Fish]], where text becomes many languages, or [[shell|the Shell]].
+## Where to go next
+
+- See the drawn form of what you're writing: [[flow|the Flow tab]].
+- Watch a program become other languages: [[babble-fish|Babble-Fish]].
+- Prefer a command prompt? [[shell|the Shell tab]].
