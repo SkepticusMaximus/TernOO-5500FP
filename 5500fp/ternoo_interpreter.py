@@ -641,8 +641,16 @@ class TernOOInterpreter:
 
     def _io_prompt_write(self, node, indent):
         self._emit(f"{indent}  {GREEN}[prompt-write] '{node.label}'{RESET}")
-        _ = self.eval_stack.pop() if self.eval_stack else None          # discard trit
-        value = self.eval_stack.pop() if self.eval_stack else '?'       # get age
+        # Age-check style leaves [value, comparison-trit] — discard the trit and show
+        # the value underneath. A plain echo (word → SHOUT → output) leaves a single
+        # value — show that directly (first-program.md's tutorial path).
+        if len(self.eval_stack) >= 2:
+            _ = self.eval_stack.pop()                                   # discard trit
+            value = self.eval_stack.pop()
+        elif self.eval_stack:
+            value = self.eval_stack.pop()
+        else:
+            value = '?'
         # Trit-to-message mapping preserved for future reference (e.g. a dedicated
         # trit-display output node that intentionally shows the comparison result):
         # _TRIT_MSG = {-1: 'Access denied', 0: 'Adult Supervision Required', 1: 'Access granted'}
@@ -746,6 +754,33 @@ class TernOOInterpreter:
         if 'PUSH' in words and threshold is not None:
             self._emit(f"{indent}  {GREEN}[push] {threshold}{RESET}")
             return threshold
+
+        # ── Text transforms — the beginner "shout it in capitals" family.
+        # A process step operates on the value flowing through it (top of stack);
+        # the transform shows in the trace and the result flows on. (first-program.md)
+        if set(words) & {'UPPER', 'UPPERCASE', 'CAPITALS', 'CAPS', 'SHOUT'}:
+            val = self.eval_stack.pop() if self.eval_stack else ''
+            result = str(val).upper()
+            self._emit(f"{indent}  {GREEN}[shout] {val!r} → {result!r}{RESET}")
+            return result
+
+        if set(words) & {'LOWER', 'LOWERCASE', 'WHISPER'}:
+            val = self.eval_stack.pop() if self.eval_stack else ''
+            result = str(val).lower()
+            self._emit(f"{indent}  {GREEN}[whisper] {val!r} → {result!r}{RESET}")
+            return result
+
+        if set(words) & {'REVERSE', 'FLIP', 'BACKWARD', 'BACKWARDS'}:
+            val = self.eval_stack.pop() if self.eval_stack else ''
+            result = str(val)[::-1]
+            self._emit(f"{indent}  {GREEN}[reverse] {val!r} → {result!r}{RESET}")
+            return result
+
+        if set(words) & {'COUNT', 'LENGTH', 'LEN', 'SIZE'}:
+            val = self.eval_stack.pop() if self.eval_stack else ''
+            result = len(str(val))
+            self._emit(f"{indent}  {GREEN}[count] len({val!r}) = {result}{RESET}")
+            return result
 
         # ── FILE SELECT — open file dialog, push chosen path ─────────────
         # Trigger: label contains FILE and (SELECT|CHOOSE|OPEN|PICK|LOAD|BROWSE)
