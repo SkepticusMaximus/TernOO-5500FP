@@ -118,17 +118,25 @@ class HelpViewer:
 
     # ── rendering ─────────────────────────────────────────────────────────────
     def _render(self, topic_id):
-        t = self._text
-        t.config(state="normal")
-        t.delete("1.0", "end")
         topic = self.topics.topic(topic_id)
         if topic is None:
+            t = self._text
+            t.config(state="normal")
+            t.delete("1.0", "end")
             self._title.config(text=topic_id)
             t.insert("end", "This topic hasn't been written yet.\n\n", ("para",))
             t.insert("end", f"(missing: {topic_id})\n", ("code",))
             t.config(state="disabled")
-            self._refresh_nav()
-            return
+        else:
+            self._paint(topic)
+        self._refresh_nav()
+
+    def _paint(self, topic):
+        """Render a parsed topic dict into the Text. Shared by store-backed show()
+        and the editor's live preview() so both render identically."""
+        t = self._text
+        t.config(state="normal")
+        t.delete("1.0", "end")
         self._title.config(text=topic["title"])
         for block in topic["blocks"]:
             kind = block["kind"]
@@ -139,7 +147,12 @@ class HelpViewer:
             if kind in (helpdown.PARA, helpdown.H1, helpdown.H2):
                 t.insert("end", "\n")
         t.config(state="disabled")
-        self._refresh_nav()
+
+    def preview(self, raw):
+        """Render an unsaved raw helpdown buffer directly — no store, no history.
+        Drives the Documentation-tab editor's live preview; parse_topic can't raise
+        (never-crash law), so a mangled buffer renders literal, never throws."""
+        self._paint(helpdown.parse_topic(raw))
 
     def _insert_spans(self, spans, block_kind):
         t = self._text
