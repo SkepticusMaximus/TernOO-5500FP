@@ -25,3 +25,6 @@ FlowCode/Drive-Bloe-Glass-Barby Bot.ternoo
 # Built emulator binary — never commit (SDL-linked builds are machine-specific
 # and a stale committed binary silently masks test results; build with make)
 NASM-TernOO-5500FP-Emulator/c_emulator/5500fp
+
+# Help editor one-level backups (HelpTopics.save)
+docs/help/*.bak
