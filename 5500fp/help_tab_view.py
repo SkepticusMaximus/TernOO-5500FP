@@ -129,6 +129,7 @@ class DocsTabView:
             self._tb_btn("👁  Read", self._leave_edit)
             self._tb_btn("Save", self._save)
             self._tb_btn("Revert", self._revert)
+            self._tb_btn("🔗  Insert link", self._insert_link)
             self._tb_btn("＋  New topic", self._new_topic)
             self._lint = self.tk.Label(self._toolbar, text="", bg=self.C["palette"],
                                        fg=self.C["dim"], font=("Monospace", 9))
@@ -313,6 +314,65 @@ class DocsTabView:
         self._load_into_editor(tid)
         self._status(f"Created: {tid}")
 
+    # ── [[link]] insert helper (autocomplete over EXISTING ids only) ────────────
+    def _insert_link_at_cursor(self, tid):
+        """Insert [[id|Title]] at the cursor. Only called with an id that exists,
+        so the inserted link is always live (never a fresh dead link)."""
+        t = self.topics.topic(tid)
+        label = t["title"] if t else tid
+        self._raw.insert("insert", f"[[{tid}|{label}]]")
+        self._dirty = True
+        self._schedule_preview()
+
+    def _insert_link(self):
+        tk, C = self.tk, self.C
+        mono = ("Monospace", 9)
+        ids = self.topics.ids()                              # existing ids ONLY
+        if not ids:
+            self._status("No topics to link to yet.")
+            return
+        win = tk.Toplevel(self.root)
+        win.title("Insert link")
+        win.configure(bg=C["bg"])
+        win.geometry("320x380")
+        win.transient(self.root)
+        filt = tk.Entry(win, bg=C["palette"], fg=C["text"], insertbackground=C["text"],
+                        relief="flat", font=mono)
+        filt.pack(side="top", fill="x", padx=8, pady=8)
+        lb = tk.Listbox(win, bg=C["bg"], fg=C["text"], font=mono, relief="flat",
+                        highlightthickness=0, selectbackground=C["palette"],
+                        activestyle="none")
+        lb.pack(side="top", fill="both", expand=True, padx=8)
+
+        def refill(*_):
+            q = filt.get().strip().lower()
+            lb.delete(0, "end")
+            for tid in ids:
+                if q in tid.lower():
+                    lb.insert("end", tid)
+        refill()
+        filt.bind("<KeyRelease>", refill)
+
+        def do_insert(*_):
+            sel = lb.curselection()
+            tid = lb.get(sel[0]) if sel else (lb.get(0) if lb.size() else None)
+            if tid:
+                self._insert_link_at_cursor(tid)
+            win.destroy()
+            self._raw.focus_set()
+
+        lb.bind("<Double-Button-1>", do_insert)
+        filt.bind("<Return>", do_insert)
+        row = tk.Frame(win, bg=C["bg"])
+        row.pack(side="bottom", fill="x", pady=8)
+        tk.Button(row, text="Insert", command=do_insert, bg=C["palette"], fg=C["text"],
+                  relief="flat", font=mono, activebackground=C["bg"]
+                  ).pack(side="right", padx=8)
+        tk.Button(row, text="Cancel", command=win.destroy, bg=C["palette"],
+                  fg=C["text"], relief="flat", font=mono, activebackground=C["bg"]
+                  ).pack(side="right")
+        filt.focus_set()
+
     # ── dirty guard (used on toggle, topic switch, and new-topic) ───────────────
     def _guard_dirty(self):
         """True = OK to proceed. If there are unsaved edits, prompt save/discard/
@@ -333,3 +393,19 @@ class DocsTabView:
     def has_unsaved(self):
         """For flowcode's tab-change guard (wired separately)."""
         return self._mode == "edit" and self._dirty
+
+    def prompt_save_on_leave(self):
+        """Called by flowcode when the Documentation tab is left with unsaved edits.
+        The tab has already switched (ttk.Notebook can't veto), so this is save-or-
+        discard, no cancel — the point is that a misclick to another tab never
+        silently eats the writing. Saving preserves it; the editor keeps its buffer."""
+        if not self.has_unsaved():
+            return
+        from tkinter import messagebox
+        if messagebox.askyesno(
+                "Unsaved help changes",
+                f"You left the Documentation tab with unsaved edits to "
+                f"'{self._editing_id}'.\n\nSave them now?"):
+            self._save()
+        else:
+            self._dirty = False

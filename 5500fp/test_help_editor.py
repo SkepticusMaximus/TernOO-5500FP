@@ -78,5 +78,25 @@ class SaveWriteLaws(unittest.TestCase):
         self.assertEqual(self.store.missing_targets("X\n\n[[a]] [[b]]"), [])
 
 
+class TwoTierLintLaw(unittest.TestCase):
+    """The editor's save is warn-and-allow; the repo gate stays strict (CF5). A draft
+    with a dead link saves fine, but dead_links() — what test_docs_lint asserts empty —
+    still reports it, so a commit carrying the loose end fails the sweep."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp(prefix="tier_")
+        self.store = HT.HelpTopics(base_dir=self.d)
+
+    def tearDown(self):
+        shutil.rmtree(self.d, ignore_errors=True)
+
+    def test_save_allows_dead_link_but_repo_gate_flags_it(self):
+        self.store.save("a", "A\nsection: X\n\nsee [[ghost|G]]\n")   # ghost missing
+        self.assertIn("a", self.store.ids())                          # save allowed
+        self.assertEqual(self.store.dead_links(), {"a": ["ghost"]})   # gate would fail
+        self.store.save("ghost", "GHOST\nsection: X\n\nhi\n")         # resolve the end
+        self.assertEqual(self.store.dead_links(), {})                 # gate now clean
+
+
 if __name__ == "__main__":
     unittest.main()

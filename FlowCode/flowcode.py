@@ -7665,8 +7665,17 @@ def run_gui():
         'babble-fish': _redraw_babble,  # vocabulary explorer
     }
 
+    _docs_view_ref = [None]        # set at DocsTabView mount; for the dirty-leave guard
+    _tab_prev_key = ['flow']       # the tab being left (notebook starts on Flow)
+
     def _on_tab_change(event=None):
         row = TAB_CHROME[notebook.index('current')]
+        # Dirty-edit guard: leaving the Docs tab with unsaved help edits prompts a
+        # save (CF5 ruling) — a misclick to another tab never silently eats writing.
+        if _tab_prev_key[0] == 'docs' and row['key'] != 'docs' and _docs_view_ref[0]:
+            try: _docs_view_ref[0].prompt_save_on_leave()
+            except Exception: pass
+        _tab_prev_key[0] = row['key']
         _render_tab_header(row)                         # title + this tab's ? Help + actions
         _rebuild_sidebar_tools()                        # tab-aware TOOLS
         _apply_action_relevance(row['key'] == 'flow')   # Flow-only ACTIONS on Flow
@@ -7821,7 +7830,8 @@ def run_gui():
             _dtv_spec = _dtv_u.spec_from_file_location('help_tab_view', _dtv_path)
             _dtv_mod = _dtv_u.module_from_spec(_dtv_spec)
             _dtv_spec.loader.exec_module(_dtv_mod)
-            _dtv_mod.DocsTabView(docs_tab, C, root, guic_set_status)
+            _docs_view_ref[0] = _dtv_mod.DocsTabView(docs_tab, C, root,
+                                                     guic_set_status)
         except Exception as _dtv_err:
             import traceback; traceback.print_exc()
             print(f'[FlowCode] Docs tab failed to load: {_dtv_err}')
