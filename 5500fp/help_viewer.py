@@ -57,10 +57,28 @@ class HelpViewer:
                                font=("Monospace", 10, "bold"))
         self._title.pack(side="left", padx=10)
 
-        self._text = tk.Text(parent, bg=C["bg"], fg=C["text"], relief="flat",
+        # Text + vertical scrollbar. Long topics were cut off past the window
+        # bottom with no way to scroll (CAI handoff 2026-07-13, item 4). Fixes
+        # both the pop-up Help window and the embedded Documentation viewer.
+        _text_wrap = tk.Frame(parent, bg=C["bg"])
+        _text_wrap.pack(side="top", fill="both", expand=True)
+        _vsb = tk.Scrollbar(_text_wrap, orient="vertical")
+        _vsb.pack(side="right", fill="y")
+        self._text = tk.Text(_text_wrap, bg=C["bg"], fg=C["text"], relief="flat",
                              font=mono, wrap="word", padx=12, pady=8,
-                             insertwidth=0, highlightthickness=0, cursor="arrow")
-        self._text.pack(side="top", fill="both", expand=True)
+                             insertwidth=0, highlightthickness=0, cursor="arrow",
+                             yscrollcommand=_vsb.set)
+        self._text.pack(side="left", fill="both", expand=True)
+        _vsb.config(command=self._text.yview)
+
+        def _on_wheel(e):                       # X11 uses Button-4/5; Win/Mac use delta
+            num = getattr(e, "num", None)
+            step = 1 if num == 5 else -1 if num == 4 else \
+                (-1 if getattr(e, "delta", 0) > 0 else 1)
+            self._text.yview_scroll(step, "units")
+            return "break"
+        for _seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self._text.bind(_seq, _on_wheel)
 
         t = self._text
         t.tag_configure("h1", font=("Monospace", 14, "bold"), spacing1=8,
@@ -184,6 +202,7 @@ def open_help_window(root, C, topics, topic_id, geometry="720x560", extra=None):
     win.title("FlowCode Help")
     win.configure(bg=C["bg"])
     win.geometry(geometry)
+    win.minsize(400, 300)                        # resizable (Toplevel default) with a floor
     tk.Button(win, text="Close", command=win.destroy, bg=C["palette"],
               fg=C["text"], font=("Monospace", 9), relief="flat",
               activebackground=C["bg"], activeforeground=C["text"]
