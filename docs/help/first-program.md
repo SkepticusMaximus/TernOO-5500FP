@@ -9,21 +9,27 @@ We'll build the smallest complete thing there is: a program that takes a word an
 
 Go to the [[flow|Flow]] tab. This is the drawing board where programs are built as flowcharts — boxes for the things that happen, arrows for the order they happen in. A blank canvas is exactly the right place to be right now.
 
-## Step 2 — Give it something to start with
+## Step 2 — Mark where it starts and ends
 
-Every program needs a beginning and an end — a place where it starts and a place where it stops. Place a starting point on the canvas, and further down, an ending point. Between them is where the actual work will go. If flowcharts are new to you, the short version is: you're about to describe a journey from *start* to *finish*, one step at a time.
+Every program needs a beginning and an end. From the palette on the left, place a **Terminator** (the oval) near the top for the start, and another lower down for the end. Between them is where the work will go. If flowcharts are new to you, the short version is: you're about to describe a journey from *start* to *finish*, one step at a time.
 
-## Step 3 — Add the step that does the work
+## Step 3 — Lay out the three steps in the middle
 
-Between your start and end, add a step that transforms text into capitals. This is the single action at the heart of your program — the "shout it back" part. TernOO comes with a whole library of ready-made actions like this one; turning text into upper case is one of the simplest, which is exactly why we're using it first.
+Between start and end, place three symbols in a row. The labels aren't decoration — TernOO reads them, so what you write on a box is what the box does:
+
+- An **I/O** step (the parallelogram), labelled something like *ask for a word*. This is where the program pauses and waits for you to type.
+- A **Process** step (the rectangle), labelled **shout** (or *uppercase*, or *capitals*). This is the heart of the program: TernOO recognises those words and turns whatever reaches this step into capital letters.
+- A second **I/O** step, labelled *show the result*. This is where the program hands the answer back.
+
+That a box labelled *shout* really shouts is the self-describing-word idea (see [[ternoo-words|What is a TernOO word]]) working in miniature — the word on the box says what the box does.
 
 ## Step 4 — Connect the dots
 
-Draw arrows so the path runs cleanly from the start, through your upper-case step, to the end. The arrows are the program's story: *begin here, do this, then stop.* When the path is unbroken from start to finish, your program is complete. That's genuinely all a program is — a path through a set of steps.
+Draw arrows so the path runs cleanly: start → ask → shout → show → end. The arrows are the program's story: *begin, take a word, shout it, show it, stop.* When the path is unbroken from start to finish, your program is complete. That's genuinely all a program is — a path through a set of steps.
 
 ## Step 5 — Run it
 
-Press **Run**. Watch what happens: TernOO walks the path you drew, step by step, and the active step lights up as it goes. Give it a word, and it hands you that word back in capitals. The output area shows you the result, and the trace of how it got there.
+Press **Run**. TernOO walks the path you drew, and the active step lights up as it goes. When it reaches your *ask* step it pauses and asks for a word — type one and press OK. It shouts your word into capitals and hands it straight back, and the output area shows you the result and the trace of how it got there.
 
 That's it. **You made a thing do a thing.** It ran on a ternary machine, driven by words that describe themselves, following a path you drew with your own hands. Small program — but everything you'd build from here uses these exact moves: place steps, connect them, run, watch.
 
