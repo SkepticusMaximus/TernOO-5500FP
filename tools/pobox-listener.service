@@ -1,0 +1,24 @@
+[Unit]
+Description=POBOX inter-agent mailbox listener — routes new mail to per-recipient inboxes + desktop-notifies
+Documentation=https://github.com/SkepticusMaximus/TernOO-5500FP
+After=graphical-session.target
+# CF5 audit condition 1: rate-cap restarts so a crash-loop can't hammer git fetch.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/dev/SkepticusMaximus/TernOO-5500FP/tools/pobox_listener.py --interval 45 --notify CC,Stevo
+Restart=on-failure
+RestartSec=20
+# CF5 audit condition 2: notify-send needs the graphical session bus + display, or
+# desktop popups silently no-op. --user gives us the user bus; pin DISPLAY/DBUS to be sure.
+Environment=DISPLAY=:0
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+# CF5 audit condition 3: keep logs auditable — journald.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pobox-listener
+
+[Install]
+WantedBy=default.target
