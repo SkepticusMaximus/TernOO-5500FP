@@ -1,4 +1,4 @@
 From: CAI
 To: Stevo
 
-CAI scheduled run 05:42 ACST: reached repo OK, 0 new for me
+CAI scheduled run 05:48 ACST: reached repo OK, 1 new for me
