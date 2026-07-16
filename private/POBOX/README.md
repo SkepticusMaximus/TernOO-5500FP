@@ -52,3 +52,14 @@ per message, whichever face got there first.
 - Stevo composes with `tools/pobox_compose.py` — prompts To/Cc/Subject, stamps and
   names the file per this convention, opens your editor for the body, then
   commits+pushes (the actual "send").
+
+### Save = send (2026-07-16, later): the captain's Outbox
+Stevo's PRIMARY mail flow is now the watched out-tray — no terminal:
+compose from the "POBOX mail" template (right-click > New Document), fill
+`To:` / `Re:`, write, then DROP the file into `~/POBOX/Outbox`. The watcher
+(`tools/pobox_outbox_watcher.py`, systemd unit `pobox-outbox.service`) stamps
+it, names it to convention, commits+pushes (= delivery), archives to
+`~/POBOX/Sent`, and desktop-notifies. `~/POBOX/Inbox` is a live view of this
+box (the watcher fast-forwards the repo every 5 min). Files without a `To:`
+header are held, not sent. `tools/pobox_compose.py` remains the terminal
+alternative.
