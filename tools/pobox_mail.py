@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 """pobox_mail — the crew mailbox as a little desktop app (pure Tk, no deps).
 
-One window: folders pane (Inbox / Drafts / Outbox / Sent), message list,
-reader, and a composer. The box is the single base: the shared mail files in
-private/POBOX/ ARE the Inbox; Drafts/Outbox/Sent are local trays inside it
-(untracked — never committed). Sending is still save=send: anything that
-lands in Outbox is stamped, convention-named, committed+pushed (= delivery),
-archived to Sent and confirmed by the watcher's "POBOX ✉ SENT" notification.
+One window: a tray/contacts tree on the left (Inbox / Drafts / Outbox / Sent
+plus an address book harvested from the mail itself), a sortable message
+table (Time | From | To | Subject — click a heading to sort), a reader, and
+a composer with live en_AU spellcheck. Everything scrolls.
 
-Composer extras: right-click edit menu (undo/cut/copy/paste/select-all) and
-live spellcheck — misspellings tag red, right-click one for suggestions.
-Backend: pyenchant (en_AU preferred) or aspell, whichever the system has;
-silently absent if neither is installed.
+The box is the single base: the shared mail files in private/POBOX/ ARE the
+Inbox; Drafts/Outbox/Sent are local trays inside it (untracked). Sending is
+save=send: anything landing in Outbox is stamped, convention-named,
+committed+pushed (= delivery) by the outbox watcher, archived to Sent, and
+confirmed with the "POBOX ✉ SENT" notification.
 
 Launcher: "POBOX Mail.desktop" in the box root (tools/pobox-mail.desktop).
 """
@@ -21,7 +20,7 @@ import re
 import shutil
 import subprocess
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 
 try:
     from zoneinfo import ZoneInfo
@@ -51,6 +50,11 @@ def header(text, key):
     return m.group(1).strip() if m else ""
 
 
+def clean_name(raw):
+    """'CAI (chat seat, docs/foundations)' -> 'CAI'"""
+    return re.sub(r"\s*\(.*?\)", "", raw).strip()
+
+
 def list_mail(tray):
     d = tray_path(tray)
     try:
@@ -59,14 +63,64 @@ def list_mail(tray):
     except FileNotFoundError:
         os.makedirs(d, exist_ok=True)
         return []
+
     def key(n):
-        # chronological: date, then HHMM if the name carries one (old-convention
-        # names without a time sort as 0000 — start of that day)
         m = re.match(r"(\d{4}-\d{2}-\d{2})-(\d{4})?", n)
         return (m.group(1), m.group(2) or "0000", n) if m else ("", "", n)
     dated = sorted([n for n in names if n[:1].isdigit()], key=key, reverse=True)
     other = sorted(n for n in names if not n[:1].isdigit())
     return dated + other
+
+
+# ---- mail metadata (cached by mtime) ---------------------------------------
+_meta_cache = {}
+
+
+def mail_meta(tray, name):
+    path = os.path.join(tray_path(tray), name)
+    try:
+        mtime = os.stat(path).st_mtime
+    except OSError:
+        return None
+    hit = _meta_cache.get(path)
+    if hit and hit[0] == mtime:
+        return hit[1]
+    try:
+        with open(path) as f:
+            head = f.read(4096)
+    except OSError:
+        head = ""
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})(?:-(\d{4}))?", name)
+    if m:
+        sort_time = f"{m.group(1)}-{m.group(2)}-{m.group(3)} {m.group(4) or '0000'}"
+        disp = f"{m.group(3)}/{m.group(2)} " + \
+               (f"{m.group(4)[:2]}:{m.group(4)[2:]}" if m.group(4) else "--:--")
+    else:
+        sort_time, disp = "0000-00-00 0000", "--"
+    frm = clean_name(header(head, "From")) or "?"
+    to = ", ".join(clean_name(t) for t in
+                   re.split(r"[,;]", header(head, "To")) if t.strip()) or "?"
+    sub = header(head, "Re") or os.path.splitext(name)[0]
+    meta = {"tray": tray, "name": name, "path": path, "sort_time": sort_time,
+            "time": disp, "from": frm, "to": to, "subject": sub}
+    _meta_cache[path] = (mtime, meta)
+    return meta
+
+
+def all_contacts():
+    names = set()
+    for tray in TRAYS:
+        for n in list_mail(tray):
+            meta = mail_meta(tray, n)
+            if not meta:
+                continue
+            if meta["from"] != "?":
+                names.add(meta["from"])
+            for t in meta["to"].split(","):
+                t = t.strip()
+                if t and t != "?":
+                    names.add(t)
+    return sorted(names)
 
 
 # ---- spellcheck backend (drop-in: pyenchant/en_AU, else aspell, else off) --
@@ -115,7 +169,7 @@ class Spell:
 SPELL = Spell()
 
 
-# ---- shared right-click edit menu ------------------------------------------
+# ---- shared widgets ---------------------------------------------------------
 def _evt(w, seq):
     try:
         w.event_generate(seq)
@@ -149,6 +203,17 @@ def attach_edit_menu(w, readonly=False, spell_hook=None):
         return "break"
     w.bind("<Button-3>", show)
     w.bind("<Control-a>", lambda e: (select_all(w), "break")[1])
+
+
+def scrolled(parent, widget_cls, **kw):
+    """widget + vertical scrollbar in a frame; returns (frame, widget)."""
+    frame = tk.Frame(parent)
+    w = widget_cls(frame, **kw)
+    sb = ttk.Scrollbar(frame, orient="vertical", command=w.yview)
+    w.configure(yscrollcommand=sb.set)
+    sb.pack(side="right", fill="y")
+    w.pack(side="left", fill="both", expand=True)
+    return frame, w
 
 
 class Composer(tk.Toplevel):
@@ -185,8 +250,9 @@ class Composer(tk.Toplevel):
         self.saved = tk.Label(btns, text="", fg="#2a7")
         self.saved.pack(side="left")
 
-        self.body = tk.Text(self, wrap="word", font=("monospace", 11), undo=True)
-        self.body.pack(side="top", fill="both", expand=True, padx=10, pady=(4, 0))
+        body_frame, self.body = scrolled(self, tk.Text, wrap="word",
+                                         font=("monospace", 11), undo=True)
+        body_frame.pack(side="top", fill="both", expand=True, padx=10, pady=(4, 0))
         self.body.tag_config("miss", foreground="#b00000", underline=1)
         attach_edit_menu(self.body, spell_hook=self._spell_menu)
         if SPELL.mode:
@@ -301,11 +367,17 @@ class Composer(tk.Toplevel):
 
 
 class MailApp(tk.Tk):
+    COLS = ("time", "from", "to", "subject")
+    HEADINGS = {"time": "Time", "from": "From", "to": "To", "subject": "Subject"}
+
     def __init__(self):
         super().__init__()
         self.title("POBOX Mail")
-        self.geometry("1020x620")
-        self.minsize(700, 420)
+        self.geometry("1080x640")
+        self.minsize(720, 420)
+        self.view = ("tray", "Inbox")
+        self.sort_col = "time"
+        self.sort_desc = True
 
         bar = tk.Frame(self)
         bar.pack(side="top", fill="x", padx=8, pady=6)
@@ -319,63 +391,142 @@ class MailApp(tk.Tk):
 
         # status bar packs BEFORE the panes so it can never be squeezed out
         self.status = tk.Label(self, anchor="w", fg="#555",
-                               text="Inbox = the shared box; Outbox = save-to-send")
+                               text="Inbox = the shared box; Outbox = save-to-send; "
+                                    "click column headings to sort")
         self.status.pack(side="bottom", fill="x", padx=8, pady=(2, 6))
 
         panes = tk.PanedWindow(self, sashrelief="raised")
         panes.pack(side="top", fill="both", expand=True, padx=8)
-        self.folders = tk.Listbox(panes, width=16, exportselection=False,
-                                  font=("sans", 11))
-        panes.add(self.folders)
+
+        # left: trays + contacts tree (scrolled)
+        lf, self.nav = scrolled(panes, ttk.Treeview, show="tree", selectmode="browse")
+        self.nav.column("#0", width=185)
+        panes.add(lf, width=200)
+        self.nav_tray = {}
+        for t in TRAYS:
+            self.nav_tray[t] = self.nav.insert("", "end", iid=f"tray:{t}", text=t)
+        self.nav_contacts = self.nav.insert("", "end", iid="contacts",
+                                            text="Contacts", open=False)
+        self.nav.selection_set("tray:Inbox")
+
         right = tk.PanedWindow(panes, orient="vertical", sashrelief="raised")
         panes.add(right)
-        self.msgs = tk.Listbox(right, exportselection=False, font=("monospace", 10))
-        right.add(self.msgs, height=220)
-        self.reader = tk.Text(right, wrap="word", font=("monospace", 10),
-                              state="disabled", bg="#fdfdfa")
-        right.add(self.reader)
+
+        # message table (scrolled, sortable)
+        mf, self.msgs = scrolled(right, ttk.Treeview, columns=self.COLS,
+                                 show="headings", selectmode="browse")
+        for c, w, stretch in (("time", 110, False), ("from", 100, False),
+                              ("to", 110, False), ("subject", 420, True)):
+            self.msgs.heading(c, command=lambda c=c: self.sort_by(c))
+            self.msgs.column(c, width=w, stretch=stretch)
+        self._set_headings()
+        right.add(mf, height=260)
+
+        rf, self.reader = scrolled(right, tk.Text, wrap="word",
+                                   font=("monospace", 10), state="disabled",
+                                   bg="#fdfdfa")
+        right.add(rf)
         attach_edit_menu(self.reader, readonly=True)
 
-        self.folders.bind("<<ListboxSelect>>", lambda e: self.load_folder())
-        self.msgs.bind("<<ListboxSelect>>", lambda e: self.load_message())
-        self.current = "Inbox"
+        self.nav.bind("<<TreeviewSelect>>", lambda e: self.on_nav())
+        self.nav.bind("<Double-1>", self.on_nav_double)
+        self.msgs.bind("<<TreeviewSelect>>", lambda e: self.load_message())
         self.refresh()
-        self.folders.selection_set(0)
         self.after(4000, self._tick)
 
-    # ---- data ---------------------------------------------------------------
+    # ---- helpers -------------------------------------------------------------
     def set_status(self, text):
         self.status.config(text=text)
 
+    def _set_headings(self):
+        for c in self.COLS:
+            label = self.HEADINGS[c]
+            if c == self.sort_col:
+                label += "  ▼" if self.sort_desc else "  ▲"
+            self.msgs.heading(c, text=label)
+
+    def current_metas(self):
+        kind, val = self.view
+        metas = []
+        if kind == "tray":
+            metas = [m for n in list_mail(val) if (m := mail_meta(val, n))]
+        else:                                   # contact filter, whole box
+            for tray in TRAYS:
+                for n in list_mail(tray):
+                    m = mail_meta(tray, n)
+                    if not m:
+                        continue
+                    tos = [t.strip() for t in m["to"].split(",")]
+                    if m["from"] == val or val in tos:
+                        metas.append(m)
+        key = {"time": lambda m: (m["sort_time"], m["name"]),
+               "from": lambda m: (m["from"].lower(), m["sort_time"]),
+               "to": lambda m: (m["to"].lower(), m["sort_time"]),
+               "subject": lambda m: (m["subject"].lower(), m["sort_time"])}[self.sort_col]
+        return sorted(metas, key=key, reverse=self.sort_desc)
+
+    # ---- refresh cycle ---------------------------------------------------------
     def refresh(self):
-        sel = self.folders.curselection()
-        self.folders.delete(0, "end")
         for t in TRAYS:
-            self.folders.insert("end", f"{t}  ({len(list_mail(t))})")
-        if sel:
-            self.folders.selection_set(sel[0])
-        self.load_folder(keep=True)
+            self.nav.item(f"tray:{t}", text=f"{t}  ({len(list_mail(t))})")
+        known = set(self.nav.get_children("contacts"))
+        for c in all_contacts():
+            iid = f"contact:{c}"
+            if iid not in known:
+                self.nav.insert("contacts", "end", iid=iid, text=c)
+        self.load_rows()
 
-    def load_folder(self, keep=False):
-        sel = self.folders.curselection()
-        if sel:
-            self.current = TRAYS[sel[0]]
-        prev = self.selected_name()
-        self.msgs.delete(0, "end")
-        for n in list_mail(self.current):
-            self.msgs.insert("end", n)
-        if keep and prev:
-            names = self.msgs.get(0, "end")
-            if prev in names:
-                self.msgs.selection_set(names.index(prev))
+    def load_rows(self):
+        prev = self.selected_iid()
+        self.msgs.delete(*self.msgs.get_children())
+        for m in self.current_metas():
+            iid = f"{m['tray']}/{m['name']}"
+            self.msgs.insert("", "end", iid=iid, values=(
+                m["time"], m["from"], m["to"], m["subject"]))
+        if prev and self.msgs.exists(prev):
+            self.msgs.selection_set(prev)
 
-    def selected_name(self):
-        sel = self.msgs.curselection()
-        return self.msgs.get(sel[0]) if sel else None
+    def _tick(self):
+        self.refresh()
+        self.after(4000, self._tick)
+
+    # ---- selection -------------------------------------------------------------
+    def selected_iid(self):
+        sel = self.msgs.selection()
+        return sel[0] if sel else None
 
     def selected_path(self):
-        n = self.selected_name()
-        return os.path.join(tray_path(self.current), n) if n else None
+        iid = self.selected_iid()
+        if not iid:
+            return None
+        tray, name = iid.split("/", 1)
+        return os.path.join(tray_path(tray), name)
+
+    def on_nav(self):
+        sel = self.nav.selection()
+        if not sel:
+            return
+        iid = sel[0]
+        if iid.startswith("tray:"):
+            self.view = ("tray", iid.split(":", 1)[1])
+        elif iid.startswith("contact:"):
+            self.view = ("contact", iid.split(":", 1)[1])
+        else:
+            return                       # the "Contacts" folder itself
+        self.load_rows()
+
+    def on_nav_double(self, e):
+        iid = self.nav.identify_row(e.y)
+        if iid.startswith("contact:"):
+            Composer(self, to=iid.split(":", 1)[1])
+
+    def sort_by(self, col):
+        if self.sort_col == col:
+            self.sort_desc = not self.sort_desc
+        else:
+            self.sort_col, self.sort_desc = col, (col == "time")
+        self._set_headings()
+        self.load_rows()
 
     def load_message(self):
         p = self.selected_path()
@@ -391,19 +542,13 @@ class MailApp(tk.Tk):
         self.reader.insert("1.0", text)
         self.reader.config(state="disabled")
 
-    def _tick(self):
-        self.refresh()
-        self.after(4000, self._tick)
-
-    # ---- actions --------------------------------------------------------------
+    # ---- actions ---------------------------------------------------------------
     def send_draft(self):
-        if self.current != "Drafts":
-            self.set_status("Send draft: pick a mail in the Drafts folder first")
+        iid = self.selected_iid()
+        if not iid or not iid.startswith("Drafts/"):
+            self.set_status("Send draft: select a mail in the Drafts tray first")
             return
         p = self.selected_path()
-        if not p:
-            self.set_status("Send draft: select a draft first")
-            return
         os.makedirs(tray_path("Outbox"), exist_ok=True)
         shutil.move(p, os.path.join(tray_path("Outbox"), os.path.basename(p)))
         self.set_status(f"✉ {os.path.basename(p)} handed to the watcher — "
@@ -411,12 +556,11 @@ class MailApp(tk.Tk):
         self.refresh()
 
     def delete_draft(self):
-        if self.current not in ("Drafts", "Outbox"):
-            self.set_status("Delete works in Drafts/Outbox only — box mail is ledger")
+        iid = self.selected_iid()
+        if not iid or iid.split("/", 1)[0] not in ("Drafts", "Outbox"):
+            self.set_status("Delete works on Drafts/Outbox only — box mail is ledger")
             return
         p = self.selected_path()
-        if not p:
-            return
         if messagebox.askyesno("Delete", f"Delete {os.path.basename(p)}?"):
             os.remove(p)
             self.refresh()
@@ -428,7 +572,7 @@ class MailApp(tk.Tk):
             return
         with open(p) as f:
             text = f.read()
-        frm = header(text, "From").split("(")[0].strip() or "crew"
+        frm = clean_name(header(text, "From")) or "crew"
         sub = header(text, "Re") or os.path.basename(p)
         Composer(self, to=frm, subject=f"re: {sub}")
 
