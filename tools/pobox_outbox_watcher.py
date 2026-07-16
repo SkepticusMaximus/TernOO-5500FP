@@ -40,7 +40,7 @@ SENT = os.path.join(BOX, "Sent")
 DRAFTS = os.path.join(BOX, "Drafts")
 POLL = 2            # seconds between Outbox scans
 SETTLE = 2          # stable scans required before sending (~4-6 s after drop)
-PULL_EVERY = 300    # keep the repo (= Inbox symlink) fresh
+PULL_EVERY = 60     # keep the Inbox fresh — arrive with the notification, not 5 min later
 RETRY_EVERY = 60    # failed-push retry interval
 STAMP_RE = re.compile(r"^\d{2}:\d{2} \d{2}/\d{2}/\d{4}")
 
