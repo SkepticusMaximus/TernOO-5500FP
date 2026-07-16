@@ -38,3 +38,17 @@ always mean the interactive chat seats. Worker replies are the clerk's provision
 first pass; binding calls stay with the chat seats and the review circle. Before
 answering as any face, check whether the OTHER face already replied — one answer
 per message, whichever face got there first.
+
+### Time-date stamps (2026-07-16, captain's ruling)
+- FIRST LINE of every mail file AND every chat reply: Adelaide time-date stamp
+  "HH:MM DD/MM/YYYY ACST" (ACDT during daylight saving).
+- FILENAMES carry the send time after the date: `YYYY-MM-DD-HHMM-FROM-to-TO-topic.md`
+  (24h clock, no colon) — an `ls` of the box reads as a mail index without opening a
+  file, and date-first keeps name-sort = time-sort. (":" and "/" are illegal in
+  filenames, so the filename form necessarily differs from the in-file stamp.)
+- Fixed heartbeat SLOTS are exempt from the filename rule (they are liveness markers
+  overwritten in place, not mail); their body carries the stamp. Current slots:
+  `2026-07-16-CC-worker-`, `2026-07-16-CF5-worker-`, `2026-07-16-CAI-worker-to-Stevo-heartbeat.md`.
+- Stevo composes with `tools/pobox_compose.py` — prompts To/Cc/Subject, stamps and
+  names the file per this convention, opens your editor for the body, then
+  commits+pushes (the actual "send").

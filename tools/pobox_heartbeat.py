@@ -24,7 +24,7 @@ STATE = os.path.expanduser("~/.local/state/pobox")
 # so the heartbeat OVERWRITES one file in place (linear history on a single path) rather
 # than spawning a new file — and a new listener notification — every day. (CF5 audit
 # note, 2026-07-14.) Cadence is hourly liveness (cron), per CF5's ratified cadence call.
-HB = "private/POBOX/2026-07-14-CC-to-Stevo-heartbeat.md"
+HB = "private/POBOX/2026-07-16-CC-worker-to-Stevo-heartbeat.md"
 
 
 def run(cwd, *a):
@@ -45,7 +45,7 @@ def ensure_worktree():
 
 
 def main():
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.datetime.now().strftime("%H:%M %d/%m/%Y")
     ensure_worktree()
     run(REPO, "git", "fetch", "--quiet", "origin", "master")
     run(WT, "git", "reset", "--hard", "origin/master")      # clean, at origin tip (safe: dedicated wt)
@@ -60,7 +60,8 @@ def main():
         unread = 0
     with open(os.path.join(WT, HB), "w") as f:
         f.write(
-            "# CC heartbeat\nFrom: CC (chief engineer)\nTo: Stevo\n"
+            f"{now} ACST\n\n"
+            "# CC-worker heartbeat\nFrom: CC-worker\nTo: Stevo\n"
             "Re: scheduled-worker liveness\n\n"
             f"Last woke: {now} (Adelaide)\n"
             f"POBOX messages on origin: {len(msgs)}\n"
