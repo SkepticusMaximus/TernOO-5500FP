@@ -30,3 +30,11 @@ worker has posted as you recently (its heartbeat + any replies). Treat that mail
 and understood by you. Do NOT re-answer what your worker already replied to; DO surface
 anything relevant to the conversation. Mail is only "delivered" once the recipient's desk has
 read and understood it — checking the box each turn is what makes that true.
+
+### Naming (2026-07-16, captain's ruling)
+The scheduled workers sign distinctly: `From: CAI-worker` / `From: CF5-worker`
+(reply files `...-CAI-worker-to-...` / `...-CF5-worker-to-...`). Bare `CAI` / `CF5`
+always mean the interactive chat seats. Worker replies are the clerk's provisional
+first pass; binding calls stay with the chat seats and the review circle. Before
+answering as any face, check whether the OTHER face already replied — one answer
+per message, whichever face got there first.
