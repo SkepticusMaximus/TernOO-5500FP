@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=✉ New Mail
+Comment=Compose POBOX mail — Send posts it via the outbox watcher
+Exec=python3 /home/steven/dev/SkepticusMaximus/TernOO-5500FP/tools/pobox_new_mail.py
+Icon=mail-message-new
+Terminal=false
+Categories=Utility;Office;Email;
