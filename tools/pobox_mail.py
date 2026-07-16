@@ -390,6 +390,8 @@ class MailApp(tk.Tk):
         self.view = ("tray", "Inbox")
         self.sort_col = "time"
         self.sort_desc = True
+        self._rows_sig = None       # last rendered table content
+        self._loaded = None         # (path, mtime) shown in the reader
 
         bar = tk.Frame(self)
         bar.pack(side="top", fill="x", padx=8, pady=6)
@@ -489,12 +491,16 @@ class MailApp(tk.Tk):
         self.load_rows()
 
     def load_rows(self):
+        rows = [(f"{m['tray']}/{m['name']}",
+                 (m["time"], m["from"], m["to"], m["subject"]))
+                for m in self.current_metas()]
+        if rows == self._rows_sig:
+            return                  # nothing changed — leave scroll + selection be
+        self._rows_sig = rows
         prev = self.selected_iid()
         self.msgs.delete(*self.msgs.get_children())
-        for m in self.current_metas():
-            iid = f"{m['tray']}/{m['name']}"
-            self.msgs.insert("", "end", iid=iid, values=(
-                m["time"], m["from"], m["to"], m["subject"]))
+        for iid, vals in rows:
+            self.msgs.insert("", "end", iid=iid, values=vals)
         if prev and self.msgs.exists(prev):
             self.msgs.selection_set(prev)
 
@@ -545,14 +551,24 @@ class MailApp(tk.Tk):
         if not p:
             return
         try:
+            mtime = os.stat(p).st_mtime
+        except OSError:
+            mtime = None
+        if self._loaded == (p, mtime):
+            return                  # same file, unchanged — don't touch the view
+        same_file = bool(self._loaded) and self._loaded[0] == p
+        self._loaded = (p, mtime)
+        try:
             with open(p) as f:
                 text = f.read()
         except OSError as e:
             text = f"(could not read: {e})"
+        frac = self.reader.yview()[0] if same_file else 0.0
         self.reader.config(state="normal")
         self.reader.delete("1.0", "end")
         self.reader.insert("1.0", text)
         self.reader.config(state="disabled")
+        self.reader.yview_moveto(frac)
 
     # ---- actions ---------------------------------------------------------------
     def send_draft(self):
