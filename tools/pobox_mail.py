@@ -55,6 +55,18 @@ def clean_name(raw):
     return re.sub(r"\s*\(.*?\)", "", raw).strip()
 
 
+def parse_recipients(raw):
+    """'CF5 (audit); CC: Stevo' -> ['CF5', 'Stevo'];  'the crew — Stevo' -> ['crew', 'Stevo']"""
+    out = []
+    for t in re.split(r"[,;/—]", raw):
+        t = re.sub(r"^\s*(cc|to)\s*:\s*", "", clean_name(t), flags=re.I).strip()
+        if t.lower() in ("the crew", "all", "everyone"):
+            t = "crew"
+        if t and len(t) <= 24 and t not in out:
+            out.append(t)
+    return out
+
+
 def list_mail(tray):
     d = tray_path(tray)
     try:
@@ -98,8 +110,7 @@ def mail_meta(tray, name):
     else:
         sort_time, disp = "0000-00-00 0000", "--"
     frm = clean_name(header(head, "From")) or "?"
-    to = ", ".join(clean_name(t) for t in
-                   re.split(r"[,;]", header(head, "To")) if t.strip()) or "?"
+    to = ", ".join(parse_recipients(header(head, "To"))) or "?"
     sub = header(head, "Re") or os.path.splitext(name)[0]
     meta = {"tray": tray, "name": name, "path": path, "sort_time": sort_time,
             "time": disp, "from": frm, "to": to, "subject": sub}
