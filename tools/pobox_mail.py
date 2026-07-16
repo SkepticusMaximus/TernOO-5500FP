@@ -58,7 +58,8 @@ def clean_name(raw):
 def parse_recipients(raw):
     """'CF5 (audit); CC: Stevo' -> ['CF5', 'Stevo'];  'the crew — Stevo' -> ['crew', 'Stevo']"""
     out = []
-    for t in re.split(r"[,;/—]", raw):
+    raw = re.sub(r"\([^)]*\)", "", raw)      # strip parentheticals BEFORE splitting
+    for t in re.split(r"[,;—]", raw):
         t = re.sub(r"^\s*(cc|to)\s*:\s*", "", clean_name(t), flags=re.I).strip()
         if t.lower() in ("the crew", "all", "everyone"):
             t = "crew"
