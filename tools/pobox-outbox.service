@@ -1,0 +1,19 @@
+[Unit]
+Description=POBOX outbox watcher — save into ~/POBOX/Outbox = stamped, named, committed+pushed (sent)
+After=graphical-session.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/dev/SkepticusMaximus/TernOO-5500FP/tools/pobox_outbox_watcher.py
+Restart=on-failure
+RestartSec=20
+Environment=DISPLAY=:0
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pobox-outbox
+
+[Install]
+WantedBy=default.target
