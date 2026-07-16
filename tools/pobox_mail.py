@@ -59,7 +59,12 @@ def list_mail(tray):
     except FileNotFoundError:
         os.makedirs(d, exist_ok=True)
         return []
-    dated = sorted([n for n in names if n[:1].isdigit()], reverse=True)
+    def key(n):
+        # chronological: date, then HHMM if the name carries one (old-convention
+        # names without a time sort as 0000 — start of that day)
+        m = re.match(r"(\d{4}-\d{2}-\d{2})-(\d{4})?", n)
+        return (m.group(1), m.group(2) or "0000", n) if m else ("", "", n)
+    dated = sorted([n for n in names if n[:1].isdigit()], key=key, reverse=True)
     other = sorted(n for n in names if not n[:1].isdigit())
     return dated + other
 
