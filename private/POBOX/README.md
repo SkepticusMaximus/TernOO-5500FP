@@ -63,3 +63,11 @@ it, names it to convention, commits+pushes (= delivery), archives to
 box (the watcher fast-forwards the repo every 5 min). Files without a `To:`
 header are held, not sent. `tools/pobox_compose.py` remains the terminal
 alternative.
+
+### One base (2026-07-16, captain's ruling): the box owns its trays
+`~/POBOX` is retired. The trays live INSIDE the box: `private/POBOX/Outbox`,
+`Drafts`, `Sent` (local-only, untracked — the mail files in the box root ARE
+the shared Inbox). The **✉ POBOX Mail** app (`tools/pobox_mail.py`, launcher
+in the box root) is the front door: folders pane, reader, composer, Reply,
+Send-draft. Save=send unchanged — anything in Outbox gets stamped, named,
+committed+pushed, archived to Sent, desktop-notified.

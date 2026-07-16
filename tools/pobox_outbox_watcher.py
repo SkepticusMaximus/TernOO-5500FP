@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """pobox_outbox_watcher — save = send: the file manager IS the mail app.
 
-Watches ~/POBOX/Outbox. Any finished .md that lands there (dropped or saved)
-is automatically: stamped (Adelaide first line "HH:MM DD/MM/YYYY ACST"),
-named to convention (YYYY-MM-DD-HHMM-FROM-to-TO-topic.md), committed+pushed
-to origin master (that push IS delivery — the shared box lives on origin),
-archived to ~/POBOX/Sent/, and confirmed with a desktop notification.
+Watches private/POBOX/Outbox — ONE base, the trays live inside the box.
+Any .md that lands there (dropped in, or sent from the ✉ POBOX Mail app) is
+automatically: stamped (Adelaide first line "HH:MM DD/MM/YYYY ACST"), named
+to convention (YYYY-MM-DD-HHMM-FROM-to-TO-topic.md), committed+pushed to
+origin master (that push IS delivery — the shared box lives on origin),
+archived to the box's Sent tray, and confirmed with a desktop notification.
 
-The captain's workflow, zero terminal:
-  right-click > New Document > "POBOX mail" (template) anywhere,
-  fill To: / Re:, write the body, then DROP the file into ~/POBOX/Outbox —
-  dropping it in the out-tray is the send gesture, like a real desk.
+The captain's workflow, zero terminal: open ✉ POBOX Mail (launcher in the
+box root), write, click Send — or drop any finished .md straight into the
+Outbox folder. Dropping it in the out-tray IS the send gesture.
 
 Safety: a file with no "To:" header is held (notified once) until edited —
 so a half-written draft saved in the wrong folder never sends. Failed pushes
-retry every minute. ~/POBOX/Inbox is a symlink into the repo's box; this
-watcher also fast-forwards the repo every 5 min so the Inbox stays fresh.
+retry every minute. The box root IS the Inbox; this watcher fast-forwards
+the repo every 5 min so incoming mail keeps appearing.
 
 Runs as a systemd --user service (tools/pobox-outbox.service).
 """
@@ -34,10 +34,10 @@ except Exception:  # pragma: no cover — the box runs Adelaide time anyway
 
 REPO = os.path.expanduser("~/dev/SkepticusMaximus/TernOO-5500FP")
 WT = os.path.expanduser("~/.local/state/pobox/hbwt")
-BASE = os.path.expanduser("~/POBOX")
-OUTBOX = os.path.join(BASE, "Outbox")
-SENT = os.path.join(BASE, "Sent")
-DRAFTS = os.path.join(BASE, "Drafts")
+BOX = os.path.join(REPO, "private/POBOX")   # ONE base — the box owns its trays
+OUTBOX = os.path.join(BOX, "Outbox")
+SENT = os.path.join(BOX, "Sent")
+DRAFTS = os.path.join(BOX, "Drafts")
 POLL = 2            # seconds between Outbox scans
 SETTLE = 2          # stable scans required before sending (~4-6 s after drop)
 PULL_EVERY = 300    # keep the repo (= Inbox symlink) fresh
