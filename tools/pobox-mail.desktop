@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=✉ POBOX Mail
+Comment=The crew mailbox — read, compose, send (save=send via the outbox watcher)
+Exec=python3 /home/steven/dev/SkepticusMaximus/TernOO-5500FP/tools/pobox_mail.py
+Icon=mail-message-new
+Terminal=false
+Categories=Utility;Office;Email;
