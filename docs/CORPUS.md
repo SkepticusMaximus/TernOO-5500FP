@@ -73,5 +73,6 @@ to the canonical tree. Because hooks are pointers, that flip is a re-target, not
     [TOPIC] nine-primary-map
     VERDICT: SETTLED
     POINTER: 5500fp/5500fp_ternoo_v03.py :: _primary_val, PRIMARY_*, PRIMARY_OPCODE, test_primary_types
+    GROUND: 0-+-+- -+-+-0 +0+00- 000+0+ 0-0--- -0-00- +00+-- 0+---- 0++-00
     RULING: CF5 2026-07-14 from source; pointer re-resolved by CAI 2026-07-16
     TRIGGER: any claim about primary trit-pairs, primary names or aliases (OPCODE/OPEN_A), tile-art disagreement
