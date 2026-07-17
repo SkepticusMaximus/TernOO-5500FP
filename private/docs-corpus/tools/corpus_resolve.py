@@ -19,12 +19,13 @@ that is all it does.
 
 Exit codes:  0 = all HOLDS   1 = STIRRED or DEAD present   2 = lint failure
 
-Stdlib only. Draft — bench tooling, pending review circle + captain's gate.
+Digest is the project's own ternary_sponge (captain's ruling, 2026-07-17):
+the scaffolding is built with porting to TernOO in mind. Stdlib + that module.
+Draft — bench tooling, pending review circle + captain's gate.
 CAI (chat seat), 2026-07-17.
 """
 
 import argparse
-import hashlib
 import re
 import sys
 from pathlib import Path
@@ -32,11 +33,34 @@ from pathlib import Path
 VERDICTS = ("SETTLED", "OPEN", "STALE")
 DERIVED = ("DEAD", "STIRRED", "HOLDS")
 BUDGET = 500
-DIGEST_LEN = 16  # 64 bits of sha256; accident-detection, not adversarial
 
 FIELD_RE = re.compile(r"^([A-Z][A-Z-]*):\s*(.*)$")
 TOPIC_RE = re.compile(r"^\[TOPIC\]\s+(\S+)\s*$")
 LINENUM_RE = re.compile(r"(::.*?)(\bL\d+\b|:\d+\b)")
+
+_sponge = None
+
+
+def load_sponge(root):
+    """Import the project's ternary_sponge from the tree at `root`.
+
+    Fails LOUDLY. There is deliberately no fallback digest: a resolver that
+    quietly swapped in another hash would report HOLDS/STIRRED computed on a
+    different basis than the recorded GROUND, which is precisely the silent
+    degradation this whole protocol exists to prevent.
+    """
+    global _sponge
+    sys.path.insert(0, str(Path(root) / "5500fp"))
+    try:
+        import ternary_sponge
+    except ImportError as e:
+        raise SystemExit(
+            f"FATAL: cannot import ternary_sponge from {root}/5500fp — {e}\n"
+            "The digest is ruled to be the sponge (captain, 2026-07-17). "
+            "There is no fallback: refusing to run rather than digest on a "
+            "different basis than the recorded GROUND."
+        )
+    _sponge = ternary_sponge
 
 
 # ---------------------------------------------------------------- parsing
@@ -249,8 +273,30 @@ def extract(root, path, syms):
     return "\n".join(chunks), missing
 
 
+def text_to_words(text):
+    """Canonical text -> 24-trit TernOO word sequence, for the sponge.
+
+    Canonicalize-then-address. UTF-8 bytes, LENGTH-PREFIXED so trailing
+    NULs cannot alias a shorter input, then packed big-endian 4 bytes per
+    word. 4 bytes = 32 bits, comfortably inside a word's 729**4.
+    """
+    b = text.encode("utf-8")
+    b = len(b).to_bytes(4, "big") + b
+    while len(b) % 4:
+        b += b"\x00"
+    return [int.from_bytes(b[i:i + 4], "big") for i in range(0, len(b), 4)]
+
+
 def digest(text):
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:DIGEST_LEN]
+    """GROUND digest via the project's own ternary_sponge (captain's ruling,
+    2026-07-17: the scaffolding is built with porting to TernOO in mind).
+
+    The sponge's KNOWN.md role — accident-resistance and local tamper-evidence,
+    NOT adversarial security — is exactly this use case. That caveat holds: this
+    digest detects honest drift, never a determined forger. Do not promote it to
+    a security boundary without the external review KNOWN.md asks for.
+    """
+    return _sponge.digest_trits(text_to_words(text))
 
 
 # ---------------------------------------------------------------- resolving
@@ -291,6 +337,7 @@ def main():
     args = ap.parse_args()
 
     root = Path(args.root).resolve()
+    load_sponge(root)
     cpath = root / args.corpus
     if not cpath.is_file():
         print(f"FATAL: corpus not found: {cpath}", file=sys.stderr)
