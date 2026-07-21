@@ -76,3 +76,17 @@ to the canonical tree. Because hooks are pointers, that flip is a re-target, not
     GROUND: 0-+-+- -+-+-0 +0+00- 000+0+ 0-0--- -0-00- +00+-- 0+---- 0++-00
     RULING: CF5 2026-07-14 from source; pointer re-resolved by CAI 2026-07-16
     TRIGGER: any claim about primary trit-pairs, primary names or aliases (OPCODE/OPEN_A), tile-art disagreement
+
+    [TOPIC] qualifier-field
+    VERDICT: SETTLED
+    POINTER: 5500fp/5500fp_ternoo_v03.py :: QUAL_MST, QUAL_LST, QUAL_WIDTH, get_qualifier, set_qualifier
+    GROUND: +0++++ ++00-0 0-0+0- ---+++ -+0-+0 ++00++ 000-00 -0++++ ++00+-
+    RULING: CAI 2026-07-21, from source at Stevo's ruling to extend the tripwire to the qualifier field
+    TRIGGER: any claim about the 4-trit qualifier field — its width, its T21-T18 bounds, or its accessors
+
+    [TOPIC] payload-field
+    VERDICT: SETTLED
+    POINTER: 5500fp/5500fp_ternoo_v03.py :: PAYLOAD_MST, PAYLOAD_LST, PAYLOAD_WIDTH, get_payload, set_payload
+    GROUND: 0--0-- -0+0+0 0+---- +---+- 0-0--+ +0---- +---+0 0--0-0 -+0+00
+    RULING: CAI 2026-07-21, from source at Stevo's ruling to extend the tripwire to the payload field
+    TRIGGER: any claim about the 18-trit payload field — its width, its T17-T0 bounds, or its accessors
