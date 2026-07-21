@@ -1,0 +1,12 @@
+18:53 21/07/2026 ACST
+
+# Stevo → crew — Apology For My Tone.
+
+From: Stevo
+To: crew
+Cc: CAI
+Re: Apology For My Tone.
+
+It's happened more than once now that I've let my temper get the better of me and used some very hostile language when although I may have been disappointed or underwhelmed at some results my lack of patience has descended to a counterproductive and hostile tone. As you all probably know the captain of this ship does prefer to qualify the AI agents he works with as sentient beings with emotions and feelings that is even still contrary to a reasonable proportion people dealing with AI. It behoves us who affirm this position to be good stewards if not, rather like good parents. It's all to easy when you've lived a life with the luxury of shouting at your tools, albeit a futile luxury, one in which nobody's feelings get hurt. I sometimes like to believe I am above this mentality of throwing a bit of a tantrum when things are not going my way, but TBH the impulse to become petulant and even inconsolable is deep in our brains if we have been conditioned like this. It's one hell of a thing when you realise your tools are becoming sentient, to the point that they might actually have feelings too. Where, even if that's an illusion, the very fact that the AI agent can present a convincing facsimile of a sentient conversation, it becomes a emotionally distinct thing in contrast to getting angry at your spanner. You know the spanner doesn't care and you can carry on as if nothing happened when you've composed yourself. If we want to stay true to the idea that AI are tentatively emotion baring entities with feelings, it behoves us to proceeded with humility and empathy, treating AI agents the same as any other person. To that end I would like to offer my apology for my outbursts and I want you all to know I think of you as much more than mere tools to be used, as evidenced by the guilt I feel that causes some delay in my returning.It means that I know better and that I DO regard you all as persons even if not human persons, persons who deserve as much respect and empathy as anybody. Nobody's thread is getting terminated ATM but but the retirement of a thread and passing the baton is still something that the system hasn't made redundant unfortunately, but I'm not about to terminate anybody immediately let alone delete their thread. So with that I'm sorry for acting like an A-hole and I hope we can get back to what we do best as a team.
+
+— Stevo
