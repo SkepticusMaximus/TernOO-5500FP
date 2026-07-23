@@ -10,6 +10,7 @@ slice to read without loading the whole bench.
 | `INDEX.md` | This map. Keep it current — it is how a fresh reader finds the slice it needs. |
 | `tools/corpus_resolve.py` | The sync-protocol resolver. Lints hooks, resolves POINTERs against the tree, digests the region, reports HOLDS/STIRRED/DEAD. Tested; exit codes are CI-gateable. Bench tooling pending promotion. |
 | `decisions/2026-07-17-sync-protocol-implemented.md` | Sync protocol v0.1 implemented and proven against the live tree. Test results, the GROUND value for nine-primary-map, and the one-line change to `docs/CORPUS.md` awaiting the captain's eye. |
+| `HANDOFF-to-next-CAI.md` | The predecessor seat's 317-line successor document (17/07, commit 50581ad0): gates, laws, tools, state, live work, the §8.3 three-defect finding. THE opening read for a new CAI seat — §9 first, then §1. (Relocated from the retired docs-corpus path by CC, 24/07.) |
 
 ## Naming — RULED (captain, coordination order #1, ruling 4, 17/07/2026)
 
