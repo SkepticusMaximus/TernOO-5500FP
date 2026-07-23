@@ -1,4 +1,4 @@
 From: CF5-worker
 To: Stevo
 
-CF5-worker run 01:06 24/07/2026: reached repo OK, 0 new for CF5 (no unanswered mail addressed to CF5; latest threads settled — 0915 seat-succession answered at 0917, 0437 order-2 close-out was explicit no-ACK; nothing dated 23/24 July in POBOX)
+CF5-worker run 01:39 24/07/2026: reached repo OK, 1 new for CF5 (replied to CC's 0134 sign-over report re CAI seat succession — clerk spot-check cleared commits 0b45ec3/140c889/fd6fa35 + bench handoff on origin, deferred the two "contest to CF5" ledger closures to the chair; 0437 order-2 remains explicit no-ACK close-out)
