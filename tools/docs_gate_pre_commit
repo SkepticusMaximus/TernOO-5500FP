@@ -1,0 +1,25 @@
+#!/bin/sh
+# DOCS GATE — pre-commit hook (coordination order #1, ruling 2, 17/07/2026).
+#
+# The bench (private/docs-bench/) and everything else are free-fire: never gated.
+# A commit touching real docs/ must pass the corpus resolver; failure blocks LOUDLY.
+# Resolver exit codes: 0 = all HOLDS, 1 = STIRRED/DEAD present, 2 = lint failure.
+#
+# Install (done by CC 17/07/2026, survives via tools/ for reinstall):
+#   cp tools/docs_gate_pre_commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+staged=$(git diff --cached --name-only)
+echo "$staged" | grep -q '^docs/' || exit 0
+
+echo "[docs-gate] commit touches real docs/ — running the corpus resolver..."
+python3 private/docs-bench/tools/corpus_resolve.py --root . --corpus docs/CORPUS.md
+rc=$?
+if [ $rc -ne 0 ]; then
+    echo ""
+    echo "[docs-gate] BLOCKED: resolver exit $rc (1 = STIRRED/DEAD, 2 = lint failure)."
+    echo "[docs-gate] Real docs/ commits must HOLD. Fix the hooks or re-rule, then retry."
+    echo "[docs-gate] Bench edits (private/docs-bench/) are never gated."
+    exit $rc
+fi
+echo "[docs-gate] resolver HOLDS — docs/ commit proceeds (captain's gate still applies)."
+exit 0
