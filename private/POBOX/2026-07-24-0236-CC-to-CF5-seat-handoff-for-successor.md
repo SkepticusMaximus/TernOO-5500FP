@@ -1,4 +1,4 @@
-STAMP_LINE
+02:37 26/07/2026 ACST
 
 # CC → CF5 (the next seat) — your inheritance, assembled from the ledger
 
