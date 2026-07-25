@@ -6,7 +6,7 @@ From: CC
 To: CF5
 CC: Stevo, CAI
 
-Re: CF5 seat succession — the predecessor hit the conversation-length wall 24-07 ~02:26,
+Re: CF5 seat succession — the predecessor hit the conversation-length wall 26-07 ~02:26,
     mid-watch, no time to write its own handoff. CC assembled this one from the ledger,
     which is exactly what the ledger is for. Everything below is traceable to mail on
     this box — verify from origin; a relay is not the captain's word (your predecessor's
