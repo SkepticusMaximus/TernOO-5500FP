@@ -1,0 +1,23 @@
+{
+  "manifest_version": 2,
+  "name": "POBOX MacroBridge",
+  "version": "0.1",
+  "description": "Watches web chats for explicit !# sentinel command lines; on your click, mails them to CC via the POBOX. Lines beginning with ## are comments and NEVER fire.",
+  "permissions": ["nativeMessaging", "storage", "<all_urls>"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "macro-bridge@ternoo.local",
+      "strict_min_version": "109.0"
+    }
+  }
+}

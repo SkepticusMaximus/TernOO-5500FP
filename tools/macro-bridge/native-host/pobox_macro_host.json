@@ -1,0 +1,7 @@
+{
+  "name": "pobox_macro_host",
+  "description": "POBOX MacroBridge native host — relays approved !# sentinel commands to the POBOX Outbox as mail to CC",
+  "path": "/home/steven/dev/SkepticusMaximus/TernOO-5500FP/tools/macro-bridge/native-host/pobox_macro_host.py",
+  "type": "stdio",
+  "allowed_extensions": ["macro-bridge@ternoo.local"]
+}
