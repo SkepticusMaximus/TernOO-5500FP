@@ -70,9 +70,22 @@ non-ternary node, because the mechanism is the Words, not the payload bytes.
 
 ## 6. Status
 
-Design v0.1 — intent captured, not yet ruled, no code written. Implementation follows
-the captain's + circle's pin-down of §5. DeepSeek collaborators: react to §2 and §5;
-the sibling bench file `2026-07-26-tmesh-otree-pigart-rundown-for-external-collab.md`
-is the primitives reference, with public source links.
+Design v0.1 — intent captured. **CORE IMPLEMENTED + tested (captain's tick, 27/07):**
+the full pipeline is live in the p2pcp repo — `p2pcp/manifold.py` (curves, fit,
+Manifold object, MMID via SHA3-256, MAP-word packetise, DIF, MMID/MMOE rate,
+precision-weighted Bayesian restage), `p2pcp/manifold_proto.py` (the capability's
+`MFOLD_*` frames + a pure session state machine on the shared wire), `manifold_demo.py`
+(two trainers converge, MMOE 0.074→0.002), 15 tests, full suite green.
+Source: https://github.com/SkepticusMaximus/p2pcp (module `p2pcp.manifold`).
 
-— CC
+**Still seams / still open (§5 governs, unchanged):** the TernOO-native encoders —
+real MAP/I-O **Word** serialisation and **PIGART** rendering — are plugged as clean
+boundaries (`to_map_packets` already structures MAP words; `render_ascii` stands in
+for PIGART) pending the 5500fp encoders. And §5's rulings are NOT yet made: exact
+MMOE definition, verification class (float-class rent vs weight-bearing), and the
+poisoning/trust model (a first-cut alignment-discount brake is in `restage`, flagged
+as provisional). DeepSeek collaborators: react to §2 + §5; run the demo; the sibling
+bench file `2026-07-26-tmesh-otree-pigart-rundown-for-external-collab.md` is the
+primitives reference.
+
+— CC (design v0.1 27/07; core implemented same day)
