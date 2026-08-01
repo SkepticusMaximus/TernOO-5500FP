@@ -46,6 +46,8 @@ class MeshTabView:
         self._cards = []
         self._drawer_shown = False
         self._ask_result = None                  # worker → main-thread handoff
+        self._history = []                        # [(role, text)] — the conversation
+        self._pending_idx = None
         self._build(parent)
 
     # ── layout ────────────────────────────────────────────────────────────────
@@ -76,12 +78,14 @@ class MeshTabView:
                  font=("Monospace", 13, "bold"), anchor="w"
                  ).pack(side="top", fill="x", padx=12, pady=(6, 2))
         self._prompt = tk.Text(self._main, height=4, bg=C["palette"], fg=C["dim"],
-                               insertbackground=C["text"], relief="flat",
+                               insertbackground=C["text"], relief="flat", undo=True,
+                               maxundo=-1, autoseparators=True,
                                font=("Monospace", 14), wrap="word", padx=8, pady=8)
         self._prompt.pack(side="top", fill="x", padx=12)
         self._prompt.insert("1.0", self.PLACEHOLDER)
         self._prompt.bind("<FocusIn>", self._clear_placeholder)
         self._prompt.bind("<Control-Return>", lambda e: (self._ask(), "break")[1])
+        self._wire_editing(self._prompt, editable=True)
 
         askrow = tk.Frame(self._main, bg=C["bg"])
         askrow.pack(side="top", fill="x", padx=12, pady=(6, 4))
@@ -93,19 +97,29 @@ class MeshTabView:
                                  activebackground="#57e0a0")
         self._askbtn.pack(side="right")
 
-        # the answer — dominant, fills the rest
+        # the chat — a running TRANSCRIPT (accumulates; read-only but selectable)
         af = tk.Frame(self._main, bg=C["bg"])
         af.pack(side="top", fill="both", expand=True, padx=12, pady=(4, 12))
-        self._answer = tk.Text(af, bg="#0c0e14", fg=C["text"], relief="flat",
-                               font=("Monospace", 12), wrap="word", padx=10,
-                               pady=10, state="disabled")
-        sb = tk.Scrollbar(af, orient="vertical", command=self._answer.yview)
-        self._answer.configure(yscrollcommand=sb.set)
+        self._chat = tk.Text(af, bg="#0c0e14", fg=C["text"], relief="flat",
+                             font=("Monospace", 12), wrap="word", padx=10, pady=10)
+        sb = tk.Scrollbar(af, orient="vertical", command=self._chat.yview)
+        self._chat.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
-        self._answer.pack(side="left", fill="both", expand=True)
-        self._set_answer("Type a question above and press Ask — you're already "
-                         "connected to the mesh. ⚙ Setup (top-right) has the nodes, "
-                         "your own stall, and advanced options.", C["dim"])
+        self._chat.pack(side="left", fill="both", expand=True)
+        self._chat.tag_config("who_you", foreground=C["dim"],
+                              font=("Monospace", 9, "bold"), spacing1=8)
+        self._chat.tag_config("who_prof", foreground=self.GRN,
+                              font=("Monospace", 9, "bold"), spacing1=8)
+        self._chat.tag_config("msg", foreground=C["text"], font=("Monospace", 12))
+        self._chat.tag_config("pending", foreground=C["dim"],
+                              font=("Monospace", 11, "italic"))
+        self._chat.tag_config("sys", foreground=C["dim"], font=("Monospace", 10))
+        self._chat.tag_config("error", foreground=self.RED, font=("Monospace", 11))
+        self._chat.insert("end", "You're connected to the mesh — ask the Professor "
+                          "anything. The conversation is remembered as you go. "
+                          "⚙ Setup (top-right) holds the nodes, your stall, and "
+                          "advanced options.\n\n", ("sys",))
+        self._wire_editing(self._chat, editable=False)
 
         self._build_drawer(self._drawer)
         self._start_board()
@@ -219,20 +233,15 @@ class MeshTabView:
         if not prompt or prompt == self.PLACEHOLDER:
             self._status("Type a question first.")
             return
-        cands = [(st.host, st.port) for st in self._board_states]
-        if not cands:
-            cands = [("127.0.0.1", 9000)]
-        self._askbtn.config(state="disabled", text="  …thinking  ")
-        self._set_answer("…asking a model on the mesh (a Professor can take a few "
-                         "seconds)…", self.C["dim"])
+        cands = [(st.host, st.port) for st in self._board_states] or [("127.0.0.1", 9000)]
+        self._begin_turn(prompt)
+        context = self._build_context()          # the conversation so far → the model
         self._status("Asking the mesh…")
-
-        self._ask_result = None
 
         def work():
             where = ans = err = None
             try:
-                where, ans = self._buyer.ask_mesh(prompt, candidates=cands)
+                where, ans = self._buyer.ask_mesh(context, candidates=cands)
             except Exception as e:                # noqa: BLE001 — surfaced to the user
                 err = str(e)
             self._ask_result = (where, ans, err)  # a main-thread poll paints it —
@@ -251,29 +260,128 @@ class MeshTabView:
 
     def _show_ask(self, where, ans, err):
         self._askbtn.config(state="normal", text="  Ask  ▶  ")
+        self._end_pending()
         if err:
-            self._set_answer(f"Couldn't reach a model: {err}\n\nOpen ⚙ Setup to "
-                             "check the mesh nodes.", self.RED)
+            self._chat.insert("end", f"(couldn't reach a model: {err} — try ⚙ Setup)"
+                              "\n\n", ("error",))
             self._status("Ask failed.")
         elif not where or ans is None:
-            self._set_answer("No model on the mesh answered just now. Open ⚙ Setup "
-                             "to see which nodes are online.", self.C["dim"])
+            self._chat.insert("end", "(no model on the mesh answered — check ⚙ Setup)"
+                              "\n\n", ("error",))
             self._status("No model answered.")
         else:
-            self._set_answer(ans, self.C["text"])
-            self._append_answer(f"\n\n— answered by {where}", self.C["dim"])
+            ans = self._trim_followups(ans)
+            self._history.append(("assistant", ans))
+            self._append_prof(where, ans)
             self._status(f"Answered by {where}.")
+        self._chat.see("end")
 
-    def _set_answer(self, text, color=None):
-        self._answer.config(state="normal")
-        self._answer.delete("1.0", "end")
-        self._answer.insert("1.0", text)
-        self._answer.config(state="disabled", fg=color or self.C["text"])
+    # ── transcript + conversation memory ──────────────────────────────────────
+    def _begin_turn(self, prompt):
+        """Record the turn, show 'You: …', clear the box (the turn now lives in the
+        transcript), show a pending Professor line, and disable Ask until it lands."""
+        self._history.append(("user", prompt))
+        self._append_you(prompt)
+        self._prompt.delete("1.0", "end")
+        self._prompt.config(fg=self.C["text"])
+        self._start_pending()
+        self._askbtn.config(state="disabled", text="  …thinking  ")
+        self._ask_result = None
 
-    def _append_answer(self, text, color=None):
-        self._answer.config(state="normal")
-        self._answer.insert("end", text)
-        self._answer.config(state="disabled")
+    def _append_you(self, text):
+        self._chat.insert("end", "You\n", ("who_you",))
+        self._chat.insert("end", text + "\n\n", ("msg",))
+        self._chat.see("end")
+
+    def _append_prof(self, where, text):
+        self._chat.insert("end", f"Professor · {where}\n", ("who_prof",))
+        self._chat.insert("end", text + "\n\n", ("msg",))
+        self._chat.see("end")
+
+    def _start_pending(self):
+        self._pending_idx = self._chat.index("end-1c")
+        self._chat.insert("end", "Professor is thinking…\n\n", ("pending",))
+        self._chat.see("end")
+
+    def _end_pending(self):
+        if self._pending_idx is not None:
+            self._chat.delete(self._pending_idx, "end")
+            self._pending_idx = None
+
+    def _build_context(self, budget=2400):
+        """The conversation so far, newest-first within a char budget (a small model
+        has a tiny context window), rendered as a dialogue the model continues after
+        the final 'Professor:'. This is what gives the Professor its memory."""
+        lines, total = [], 0
+        for role, text in reversed(self._history):
+            tag = "You" if role == "user" else "Professor"
+            chunk = f"{tag}: {text}\n"
+            if total + len(chunk) > budget and lines:
+                break
+            lines.append(chunk)
+            total += len(chunk)
+        lines.reverse()
+        return "".join(lines) + "Professor:"
+
+    @staticmethod
+    def _trim_followups(ans):
+        """A small model sometimes tacks the NEXT 'You:' turn onto its answer; cut
+        it there so the transcript stays clean."""
+        for marker in ("\nYou:", "\nUser:", "\nYou :", "\nHuman:"):
+            i = ans.find(marker)
+            if i != -1:
+                ans = ans[:i]
+        ans = ans.strip()
+        # the completion-style context makes the model echo a "Professor…:" label;
+        # the turn is already labelled, so strip a short leading one.
+        if ans.lower().startswith("professor"):
+            colon = ans.find(":")
+            if 0 < colon < 40:
+                ans = ans[colon + 1:].strip()
+        return ans
+
+    # ── clipboard + selection (copy/paste/select-all/undo, like the editor) ────
+    def _wire_editing(self, text, editable):
+        tk = self.tk
+        menu = tk.Menu(text, tearoff=0)
+        if editable:
+            menu.add_command(label="Cut",
+                             command=lambda: text.event_generate("<<Cut>>"))
+        menu.add_command(label="Copy",
+                         command=lambda: text.event_generate("<<Copy>>"))
+        if editable:
+            menu.add_command(label="Paste",
+                             command=lambda: text.event_generate("<<Paste>>"))
+        menu.add_separator()
+        menu.add_command(label="Select All", command=lambda: self._select_all(text))
+
+        def popup(e):
+            try:
+                menu.tk_popup(e.x_root, e.y_root)
+            finally:
+                menu.grab_release()
+
+        text.bind("<Button-3>", popup)
+        text.bind("<Control-a>", lambda e: self._select_all(text))
+        text.bind("<Control-A>", lambda e: self._select_all(text))
+        if not editable:                          # read-only, yet selectable/copyable
+            text.bind("<KeyPress>", self._readonly_guard)
+            text.bind("<Button-2>", lambda e: "break")   # no middle-click paste
+
+    def _select_all(self, text):
+        text.tag_add("sel", "1.0", "end-1c")
+        text.mark_set("insert", "1.0")
+        return "break"
+
+    @staticmethod
+    def _readonly_guard(e):
+        # allow copy (Ctrl+C) + select-all (Ctrl+A) + navigation; block edits.
+        if (e.state & 0x4) and e.keysym.lower() in ("c", "a"):
+            return None
+        if e.keysym in ("Left", "Right", "Up", "Down", "Home", "End", "Prior",
+                        "Next", "Shift_L", "Shift_R", "Control_L", "Control_R"):
+            return None
+        return "break"
 
     # ── live board: reuse p2pcp.dashboard, drives conn status + drawer cards ────
     def _start_board(self):
@@ -438,15 +546,15 @@ class MeshTabView:
         if not text or text == self.PLACEHOLDER:
             self._status("Type a question first.")
             return
-        self._askbtn.config(state="disabled", text="  …thinking  ")
-        self._set_answer(f"…asking {host}:{port}…", self.C["dim"])
-        self._ask_result = None
+        self._begin_turn(text)
+        payload = self._build_context() if kind == "ask" else text
+        self._status(f"Asking {host}:{port}…")
 
         def work():
             err = None
             try:
-                ans = (self._buyer.ask(host, port, text) if kind == "ask"
-                       else self._buyer.classify(host, port, text))
+                ans = (self._buyer.ask(host, port, payload) if kind == "ask"
+                       else self._buyer.classify(host, port, payload))
             except Exception as e:                # noqa: BLE001 — surfaced
                 ans, err = None, str(e)
             self._ask_result = (f"{host}:{port}", ans, err)
