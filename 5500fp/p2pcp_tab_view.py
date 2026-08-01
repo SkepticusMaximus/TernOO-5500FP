@@ -167,6 +167,18 @@ class MeshTabView:
             e.insert(0, value)
             return e
 
+        # away-from-home: point the client at a public relay (e.g. bore.pub:PORT)
+        road = section("🧳 Away from home — talk via relay")
+        rr = tk.Frame(road, bg=C["bg"]); rr.pack(side="top", fill="x", pady=2)
+        tk.Label(rr, text="relay host:port", bg=C["bg"], fg=C["dim"], font=mono
+                 ).pack(side="left", padx=(4, 2))
+        self._relay = dentry(rr, self._read_relay(), width=22)
+        self._relay.pack(side="left", padx=2)
+        tk.Label(road, text="Set this to reach home over the internet (a bore.pub:PORT "
+                 "from park-relay.sh). Clear it to use the LAN/mesh.", bg=C["bg"],
+                 fg=C["dim"], font=("Monospace", 8), wraplength=360, justify="left",
+                 anchor="w").pack(side="top", fill="x", padx=4, pady=(0, 2))
+
         # the live mesh — the real nodes (the folded-in dashboard)
         board = section("The mesh — live nodes")
         self._board_holder = board
@@ -240,14 +252,21 @@ class MeshTabView:
             self._status("Type a question first.")
             return
         cands = [(st.host, st.port) for st in self._board_states] or [("127.0.0.1", 9000)]
+        relay = self._relay_addr()
+        if relay:
+            self._save_relay(f"{relay[0]}:{relay[1]}")
         self._begin_turn(prompt)
         context = self._build_context()          # the conversation so far → the model
-        self._status("Asking the mesh…")
+        self._status("Asking via relay…" if relay else "Asking the mesh…")
 
         def work():
             where = ans = err = None
             try:
-                where, ans = self._buyer.ask_mesh(context, candidates=cands)
+                if relay:                         # away-from-home: go through the relay
+                    where = f"{relay[0]}:{relay[1]} (relay)"
+                    ans = self._buyer.ask_via_relay(relay[0], relay[1], context)
+                else:                             # home: discover a provider on the mesh
+                    where, ans = self._buyer.ask_mesh(context, candidates=cands)
             except Exception as e:                # noqa: BLE001 — surfaced to the user
                 err = str(e)
             self._ask_result = (where, ans, err)  # a main-thread poll paints it —
@@ -491,6 +510,36 @@ class MeshTabView:
             return
         self._store.delete(self._chat_id)
         self._new_chat()
+
+    # ── relay address (away-from-home), persisted so the phone remembers it ─────
+    @staticmethod
+    def _relay_path():
+        return os.path.expanduser("~/.p2pcp/relay")
+
+    def _read_relay(self):
+        try:
+            with open(self._relay_path(), encoding="utf-8") as fh:
+                return fh.read().strip()
+        except OSError:
+            return ""
+
+    def _save_relay(self, addr):
+        try:
+            os.makedirs(os.path.dirname(self._relay_path()), exist_ok=True)
+            with open(self._relay_path(), "w", encoding="utf-8") as fh:
+                fh.write(addr.strip() + "\n")
+        except OSError:
+            pass
+
+    def _relay_addr(self):
+        raw = self._relay.get().strip() if hasattr(self, "_relay") else ""
+        if not raw:
+            return None
+        host, _, port = raw.rpartition(":")
+        try:
+            return (host or "127.0.0.1", int(port))
+        except ValueError:
+            return None
 
     # ── live board: reuse p2pcp.dashboard, drives conn status + drawer cards ────
     def _start_board(self):
