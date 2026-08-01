@@ -37,14 +37,21 @@ class MeshService:
     ``"professor"`` (Bonsai, float), ``"ghost"`` (native), or ``None`` (buy-only).
     ``keyfile`` persists identity + earnings; ``mock`` uses the echo professor."""
 
+    # A model can take tens of seconds to answer (float inference); the buy client
+    # must wait that long or it hangs up mid-answer and reports "no result" — the
+    # bug behind an Ask that silently fails against a real Professor.
+    MODEL_TIMEOUT = 240.0
+
     def __init__(self, worker_kind="professor", keyfile=None, mock=False,
-                 seed="mesh-node"):
+                 seed="mesh-node", timeout=None):
         self.worker_kind = worker_kind
         self.keyfile = keyfile
         self.mock = mock
         self.seed = seed
+        self.timeout = self.MODEL_TIMEOUT if timeout is None else timeout
         self._node = None
         self._addr = None
+        self._buy_client = None
 
     # ── lifecycle ────────────────────────────────────────────────────────────
     def _make_worker(self):
@@ -62,7 +69,8 @@ class MeshService:
             ledger = L.Ledger.load(self.keyfile + ".ledger")
             if not ledger.verify():                    # never run on tampered state
                 raise ValueError("persisted ledger failed integrity check")
-        self._node = D.Daemon(identity, worker=self._make_worker(), ledger=ledger)
+        self._node = D.Daemon(identity, worker=self._make_worker(), ledger=ledger,
+                              timeout=self.timeout)
         self._addr = self._node.start(host, port)
         return self._addr
 
@@ -109,7 +117,12 @@ class MeshService:
 
     # ── buy compute ──────────────────────────────────────────────────────────
     def _client(self):
-        return self._node or D.Daemon(NODE.node_identity(self.seed + "-client"))
+        if self._node is not None:                 # a running stall buys under its wallet
+            return self._node
+        if self._buy_client is None:               # else a stable, model-patient buy client
+            self._buy_client = D.Daemon(NODE.node_identity(self.seed + "-client"),
+                                        timeout=self.timeout)
+        return self._buy_client
 
     def ask(self, host, port, prompt, k=5):
         """Buy inference from a Professor node (float). Returns the answer, or None."""
