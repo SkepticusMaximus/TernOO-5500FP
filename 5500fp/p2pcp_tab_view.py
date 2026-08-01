@@ -48,6 +48,8 @@ class MeshTabView:
         self._ask_result = None                  # worker → main-thread handoff
         self._history = []                        # [(role, text)] — the conversation
         self._pending_idx = None
+        self._store = None                        # portable saved-chat store
+        self._chat_id = None                      # current saved chat (None = unsaved)
         self._build(parent)
 
     # ── layout ────────────────────────────────────────────────────────────────
@@ -72,6 +74,12 @@ class MeshTabView:
                                    relief="flat", activebackground=C["bg"],
                                    activeforeground=C["text"])
         self._setupbtn.pack(side="right")
+        self._chatbtn = tk.Menubutton(top, text="💬 New chat ▾", bg=C["palette"],
+                                      fg=C["text"], font=mono, relief="flat",
+                                      activebackground=C["bg"])
+        self._chatmenu = tk.Menu(self._chatbtn, tearoff=0)
+        self._chatbtn.config(menu=self._chatmenu)
+        self._chatbtn.pack(side="right", padx=(0, 8))
 
         # the prompt — the dominant element
         tk.Label(self._main, text="Ask the mesh", bg=C["bg"], fg=C["text"],
@@ -115,13 +123,11 @@ class MeshTabView:
                               font=("Monospace", 11, "italic"))
         self._chat.tag_config("sys", foreground=C["dim"], font=("Monospace", 10))
         self._chat.tag_config("error", foreground=self.RED, font=("Monospace", 11))
-        self._chat.insert("end", "You're connected to the mesh — ask the Professor "
-                          "anything. The conversation is remembered as you go. "
-                          "⚙ Setup (top-right) holds the nodes, your stall, and "
-                          "advanced options.\n\n", ("sys",))
+        self._greeting()
         self._wire_editing(self._chat, editable=False)
 
         self._build_drawer(self._drawer)
+        self._init_store()
         self._start_board()
 
     def _clear_placeholder(self, _e=None):
@@ -275,6 +281,7 @@ class MeshTabView:
             self._append_prof(where, ans)
             self._status(f"Answered by {where}.")
         self._chat.see("end")
+        self._save_current()
 
     # ── transcript + conversation memory ──────────────────────────────────────
     def _begin_turn(self, prompt):
@@ -294,7 +301,8 @@ class MeshTabView:
         self._chat.see("end")
 
     def _append_prof(self, where, text):
-        self._chat.insert("end", f"Professor · {where}\n", ("who_prof",))
+        label = f"Professor · {where}" if where else "Professor"
+        self._chat.insert("end", label + "\n", ("who_prof",))
         self._chat.insert("end", text + "\n\n", ("msg",))
         self._chat.see("end")
 
@@ -382,6 +390,107 @@ class MeshTabView:
                         "Next", "Shift_L", "Shift_R", "Control_L", "Control_R"):
             return None
         return "break"
+
+    # ── named chats — portable saved conversations (p2pcp.chatstore) ────────────
+    def _greeting(self):
+        self._chat.insert("end", "You're connected to the mesh — ask the Professor "
+                          "anything. The conversation is remembered as you go and "
+                          "saved as a chat you can revisit (💬 top-right). ⚙ Setup "
+                          "holds the nodes, your stall, and advanced options.\n\n",
+                          ("sys",))
+        self._chat.see("end")
+
+    def _init_store(self):
+        try:
+            from p2pcp import chatstore
+            self._store = chatstore.ChatStore()
+        except Exception:                          # no store → chats just aren't saved
+            self._store = None
+        self._chat_id = None
+        self._refresh_chat_menu()
+
+    def _refresh_chat_menu(self):
+        m = self._chatmenu
+        m.delete(0, "end")
+        title = "New chat"
+        n = 0
+        if self._store:
+            for cid, ttl, _u in self._store.list()[:20]:
+                mark = "•  " if cid == self._chat_id else "    "
+                m.add_command(label=mark + ttl,
+                              command=lambda c=cid: self._switch_chat(c))
+                if cid == self._chat_id:
+                    title = ttl
+                n += 1
+            if n:
+                m.add_separator()
+        m.add_command(label="＋  New chat", command=self._new_chat)
+        m.add_command(label="✎  Rename current", command=self._rename_chat)
+        m.add_command(label="🗑  Delete current", command=self._delete_chat)
+        self._chatbtn.config(text=f"💬 {title[:26]} ▾")
+
+    def _new_chat(self):
+        self._history = []
+        self._chat_id = None
+        self._pending_idx = None
+        self._chat.delete("1.0", "end")
+        self._greeting()
+        self._refresh_chat_menu()
+        self._status("New chat.")
+
+    def _switch_chat(self, cid):
+        rec = self._store.load(cid) if self._store else None
+        if not rec:
+            return
+        self._history = [(mm["role"], mm["text"]) for mm in rec.get("messages", [])]
+        self._chat_id = cid
+        self._render_history()
+        self._refresh_chat_menu()
+        self._status(f"Opened “{rec.get('title', 'chat')}”.")
+
+    def _render_history(self):
+        self._chat.delete("1.0", "end")
+        self._greeting()
+        for role, text in self._history:
+            self._append_you(text) if role == "user" else self._append_prof(None, text)
+        self._pending_idx = None
+
+    def _save_current(self):
+        if not self._store or not self._history:
+            return
+        if self._chat_id is None:
+            self._chat_id = self._store.new_id()
+        rec = self._store.load(self._chat_id)
+        if rec and rec.get("title"):               # keep a renamed/existing title
+            title = rec["title"]
+        else:
+            first = next((t for r, t in self._history if r == "user"), "")
+            title = self._store.title_for(first)
+        try:
+            self._store.save(self._chat_id, title, self._history)
+        except Exception:                          # a transient FS error must not
+            pass                                   # break the chat
+        self._refresh_chat_menu()
+
+    def _rename_chat(self):
+        if not self._store or self._chat_id is None:
+            self._status("Send a message first — then the chat can be named.")
+            return
+        from tkinter import simpledialog
+        rec = self._store.load(self._chat_id)
+        new = simpledialog.askstring("Rename chat", "Title:",
+                                     initialvalue=(rec or {}).get("title", ""),
+                                     parent=self.root)
+        if new and new.strip():
+            self._store.rename(self._chat_id, new.strip())
+            self._refresh_chat_menu()
+
+    def _delete_chat(self):
+        if not self._store or self._chat_id is None:
+            self._status("Nothing saved to delete yet.")
+            return
+        self._store.delete(self._chat_id)
+        self._new_chat()
 
     # ── live board: reuse p2pcp.dashboard, drives conn status + drawer cards ────
     def _start_board(self):
