@@ -27,6 +27,7 @@ def _load(name):
 
 D = _load("p2pcp_daemon")
 L = D.L
+W = _load("p2pcp_wire")
 P = _load("p2pcp_bonsai")
 GH = _load("p2pcp_ghost")
 NODE = _load("p2pcp_node")
@@ -154,6 +155,16 @@ class MeshService:
             "compute:native", text.encode("utf-8"), 1, k, L.VCLASS_NATIVE,
             audit=GH.GhostWorker(), candidates=candidates)
         return self._located(addr, res)
+
+    def ask_via_relay(self, relay_host, relay_port, prompt, k=5):
+        """Buy inference from a Professor PARKED AT A RELAY — the away-from-home
+        path. The relay splices us to a NAT'd seller (e.g. Lenny at the motel) that
+        dialled out to it, so this works from the pub or the park over the WAN."""
+        preamble = W.relay_buy_frame("compute:float")
+        res = self._client().request_job(
+            relay_host, int(relay_port), prompt.encode("utf-8"), n_chunks=1, k=k,
+            vclass=L.VCLASS_FLOAT, audit=None, preamble=preamble)
+        return self._answer(res)
 
     @classmethod
     def _located(cls, addr, res):
