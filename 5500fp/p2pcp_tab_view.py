@@ -62,6 +62,10 @@ class MeshTabView:
                  bg=C["palette"], fg=C["dim"], font=mono, anchor="w"
                  ).pack(side="top", fill="x")
 
+        # The standalone dashboard, folded in: a live board of the REAL running
+        # nodes (wallets, what each sells, a compute meter), polled off-thread.
+        self._build_market_board(parent)
+
         # toolbar: what you sell + port + mock + open/close + address + help
         bar = tk.Frame(parent, bg=C["palette"])
         bar.pack(side="top", fill="x")
@@ -137,6 +141,94 @@ class MeshTabView:
                                insertbackground=C["text"], relief="flat",
                                font=mono, wrap="word")
         self._result.pack(side="top", fill="both", expand=True, padx=6, pady=4)
+
+    # ── live market board: the standalone dashboard, folded in ─────────────────
+    # Reuses p2pcp.dashboard's NodeState/rate engine verbatim to poll the REAL
+    # running nodes (from ~/.p2pcp/nodes.txt) and paint per-node cards — wallet,
+    # what each sells, and a chunks/sec compute meter. Polling runs OFF the GUI
+    # thread so a slow or absent node never freezes the IDE; the paint is marshalled
+    # back onto the Tk thread via root.after(0). This is the dashboard the captain
+    # watched work, now inside the Mesh tab and themed with the shared C palette.
+    def _build_market_board(self, parent):
+        tk, C = self.tk, self.C
+        mono = ("Monospace", 9)
+        try:
+            from p2pcp import dashboard as DASH     # shims already put p2pcp on path
+        except Exception as e:                      # missing dep → degrade, keep tab
+            tk.Label(parent, text=f"  (live board unavailable: {e})  ", bg=C["bg"],
+                     fg=C["dim"], font=mono).pack(side="top", fill="x", padx=8)
+            return
+        self._DASH = DASH
+        self._GRN, self._RED = "#3fd08f", "#e06a6a"
+        self._board_states = [DASH.NodeState(a) for a in DASH._configured_nodes()]
+        board = tk.LabelFrame(parent, text=" Live mesh — the real nodes ",
+                              bg=C["bg"], fg=C["text"], font=mono)
+        board.pack(side="top", fill="x", padx=8, pady=6)
+        self._cards = []
+        for st in self._board_states:
+            f = tk.Frame(board, bg=C["palette"])
+            f.pack(fill="x", padx=6, pady=3)
+            head = tk.Label(f, text=st.addr, bg=C["palette"], fg=C["dim"],
+                            font=mono, anchor="w")
+            head.pack(fill="x", padx=6, pady=(3, 0))
+            bal = tk.Label(f, text="0 CompuCoin", bg=C["palette"], fg=C["text"],
+                           font=("Monospace", 14, "bold"), anchor="w")
+            bal.pack(fill="x", padx=6)
+            sub = tk.Label(f, text="", bg=C["palette"], fg=C["dim"], font=mono,
+                           anchor="w")
+            sub.pack(fill="x", padx=6)
+            mrow = tk.Frame(f, bg=C["palette"])
+            mrow.pack(fill="x", padx=6, pady=(1, 4))
+            tk.Label(mrow, text="compute", bg=C["palette"], fg=C["dim"],
+                     font=("Monospace", 8)).pack(side="left")
+            cv = tk.Canvas(mrow, height=10, bg=C["bg"], highlightthickness=0)
+            cv.pack(side="left", fill="x", expand=True, padx=6)
+            rate = tk.Label(mrow, text="0.0 ch/s", bg=C["palette"], fg=C["text"],
+                            font=("Monospace", 8), width=10, anchor="e")
+            rate.pack(side="right")
+            self._cards.append((st, head, bal, sub, cv, rate))
+        self._board_stop = threading.Event()
+        threading.Thread(target=self._board_loop, name="mesh-board",
+                         daemon=True).start()
+        self.root.after(400, self._paint_board)     # main-thread paint loop
+
+    def _board_loop(self):
+        # ONLY network I/O here — never touch Tk from this thread (Tkinter is not
+        # thread-safe; cross-thread .after() silently fails to dispatch). The
+        # main-thread _paint_board reads these NodeStates and repaints on its own
+        # cadence, so a slow/absent node blocks only this thread, never the IDE.
+        while not self._board_stop.is_set():
+            for st in self._board_states:
+                try:
+                    st.poll()                       # STATUS over the wire, OFF the GUI thread
+                except Exception:                   # noqa: BLE001 — never kill the loop
+                    pass
+            self._board_stop.wait(max(0.5, self._DASH.POLL_MS / 1000.0))
+
+    def _paint_board(self):
+        GRN, RED, FG, DIM = self._GRN, self._RED, self.C["text"], self.C["dim"]
+        for (st, head, bal, sub, cv, rate) in self._cards:
+            dot = "● online" if st.online else "○ offline"
+            head.config(text=f"{st.addr}    {dot}    {st.account}",
+                        fg=DIM if st.online else RED)
+            flow = (f"  +{st.coin_delta}" if st.coin_delta > 0
+                    else (f"  {st.coin_delta}" if st.coin_delta < 0 else ""))
+            bal.config(text=f"{st.balance} CompuCoin{flow}",
+                       fg=(GRN if st.coin_delta > 0
+                           else (RED if st.coin_delta < 0 else FG)))
+            kind = ("a model · float" if "compute:float" in st.caps
+                    else ("raw compute · native" if "compute:native" in st.caps
+                          else "buy-only (no worker)"))
+            sub.config(text=f"jobs {st.jobs}   chunks {st.chunks}   · sells {kind}")
+            cps = st.chunks_per_sec()
+            cv.delete("all")
+            w = cv.winfo_width() or 260
+            fill = max(0.0, min(1.0, cps / self._DASH.METER_FULL))
+            if fill > 0:
+                cv.create_rectangle(0, 0, int(w * fill), 10, fill=GRN, outline="")
+            rate.config(text=f"{cps:.1f} ch/s")
+        if not self._board_stop.is_set():
+            self.root.after(int(self._DASH.POLL_MS), self._paint_board)  # reschedule (GUI thread)
 
     # ── actions (delegate to the tested MeshService) ──────────────────────────
     @staticmethod
