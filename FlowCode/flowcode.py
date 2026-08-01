@@ -799,7 +799,7 @@ def run_gui():
         {'key': 'text',        'title': 'Text',          'help_topic': 'text',        'wants_sidebar': False, 'wants_output': False},
         {'key': 'babble-fish', 'title': 'Babble-Fish',   'help_topic': 'babble-fish', 'wants_sidebar': True,  'wants_output': False},
         {'key': 'academy',     'title': 'Academy',       'help_topic': 'academy',     'wants_sidebar': False, 'wants_output': False},
-        {'key': 'mesh',        'title': 'Mesh',          'help_topic': 'mesh',        'wants_sidebar': False, 'wants_output': False},
+        {'key': 'mesh',        'title': 'Mesh-Chat',     'help_topic': 'mesh',        'wants_sidebar': False, 'wants_output': False},
         {'key': 'docs',        'title': 'Documentation', 'help_topic': 'docs',        'wants_sidebar': False, 'wants_output': False},
     ]
     _tab_by_key = {r['key']: r for r in TAB_CHROME}
