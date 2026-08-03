@@ -4,8 +4,8 @@ Mounted by flowcode.py:  MeshTabView(parent_frame, C, root, set_status)
 
 You land ALREADY talking to a model: a big prompt, a big answer, and one Ask
 button that auto-routes to a live Professor on the mesh — no addresses, no ports,
-no "open a stall" first. All the plumbing (which node, your own stall, peers,
-GHOST classify) lives behind a ⚙ Setup drawer, out of sight until you want it.
+no "open a stall" first. All the plumbing (your own stall, peers, the live board)
+lives behind a ⚙ Setup drawer, out of sight until you want it.
 
 Under the hood it's the tested p2pcp_service.MeshService; the live board reuses the
 standalone p2pcp.dashboard's NodeState engine to watch the real nodes. `tkinter` is
@@ -35,6 +35,7 @@ SVC = _load("p2pcp_service")
 class MeshTabView:
     GRN, RED = "#3fd08f", "#e06a6a"
     PLACEHOLDER = "Ask the Professor anything…   (Ctrl+Enter to send)"
+    ATTACH_MAX = 4000            # max chars of an attached file fed to the model
 
     def __init__(self, parent, C, root, set_status):
         import tkinter as tk
@@ -50,6 +51,7 @@ class MeshTabView:
         self._pending_idx = None
         self._store = None                        # portable saved-chat store
         self._chat_id = None                      # current saved chat (None = unsaved)
+        self._attachment = None                   # {name,text,clipped} for the next Ask
         self._build(parent)
 
     # ── layout ────────────────────────────────────────────────────────────────
@@ -109,6 +111,14 @@ class MeshTabView:
                                  font=("Monospace", 12, "bold"), relief="flat",
                                  activebackground="#57e0a0")
         self._askbtn.pack(side="right")
+        self._attachbtn = tk.Button(askrow, text=" 📎 ", command=self._attach_file,
+                                     bg=C["palette"], fg=C["text"], font=mono,
+                                     relief="flat", activebackground=C["bg"],
+                                     activeforeground=C["text"])
+        self._attachbtn.pack(side="right", padx=(0, 6))
+        self._attachlbl = tk.Label(askrow, text="", bg=C["bg"], fg=C["dim"],
+                                   font=("Monospace", 8))
+        self._attachlbl.pack(side="right", padx=(0, 4))
 
         # the chat — a running TRANSCRIPT (accumulates; read-only but selectable)
         af = tk.Frame(self._main, bg=C["bg"])
@@ -227,17 +237,6 @@ class MeshTabView:
                                     selectbackground=C["palette"])
         self._peerlist.pack(side="top", fill="x", padx=4, pady=3)
 
-        # advanced: talk to a specific node / classify with GHOST
-        adv = section("Advanced — a specific node")
-        arow = tk.Frame(adv, bg=C["bg"]); arow.pack(side="top", fill="x", pady=2)
-        tk.Label(arow, text="node host:port", bg=C["bg"], fg=C["dim"], font=mono
-                 ).pack(side="left", padx=(4, 2))
-        self._target = dentry(arow, "127.0.0.1:9000", width=20)
-        self._target.pack(side="left", padx=2)
-        brow = tk.Frame(adv, bg=C["bg"]); brow.pack(side="top", fill="x")
-        dbtn(brow, "Ask this node", lambda: self._buy_direct("ask"))
-        dbtn(brow, "Classify (GHOST)", lambda: self._buy_direct("classify"))
-
     def _toggle_setup(self):
         if self._drawer_shown:
             self._drawer.withdraw()
@@ -266,6 +265,7 @@ class MeshTabView:
             self._save_relay(f"{relay[0]}:{relay[1]}")
         self._begin_turn(prompt)
         context = self._build_context()          # the conversation so far → the model
+        self._clear_attachment()                 # one-shot: it rode along with this turn
         self._status("Asking via relay…" if relay else "Asking the mesh…")
 
         def work():
@@ -311,10 +311,42 @@ class MeshTabView:
         self._chat.see("end")
         self._save_current()
 
+    # ── attach a file for the Professor to read ────────────────────────────────
+    def _attach_file(self):
+        """Pick a text file; its contents ride along with the NEXT Ask as context,
+        then clear (one-shot). Big files are clipped to ATTACH_MAX chars so they fit
+        the model's small window."""
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(
+            title="Attach a text file for the Professor to read",
+            filetypes=[("Text", "*.txt *.md *.py *.json *.csv *.log *.fc *.flow *.gui"),
+                       ("All files", "*.*")])
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        except Exception as e:                    # noqa: BLE001 — surfaced to the user
+            self._status(f"Couldn't read that file: {e}")
+            return
+        name = os.path.basename(path)
+        clipped = len(text) > self.ATTACH_MAX
+        self._attachment = {"name": name, "text": text[:self.ATTACH_MAX],
+                            "clipped": clipped}
+        self._attachlbl.config(text=f"📎 {name}" + ("  (clipped)" if clipped else ""))
+        self._status(f"Attached {name} — rides with your next Ask (📎 again to replace).")
+
+    def _clear_attachment(self):
+        self._attachment = None
+        if hasattr(self, "_attachlbl"):
+            self._attachlbl.config(text="")
+
     # ── transcript + conversation memory ──────────────────────────────────────
     def _begin_turn(self, prompt):
         """Record the turn, show 'You: …', clear the box (the turn now lives in the
         transcript), show a pending Professor line, and disable Ask until it lands."""
+        if self._attachment:                       # note the attachment in the record
+            prompt = f"{prompt}\n📎 [attached: {self._attachment['name']}]"
         self._history.append(("user", prompt))
         self._append_you(prompt)
         self._prompt.delete("1.0", "end")
@@ -357,7 +389,13 @@ class MeshTabView:
             lines.append(chunk)
             total += len(chunk)
         lines.reverse()
-        return "".join(lines) + "Professor:"
+        prefix = ""
+        if self._attachment:                       # the user's attached file, as context
+            a = self._attachment
+            tag = "  (truncated)" if a.get("clipped") else ""
+            prefix = (f'[The user attached a file "{a["name"]}"{tag}. Its contents:]\n'
+                      f'"""\n{a["text"]}\n"""\n\n')
+        return prefix + "".join(lines) + "Professor:"
 
     @staticmethod
     def _trim_followups(ans):
@@ -731,34 +769,6 @@ class MeshTabView:
         n = self.svc.join([addr])
         self._refresh_wallet()
         self._status(f"Joined; know {n} peer(s).")
-
-    # ── advanced: talk to a specific node (from the drawer) ────────────────────
-    def _buy_direct(self, kind):
-        host, _, port = self._target.get().strip().rpartition(":")
-        try:
-            host, port = (host or "127.0.0.1"), int(port)
-        except ValueError:
-            self._status("Bad host:port.")
-            return
-        text = self._prompt.get("1.0", "end").strip()
-        if not text or text == self.PLACEHOLDER:
-            self._status("Type a question first.")
-            return
-        self._begin_turn(text)
-        payload = self._build_context() if kind == "ask" else text
-        self._status(f"Asking {host}:{port}…")
-
-        def work():
-            err = None
-            try:
-                ans = (self._buyer.ask(host, port, payload) if kind == "ask"
-                       else self._buyer.classify(host, port, payload))
-            except Exception as e:                # noqa: BLE001 — surfaced
-                ans, err = None, str(e)
-            self._ask_result = (f"{host}:{port}", ans, err)
-
-        threading.Thread(target=work, daemon=True).start()
-        self.root.after(150, self._ask_poll)
 
     # ── help_extra: the tab's contribution to the shared Help window ───────────
     def help_extra(self, win):
