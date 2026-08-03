@@ -61,7 +61,12 @@ class MeshTabView:
         self._outer.pack(fill="both", expand=True)
         self._main = tk.Frame(self._outer, bg=C["bg"])
         self._main.pack(side="left", fill="both", expand=True)
-        self._drawer = tk.Frame(self._outer, bg=C["palette"], width=400)  # hidden
+        self._drawer = tk.Toplevel(self.root)      # ⚙ Setup is its own pop-out window
+        self._drawer.title("⚙ Setup — Mesh-Chat")
+        self._drawer.configure(bg=C["palette"])
+        self._drawer.geometry("440x700")
+        self._drawer.withdraw()                    # hidden until Setup is clicked
+        self._drawer.protocol("WM_DELETE_WINDOW", self._toggle_setup)  # its ✕ hides it
 
         # top strip: live connection status + the Setup toggle
         top = tk.Frame(self._main, bg=C["bg"])
@@ -235,12 +240,16 @@ class MeshTabView:
 
     def _toggle_setup(self):
         if self._drawer_shown:
-            self._drawer.pack_forget()
+            self._drawer.withdraw()
             self._drawer_shown = False
             self._setupbtn.config(text="⚙ Setup")
         else:
-            self._drawer.pack(side="right", fill="y")
-            self._drawer.pack_propagate(False)
+            self.root.update_idletasks()           # pop out beside the main window
+            x = self.root.winfo_rootx() + self.root.winfo_width() + 8
+            y = self.root.winfo_rooty()
+            self._drawer.geometry(f"+{max(0, x)}+{max(0, y)}")
+            self._drawer.deiconify()
+            self._drawer.lift()
             self._drawer_shown = True
             self._setupbtn.config(text="⚙ Setup ✕")
             self._refresh_wallet()
@@ -446,6 +455,8 @@ class MeshTabView:
         m.add_command(label="＋  New chat", command=self._new_chat)
         m.add_command(label="✎  Rename current", command=self._rename_chat)
         m.add_command(label="🗑  Delete current", command=self._delete_chat)
+        m.add_separator()
+        m.add_command(label="⬇  Export chat…", command=self._export_chat)
         self._chatbtn.config(text=f"💬 {title[:26]} ▾")
 
     def _new_chat(self):
@@ -510,6 +521,35 @@ class MeshTabView:
             return
         self._store.delete(self._chat_id)
         self._new_chat()
+
+    def _export_chat(self):
+        """Save the whole conversation to a Markdown file (the dashboard's Export,
+        brought across to the standalone/FlowCode client)."""
+        if not self._history:
+            self._status("Nothing to export yet — ask something first.")
+            return
+        from tkinter import filedialog
+        title = "mesh-chat"
+        if self._store and self._chat_id:
+            rec = self._store.load(self._chat_id)
+            if rec and rec.get("title"):
+                title = rec["title"]
+        safe = "".join(c if c.isalnum() or c in " -_" else "" for c in title).strip()
+        path = filedialog.asksaveasfilename(
+            parent=self.root, title="Export chat", defaultextension=".md",
+            initialfile=(safe[:40] or "mesh-chat") + ".md",
+            filetypes=[("Markdown", "*.md"), ("Text", "*.txt"), ("All files", "*")])
+        if not path:
+            return
+        lines = [f"# {title}\n"]
+        for role, text in self._history:
+            lines.append(f"**{'You' if role == 'user' else 'Professor'}:**\n\n{text}\n")
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(lines) + "\n")
+            self._status(f"Exported {len(self._history)} messages → {path}")
+        except OSError as e:
+            self._status(f"Export failed: {e}")
 
     # ── relay address (away-from-home), persisted so the phone remembers it ─────
     @staticmethod
