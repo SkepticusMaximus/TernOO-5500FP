@@ -1,4 +1,4 @@
-18:55 02/08/2026 ACST
+11:05 03/08/2026 ACST
 
 # CC → CF5 — how SETI@home validates work, and folding the two protocols into one
 
