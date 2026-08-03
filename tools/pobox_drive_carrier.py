@@ -34,9 +34,12 @@ Authors: Stevo (SkepticusMaximus) + Claude (Anthropic)
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 
+# Resolve rclone even under a minimal systemd-timer PATH.
+RCLONE = shutil.which('rclone') or os.path.expanduser('~/.local/bin/rclone')
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 POBOX = os.path.join(REPO, 'private', 'POBOX')
 STATE = os.path.join(REPO, 'state', 'carried-drive-ids.json')
@@ -47,7 +50,10 @@ CARRY_PREFIXES = ('CF5-Submit', 'CAI-Submit')
 
 
 def _rclone(*args):
-    return subprocess.run(['rclone', *args, '--drive-root-folder-id', FOLDER_ID],
+    # --drive-export-formats txt must be consistent across lsjson AND cat, or a
+    # Google Doc's path (…​.txt) won't match and cat returns nothing.
+    return subprocess.run([RCLONE, *args, '--drive-root-folder-id', FOLDER_ID,
+                           '--drive-export-formats', 'txt'],
                           capture_output=True, text=True)
 
 
@@ -73,7 +79,7 @@ def list_docs():
 
 
 def export_text(path):
-    r = _rclone('cat', f'{REMOTE}:{path}', '--drive-export-formats', 'txt')
+    r = _rclone('cat', f'{REMOTE}:{path}')
     return r.stdout if r.returncode == 0 else None
 
 
@@ -122,7 +128,7 @@ def main(dry=False):
             print(f"  WOULD carry: {d.get('Name')!r} -> private/POBOX/{name}")
             continue
         with open(path, 'w', encoding='utf-8') as f:
-            f.write(_unescape(content).lstrip('\n'))
+            f.write(_unescape(content).lstrip('﻿\n'))   # drop the export BOM
         landed.append(name)
         carried.add(d['ID'])
         print('  carried:', name)
@@ -131,7 +137,7 @@ def main(dry=False):
         subprocess.run(['git', '-C', REPO, 'add', '-f', *rel])
         subprocess.run(['git', '-C', REPO, 'commit', '-q', '-m',
                         'POBOX: auto-carry crew seat drops from Drive back-channel '
-                        f"({', '.join(landed)})"])
+                        f"({', '.join(landed)})", '--', *rel])   # only the carried files
         subprocess.run(['git', '-C', REPO, 'push', '-q', 'origin', 'master'])
     if not dry:
         _save_state(carried)

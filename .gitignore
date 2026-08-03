@@ -33,3 +33,6 @@ NASM-TernOO-5500FP-Emulator/c_emulator/5500fp
 
 # Help editor one-level backups (HelpTopics.save)
 docs/help/*.bak
+
+# node-local: which Drive seat-drops this box has carried (per-machine)
+state/carried-drive-ids.json

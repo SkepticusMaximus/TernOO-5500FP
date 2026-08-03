@@ -1,0 +1,10 @@
+[Unit]
+Description=POBOX Drive->git last-mile carrier (crew chat-seat drops)
+Documentation=file:%h/dev/SkepticusMaximus/TernOO-5500FP/tools/pobox_drive_carrier.py
+
+[Service]
+Type=oneshot
+# rclone lives in ~/.local/bin; a --user timer has a minimal PATH.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+WorkingDirectory=%h/dev/SkepticusMaximus/TernOO-5500FP
+ExecStart=/usr/bin/python3 %h/dev/SkepticusMaximus/TernOO-5500FP/tools/pobox_drive_carrier.py
