@@ -35,7 +35,9 @@ SVC = _load("p2pcp_service")
 class MeshTabView:
     GRN, RED = "#3fd08f", "#e06a6a"
     PLACEHOLDER = "Ask the Professor anything…   (Ctrl+Enter to send)"
-    ATTACH_MAX = 4000            # max chars of an attached file fed to the model
+    ATTACH_MAX = 20000           # max chars of an attached file fed to the model
+    #                              (fits a full doc like the TernOO primer in the
+    #                              Professor's 8192-token window, with room to reply)
 
     def __init__(self, parent, C, root, set_status):
         import tkinter as tk
