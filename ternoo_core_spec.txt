@@ -1,514 +1,541 @@
-# TernOO/5500FP Word Architecture Specification
-## v0.1 — Working Draft
+# TernOO / 5500FP Word Architecture Specification
+## v0.3 — Current (the 2+4+18 word format)
 
 **Author:** Stevo (SkepticusMaximus)
 **Collaborator:** Claude (Anthropic)
-**Date:** May 2026
-**Status:** Working Draft — not yet implemented
-**Companion:** 5500fp_emulator.py (CPU5500FP + TernOO v0.1.0)
+**Date:** August 2026 — supersedes the v0.1 draft (May 2026)
+**Status:** IMPLEMENTED — this describes the architecture as built, not a proposal.
+**Authoritative implementation:** `5500fp/5500fp_ternoo_v03.py`
+**Companions:** `5500fp/ternoo_gristmill.py`, `5500fp/widget_lib.py`,
+`private/TernOO-Language-Audit.md`
+
+> **Supersession note.** The v0.1 draft used a **1+3+20** layout — one primary
+> trit (EXEC/MAP/DATA), three qualifier trits, twenty payload trits. That document
+> is a fossil. The architecture has since widened to **2+4+18** and grown from
+> three primary types to **nine**. Where this spec and any older document conflict,
+> the code and this spec govern. Section 14 records the evolution.
 
 ---
 
 ## Preamble
 
-This document specifies the TernOO word architecture as adapted for the 5500FP
-24-trit balanced ternary processor. It deliberately diverges from the SBTCVM
-Gen2-9 TernOO implementation where the 5500FP's richer architecture permits
-superior design. No SBTCVM compromise is inherited without explicit justification.
+This document specifies the TernOO word architecture as implemented on the 5500FP
+24-trit balanced-ternary processor. It deliberately diverges from the SBTCVM
+Gen2-9 TernOO implementation wherever the 5500FP's richer architecture permits a
+superior design.
 
-The central thesis: **every 24-trit word is self-describing.** The word's header
-trits encode not just its type but its full operational semantics — calling
-convention, dimensional coordinates, scalar encoding, pointer model, and in the
-most general case, its own code segment, data segment, and internal cursor. Object
-dispatch requires no vtable lookup, no runtime type check, and no additional memory
-cycles beyond the fetch of the word itself.
+The central thesis is unchanged from v0.1, and is now **built**: **every 24-trit
+word is self-describing.** A word's header trits encode not just its type but its
+full operational semantics — calling convention, spatial coordinates, scalar
+encoding, pointer model, opcode family and arity, and in the most general case its
+own code segment, data segment, and internal cursor. Object dispatch requires no
+vtable lookup, no runtime type check, and no memory cycles beyond the fetch of the
+word itself.
 
 This is not object-oriented programming layered on top of a machine. It is
 object-oriented structure intrinsic to the machine word.
 
----
+What v0.1 could not yet express — a nine-type primary space, an opcode instruction
+word, and the TTree/OTree content-addressed mesh (MMID → MMOE) that makes objects
+*computed from coordinates* rather than stored — is the substance of this revision.
 
-## 1. The 24-Trit Word
-
-All memory locations and registers hold 24-trit balanced ternary words.
-Trit positions are numbered T0 (LSB) through T23 (MSB).
-Trit values: N = −1, Z = 0, P = +1 (also written −, 0, +).
-
-The word is divided into three functional regions:
-
-```
-T23          T22–T20         T19–T0
-─────────    ───────────     ──────────────────────
-PRIMARY      QUALIFIER       PAYLOAD
-(1 trit)     (3 trits)       (20 trits)
-type ID      type grammar    value / address / data
-```
-
-**T23 — Primary type identifier (always decoded first, always fixed):**
-
-| T23 | Symbol | Primary Type |
-|-----|--------|--------------|
-| −1  | N      | EXEC         |
-| 0   | Z      | MAP          |
-| +1  | P      | DATA         |
-
-The primary trit is architecturally invariant. No format redefinition can move
-or reinterpret it. This provides a stable, zero-overhead dispatch point for the
-CPU's fetch-decode loop regardless of any higher-level format in use.
-
-The qualifier trits (T22–T20) refine meaning within each primary type.
-The payload (T19–T0) carries the value, address, or structured content.
-
-In several word types, the qualifier region extends beyond T20 and the payload
-shrinks accordingly. Each case is specified below.
+Trit convention throughout: **N = −1, Z = 0, P = +1** (also written −, 0, +).
+Trit positions are numbered **T0 (LSB) through T23 (MSB)**.
 
 ---
 
-## 2. EXEC Words (T23 = −1)
+## 1. The 24-Trit Word — the 2+4+18 layout
 
-An EXEC word is a reference to executable code. The qualifier trits encode the
-function's complete calling contract, so call-site compatibility can be verified
-at fetch time with no runtime overhead.
+All memory locations and registers hold 24-trit balanced-ternary words. The word
+is divided into three functional regions:
 
 ```
-T23   T22          T21            T20           T19–T0
- −    PRIVILEGE    CALL-STYLE     RETURN-TYPE   20-trit function address
+ T23 T22 │ T21 T20 T19 T18 │ T17 ........................ T0
+ ────────┼──────────────────┼──────────────────────────────
+ PRIMARY │     QUALIFIER     │            PAYLOAD
+ (2 trits)│     (4 trits)     │           (18 trits)
+ type ID  │   type grammar    │   value / address / structure
 ```
 
-### 2.1 Qualifier Fields
+Field-position constants (`5500fp_ternoo_v03.py`):
 
-**T22 — Privilege level:**
+| Region    | Trits      | Width | Constants                          |
+|-----------|------------|-------|------------------------------------|
+| PRIMARY   | T23–T22    | 2     | `PRIMARY_MST=23`, `PRIMARY_LST=22` |
+| QUALIFIER | T21–T18    | 4     | `QUAL_MST=21`, `QUAL_LST=18`       |
+| PAYLOAD   | T17–T0     | 18    | `PAYLOAD_MST=17`, `PAYLOAD_LST=0`  |
 
-| T22 | Privilege |
-|-----|-----------|
-| −1  | Kernel    |
-| 0   | User      |
-| +1  | Sandbox   |
+Word-scale constants: `WORD_TRITS = 24`; `WORD_MAX = (3²⁴−1)/2 = 141,214,768,240`;
+`WORD_MIN = −WORD_MAX`; `TRYTE_MAX = (3⁶−1)/2 = 364`.
 
-**T21 — Calling convention:**
+Every accessor delegates to two field primitives — no ad-hoc bit/trit twiddling:
+- `get_field(value, lsb, width)` = the `width` balanced trits of `value` starting
+  at position `lsb`, returned as a balanced integer.
+- `set_field(value, lsb, width, field)` = `value` with those trits replaced.
 
-| T21 | Convention   | Meaning                                      |
-|-----|--------------|----------------------------------------------|
-| −1  | Stack        | Arguments passed on the stack                |
-| 0   | Register     | Arguments passed in registers (R1–R8)        |
-| +1  | Message      | Arguments passed as a MAP or DATA word       |
+Named accessors: `get_primary`/`set_primary` (lsb 22, width 2),
+`get_qualifier`/`set_qualifier` (lsb 18, width 4), `get_payload`/`set_payload`
+(lsb 0, width 18). `_make_word(primary, qualifier, payload)` assembles a word from
+three `set_field` calls.
 
-**T20 — Return type:**
-
-| T20 | Return type |
-|-----|-------------|
-| −1  | EXEC        |
-| 0   | MAP         |
-| +1  | DATA        |
-
-### 2.2 Payload
-
-T19–T0: 20-trit function address (range ±1,743,392,200).
-Sufficient to address any location in a 5500FP memory space.
-
-### 2.3 Rationale
-
-Encoding privilege, calling convention, and return type in the EXEC word means:
-
-- A caller fetches the EXEC word and immediately knows how to set up the call.
-- A kernel security monitor can verify privilege at fetch time.
-- A static analyser can check return-type compatibility without executing the code.
-- No separate function descriptor structure is needed.
-
-This gives typed function pointers — a safety feature normally associated with
-compiled languages like Rust — at the hardware word level, for free.
+**Primary encoding detail:** the primary is a balanced **2-trit** integer with T22
+as the low trit and T23 as the high trit — `primary = T22 + 3·T23`, spanning
+−4..+4. This matters for backward compatibility (§14): every legacy 1-trit
+EXEC/MAP/DATA word carried its type in T23 with T22 = −1, so the 2-trit reader
+decodes legacy words correctly.
 
 ---
 
-## 3. MAP Words (T23 = 0)
+## 2. The Nine PRIMARY Types (T23–T22)
 
-A MAP word encodes a position or reference in three-dimensional space using an
-octree coordinate system. The three qualifier trits each represent one axis
-pair of a 3D coordinate frame.
+The primary is decoded first and is architecturally invariant — no format
+extension may relocate or reinterpret it (Principle P1). Nine (T23,T22)
+combinations give nine primary types:
 
-```
-T23   T22       T21       T20       T19–T0
- 0    AXIS-YZ   AXIS-XZ   AXIS-XY   20-trit coordinate payload
-```
+| Constant          | (T23,T22) | int | Name (`PRIMARY_NAMES`) | Status                         |
+|-------------------|-----------|-----|------------------------|--------------------------------|
+| `PRIMARY_EXEC`    | (−1,−1)   | −4  | EXEC                   | live                           |
+| `PRIMARY_MAP`     | (−1, 0)   | −3  | MAP                    | live                           |
+| `PRIMARY_DATA`    | (−1,+1)   | −2  | DATA                   | live                           |
+| `PRIMARY_NEURAL`  | ( 0,−1)   | −1  | NEURAL                 | defined, dormant               |
+| `PRIMARY_IO`      | ( 0, 0)   |  0  | I/O                    | defined, dormant               |
+| `PRIMARY_CRYPTO`  | ( 0,+1)   | +1  | CRYPTO                 | reserved (name only)           |
+| `PRIMARY_OPCODE`  | (+1,−1)   | +2  | OPCODE                 | live (alias of retired OPEN_A) |
+| `PRIMARY_OPEN_B`  | (+1, 0)   | +3  | OPEN_B                 | open (name only)               |
+| `PRIMARY_POOL`    | (+1,+1)   | +4  | POOL                   | reserved (dynamic allocation)  |
 
-### 3.1 Octree Qualifier Fields
+`PRIMARY_OPCODE = PRIMARY_OPEN_A` — the OPEN_A slot was retired in favour of a
+first-class OPCODE type; `PRIMARY_NAMES` maps the `(+1,−1)` slot to `'OPCODE'`.
 
-Each qualifier trit encodes directional sense along its axis pair:
-
-| Trit | Meaning on axis pair          |
-|------|-------------------------------|
-| −1   | Negative direction / below    |
-| 0    | On-plane / at boundary        |
-| +1   | Positive direction / above    |
-
-The three qualifier trits together define a position in an octree:
-
-```
-{T22, T21, T20} → one of 27 possible qualifier states
-
-Special cases:
-  { 0,  0,  0} = origin (all axes intersect at zero)
-  {±1,  0,  0} = on XZ and XY planes (YZ-axis only)
-  { 0, ±1,  0} = on YZ and XY planes (XZ-axis only)
-  { 0,  0, ±1} = on YZ and XZ planes (XY-axis only)
-  any single 0 = on a plane boundary (scope/scale anchor)
-  all non-zero = fully positioned in 3D space
-```
-
-### 3.2 Dimensional Economics
-
-The redundant zero states (any qualifier trit = 0) serve as scope and scale
-anchors — equivalent to a zoom level in a vector graphics system. This means
-MAP words can encode both absolute positions and relative/scaled references
-within the same word format, without additional flags.
-
-This provides the same economic advantage as vector graphics over bitmaps:
-structure is encoded as rules (directional sense + scale) rather than as
-exhaustive enumeration of points. The information density is intrinsic and
-bottom-up, not imposed by a compression algorithm.
-
-### 3.3 Payload
-
-T19–T0: 20-trit coordinate value, distance, or index.
-Interpretation depends on qualifier state (absolute, relative, or scaled).
-
-### 3.4 Use Cases
-
-- Polygon mesh vertex coordinates
-- Network topology node references (P2PCP node addressing)
-- Spatial index keys for octree data structures
-- CGP mandate geographic scope encoding
+Each primary carries a 4-trit qualifier → **3⁴ = 81 qualifier states per primary**
+(where v0.1's 3-trit qualifier gave only 27).
 
 ---
 
-## 4. DATA Words (T23 = +1)
+## 3. The QUALIFIER Field (T21–T18)
 
-DATA words carry values, pointers, and strings. The secondary trit (T22) selects
-among three DATA subtypes; the tertiary trit (T21) further refines each subtype.
+The four qualifier trits refine meaning **within** each primary; their grammar is
+therefore per-type. Qualifiers are assembled LSB-first as
+`from_trits([T18, T19, T20, T21])`. The grammars:
 
-```
-T23   T22          T21         T20–T0
- +    SECONDARY    TERTIARY    payload (varies by subtype)
-      DATA type    subtype
-```
-
-### 4.1 Secondary Type (T22)
-
-| T22 | Subtype |
-|-----|---------|
-| −1  | SCALAR  |
-| 0   | POINTER |
-| +1  | STRING  |
+- **EXEC** — T21 privilege, T20 call-style, T19 return-type, T18 segment-index MSB.
+- **MAP** — T21 axis-YZ, T20 axis-XZ, T19 axis-XY, **T18 mode_hint** (the
+  TTree/OTree discriminator, §6).
+- **DATA** — T21–T20 secondary type (SCALAR/POINTER/STRING or a pointer model),
+  T19 sub-encoding.
+- **OPCODE** — T21–T20 family, T19–T18 arity.
+- **NEURAL / I/O** — selector + mode trits (dormant grammars, defined below).
+- **CRYPTO / OPEN_B / POOL** — no grammar yet (name-only slots).
 
 ---
 
-### 4.2 SCALAR (T22 = −1)
+## 4. The PAYLOAD — three tribbles (T17–T0)
 
-```
-T23   T22   T21          T20–T0
- +     −    ENCODING     21-trit scalar value
-```
+The 18-trit payload is read as **three 6-trit tribbles** (a "tribble" is a
+balanced 6-trit tryte, range ±364). `extract_tribbles(word)` returns:
 
-**T21 — Scalar encoding:**
+| Tribble | Trits    | `get_field`        | Role (typical)                       |
+|---------|----------|--------------------|--------------------------------------|
+| `ta`    | T17–T12  | `get_field(w,12,6)`| high tribble — symbol ID / Y / op-idx|
+| `tb`    | T11–T6   | `get_field(w, 6,6)`| mid tribble  — Z / immediate          |
+| `tc`    | T5–T0    | `get_field(w, 0,6)`| low tribble  — meccano value / immed. |
 
-| T21 | Encoding             |
-|-----|----------------------|
-| −1  | Float (fixed-point)  |
-| 0   | Integer (balanced ternary native) |
-| +1  | Unsigned             |
-
-Payload: T20–T0 = 21 trits, range ±1,743,392,200.
-
----
-
-### 4.3 STRING (T22 = +1)
-
-```
-T23   T22   T21          T20–T0
- +     +    ENCODING     21-trit length or pointer
-```
-
-**T21 — String encoding:**
-
-| T21 | Encoding                      |
-|-----|-------------------------------|
-| −1  | Unicode (UTF-8 compatible)    |
-| 0   | ASCII / byte sequence         |
-| +1  | Ternary glyph (native symbol) |
-
-Payload: T20–T0 = length (inline short strings) or address of string data.
+The tribble decomposition is what lets a whole word participate in the content
+mesh: symbol IDs are packed **high** (into `ta`) so they weigh into the OTree fold
+(§10). The primary and qualifier are excluded from tribble extraction — only the
+18-trit payload folds.
 
 ---
 
-### 4.4 POINTER (T22 = 0)
+## 5. EXEC Words (primary EXEC)
 
-The pointer subtype uses two qualifier trits (T21 and T20) together to select
-one of nine pointer models. Eight are predefined native models; the ninth is
-user-defined and extensible.
+An EXEC word references executable code and encodes its complete calling contract
+in the qualifier, so call-site compatibility is verifiable at fetch time.
 
 ```
-T23   T22   T21   T20   T19–T0
- +     0    PTR-MODEL   payload (varies by model)
+ EXEC │ T21=PRIVILEGE  T20=CALL-STYLE  T19=RETURN-TYPE  T18=SEGIDX-MST │ payload=address
 ```
 
-**Pointer model table (T21, T20):**
+- **T21 privilege:** `EXEC_PRIV_KERNEL=−1`, `EXEC_PRIV_USER=0`, `EXEC_PRIV_SANDBOX=+1`
+- **T20 call-style:** `EXEC_CALL_STACK=−1`, `EXEC_CALL_REGISTER=0`, `EXEC_CALL_MESSAGE=+1`
+- **T19 return-type:** `EXEC_RET_EXEC=−1`, `EXEC_RET_MAP=0`, `EXEC_RET_DATA=+1`
+- **T18 + T17:** the code-segment index, split MSB-in-qualifier / LSB-in-payload,
+  stored balanced as `seg_idx − 4`.
 
-| T21 | T20 | Model               | Description                              |
-|-----|-----|---------------------|------------------------------------------|
-| −1  | −1  | FLAT                | Direct memory address                    |
-| −1  | 0   | RELATIVE            | Offset from current PC                   |
-| −1  | +1  | STACK-REL           | Offset from stack pointer                |
-| 0   | −1  | FIELD               | Object base address + field index        |
-| 0   | 0   | NULL                | Null / undefined reference               |
-| 0   | +1  | SYMBOL              | Interned symbol (hash or table index)    |
-| +1  | −1  | REMOTE              | Network node reference (P2PCP address)   |
-| +1  | 0   | WEAK                | Weak reference (GC-transparent)          |
-| +1  | +1  | USER-DEFINED        | Extensible — see Section 4.5             |
-
-Models 1–8 use T19–T0 (20 trits) as the pointer payload.
+This gives **typed function pointers** — privilege, calling convention, and return
+type checkable at the hardware word level, without a separate function descriptor.
+`build_exec_word(privilege, call_style, return_type, seg_idx, offset)`.
 
 ---
 
-### 4.5 USER-DEFINED POINTER (T21 = +1, T20 = +1) — The Self-Describing Object Word
+## 6. MAP Words (primary MAP) — the octree and the TTree/OTree mesh
 
-The user-defined pointer is the most structurally rich word type. It encodes a
-complete object descriptor — type, subclass, code reference, data reference, and
-internal cursor — within a single 24-trit word.
+A MAP word encodes a position in an octree coordinate frame. Each of the three
+qualifier axis-trits encodes directional sense along one axis pair; a fourth
+qualifier trit (T18) is the **mode_hint**.
 
 ```
-T23  T22  T21  T20  T19-T18   T17–T12      T11–T6       T5–T0
- +    0    +    +    EXT       OFFSET       CODE-SEG     DATA-SEG
-DATA PTR  USER  DEF  2 trits   6 trits      6 trits      6 trits
-                     subclass  cursor/idx   code ref     data ref
+ MAP │ T21=axis-YZ  T20=axis-XZ  T19=axis-XY  T18=mode_hint │ payload=coordinate
 ```
 
-**T19–T18 — Extensibility / subclass trits (9 subclass variants):**
+Axis trit: −1 = negative/below, 0 = on-plane/at-boundary, +1 = positive/above.
+`build_map_word(axis_yz, axis_xz, axis_xy, payload, mode_hint=0)`.
 
-| T19 | T18 | Subclass          |
-|-----|-----|-------------------|
-| −1  | −1  | Predefined A      |
-| −1  | 0   | Predefined B      |
-| −1  | +1  | Predefined C      |
-| 0   | −1  | Predefined D      |
-| 0   | 0   | Base (default)    |
-| 0   | +1  | Predefined F      |
-| +1  | −1  | Predefined G      |
-| +1  | 0   | Predefined H      |
-| +1  | +1  | Meta-extensible * |
+`decode_map_word` derives a **mode from the number of zero axis-trits** — the
+redundant-zero economy of balanced ternary put to work as a scale/scope anchor:
 
-\* The (+1,+1) subclass is always reserved for further user-defined extension,
-providing an escape hatch for future needs without breaking backward compatibility.
+| Zero axes | Mode          | Payload interpretation                    |
+|-----------|---------------|-------------------------------------------|
+| 3         | `ORIGIN`      | scale                                     |
+| 2         | `ON_AXIS_{X/Y/Z}` | value along the single live axis      |
+| 1         | `ON_PLANE`    | two 9-trit half-coordinates               |
+| 0         | `ABSOLUTE_3D` | full (yz, xz, xy, magnitude)              |
 
-**T17–T12 — OFFSET register (6 trits, range ±364):**
+### 6.1 Two coordinate systems in one word — TTree and OTree
 
-An internal cursor unique to this word instance. Points to the current position
-within the object's data segment. Analogous to an instruction pointer for the
-object's own data traversal. Enables sequential access, iteration, and streaming
-within the object without external state.
+The **mode_hint (T18)** discriminates the two roles a MAP word can play:
 
-**T11–T6 — CODE segment reference (6 trits, range ±364):**
+- **TTree (mode_hint = +1 → `ON_PLANE`) — structural identity, "what kind of
+  thing."** Built by `build_ttree_mmid(ta, tb)`: `ta` (structural role) packs into
+  payload trits 9–17, `tb` (interaction style) into 0–8. A TTree word is
+  **type-determined and position-independent** — two objects of the same type have
+  the same TTree word.
+- **OTree (mode_hint = 0 → `ABSOLUTE_3D`) — content address, "this exact content."**
+  Built by `build_otree_mmoe(tribble_state)`: octant signs are derived from
+  `state%3`, `(state//3)%3`, `(state//9)%3` (each 0 coerced to +1 so all axes are
+  live), and `magnitude = state % 729`. Content-addressable: the same content-fold
+  always lands at the same coordinate.
 
-A compact reference to the executable code associated with this object type.
-Resolved at dispatch time to a full 24-trit address via a code segment base
-register. This is the object's method table in a single tryte.
+This duality is the heart of GristMill (§10): an object's *identity* is its TTree
+word (the **MMID**), and its *placement* is its OTree word — the object is not
+stored at an address, it is **computed** from its coordinate.
 
-**T5–T0 — DATA segment reference (6 trits, range ±364):**
+### 6.2 MAP use cases
 
-A compact reference to the data storage associated with this object instance.
-Resolved at dispatch time via a data segment base register.
-
-### 4.5.1 Dispatch Semantics
-
-When the CPU encounters a USER-DEFINED POINTER word, it:
-
-1. Reads CODE-SEG → resolves full code address via code segment base register
-2. Reads DATA-SEG → resolves full data address via data segment base register
-3. Reads OFFSET → sets internal cursor for data traversal
-4. Dispatches to the resolved code address
-
-Steps 1–4 require no additional memory fetches beyond the word itself. The object
-is its own dispatch descriptor. This is the key architectural claim: **the word IS
-the object**, not a pointer to one.
-
-### 4.5.2 Relationship to Turing Completeness
-
-A single USER-DEFINED POINTER word is not Turing complete — it is finite and
-static. However, it is a **complete process launch descriptor**: it contains
-everything needed to initiate a Turing complete computation (code address, data
-address, starting cursor) with zero setup overhead beyond the word fetch.
-
-In conventional OO architectures, initiating method dispatch requires: pointer
-dereference → vtable lookup → argument setup → stack frame → branch. In this
-architecture: fetch word → read three 6-trit fields → dispatch. The object model
-overhead that makes dynamic OO languages slower than C is structurally absent.
-
-This is Alan Kay's original vision for OOP — "each object is a computer" —
-implemented literally at the hardware word level.
+Polygon-mesh vertices; P2PCP node addressing (REMOTE pointers, §7); octree spatial
+indices; FlowCode symbol placement; CGP mandate geographic scope.
 
 ---
 
-## 5. Word Type Summary
+## 7. DATA Words (primary DATA)
+
+DATA words carry values, pointers, and strings. The secondary type sits in T21–T20;
+a tertiary trit (T19) refines it.
+
+### 7.1 SCALAR (`DATA_SCALAR`, (T21,T20)=(−1,−1))
+- **T19 encoding:** `SCALAR_FLOAT=−1` (fixed-point), `SCALAR_INT=0` (balanced
+  ternary native), `SCALAR_UINT=+1` (unsigned).
+- Payload: an 18-trit scalar value.
+
+### 7.2 STRING (`DATA_STRING`, (T21,T20)=(+1,−1))
+- **T19 encoding:** `STRING_UNICODE=−1` (UTF-8 compatible), `STRING_ASCII=0`
+  (byte sequence), `STRING_TERNARY=+1` (native ternary glyph — the char-map plane).
+- Payload: inline length (short strings) or an address of string data.
+
+### 7.3 POINTER (`DATA_POINTER`, (T21,T20)=(0,0)) — nine models
+The pointer subtype uses T21–T20 to select one of nine pointer models. Eight are
+predefined; the ninth is the user-defined self-describing object word.
+
+| Model            | (T21,T20) | Description                                  |
+|------------------|-----------|----------------------------------------------|
+| `PTR_FLAT`       | (−1,−1)   | direct memory address                        |
+| `PTR_RELATIVE`   | (−1, 0)   | offset from the program counter              |
+| `PTR_STACK_REL`  | (−1,+1)   | offset from the stack pointer                |
+| `PTR_FIELD`      | ( 0,−1)   | object base + field index                    |
+| `PTR_NULL`       | ( 0, 0)   | null / undefined reference                   |
+| `PTR_SYMBOL`     | ( 0,+1)   | interned symbol (hash / table index)         |
+| `PTR_REMOTE`     | (+1,−1)   | network node reference (P2PCP address)       |
+| `PTR_WEAK`       | (+1, 0)   | weak reference (GC-transparent)              |
+| `PTR_USER_DEF`   | (+1,+1)   | user-defined self-describing object (§7.4)   |
+
+`PTR_SYMBOL` is the model behind all SHAPE / STYLE / LAYOUT / SIGNAL operands
+(§9): the symbol ID rides in `ta` (T17–T12), placed high so it folds into the
+object's content address.
+
+### 7.4 The Self-Describing Object Word (`PTR_USER_DEF`)
+The user-defined pointer encodes a complete object descriptor — subclass, internal
+cursor, code segment, and data segment — in one 24-trit word:
 
 ```
-T23   Word Type    Header Region              Payload
-───   ─────────    ──────────────────────     ──────────────────────────
- −    EXEC         T22=privilege              T19–T0: function address
-                   T21=call-style             (20 trits)
-                   T20=return-type
-
- 0    MAP          T22=axis-YZ                T19–T0: coordinate
-                   T21=axis-XZ               (20 trits)
-                   T20=axis-XY
-
-+1/−1 SCALAR       T22=−1                    T19–T0: value (21 trits)
-                   T21=encoding
-
-+1/+1 STRING       T22=+1                    T19–T0: length/addr
-                   T21=encoding              (21 trits)
-
-+1/0  POINTER      T22=0                     T19–T0: address (20 trits)
- (models 1–8)      T21,T20=model             [varies by model]
-
-+1/0/++  USER-DEF  T22=0, T21=+, T20=+       T19–T18: subclass (2 trits)
-                                             T17–T12: OFFSET (6 trits)
-                                             T11–T6:  CODE-SEG (6 trits)
-                                             T5–T0:   DATA-SEG (6 trits)
+ DATA │ PTR_USER_DEF │ T17-T16=SUBCLASS │ ta/tb/tc-style fields: OFFSET · CODE-SEG · DATA-SEG
 ```
+
+- **Subclass** (2 trits): nine variants, the `(+1,+1)` variant reserved for further
+  user extension (Principle P4).
+- **OFFSET** (6 trits, ±364): an internal cursor for sequential/streaming access
+  within the object's data — an instruction pointer for the object's own data.
+- **CODE-SEG** (6 trits): a compact reference to the object's method code, resolved
+  at dispatch via a code-segment base register. The method table in a single tryte.
+- **DATA-SEG** (6 trits): a compact reference to the object's data storage, resolved
+  via a data-segment base register.
+
+**Dispatch:** read CODE-SEG → resolve; read DATA-SEG → resolve; read OFFSET → set
+cursor; branch. No fetches beyond the word itself. **The word IS the object** — a
+complete process-launch descriptor, Alan Kay's "each object is a computer" at the
+hardware word level.
 
 ---
 
-## 6. Design Principles
+## 8. OPCODE Words (primary OPCODE) — the instruction word
 
-**P1 — Primary trit invariance.**
-T23 always identifies the primary type. No format extension may relocate or
-reinterpret it. This ensures the fetch-decode loop has a stable entry point.
+The OPCODE primary (new since v0.1) turns the self-describing word into an
+executable instruction. Its qualifier splits into **family + arity**, and its
+payload into **op-index + immediate**:
 
-**P2 — Self-description without lookup.**
-Every word type carries sufficient metadata to initiate its operation without
-additional memory cycles. No vtable, no descriptor table, no runtime type check.
+```
+ OPCODE │ T21-T20=FAMILY  T19-T18=ARITY │ T17-T12=OP-INDEX │ T11-T0=IMMEDIATE(FORM)
+```
 
-**P3 — Redundant zeros as semantic anchors.**
-Zero states in qualifier trits are not wasted. They encode boundary conditions,
-origin references, scale levels, and null states. This mirrors the natural
-properties of balanced ternary arithmetic.
+- **ARITY (T19–T18):** stored as `arity − 4` in a balanced 2-trit field, carrying
+  operand counts **0..8**. The stream walker reads exactly `arity` words after the
+  opcode as its operands — this is how a flat word stream carries structured
+  instructions with their arguments (operand chaining).
+- **OP-INDEX (T17–T12):** 6 trits, the operation within the family.
+- **IMMEDIATE / FORM (T11–T0):** 12 trits, the variant discriminant (§8.3).
 
-**P4 — Escape hatch preserved.**
-In every extensible category, one qualifier combination (+1,+1 or equivalent)
-is always reserved for user-defined extension. Forward compatibility is
-structural, not contractual.
+`build_opcode_word(family, arity, op_index, immediate, meccano=None)` /
+`decode_opcode_word(word)`.
 
-**P5 — No SBTCVM compromise inherited.**
-The DATA/POINTER/USER-DEFINED taxonomy replaces SBTCVM's EXEC/DATA/REF tags
-because the 5500FP has no opcode-in-negative-range convention. Architectural
-decisions are derived from 5500FP properties, not SBTCVM limitations.
+### 8.1 Opcode families (`OPF_*`, (T21,T20))
 
-**P6 — Economics from structure, not compression.**
-MAP words encode 3D position as directional sense (3 qualifier trits) + magnitude
-(20-trit payload). This is intrinsically more information-dense than enumerating
-coordinates, for the same reason vector graphics outperform bitmaps: rules are
-cheaper than exhaustive enumeration.
+| Family          | (T21,T20) | int | Members                                        |
+|-----------------|-----------|-----|------------------------------------------------|
+| `OPF_ISA_CORE`  | (−1,−1)   | −4  | the core ISA ops (arithmetic, load/store, jumps) |
+| `OPF_ISA_STACK` | (−1, 0)   | −3  | JSR / RTI / PUSH / POP                         |
+| `OPF_WORD_OP`   | (−1,+1)   | −2  | TOBJ / TGET / TPAYLOAD / TCALL / TNEW / TBUILD / TSEG |
+| `OPF_PIGART`    | ( 0,−1)   | −1  | RPOINT / RLINE / RNODE / REDGE / RENDER        |
+| `OPF_MECCANO`   | ( 0, 0)   |  0  | meccano-value programs                          |
+| `OPF_MODEL`     | ( 0,+1)   | +1  | MKIND / MNAME / MCELL / MCMDW / MPARM / MPORT / MSCOPE / MMORE / MEDGE / MFLAG / MNOTE |
+
+**Six live families; three (+1,·) slots reserved.** `OPF_MODEL` (added 3 Jul 2026)
+carries program-model attributes so the word stream conveys the *program*, not
+merely its rendering.
+
+### 8.2 Meccano and the WORD_OP dispatcher
+- **MECCANO** words carry a value in the **low tribble `tc` (T5–T0)** — 0 or a
+  multiple of 27, normalised mod 729 — while `ta`/`tb` are spare. `meccano_tribble`
+  reads `tc`, not `ta`.
+- **WORD_OP** provides the Layer-2 object dispatcher: `TOBJ`, `TGET`, `TPAYLOAD`,
+  `TCALL`, `TNEW`, `TBUILD`, `TSEG` construct, inspect, and dispatch on the
+  self-describing words above.
+
+### 8.3 RNODE / REDGE and the FORM field (PIGART)
+The PIGART family renders FlowCode/GUI graphs. `OP_RNODE` (Render Node) and
+`OP_REDGE` (Render Edge) emit an opcode word followed by an operand chain whose
+length is the arity:
+
+- **RNODE** operands: `MAP(position), DATA(dims), SYMBOL(shape) [, UDP]
+  [, N×STRING label] [, SYMBOL(layout)]` — the layout symbol is always last.
+- **REDGE** operands: `MAP(src), MAP(dst) [, SYMBOL(style)] [, N×STRING label]`;
+  the handler form `build_redge_handler(src, dst, signal)` emits exactly five words
+  binding a SIGNAL to a STYLE_HANDLER.
+
+The **FORM** immediate selects the operand shape: `FORM_LEAN=0`, `FORM_SHAPE=1`,
+`FORM_SHAPE_UDP=2`, `FORM_HAS_LAYOUT=4` (bit), with combinations
+`FORM_SHAPE_LAYOUT=5`, `FORM_SHAPE_UDP_LAYOUT=6`, and `FORM_HANDLER=−1`.
+
+`iterate_instructions(words)` is the stream walker: skip non-OPCODE words; for each
+opcode, take `words[i+1 : i+1+arity]` as operands and advance `i += 1 + arity`.
+
+> **Encoding quirk (kept deliberately):** `OP_RNODE = 40`, but `OP_REDGE = −1` and
+> `OP_RENDER = −2` use negative op-index encodings — a v0.3 artefact preserved for
+> compatibility. The identifiers are `OP_RNODE`/`OP_REDGE`, not
+> `OPCODE_RNODE`/`OPCODE_REDGE`.
 
 ---
 
-## 7. Relationship to 5500FP ISA
+## 9. NEURAL, I/O, and the reserved primaries; symbol families
 
-This specification operates at **Layer 2** of a three-layer stack:
+**NEURAL** (dormant grammar): T21 selects `NEURAL_UNIT=−1`, `NEURAL_CONNECTION=0`,
+`NEURAL_STRUCTURE=+1` — the substrate for GHOST/PIGART neural mesh words.
+
+**I/O** (dormant grammar): T21 direction (`IO_DIR_IN/BIDI/OUT`), T20 buffering
+(`IO_BUF_NONE/BUFFERED/INTERRUPT`), T19 blocking, T18 spare.
+`build_io_word(...)`.
+
+**CRYPTO, OPEN_B, POOL** are reserved name-only slots — no qualifier grammar and no
+constructors yet. CRYPTO anticipates the `ternary_sponge` / MMID-security work;
+POOL anticipates dynamic word allocation; OPEN_B is the deliberate escape hatch.
+
+**Symbol families** (DATA-POINTER-SYMBOL words, ID in `ta`):
+- **SHAPE** 0–12: RECTANGLE, TERMINATOR, PROCESS, DECISION, IO, SUBROUTINE,
+  CONNECTOR, OFFPAGE, DOCUMENT, DATA, LABELED_BOX, WINDOW, BUTTON (13–26 reserved,
+  27+ community).
+- **STYLE** ≥ 100: `STYLE_CONTAIN=100` (logical containment, no render),
+  `STYLE_HANDLER=101` (signal→handler binding). Renderers suppress IDs ≥ 100.
+- **LAYOUT** 200–204: ABSOLUTE, HBOX, VBOX, GRID, STACKED.
+- **SIGNAL** 300–307: CLICKED, TOGGLED, CHANGED, ACTIVATED, CLOSE_REQUESTED,
+  FOCUS_CHANGED, VALUE_CHANGED, SELECTION_CHANGED.
+
+---
+
+## 10. The Mesh Mathematics — Steiner quasigroup, MMID/MMOE, the Fingerprint Fold
+
+Objects are not stored at addresses; they are **synthesised from coordinates**
+(the GristMill engine). The mesh runs on one operation.
+
+**The Steiner quasigroup:** `MOD = 3⁶ = 729` ("one tribble"), and
+```
+ternary_op(a, b) = (−(a + b)) mod 729
+```
+Mutual-recovery invariant: if `C = ternary_op(A, B)` then `ternary_op(B, C) = A`
+and `ternary_op(A, C) = B`. Any side is recoverable from the other two — a
+self-validating mesh. `MECCANO_VOCAB = {27, 54, …, 702}` is the closed 27-element
+sub-quasigroup (a closed subset of Z/729Z must have size 3ᵏ; the multiples of 27
+qualify).
+
+**Traversal:** `traverse_step(state, a, b)` recovers `side_c = ternary_op(a, b)`,
+advances `state = (state + side_c) mod 729`, and reports arrival when
+`side_c == 0` (the end-of-object sentinel). `vocab_step` adds DAG ordering.
+
+**MMID → MMOE (GristMill):**
+- An **MMID** (Minimal Map ID) is a TTree MAP word — a structural coordinate. Two
+  same-type objects share an MMID; identity is type, not instance. `distance_to`
+  is the trit-weight of the tribble differences (ternary Hamming, Kademlia lineage,
+  range 0..12).
+- An **MMOE** (Minimal Map Object Entity) is the object synthesised at an OTree
+  coordinate. Its canonical word stream is `[TTree MAP, (OTree MAP if placed),
+  UDP, *exec_words, *children]`.
+- `GristMill.compose(mmids)` threads the fold: `S = (S + ternary_op(ta, tb)) mod
+  729` per element, placing each object at `build_otree_mmoe(S)`. Same sequence →
+  identical stream (content-addressable, deterministic).
+
+**The Fingerprint Fold** (a program's content hash) is position-weighted:
+```
+S = 0
+for i, word in enumerate(words):
+    ta, tb, _ = extract_tribbles(word)
+    S = (S + ternary_op(ta·(i+1), tb)) mod 729
+address = build_otree_mmoe(S)
+```
+Because symbol IDs live in `ta` and the weight is `ta·(i+1)`, changing any
+shape/style/layout/signal — or its position — changes the program's address. This
+is the substrate the earn-unit's mint work runs on (P2PCP; see the manifold §5
+docket).
+
+---
+
+## 11. Design Principles
+
+**P1 — Primary-trit invariance.** T23–T22 always identify the primary type; no
+extension may relocate or reinterpret them. The fetch-decode loop has a stable
+2-trit entry point.
+
+**P2 — Self-description without lookup.** Every word type carries enough metadata
+to initiate its operation with no extra memory cycles — no vtable, no descriptor
+table, no runtime type check.
+
+**P3 — Redundant zeros as semantic anchors.** Zero states in qualifier trits are
+not wasted: origin, on-plane, scale level, null, arrival sentinel. The natural
+economy of balanced ternary.
+
+**P4 — Escape hatch preserved.** In every extensible category a `(+1,+1)`
+combination (or the OPEN_B primary) is reserved for user extension. Forward
+compatibility is structural, not contractual.
+
+**P5 — No SBTCVM compromise inherited.** The nine-primary space and the
+DATA/POINTER/USER-DEFINED taxonomy derive from 5500FP properties, not SBTCVM's
+opcode-in-negative-range convention.
+
+**P6 — Economics from structure, not compression.** MAP words encode 3D position
+as directional sense (qualifier) + magnitude (payload) — intrinsically denser than
+enumerating coordinates, the same way vector graphics beat bitmaps.
+
+**P7 — Objects computed, not stored.** TTree identity + OTree content-address means
+the address IS the object's content-fold; GristMill synthesises the MMOE from the
+MMID rather than fetching it. Storage is a fold, not a table.
+
+---
+
+## 12. Relationship to the 5500FP ISA
 
 ```
 Layer 3:  Application objects
-          (polygon meshes, CGP tokens, P2PCP node addresses, FlowCode graphs)
+          (FlowCode graphs, GUI widgets, P2PCP node addresses, CGP tokens,
+           MMID/MMOE meshes)
 
-Layer 2:  TernOO word interpreter  ← this specification
-          (word format, dispatch semantics, USER-DEF pointer model)
+Layer 2:  TernOO word interpreter   ← this specification
+          (2+4+18 word format, nine primaries, OPCODE IR, WORD_OP dispatch,
+           GristMill TTree/OTree synthesis)
 
-Layer 1:  5500FP ISA               ← stable substrate
-          (fetch-decode-execute, 81 registers, 120 instructions)
+Layer 1:  5500FP ISA                ← stable substrate
+          (fetch-decode-execute, 81 registers, balanced-ternary instruction set)
 ```
 
-The TernOO word interpreter is implemented as a software layer running on the
-5500FP. The 5500FP ISA is not modified. The TOBJ, TGET, TPAYLOAD, TCALL, and
-TNEW opcodes in the emulator implement the Layer 2 dispatcher.
-
-The 5500FP's native ternary instruction group (DECOT, DECOU, DECOF, TTT, TTU,
-TTF, MIN, MAX, TXOR) provides the substrate operations that make Layer 2
-efficient — trit-level decode, three-way conditional branch, and ternary logic
-are available without software simulation.
+The word interpreter runs on the 5500FP; the ISA is not modified. The WORD_OP
+family (`TOBJ`, `TGET`, `TPAYLOAD`, `TCALL`, `TNEW`, `TBUILD`, `TSEG`) implements
+the Layer-2 dispatcher. The native ternary instruction group (trit decode,
+three-way branch, MIN/MAX/TXOR) makes Layer 2 efficient without software
+simulation.
 
 ---
 
-## 8. Relationship to TernOO/SBTCVM
+## 13. Relationship to TernOO / SBTCVM
 
-The SBTCVM TernOO implementation established the core insight: **the leading trit
-of a ternary word is the natural location for a type tag**, and three-way dispatch
-on that trit is the natural dispatch primitive.
+SBTCVM established the core insight: the leading trit of a ternary word is the
+natural type tag, and three-way dispatch on it is the natural primitive. This spec
+extends that to the 5500FP's 24-trit word:
 
-This specification extends that insight to the 5500FP's 24-trit word, replacing
-SBTCVM's constraints with a richer architecture:
-
-| Property          | SBTCVM TernOO        | 5500FP TernOO (this spec)     |
-|-------------------|----------------------|-------------------------------|
-| Word width        | 9 trits              | 24 trits                      |
-| Payload           | 8 trits (±3280)      | 20 trits (±1.74B) typical     |
-| Type tags         | EXEC/DATA/REF        | EXEC/MAP/DATA                 |
-| Tag rationale     | SBTCVM opcode space  | First principles               |
-| Pointer models    | 1 (Option A)         | 9 (including user-defined)    |
-| Object descriptor | Requires Option A    | Self-contained in word        |
-| Extensibility     | Via Option A         | Structural (EXT trits)        |
-
-The SBTCVM implementation is a working proof of concept. This specification is
-its architectural successor, unconstrained by the substrate it was born on.
+| Property          | SBTCVM TernOO   | 5500FP TernOO (this spec)          |
+|-------------------|-----------------|------------------------------------|
+| Word width        | 9 trits         | 24 trits                           |
+| Primary field     | 1 trit (3 types)| **2 trits (9 types)**              |
+| Qualifier         | —               | **4 trits (81 states/primary)**    |
+| Payload           | 8 trits         | **18 trits (three ±364 tribbles)** |
+| Opcode word       | —               | **OPCODE primary (family+arity+IR)**|
+| Object descriptor | via Option A    | self-contained (PTR_USER_DEF)      |
+| Content mesh      | —               | **TTree/OTree MMID→MMOE (GristMill)**|
 
 ---
 
-## 9. Open Questions
+## 14. Evolution — v0.1 (1+3+20) → v0.3 (2+4+18)
 
-**Q1.** Should EXEC words use a 20-trit absolute address or a shorter relative
-offset combined with a code segment base register (mirroring the USER-DEF pointer
-model's CODE-SEG tryte)?
+| Aspect               | v0.1 fossil (1+3+20)    | v0.3 current (2+4+18)                       |
+|----------------------|-------------------------|---------------------------------------------|
+| Primary field        | T23 (1 trit)            | **T23–T22 (2 trits)**                        |
+| Qualifier            | T22–T20 (3 trits)       | **T21–T18 (4 trits)**                        |
+| Payload              | T19–T0 (20 trits)       | **T17–T0 (18 trits, three tribbles)**        |
+| Primary types        | 3 (EXEC/MAP/DATA)       | **9** (+ NEURAL, I/O, CRYPTO, OPCODE, OPEN_B, POOL) |
+| Qualifier states     | 27 (3³)                 | **81 (3⁴) per primary**                      |
+| OPCODE instruction   | absent                  | **present** (6 families, arity chaining, FORM IR) |
+| TTree/OTree mesh     | absent                  | **present** (T18 mode_hint; MMID→MMOE fold)  |
+| Symbol families      | absent                  | **present** (SHAPE/STYLE/LAYOUT/SIGNAL)      |
 
-**Q2.** The six 6-trit segment references in USER-DEF POINTER words resolve via
-base registers. How many base registers should be allocated for code and data
-segments? 5500FP has 81 registers — sufficient for generous allocation.
-
-**Q3.** MAP word payload: should the 20-trit field carry an absolute coordinate,
-a relative offset from a reference point, or a mixed encoding determined by
-the qualifier state (zero qualifiers → relative, non-zero → absolute)?
-
-**Q4.** Should there be a FORMAT word (a reserved word type that redefines the
-qualifier/payload boundary for subsequent words in a stream)? This would enable
-domain-specific word formats for applications like audio, image data, or protocol
-packets — while keeping the P1 invariant (T23 always the primary type).
-
-**Q5.** The nine POINTER models include REMOTE (+1,−1) for P2PCP network node
-references. Should this model use the same 20-trit payload, or should P2PCP
-addressing get its own extended format as a MAP-type word?
+**Backward compatibility.** Every legacy EXEC/MAP/DATA word carries T22 = −1, so
+the 2-trit primary reads legacy words correctly (their type was T23 alone). MAP's
+old T18 "spare" is now the mode_hint. DATA's payload lost its top two trits to the
+widened qualifier.
 
 ---
 
-## 10. Next Steps
+## 15. Open Questions
 
-1. Update `5500fp_emulator.py` to implement this word grammar:
-   - Correct type constants: DATA/EXEC/MAP (replacing INTEGER/FLOAT/STRING)
-   - Extend TOBJ to encode full qualifier fields
-   - Implement USER-DEF POINTER word construction and dispatch
-   - Add MAP word construction with octree qualifier encoding
+**Q1.** EXEC addressing — absolute payload vs. a code-segment-base + offset scheme
+mirroring `PTR_USER_DEF`'s CODE-SEG tryte.
 
-2. Write `ternoo_word_tools.py`: helper library for constructing and
-   inspecting TernOO words — equivalent to SBTCVM's Object Inspector but
-   for the 5500FP word format.
+**Q2.** How many of the 81 registers to allocate as code/data segment-base
+registers for `PTR_USER_DEF` and EXEC resolution.
 
-3. Port the SBTCVM demo ROMs (ternoo_obj1–5, hello_ternoo) to 5500FP
-   assembly using the new word grammar as a validation suite.
+**Q3.** MAP payload semantics per mode — absolute vs. relative vs. scaled, keyed by
+the zero-axis count.
 
-4. Draft a proposal to Claudio La Rosa (5500FP author) presenting the
-   TernOO word grammar as a candidate ISA extension.
+**Q4.** A FORMAT word (a reserved type that redefines the qualifier/payload
+boundary for a following stream) for domain-specific formats (audio, image,
+protocol packets) — while preserving P1.
+
+**Q5.** P2PCP addressing — the `PTR_REMOTE` model vs. a dedicated extended MAP
+format for node references.
+
+**Q6.** Activating the dormant primaries: NEURAL (GHOST mesh), I/O (native
+filesystem, Stage 10), CRYPTO (`ternary_sponge` / MMID as a security boundary).
 
 ---
 
-*This is a living specification. Architectural decisions made during implementation
-supersede this document where they conflict. The next revision will be v0.2.*
+*This is a living specification. Implementation decisions in
+`5500fp_ternoo_v03.py` supersede this document where they conflict; this revision
+is faithful to that file as of August 2026.*
 
 *"The ideal object-oriented object is itself a computer."*
-*— Alan Kay, 1972 (approximately)*
+*— Alan Kay, ~1972*
 *"Each 24-trit word is a complete process launch descriptor."*
 *— Stevo, 2026*
