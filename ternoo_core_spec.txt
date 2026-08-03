@@ -3,17 +3,11 @@
 
 **Author:** Stevo (SkepticusMaximus)
 **Collaborator:** Claude (Anthropic)
-**Date:** August 2026 — supersedes the v0.1 draft (May 2026)
+**Date:** August 2026
 **Status:** IMPLEMENTED — this describes the architecture as built, not a proposal.
 **Authoritative implementation:** `5500fp/5500fp_ternoo_v03.py`
 **Companions:** `5500fp/ternoo_gristmill.py`, `5500fp/widget_lib.py`,
 `private/TernOO-Language-Audit.md`
-
-> **Supersession note.** The v0.1 draft used a **1+3+20** layout — one primary
-> trit (EXEC/MAP/DATA), three qualifier trits, twenty payload trits. That document
-> is a fossil. The architecture has since widened to **2+4+18** and grown from
-> three primary types to **nine**. Where this spec and any older document conflict,
-> the code and this spec govern. Section 14 records the evolution.
 
 ---
 
@@ -24,7 +18,7 @@ This document specifies the TernOO word architecture as implemented on the 5500F
 Gen2-9 TernOO implementation wherever the 5500FP's richer architecture permits a
 superior design.
 
-The central thesis is unchanged from v0.1, and is now **built**: **every 24-trit
+The central thesis: **every 24-trit
 word is self-describing.** A word's header trits encode not just its type but its
 full operational semantics — calling convention, spatial coordinates, scalar
 encoding, pointer model, opcode family and arity, and in the most general case its
@@ -34,10 +28,6 @@ word itself.
 
 This is not object-oriented programming layered on top of a machine. It is
 object-oriented structure intrinsic to the machine word.
-
-What v0.1 could not yet express — a nine-type primary space, an opcode instruction
-word, and the TTree/OTree content-addressed mesh (MMID → MMOE) that makes objects
-*computed from coordinates* rather than stored — is the substance of this revision.
 
 Trit convention throughout: **N = −1, Z = 0, P = +1** (also written −, 0, +).
 Trit positions are numbered **T0 (LSB) through T23 (MSB)**.
@@ -80,9 +70,7 @@ three `set_field` calls.
 
 **Primary encoding detail:** the primary is a balanced **2-trit** integer with T22
 as the low trit and T23 as the high trit — `primary = T22 + 3·T23`, spanning
-−4..+4. This matters for backward compatibility (§14): every legacy 1-trit
-EXEC/MAP/DATA word carried its type in T23 with T22 = −1, so the 2-trit reader
-decodes legacy words correctly.
+−4..+4.
 
 ---
 
@@ -107,8 +95,7 @@ combinations give nine primary types:
 `PRIMARY_OPCODE = PRIMARY_OPEN_A` — the OPEN_A slot was retired in favour of a
 first-class OPCODE type; `PRIMARY_NAMES` maps the `(+1,−1)` slot to `'OPCODE'`.
 
-Each primary carries a 4-trit qualifier → **3⁴ = 81 qualifier states per primary**
-(where v0.1's 3-trit qualifier gave only 27).
+Each primary carries a 4-trit qualifier → **3⁴ = 81 qualifier states per primary**.
 
 ---
 
@@ -278,7 +265,7 @@ hardware word level.
 
 ## 8. OPCODE Words (primary OPCODE) — the instruction word
 
-The OPCODE primary (new since v0.1) turns the self-describing word into an
+The OPCODE primary turns the self-describing word into an
 executable instruction. Its qualifier splits into **family + arity**, and its
 payload into **op-index + immediate**:
 
@@ -488,27 +475,7 @@ extends that to the 5500FP's 24-trit word:
 
 ---
 
-## 14. Evolution — v0.1 (1+3+20) → v0.3 (2+4+18)
-
-| Aspect               | v0.1 fossil (1+3+20)    | v0.3 current (2+4+18)                       |
-|----------------------|-------------------------|---------------------------------------------|
-| Primary field        | T23 (1 trit)            | **T23–T22 (2 trits)**                        |
-| Qualifier            | T22–T20 (3 trits)       | **T21–T18 (4 trits)**                        |
-| Payload              | T19–T0 (20 trits)       | **T17–T0 (18 trits, three tribbles)**        |
-| Primary types        | 3 (EXEC/MAP/DATA)       | **9** (+ NEURAL, I/O, CRYPTO, OPCODE, OPEN_B, POOL) |
-| Qualifier states     | 27 (3³)                 | **81 (3⁴) per primary**                      |
-| OPCODE instruction   | absent                  | **present** (6 families, arity chaining, FORM IR) |
-| TTree/OTree mesh     | absent                  | **present** (T18 mode_hint; MMID→MMOE fold)  |
-| Symbol families      | absent                  | **present** (SHAPE/STYLE/LAYOUT/SIGNAL)      |
-
-**Backward compatibility.** Every legacy EXEC/MAP/DATA word carries T22 = −1, so
-the 2-trit primary reads legacy words correctly (their type was T23 alone). MAP's
-old T18 "spare" is now the mode_hint. DATA's payload lost its top two trits to the
-widened qualifier.
-
----
-
-## 15. Open Questions
+## 14. Open Questions
 
 **Q1.** EXEC addressing — absolute payload vs. a code-segment-base + offset scheme
 mirroring `PTR_USER_DEF`'s CODE-SEG tryte.
