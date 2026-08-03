@@ -36,3 +36,6 @@ docs/help/*.bak
 
 # node-local: which Drive seat-drops this box has carried (per-machine)
 state/carried-drive-ids.json
+
+# Professor wiring is per-machine (absolute paths + auto-discover fallback); never shared
+5500fp/bonsai.json
