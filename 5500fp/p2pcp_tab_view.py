@@ -189,6 +189,7 @@ class MeshTabView:
                  ).pack(side="left", padx=(4, 2))
         self._relay = dentry(rr, self._read_relay(), width=22)
         self._relay.pack(side="left", padx=2)
+        dbtn(rr, "✕", self._clear_relay)          # forget a stale/ephemeral relay
         tk.Label(road, text="Set this to reach home over the internet (a bore.pub:PORT "
                  "from park-relay.sh). Clear it to use the LAN/mesh.", bg=C["bg"],
                  fg=C["dim"], font=("Monospace", 8), wraplength=360, justify="left",
@@ -263,6 +264,8 @@ class MeshTabView:
         relay = self._relay_addr()
         if relay:
             self._save_relay(f"{relay[0]}:{relay[1]}")
+        elif hasattr(self, "_relay") and not self._relay.get().strip():
+            self._clear_relay(clear_field=False)   # emptied → forget it, don't resurrect
         self._begin_turn(prompt)
         context = self._build_context()          # the conversation so far → the model
         self._clear_attachment()                 # one-shot: it rode along with this turn
@@ -618,6 +621,17 @@ class MeshTabView:
             return (host or "127.0.0.1", int(port))
         except ValueError:
             return None
+
+    def _clear_relay(self, clear_field=True):
+        """Forget the saved relay (bore tunnels are ephemeral — a dead one must not
+        resurrect on restart). The ✕ button also empties the box."""
+        if clear_field and hasattr(self, "_relay"):
+            self._relay.delete(0, "end")
+            self._status("Relay cleared — using the LAN/mesh.")
+        try:
+            os.remove(self._relay_path())
+        except OSError:
+            pass
 
     # ── live board: reuse p2pcp.dashboard, drives conn status + drawer cards ────
     def _start_board(self):
