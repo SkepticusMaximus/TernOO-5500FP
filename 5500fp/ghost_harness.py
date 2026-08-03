@@ -3,8 +3,10 @@
 Everything the GHOST tab does, minus pixels — so the whole Academy is
 unit-testable without a display:
 
-  * Curriculum  — the corpus externalized to ghost_corpus.json (seeded from
-    ghost_train.TEMPLATES on first run); add/remove phrases per class.
+  * Curriculum  — the corpus lives in the node-private brain dir (ghost_home(),
+    default ~/.GHOST/TrainingData; D1), seeded from ghost_train.TEMPLATES on
+    first run. The repo ships only the SEED + a starter model — never a node's
+    ongoing learning (manifold §5 seed-public / learning-private).
   * !learn      — explicit teaching at any prompt:
                      !learn <class> "<phrase>"      (teach a routing)
                      !learn none "<phrase>"         (teach a refusal)
@@ -72,6 +74,24 @@ MAJORS = {
 }
 
 
+# ── D1: the node-private brain directory ───────────────────────────────────
+# Ratified 03-08 (manifold §5 seed-public / learning-private): a node's ONGOING
+# learning — the materialised corpus, the model weights, the learnlog — is
+# per-node PRIVATE. The repo ships only the SEED (ghost_train.TEMPLATES + the
+# surfaces corpus) and a pre-trained STARTER model (ghost_model.json) — a floor,
+# not a ceiling. Everything a node learns lives in ghost_home(), never in the
+# repo, never given away.
+GHOST_HOME_DEFAULT = os.path.join(os.path.expanduser('~'), '.GHOST', 'TrainingData')
+
+
+def ghost_home() -> str:
+    """The node-private GHOST brain dir (D1). $GHOST_HOME overrides the
+    ~/.GHOST/TrainingData default. Created on demand."""
+    base = os.environ.get('GHOST_HOME') or GHOST_HOME_DEFAULT
+    os.makedirs(base, exist_ok=True)
+    return base
+
+
 class HarnessError(ValueError):
     pass
 
@@ -116,7 +136,10 @@ class Harness:
                                + ', '.join(sorted(MAJORS)))
         self.major = major
         self._files = MAJORS[major]
-        self.fs = fs or _fs_mod.get_fs()
+        # D1: with no fs injected (production), the brain lives in the private
+        # node dir (ghost_home()). Tests inject their own fs and are untouched.
+        self._seed_bootstrap = fs is None
+        self.fs = fs or _fs_mod.HostFileSystem(ghost_home())
         self.emulator = emulator
         self.corpus = load_corpus(self.fs, major)
         model_path = self._files['model']
@@ -124,6 +147,11 @@ class Harness:
             self.model = json.loads(self.fs.read(model_path))
         elif major != 'commands' and os.path.exists(os.path.join(_HERE, model_path)):
             self.model = json.loads(open(os.path.join(_HERE, model_path)).read())
+        elif self._seed_bootstrap and os.path.exists(os.path.join(_HERE, model_path)):
+            # ship-free-weights (Q2): seed the private brain from the shipped
+            # STARTER model on first run — the floor the node then trains past.
+            self.model = json.loads(open(os.path.join(_HERE, model_path)).read())
+            self.fs.save(model_path, json.dumps(self.model))
         else:
             self.model = None
         self.turns = []                 # current session, for .chat save

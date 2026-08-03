@@ -11,6 +11,11 @@ pics/First-Flowcode-For-TernOO.png
 docs/TernOO-5500FP-Companion.md
 private/
 GHOST/
+# GHOST commands corpus is node-private (manifold §5 seed-public/learning-private, Q3);
+# the public seed is ghost_train.TEMPLATES (in code) + the shipped starter model, not a
+# tracked corpus. A node's ongoing brain lives in ghost_home() (~/.GHOST/TrainingData).
+ghost_corpus.json
+ghost_learnlog.jsonl
 NASM-TernOO-5500FP-Emulator/obj/
 NASM-TernOO-5500FP-Emulator/c_emulator/src/*.o
 
