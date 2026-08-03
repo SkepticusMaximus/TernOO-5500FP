@@ -75,15 +75,25 @@ def ensure_worktree():
 
 
 def deliver(name, content):
-    """Commit+push one mail file to origin master via the dedicated worktree."""
+    """Commit+push one mail file to origin master via the dedicated worktree.
+
+    Returns True ONLY if a NEW commit was actually created AND pushed. A failed
+    commit (no git user.name/email, empty diff) leaves HEAD unmoved, so a bare
+    `git push` would report "Everything up-to-date" (rc 0) and the mail would be
+    filed as 'sent' while never leaving the machine — the silent-vanish bug. We
+    guard it by requiring HEAD to advance before trusting the push."""
     ensure_worktree()
     for _ in range(3):
         run(REPO, "git", "fetch", "--quiet", "origin", "master")
         run(WT, "git", "reset", "--hard", "origin/master")
+        before = run(WT, "git", "rev-parse", "HEAD").stdout.strip()
         with open(os.path.join(WT, "private/POBOX", name), "w") as f:
             f.write(content)
         run(WT, "git", "add", "-f", f"private/POBOX/{name}")
         run(WT, "git", "commit", "-q", "-m", f"POBOX mail: {name}")
+        after = run(WT, "git", "rev-parse", "HEAD").stdout.strip()
+        if not after or after == before:
+            return False        # commit didn't take (no identity / empty) — NOT sent
         if run(WT, "git", "push", "-q", "origin", "HEAD:master").returncode == 0:
             return True
         time.sleep(2)
