@@ -262,7 +262,12 @@ class MeshTabView:
         if not prompt or prompt == self.PLACEHOLDER:
             self._status("Type a question first.")
             return
-        cands = [(st.host, st.port) for st in self._board_states] or [("127.0.0.1", 9000)]
+        # always try the local node FIRST, then any others the board discovered — a
+        # stale/unreachable board entry (e.g. a peer's old IP after a network change)
+        # must never block a working local Professor.
+        local = ("127.0.0.1", 9000)
+        cands = [local] + [(st.host, st.port) for st in self._board_states
+                           if (st.host, st.port) != local]
         relay = self._relay_addr()
         if relay:
             self._save_relay(f"{relay[0]}:{relay[1]}")
