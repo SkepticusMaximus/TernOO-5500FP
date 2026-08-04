@@ -39,3 +39,6 @@ state/carried-drive-ids.json
 
 # Professor wiring is per-machine (absolute paths + auto-discover fallback); never shared
 5500fp/bonsai.json
+
+# Claude Code session folder (worktrees, shell snapshots, local settings) — machine-local
+.claude/
