@@ -122,9 +122,10 @@ on its own.
 
 ## Space, and the TMesh
 
-A **MAP** word is a coordinate. Its three qualifier trits each give a direction —
-below / on / above — along one pair of axes, placing the word somewhere in a
-three-dimensional octree; its payload carries the magnitude. Because a zero on an
+A **MAP** word is a coordinate. Three of its four qualifier trits each give a
+direction — below / on / above — along one pair of axes, placing the word somewhere
+in a three-dimensional octree (the fourth records how the coordinate is read); its
+payload carries the magnitude. Because a zero on an
 axis means "on the plane" rather than a wasted state, a single MAP word can express
 an exact point, a plane, an axis, or the origin, and can act as a scale or scope
 anchor — the same economy that lets vector graphics describe a shape with rules
