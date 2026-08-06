@@ -1,0 +1,17 @@
+[Unit]
+Description=P2PVP earn node (HP) — sells S1a vector-manifold work for weight-bearing CompuCoin
+Documentation=https://github.com/SkepticusMaximus/TernOO-5500FP
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/dev/SkepticusMaximus/TernOO-5500FP/5500fp
+ExecStart=/usr/bin/python3 p2pcp_node.py earn --host 0.0.0.0 --port 9001 --keyfile %h/.p2pcp/hp-p2pvp.key
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=p2pvp-earn
+
+[Install]
+WantedBy=default.target

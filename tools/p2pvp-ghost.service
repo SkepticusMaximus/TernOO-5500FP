@@ -1,0 +1,17 @@
+[Unit]
+Description=P2PVP GHOST node (HP) — sells native C-emulator classification, replay-class, weight-bearing
+Documentation=https://github.com/SkepticusMaximus/TernOO-5500FP
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/dev/SkepticusMaximus/TernOO-5500FP/5500fp
+ExecStart=/usr/bin/python3 p2pcp_node.py ghost --host 0.0.0.0 --port 9002 --keyfile %h/.p2pcp/hp-ghost.key
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=p2pvp-ghost
+
+[Install]
+WantedBy=default.target
