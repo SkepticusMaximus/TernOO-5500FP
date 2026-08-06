@@ -48,6 +48,7 @@ D = _load("p2pcp_daemon")
 P = _load("p2pcp_bonsai")
 GH = _load("p2pcp_ghost")
 EM = _load("p2pcp_emulator")
+EU = _load("earn_unit")
 L = D.L
 
 
@@ -153,6 +154,28 @@ def run_emulator(host="127.0.0.1", port=0, seed="emulator", keyfile=None,
                   node_identity(seed, keyfile),
                   ledger_path=(keyfile + ".ledger") if keyfile else None,
                   peers=peers)
+
+
+def run_earn(host="127.0.0.1", port=0, seed="earn", keyfile=None, peers=None):
+    """Start a P2PVP earn node — the S1a vector manifold, served. It sells the
+    replay-class earn unit (predicted vector → TMesh traversal → OTree descent →
+    residual/accuracy + weights), the trunk the vector-sharing manifold grows
+    from. Weight-bearing: every settled chunk is bit-exactly re-derivable."""
+    _serve_worker(EU.as_worker(), "p2pvp/earn", host, port,
+                  node_identity(seed, keyfile),
+                  ledger_path=(keyfile + ".ledger") if keyfile else None,
+                  peers=peers)
+
+
+def vector(host, port, cargo, chunks=1, k=3, seed="navigator"):
+    """Buy P2PVP vector work: run the S1a earn unit over chunks 0..n-1 and
+    REPLAY-AUDIT each result with our own earn unit (pay only for work we
+    re-derive, §3). `cargo` is the job bytes — JSON {"vector":[...],"target":N}
+    or arbitrary bytes. Returns (client, result)."""
+    client = D.Daemon(identity_from_seed(seed))
+    res = client.request_job(host, int(port), cargo, n_chunks=int(chunks), k=k,
+                             vclass=L.VCLASS_NATIVE, audit=EU.as_worker())
+    return client, res
 
 
 def compute(host, port, spec, chunks=1, k=3, seed="computer"):
@@ -317,6 +340,25 @@ def main(argv=None):
                     help="persist node identity + earnings here")
     pe.add_argument("--peers", default=cfg.get("peers"),
                     help="bootstrap peers, host:port,host:port")
+    pv = sub.add_parser("earn", help="run a P2PVP earn node (S1a vector manifold)")
+    pv.add_argument("--host", default=cfg.get("host", "127.0.0.1"))
+    pv.add_argument("--port", type=int, default=cfg.get("port", 0))
+    pv.add_argument("--seed", default=cfg.get("seed", "earn"))
+    pv.add_argument("--keyfile", default=cfg.get("keyfile"),
+                    help="persist node identity + earnings here")
+    pv.add_argument("--peers", default=cfg.get("peers"),
+                    help="bootstrap peers, host:port,host:port")
+    px = sub.add_parser("vector",
+                        help="buy P2PVP vector work (paid, replay-audited)")
+    px.add_argument("--host", default="127.0.0.1")
+    px.add_argument("--port", type=int, required=True)
+    px.add_argument("--vector", help="comma-separated ints, e.g. 1,2,3,4,5")
+    px.add_argument("--target", type=int, default=0)
+    px.add_argument("--cargo", help="arbitrary text cargo instead of --vector")
+    px.add_argument("--chunks", type=int, default=1,
+                    help="map the unit over targets index 0..chunks-1")
+    px.add_argument("--k", type=int, default=3)
+    px.add_argument("--seed", default="navigator")
     pk = sub.add_parser("compute",
                         help="buy 5500FP native compute (paid, replay-audited)")
     pk.add_argument("--host", default="127.0.0.1")
@@ -368,6 +410,31 @@ def main(argv=None):
     elif args.cmd == "emulator":
         run_emulator(args.host, args.port, args.seed, args.keyfile,
                      parse_peers(args.peers))
+    elif args.cmd == "earn":
+        run_earn(args.host, args.port, args.seed, args.keyfile,
+                 parse_peers(args.peers))
+    elif args.cmd == "vector":
+        if args.vector:
+            cargo = json.dumps({"vector": [int(x) for x in args.vector.split(",")],
+                                "target": args.target},
+                               separators=(",", ":")).encode("utf-8")
+        elif args.cargo:
+            cargo = args.cargo.encode("utf-8")
+        else:
+            ap.error("vector: give --vector or --cargo")
+        client, res = vector(args.host, args.port, cargo, args.chunks, args.k,
+                             args.seed)
+        try:
+            if res["settled_chunks"] < 1:
+                print("[vector] nothing settled (node offline, refused, or audit "
+                      "failed).", file=sys.stderr)
+                sys.exit(1)
+            for i, out in enumerate(res["outputs"]):
+                print(f"chunk {i}: {out.decode('utf-8', 'replace')}")
+            print(f"\n[vector] paid {res['paid']} CompuCoin to "
+                  f"{res['worker'].hex()[:16]}…", file=sys.stderr)
+        finally:
+            client.stop()
     elif args.cmd == "compute":
         if args.program_file:
             with open(args.program_file) as f:

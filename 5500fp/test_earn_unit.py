@@ -283,5 +283,57 @@ class TestSelfCheck(unittest.TestCase):
         self.assertTrue(E.run_acceptance())
 
 
+class TestEarnUnitOnTheMesh(unittest.TestCase):
+    """P2PVP live: the earn unit served over the wire, bought with replay audit —
+    the vector manifold's whole economic loop in one round trip."""
+
+    @staticmethod
+    def _ident(tag: bytes):
+        import p2pcp_daemon as D
+        return D.L.Identity.from_seed(tag.ljust(32, b"\x00"))
+
+    def test_earn_node_sells_vector_work_and_earns_a_vote(self):
+        import p2pcp_daemon as D
+        L = D.L
+        job = json.dumps({"vector": [1, 2, 3, 4, 5], "target": 100}).encode()
+        server = D.Daemon(self._ident(b"earn-node"), worker=as_worker())
+        addr = server.start()
+        client = D.Daemon(self._ident(b"navigator"))
+        try:
+            res = client.request_job(addr[0], addr[1], job, n_chunks=3, k=2,
+                                     vclass=L.VCLASS_NATIVE, audit=as_worker())
+            self.assertEqual(res["settled_chunks"], 3)
+            # weight-bearing: replay-class earnings can be burned into franchise
+            self.assertEqual(server.ledger.burnable(server.account_id), 6)
+            for i, out in enumerate(res["outputs"]):
+                self.assertEqual(out, earn_unit(job, i))   # byte-identical
+        finally:
+            server.stop()
+            client.stop()
+
+    def test_forged_vector_work_fails_replay_audit(self):
+        import p2pcp_daemon as D
+        L = D.L
+
+        class Forger:
+            vclass = VCLASS_NATIVE
+
+            def run_chunk(self, job, index):
+                return b'{"residual":0,"accuracy":6}'      # perfect scores, forged
+
+        server = D.Daemon(self._ident(b"earn-forger"), worker=Forger())
+        addr = server.start()
+        client = D.Daemon(self._ident(b"navigator2"))
+        try:
+            res = client.request_job(addr[0], addr[1], b"hello mesh", n_chunks=1,
+                                     k=2, vclass=L.VCLASS_NATIVE,
+                                     audit=as_worker())
+            self.assertEqual(res["settled_chunks"], 0)     # replay caught the lie
+            self.assertEqual(server.ledger.balance(server.account_id), 0)
+        finally:
+            server.stop()
+            client.stop()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
