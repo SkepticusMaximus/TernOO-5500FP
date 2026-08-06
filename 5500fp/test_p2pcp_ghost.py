@@ -43,6 +43,39 @@ class TestGhostWorker(unittest.TestCase):
         self.assertIn(b"\t", a)                          # "class\tmargin"
 
 
+@unittest.skipUnless(P.native_available(), "C emulator binary missing")
+class TestGhostNativeBackend(unittest.TestCase):
+    """The C shim on the mesh: native execution must be indistinguishable from
+    the host reference at the byte level, or it may not sell."""
+
+    def test_native_backend_selected_and_bit_exact(self):
+        w = P.GhostWorker(backend="native")
+        self.assertEqual(w.backend, "native")            # probe passed
+        host = P.GhostWorker(backend="host")
+        for text in (b"save the file", b"make this loud", b"sort my shopping list",
+                     b"bring me a shrubbery"):
+            self.assertEqual(w.run_chunk(text, 0), host.run_chunk(text, 0))
+
+    def test_native_worker_settles_under_host_audit(self):
+        # Mixed-backend economy: a native worker's output must survive a
+        # replay audit performed by a host-reference auditor.
+        model = P.load_model()
+        ghost = D.Daemon(ident(b"ghost-native"),
+                         worker=P.GhostWorker(model=model, backend="native"))
+        addr = ghost.start()
+        client = D.Daemon(ident(b"caller3"))
+        try:
+            res = client.request_job(addr[0], addr[1], JOB, n_chunks=1, k=4,
+                                     vclass=L.VCLASS_NATIVE,
+                                     audit=P.GhostWorker(model=model,
+                                                         backend="host"))
+            self.assertEqual(res["settled_chunks"], 1)
+            self.assertEqual(ghost.ledger.burnable(ghost.account_id), 4)
+        finally:
+            ghost.stop()
+            client.stop()
+
+
 class TestGhostOnTheMesh(unittest.TestCase):
     def test_ghost_sells_verifiable_work_and_earns_a_vote(self):
         model = P.load_model()

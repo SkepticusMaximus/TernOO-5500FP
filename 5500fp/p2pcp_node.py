@@ -135,8 +135,11 @@ def run_professor(host="127.0.0.1", port=0, seed="professor", mock=False,
 
 
 def run_ghost(host="127.0.0.1", port=0, seed="ghost", keyfile=None, peers=None):
-    """Start a GHOST (native, replay-class, weight-bearing) classifier node."""
-    _serve_worker(GH.GhostWorker(), "ghost", host, port,
+    """Start a GHOST (native, replay-class, weight-bearing) classifier node.
+    Sells the C-emulator pass when it's present and probe-verified, else the
+    bit-identical host reference — the label says which engine is on shift."""
+    worker = GH.GhostWorker()
+    _serve_worker(worker, f"ghost/{worker.backend}", host, port,
                   node_identity(seed, keyfile),
                   ledger_path=(keyfile + ".ledger") if keyfile else None,
                   peers=peers)
