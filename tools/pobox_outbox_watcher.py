@@ -63,6 +63,15 @@ def slug(s):
     return s[:60] or "mail"
 
 
+def addr_token(t):
+    """One address as a filesystem-safe filename token: qualifiers like
+    'CC (retiring — cloud fork seat, design/docs/specs)' must never leak
+    slashes or spaces into the generated name (that crashes delivery)."""
+    t = re.sub(r"\(.*?\)", "", t)              # drop parenthetical qualifiers
+    t = re.sub(r"[^A-Za-z0-9]+", "", t)        # no separators of any kind
+    return t[:20]
+
+
 def header(text, key):
     m = re.search(rf"^{key}:\s*(.+)$", text, re.M | re.I)
     return m.group(1).strip() if m else ""
@@ -117,8 +126,12 @@ def process(path):
              or next((l[2:].strip() for l in text.splitlines()
                       if l.startswith("# ")), "")
              or os.path.splitext(os.path.basename(path))[0])
-    to_part = "+".join(t.strip() for t in re.split(r"[,;]", to) if t.strip())
-    name = f"{dt.strftime('%Y-%m-%d-%H%M')}-{sender}-to-{to_part}-{slug(topic)}.md"
+    to_part = "+".join(filter(None, (addr_token(t)
+                                     for t in re.split(r"[,;]", to))))
+    if not to_part:
+        return ("hold", "To: header has no usable recipient token")
+    name = (f"{dt.strftime('%Y-%m-%d-%H%M')}-{addr_token(sender) or 'Stevo'}"
+            f"-to-{to_part}-{slug(topic)}.md")
     if not deliver(name, text):
         return ("retry", "push to origin failed — retrying every minute")
     os.makedirs(SENT, exist_ok=True)
