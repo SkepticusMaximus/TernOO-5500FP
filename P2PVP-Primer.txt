@@ -1,0 +1,179 @@
+# The Compute Mesh — P2PCP & P2PVP: A Primer
+
+**Author:** Stevo (SkepticusMaximus)
+**Collaborator:** Claude (Anthropic)
+**Date:** August 2026
+
+How TernOO machines trade computation with strangers, and how the trade stays
+honest without anyone in charge.
+
+---
+
+## One wire, two manifolds
+
+**P2PCP** is the **Peer-to-Peer Compute Protocol**: independent machines buy and
+sell computation from each other, settling in a currency called **CompuCoin**. A
+node is identified by its keypair, discovered by gossip, and trusted only as far
+as its work can be checked.
+
+Two distinct kinds of cargo ride the mesh, and the split between them carries
+most of the design:
+
+- The **compute manifold** — prompts in, answers out. Inference and general
+  computation, sold for coin. This is P2PCP's original trade.
+- The **vector manifold** — training signal, not answers. This is **P2PVP, the
+  Peer-to-Peer Vector Protocol**, and it is the newer and stranger of the two.
+  It carried the working code-name **SETI@HOME** — *Search for Empathetic
+  Ternary Intelligence* — a tip of the hat to the volunteer-computing project
+  whose validate-by-redundancy model inspired it.
+
+A protocol here is identified by its handshake and frame types, never by a port
+number. A stranger's traffic on the same port simply fails the handshake and is
+dropped; a peer's capabilities are advertised at hello, so a buyer discovers
+what a node sells rather than assuming it.
+
+---
+
+## CompuCoin — proof of useful work
+
+CompuCoin is commodity money, minted only by **work whose correctness an
+independent auditor can prove**. There is no treasury, no redemption desk, and
+no monetary authority. The economics rest on a cost-of-production floor: when
+the coin trades below the cost of producing one validated compute-unit,
+rational nodes stop minting, supply dries up, and the price returns to the
+floor. The mint *is* the floor — like gold, it needs no keeper.
+
+Money and governance are deliberately decoupled. The coin itself never votes:
+minting buys admission to the economy, never franchise over it. Replay-class
+earnings are *weight-bearing* in a separate sense — a node may **burn** earned
+coin into non-transferable governance weight (earn → burn → vote) — so
+influence costs real, audited work and cannot simply be bought back out.
+
+---
+
+## The audit boundary
+
+The line between the two manifolds is a **type boundary: integer versus float**.
+
+Integer work on the 5500FP is deterministic to the trit. Given the same job, any
+machine reproduces the seller's output byte for byte — so honesty is checkable
+by **replay**: the buyer re-runs each chunk with its own kernel and **pays only
+for work it re-derived itself**. No trust, no reputation, no committee; the
+arithmetic is the auditor. This is the **replay class**, and it is the only
+class that mints.
+
+Float work — model inference chief among it — is not bit-replayable across
+machines. It is bought with redundancy instead: fan a job to several sellers
+and take agreement. Float work earns **rent**, never votes. The language model
+reading this document is itself a float-class worker on the compute manifold:
+it is paid for answers, and its earnings carry no governance weight.
+
+---
+
+## The earn unit — what a mint actually is
+
+The minting kernel is small enough to state. Its arithmetic is the TernOO
+mesh's own: the Steiner quasigroup **op(A, B) = −(A + B) mod 729**, under which
+any two corners of a triangle recover the third, and a closed 27-element
+sub-vocabulary of moves (the MECCANO set). A job names a predicted vector; the
+kernel traverses the TMesh, descends the octree, and reports residual and
+accuracy — pure integer from end to end, no rounding, no floating point,
+nothing machine-dependent.
+
+A seller streams back chunks of this work. The buyer replays every chunk with
+its own copy of the same kernel and settles payment only on exact agreement.
+Work that fails replay earns nothing and costs the seller its time — cheating
+is not so much forbidden as unprofitable.
+
+---
+
+## P2PVP — the vector manifold
+
+Distributing *inference* over a mesh fails for a structural reason: generation
+is serial next-token prediction and cannot be split across a wire. A network
+that claims to sell distributed inference degenerates into passing prompts to
+whoever holds the model. Training is the opposite case — data-parallel and
+latency-tolerant — so **training signal is the load-balanceable commodity**, and
+that is what P2PVP trades.
+
+Trainers do not ship answers, and they do not ship raw weights. They share the
+**patterns their weights are converging on**, as objects:
+
+1. **Vector as object** — a weight-pattern becomes a graphable object: a typed
+   curve per dimension (linear, quadratic, exponential) over a shared
+   parameter such as the training step.
+2. **Render** — PIGART draws it; the pattern has a canonical visual form.
+3. **Packetise** — it ships as I/O words carrying MAP words. The payload is
+   24-trit TernOO Words end to end — it is the Words, not bytes; a non-ternary
+   node cannot participate by proxy.
+4. **DIF and rate** — the receiver diffs the incoming pattern against its own
+   state and rates it on two axes: in the manifold's vocabulary, **MMID**, the
+   content identity of a manifold (the hash of its canonical form — does it
+   *be* what it claims), and **MMOE**, its Mismatch Of Expectation (how far it
+   diverges from what the local state predicts).
+5. **Re-stage** — a precision-weighted Bayesian merge folds the useful parts
+   in, and the cycle repeats.
+
+Run between deliberately divergent trainers, the loop converges: mismatch
+falling from 0.074 to 0.002 across rounds in measurement. Agreement is not
+imposed; it precipitates.
+
+The seam between the manifolds is load-bearing for security. The compute
+manifold has essentially no poisoning surface — a prompt answered leaves
+nothing behind. The vector manifold is precisely where the federated-learning
+poisoning literature applies, which is why the audit machinery concentrates
+there, and why its work is the kind an auditor can re-derive.
+
+---
+
+## GHOST, and the senses
+
+**GHOST** is TernOO's limbic layer: a small system whose one drive is to
+predict its next sensory input. The next input then arrives and *is* the
+label — a live stream supervises itself for free, and surprise (prediction
+error) is the native salience signal: what deserves attention is what the
+system failed to anticipate.
+
+On the mesh today, GHOST work is sold two ways. Its classification runs
+natively — the C emulator executes the ternary assembly itself, gated at
+startup by a probe that must agree bit-for-bit with the reference
+implementation — so native ternary execution is replay-class and earns votes.
+And GHOST has drawn a first breath: a live microphone loop — sound, ternarised
+to loudness words, next-tick prediction, surprise — with surprise measurably
+falling within seconds of listening. One sense, a prototype, on record.
+
+One further mechanism is designed and agreed but not yet wired: the **held-out
+mint gate**. Under it, a training contribution mints only if it improves
+GHOST's prediction on a fresh slice of the real sensory stream the contributor
+never saw. The environment itself becomes the judge of what mattered — ground
+truth arrives on its own schedule, later, and settles who did real work; you
+cannot fake the sensory future. Until that gate lands, minting stands on the
+replay-audit economy above.
+
+---
+
+## What the wire refuses
+
+The mesh signs with ed25519 and digests with SHA3 — established, externally
+analysed primitives. A ternary-native digest was designed, then attacked
+in-house and shown to be affine over GF(3) — trivially collidable — and so it
+remains a stub, deliberately. Nothing home-rolled touches the wire before
+external cryptanalysis. The mesh's honesty story rests on replay and
+redundancy, not on novel cryptography.
+
+---
+
+## Where it sits in TernOO
+
+The mesh is not an application bolted onto the architecture; it is the
+architecture, socialised. The minting kernel's arithmetic is the TMesh's own
+triangle recovery. The vector manifold's packets are MAP words — the same
+self-describing words that carry code, data, and geometry everywhere else. The
+economy's audit rests on the determinism of balanced-ternary integer compute,
+and its designed future rests on GHOST's perceptions — the same limbic layer
+the architecture grows for itself.
+
+One idea underneath, as ever: work whose value can be checked against reality —
+by re-deriving it exactly today, by predicting the world's next moment
+tomorrow — needs no authority to vouch for it. The mesh pays for truth because
+truth is the only thing every node can verify alone.
