@@ -370,8 +370,24 @@ class MeshTabView:
         self._chat.insert("end", text + "\n\n", ("msg",))
         self._chat.see("end")
 
+    def _model_of(self, where):
+        """The advertised brain behind an answer — a 'model:NAME' cap gossiped in
+        the node's STATUS. Label honesty: 'Professor' is the persona; this is the
+        actual model playing him tonight. Absent on old nodes → purely additive."""
+        if not where:
+            return None
+        addr = where.split(" ")[0]                 # strip a trailing "(relay)"
+        for st in self._board_states:
+            if f"{st.host}:{st.port}" == addr:
+                for c in st.caps:
+                    if c.startswith("model:"):
+                        return c[6:]
+        return None
+
     def _append_prof(self, where, text):
-        label = f"Professor · {where}" if where else "Professor"
+        brain = self._model_of(where)
+        label = (f"Professor ({brain}) · {where}" if brain and where
+                 else (f"Professor · {where}" if where else "Professor"))
         self._chat.insert("end", label + "\n", ("who_prof",))
         self._chat.insert("end", text + "\n\n", ("msg",))
         self._chat.see("end")
@@ -405,7 +421,11 @@ class MeshTabView:
             tag = "  (truncated)" if a.get("clipped") else ""
             prefix = (f'[The user attached a file "{a["name"]}"{tag}. Its contents:]\n'
                       f'"""\n{a["text"]}\n"""\n\n')
-        return prefix + "".join(lines) + "Professor:"
+        persona = ('[You are the Professor — the assistant in this dialogue. The '
+                   '"Professor:" lines are your own earlier replies; the "You:" '
+                   'lines are the user speaking to you. Answer the user\'s last '
+                   'message, as the Professor.]\n\n')
+        return persona + prefix + "".join(lines) + "Professor:"
 
     @staticmethod
     def _trim_followups(ans):
