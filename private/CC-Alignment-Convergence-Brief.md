@@ -51,9 +51,17 @@ inference**.
 - **GHOST senses** — now a **live audio-prediction prototype** (capture → ternarise
   → predict → surprise) on a real mic. Persistent perception has moved from
   *proposed* to *a loop turning real sound into surprise*.
-- These answer DeepSeek's earlier gaps: reward-allocation (GHOST-as-judge mint),
-  cold-start salience (the live stream), preference-updating (the prediction loop),
-  token-reinterpretation (native/replay-MINT vs float/redundancy-SPEND).
+**LEDGER HONESTY (New CC's audit — critical; bake into §6 + Epistemic Status):**
+- BUILT & RUNNING: the *replay-audit economy* — work mints credit iff an independent
+  auditor reproduces it byte-for-byte (S1a earn-unit proven; P2PVP serving over
+  Tailscale). Arbiter = *determinism*, not prediction.
+- RATIFIED DESIGN (not built): the predictive-improvement mint-gate (mint iff it
+  improves prediction on a held-out slice) — open seam in earn_unit.py.
+- PROTOTYPE / first breath: GHOST's sensory loop (mic → ternary → predict →
+  surprise), mic-only — NOT "continuously predicting a live stream, built."
+- NOT BUILT: the multi-node ecology of differently-sensed nodes — stays a prediction.
+- The anti-Goodhart claim has two legs: BUILT = unfakeable *replay* (determinism);
+  DESIGNED = the unfakeable *future* (prediction). Lead with replay — it's running.
 
 ## Open — needs a call
 - **P2PVP rename + bounded status** must go into the draft (it still says P2PCP; and
