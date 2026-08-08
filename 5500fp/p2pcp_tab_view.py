@@ -275,7 +275,8 @@ class MeshTabView:
             self._clear_relay(clear_field=False)   # emptied → forget it, don't resurrect
         self._begin_turn(prompt)
         context = self._build_context()          # the conversation so far → the model
-        self._clear_attachment()                 # one-shot: it rode along with this turn
+        # the attachment stays armed until an answer actually LANDS (cleared in
+        # _show_ask's success branch) — a timeout must not eat the file mid-ride
         self._status("Asking via relay…" if relay else "Asking the mesh…")
 
         def work():
@@ -302,19 +303,36 @@ class MeshTabView:
         self._ask_result = None
         self._show_ask(*r)
 
+    def _ask_failed_cleanup(self):
+        """A failed ask must not poison the next one: pop the unanswered turn from
+        the model's memory (the on-screen transcript keeps it, error and all, but
+        retries must not stack triplicate 'You:' lines into the context), keep the
+        attachment armed (it never reached a model), and put the question back in
+        the box so retrying is one click."""
+        if self._history and self._history[-1][0] == "user":
+            self._history.pop()
+        raw = getattr(self, "_last_ask_raw", None)
+        if raw:
+            self._prompt.delete("1.0", "end")
+            self._prompt.insert("1.0", raw)
+            self._prompt.config(fg=self.C["text"])
+
     def _show_ask(self, where, ans, err):
         self._askbtn.config(state="normal", text="  Ask  ▶  ")
         self._end_pending()
         if err:
             self._chat.insert("end", f"(couldn't reach a model: {err} — try ⚙ Setup)"
                               "\n\n", ("error",))
+            self._ask_failed_cleanup()
             self._status("Ask failed.")
         elif not where or ans is None:
             self._chat.insert("end", "(no model on the mesh answered — check ⚙ Setup)"
                               "\n\n", ("error",))
+            self._ask_failed_cleanup()
             self._status("No model answered.")
         else:
             ans = self._trim_followups(ans)
+            self._clear_attachment()               # it landed — the ride is over
             self._history.append(("assistant", ans))
             self._append_prof(where, ans)
             self._status(f"Answered by {where}.")
@@ -355,6 +373,7 @@ class MeshTabView:
     def _begin_turn(self, prompt):
         """Record the turn, show 'You: …', clear the box (the turn now lives in the
         transcript), show a pending Professor line, and disable Ask until it lands."""
+        self._last_ask_raw = prompt                # kept so a failed ask can retry
         if self._attachment:                       # note the attachment in the record
             prompt = f"{prompt}\n📎 [attached: {self._attachment['name']}]"
         self._history.append(("user", prompt))
