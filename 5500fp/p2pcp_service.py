@@ -38,10 +38,15 @@ class MeshService:
     ``"professor"`` (Bonsai, float), ``"ghost"`` (native), or ``None`` (buy-only).
     ``keyfile`` persists identity + earnings; ``mock`` uses the echo professor."""
 
-    # A model can take tens of seconds to answer (float inference); the buy client
-    # must wait that long or it hangs up mid-answer and reports "no result" — the
-    # bug behind an Ask that silently fails against a real Professor.
-    MODEL_TIMEOUT = 240.0
+    # A model ask must survive the COLD worst case: a big attachment read at
+    # prompt-eval speed PLUS a full-length answer at generation speed — for the
+    # 30B Professor given a ~9k-char primer under a 2048-token cap that is
+    # ~7 minutes, not "tens of seconds". Hang up earlier and the mesh reports
+    # "no model answered" while the Professor is still mid-read (the bug behind
+    # an Ask that fails twice cold then lands on the third try, riding the
+    # server's warm prompt cache). The seller node's own backend timeout should
+    # sit BELOW this so a genuine failure is reported by the node, not by us.
+    MODEL_TIMEOUT = 600.0
 
     def __init__(self, worker_kind="professor", keyfile=None, mock=False,
                  seed="mesh-node", timeout=None):
