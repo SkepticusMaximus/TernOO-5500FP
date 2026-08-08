@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- FlowCode — the TernOO trio as a TMesh triangle: P(+) green, Z(0) blue, N(−) orange.
+       Flowchart and ternary arithmetic in one mark. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1c2b4d"/>
+      <stop offset="1" stop-color="#0e1730"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="54" fill="url(#bg)" stroke="#31497c" stroke-width="5"/>
+  <!-- mesh edges -->
+  <g stroke="#8fb4ff" stroke-width="11" stroke-linecap="round" opacity="0.9">
+    <line x1="128" y1="72" x2="72" y2="174"/>
+    <line x1="128" y1="72" x2="184" y2="174"/>
+    <line x1="72" y1="174" x2="184" y2="174"/>
+  </g>
+  <!-- nodes -->
+  <circle cx="128" cy="72"  r="31" fill="#3fb950" stroke="#eafff0" stroke-width="6"/>
+  <circle cx="72"  cy="174" r="31" fill="#5a7bd8" stroke="#eef2ff" stroke-width="6"/>
+  <circle cx="184" cy="174" r="31" fill="#ff8f3f" stroke="#fff3e8" stroke-width="6"/>
+  <!-- trit glyphs: + , 0 , − -->
+  <g stroke="#0b1226" stroke-width="9" stroke-linecap="round" fill="none">
+    <line x1="128" y1="59" x2="128" y2="85"/>
+    <line x1="115" y1="72" x2="141" y2="72"/>
+    <circle cx="72" cy="174" r="11"/>
+    <line x1="171" y1="174" x2="197" y2="174"/>
+  </g>
+</svg>
