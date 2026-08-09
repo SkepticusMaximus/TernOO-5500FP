@@ -109,7 +109,7 @@ def _validate(spec):
 
 
 class MacroPanel:
-    WIDTH = 450
+    WIDTH = 500
 
     def __init__(self, tv, outer, C, root):
         import tkinter as tk
@@ -175,7 +175,7 @@ class MacroPanel:
 
     # ── panel chrome ─────────────────────────────────────────────────────────
     def _drag(self, e):
-        w = max(250, min(e.x_root - self.frame.winfo_rootx(), 720))
+        w = max(250, min(e.x_root - self.frame.winfo_rootx(), 900))
         self.WIDTH = w
         self.frame.config(width=w)
 
@@ -360,15 +360,13 @@ class MacroPanel:
         top = tk.Frame(self._tab_forge, bg=C["palette"])
         top.pack(fill="x", padx=6, pady=6)
         self._forge_name = tk.StringVar(value="")
-        tk.Label(top, text="file:", bg=C["palette"], fg=C["dim"],
+        tk.Label(top, text="file (.json):", bg=C["palette"], fg=C["dim"],
                  font=("Monospace", 9)).pack(side="left")
         self._forge_entry = tk.Entry(top, textvariable=self._forge_name,
                                      bg=C["bg"], fg=C["text"], relief="flat",
                                      insertbackground=C["text"],
                                      font=("Monospace", 10))
         self._forge_entry.pack(side="left", fill="x", expand=True, padx=4)
-        tk.Label(top, text=".json", bg=C["palette"], fg=C["dim"],
-                 font=("Monospace", 9)).pack(side="left")
         self.tv._wire_editing(self._forge_entry, editable=True)
 
         # bottom claims its ground FIRST — controls must never be the widgets
@@ -382,15 +380,15 @@ class MacroPanel:
         self._forge_body = tk.Frame(self._tab_forge, bg=C["palette"])
         self._forge_body.pack(fill="both", expand=True, padx=6)
 
-        tk.Button(bar, text="🤖 Forge from a command", command=self._ai_forge,
+        tk.Button(bar, text="🤖 Forge…", command=self._ai_forge,
                   bg=C["bg"], fg=C["text"], relief="flat", font=("Monospace", 9)
                   ).pack(side="left")
-        tk.Button(bar, text="skeleton", command=self._load_skeleton, bg=C["bg"],
+        tk.Button(bar, text="new", command=self._load_skeleton, bg=C["bg"],
                   fg=C["dim"], relief="flat", font=("Monospace", 9)
-                  ).pack(side="left", padx=4)
+                  ).pack(side="left", padx=2)
         tk.Button(bar, text="{ }", command=self._toggle_raw, bg=C["bg"],
                   fg=C["dim"], relief="flat", font=("Monospace", 9)
-                  ).pack(side="left", padx=4)
+                  ).pack(side="left", padx=2)
         tk.Button(bar, text="💾 Save", command=self._forge_save, bg=self.tv.GRN,
                   fg="#0c0e14", relief="flat", font=("Monospace", 10, "bold")
                   ).pack(side="right")
@@ -434,36 +432,45 @@ class MacroPanel:
                  anchor="w").pack(fill="x", pady=(2, 4))
         self._t_rows = []
         for f in s.get("fields", []):
-            row = tk.Frame(self._forge_body, bg=C["palette"])
-            row.pack(fill="x", pady=1)
+            # a side panel demands VERTICAL grammar: two lines per field —
+            # four columns in a narrow space is how defaults fall off cliffs
+            box = tk.Frame(self._forge_body, bg=C["palette"])
+            box.pack(fill="x", pady=(1, 4))
+            r1 = tk.Frame(box, bg=C["palette"])
+            r1.pack(fill="x")
             inc = tk.IntVar(value=1)
-            tk.Checkbutton(row, variable=inc, bg=C["palette"],
+            tk.Checkbutton(r1, variable=inc, bg=C["palette"],
                            activebackground=C["palette"]).pack(side="left")
             lv = tk.StringVar(value=f.get("label", ""))
-            le = tk.Entry(row, textvariable=lv, bg=C["bg"], fg=C["text"],
+            le = tk.Entry(r1, textvariable=lv, bg=C["bg"], fg=C["text"],
                           insertbackground=C["text"], relief="flat",
-                          font=("Monospace", 10), width=16)
-            le.pack(side="left", padx=(2, 4))
+                          font=("Monospace", 10))
+            le.pack(side="left", fill="x", expand=True, padx=(2, 6))
             self.tv._wire_editing(le, editable=True)
+            r2 = tk.Frame(box, bg=C["palette"])
+            r2.pack(fill="x")
             code = f.get("flag", f.get("arg", "?"))
-            tk.Label(row, text=f"{code}", bg=C["palette"], fg=C["dim"],
-                     font=("Monospace", 9), width=12, anchor="w"
-                     ).pack(side="left")
+            tk.Label(r2, text=code, bg=C["palette"], fg=C["dim"],
+                     font=("Monospace", 9)).pack(side="left", padx=(28, 6))
             t = f.get("type")
             if t == "check":
                 dv = tk.IntVar(value=1 if f.get("default") else 0)
-                tk.Checkbutton(row, variable=dv, bg=C["palette"],
-                               activebackground=C["palette"]).pack(side="left")
+                tk.Checkbutton(r2, variable=dv, bg=C["palette"],
+                               activebackground=C["palette"],
+                               text="on by default", fg=C["dim"],
+                               selectcolor=C["bg"], font=("Monospace", 8)
+                               ).pack(side="left")
             elif t == "choice":
                 dv = tk.StringVar(value=str(f.get("default", "")))
                 opts = [str(o) for o in f.get("options", [])] or [""]
-                tk.OptionMenu(row, dv, *opts).pack(side="left")
+                tk.OptionMenu(r2, dv, *opts).pack(side="left", fill="x",
+                                                  expand=True, padx=(0, 8))
             else:
                 dv = tk.StringVar(value=str(f.get("default", "")))
-                de = tk.Entry(row, textvariable=dv, bg=C["bg"], fg=C["text"],
+                de = tk.Entry(r2, textvariable=dv, bg=C["bg"], fg=C["text"],
                               insertbackground=C["text"], relief="flat",
-                              font=("Monospace", 10), width=10)
-                de.pack(side="left")
+                              font=("Monospace", 10))
+                de.pack(side="left", fill="x", expand=True, padx=(0, 8))
                 self.tv._wire_editing(de, editable=True)
             self._t_rows.append((f, inc, lv, dv))
 
