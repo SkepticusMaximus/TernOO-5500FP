@@ -262,6 +262,67 @@ def load_chat(cid):
     set_status(f"continuing: {rec.get('title', '')[:44]}", GRN)
 
 
+def chat_menu(*_):
+    """Rename / Export / Delete — the management trio from the tk client."""
+    tag = "chatmgr"
+    if dpg.does_item_exist(tag):
+        dpg.delete_item(tag)
+    rec = STORE.load(CHAT_ID) if (STORE and CHAT_ID) else None
+    title = rec.get("title", "") if rec else ""
+    with dpg.window(label="This chat", modal=True, tag=tag, width=560,
+                    height=250, pos=(300, 200)):
+        if not rec:
+            dpg.add_text("No saved chat yet — ask something first, or pick "
+                         "one from the dropdown.", color=DIM, wrap=520)
+            dpg.add_button(label="Close",
+                           callback=lambda: dpg.delete_item(tag))
+            return
+        dpg.add_text("title", color=DIM)
+        te = dpg.add_input_text(width=-1, default_value=title)
+
+        def do_rename():
+            STORE.rename(CHAT_ID, dpg.get_value(te).strip() or title)
+            refresh_chats()
+            dpg.delete_item(tag)
+            set_status("renamed")
+
+        def do_delete():
+            STORE.delete(CHAT_ID)
+            dpg.delete_item(tag)
+            new_chat()
+            refresh_chats()
+            set_status("chat deleted")
+
+        def do_export():
+            dpg.delete_item(tag)
+            dpg.show_item("expdlg")
+        dpg.add_spacer(height=8)
+        with dpg.group(horizontal=True):
+            dpg.add_button(label="  Rename  ", callback=do_rename)
+            dpg.add_button(label="  Export...  ", callback=do_export)
+            dpg.add_button(label="  Delete  ", callback=do_delete)
+            dpg.add_button(label="Close",
+                           callback=lambda: dpg.delete_item(tag))
+
+
+def on_export_pick(_s, app_data):
+    path = app_data.get("file_path_name", "")
+    if path.endswith(".*"):
+        path = path[:-2]
+    if not path:
+        return
+    rec = STORE.load(CHAT_ID) if (STORE and CHAT_ID) else None
+    title = rec.get("title", "chat") if rec else "chat"
+    lines = [f"# {title}\n"]
+    for r, t in HISTORY:
+        lines.append(f"**{'You' if r == 'user' else 'Professor'}:**\n\n{t}\n")
+    try:
+        open(path, "w", encoding="utf-8").write("\n".join(lines))
+        set_status(f"exported to {os.path.basename(path)}", GRN)
+    except Exception as e:                      # noqa: BLE001
+        set_status(f"export failed: {e}", RED)
+
+
 def save_chat(where=None):
     global CHAT_ID
     if not STORE or not HISTORY:
@@ -336,9 +397,27 @@ def on_ask(*_):
 
 
 # ── attachment ───────────────────────────────────────────────────────────────
+def _picked_path(app_data):
+    """The path the user ACTUALLY picked. DPG's file dialog appends the active
+    filter to file_path_name (giving 'Report.*'); the selections dict holds
+    the real clicked file, so prefer it, then sanitise the fallback."""
+    sel = app_data.get("selections") or {}
+    for _name, p in sel.items():
+        return p
+    p = app_data.get("file_path_name", "")
+    if p.endswith(".*"):
+        p = p[:-2]
+    if p and not os.path.exists(p):
+        import glob as _g
+        hits = _g.glob(p + ".*")
+        if len(hits) == 1:
+            return hits[0]
+    return p
+
+
 def on_attach_pick(_s, app_data):
     global ATTACH
-    path = app_data.get("file_path_name", "")
+    path = _picked_path(app_data)
     if not path:
         return
     try:
@@ -659,7 +738,7 @@ def ed_key(*_):
 
 def ed_open_pick(_s, app_data):
     global ED_PATH, ED_DIRTY
-    path = app_data.get("file_path_name", "")
+    path = _picked_path(app_data)
     if not path:
         return
     try:
@@ -674,7 +753,9 @@ def ed_open_pick(_s, app_data):
 
 def ed_save_pick(_s, app_data):
     global ED_PATH
-    path = app_data.get("file_path_name", "")
+    path = app_data.get("file_path_name", "")   # save-as: the TYPED name is law
+    if path.endswith(".*"):
+        path = path[:-2]
     if path:
         ED_PATH = path
         ed_save()
@@ -856,6 +937,7 @@ def build():
                                    callback=lambda: zoom(+0.1))
                     dpg.add_combo([], tag="chatsel", width=300,
                                   callback=on_chat_pick)
+                    dpg.add_button(label="...", small=True, callback=chat_menu)
                     dpg.add_button(label="New chat", callback=new_chat)
                     ask = dpg.add_button(label="   Ask   ", tag="askbtn",
                                          callback=on_ask)
@@ -915,6 +997,13 @@ def build():
                          width=760, height=460,
                          default_path=os.path.expanduser("~")):
         dpg.add_file_extension(".*")
+    with dpg.file_dialog(directory_selector=False, show=False, modal=True,
+                         callback=on_export_pick, tag="expdlg",
+                         width=760, height=460,
+                         default_path=os.path.expanduser("~"),
+                         default_filename="chat-export.md"):
+        dpg.add_file_extension(".*")
+        dpg.add_file_extension(".md", color=tuple(GRN))
 
     with dpg.theme(tag="gripbtn"):
         with dpg.theme_component(dpg.mvButton):
