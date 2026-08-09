@@ -108,6 +108,14 @@ class MacroPanel:
                      padding=(10, 4))
         st.map("TNotebook.Tab", background=[("selected", C["palette"])])
 
+        hdr = tk.Frame(self.frame, bg=C["palette"])
+        hdr.pack(fill="x")
+        tk.Label(hdr, text=" 🧰 macro workshop", bg=C["palette"], fg=C["dim"],
+                 font=("Monospace", 9)).pack(side="left", padx=4, pady=2)
+        tk.Button(hdr, text="«", command=self.toggle, bg=C["palette"],
+                  fg=C["dim"], relief="flat", font=("Monospace", 11)
+                  ).pack(side="right", padx=2)
+
         nb = ttk.Notebook(self.frame)
         nb.pack(fill="both", expand=True, padx=4, pady=4)
         self._tab_macros = tk.Frame(nb, bg=C["palette"])
@@ -121,12 +129,23 @@ class MacroPanel:
         self._build_forge_tab()
         self._build_editor_tab()
 
+        # captain's ruling: the panel is a citizen, not a secret — it lives on
+        # the LEFT, open by default (Claude-Desktop style), collapsible via «;
+        # a thin » ribbon remains so reopening is discoverable, not memorised.
+        self._sliver = tk.Frame(outer, bg=C["bg"], width=18)
+        tk.Button(self._sliver, text="»", command=self.toggle, bg=C["bg"],
+                  fg=C["dim"], relief="flat", font=("Monospace", 10)
+                  ).pack(fill="both", expand=True)
+        self.toggle()                              # start OPEN
+
     # ── panel chrome ─────────────────────────────────────────────────────────
     def toggle(self):
         if self._shown:
             self.frame.pack_forget()
+            self._sliver.pack(side="left", fill="y", before=self.tv._main)
         else:
-            self.frame.pack(side="right", fill="y")
+            self._sliver.pack_forget()
+            self.frame.pack(side="left", fill="y", before=self.tv._main)
             self.refresh()
         self._shown = not self._shown
 
