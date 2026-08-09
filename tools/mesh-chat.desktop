@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Mesh-Chat
+GenericName=P2PCP standalone chat client
+Comment=Talk to the Professor on the mesh — the Mesh-Chat tab as its own light window
+Exec=/home/steven/.venvs/p2pcp/bin/python /home/steven/dev/SkepticusMaximus/TernOO-5500FP/5500fp/chat_client.py
+Path=/home/steven/dev/SkepticusMaximus/TernOO-5500FP/5500fp
+Icon=mesh-chat
+Terminal=false
+Categories=Network;Chat;
+StartupNotify=true

@@ -17,7 +17,9 @@ Authors: Stevo (SkepticusMaximus) + Claude (Anthropic)
 
 import importlib.util as _ilu
 import os
+import re
 import threading
+import webbrowser
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -140,6 +142,12 @@ class MeshTabView:
                               font=("Monospace", 11, "italic"))
         self._chat.tag_config("sys", foreground=C["dim"], font=("Monospace", 10))
         self._chat.tag_config("error", foreground=self.RED, font=("Monospace", 11))
+        # live links: URLs in any message are clickable (open the desktop browser)
+        self._chat.tag_config("link", foreground="#6db3ff", underline=True)
+        self._chat.tag_bind("link", "<Enter>",
+                            lambda _e: self._chat.config(cursor="hand2"))
+        self._chat.tag_bind("link", "<Leave>",
+                            lambda _e: self._chat.config(cursor=""))
         self._greeting()
         self._wire_editing(self._chat, editable=False)
 
@@ -384,9 +392,29 @@ class MeshTabView:
         self._askbtn.config(state="disabled", text="  …thinking  ")
         self._ask_result = None
 
+    def _insert_linked(self, text, tag):
+        """Insert message text with http(s) URLs as live, clickable links —
+        an answer full of bare URLs you can't click is a terminal, not a chat."""
+        pos = 0
+        for m in re.finditer(r"https?://[^\s<>\"')\]]+", text):
+            if m.start() > pos:
+                self._chat.insert("end", text[pos:m.start()], (tag,))
+            url = m.group(0).rstrip(".,;:")
+            self._linkn = getattr(self, "_linkn", 0) + 1
+            lt = f"link-{self._linkn}"
+            self._chat.insert("end", url, (tag, "link", lt))
+            self._chat.tag_bind(lt, "<Button-1>",
+                                lambda _e, u=url: webbrowser.open(u))
+            trail = m.group(0)[len(url):]
+            if trail:
+                self._chat.insert("end", trail, (tag,))
+            pos = m.end()
+        self._chat.insert("end", text[pos:], (tag,))
+
     def _append_you(self, text):
         self._chat.insert("end", "You\n", ("who_you",))
-        self._chat.insert("end", text + "\n\n", ("msg",))
+        self._insert_linked(text, "msg")
+        self._chat.insert("end", "\n\n", ("msg",))
         self._chat.see("end")
 
     def _model_of(self, where):
@@ -408,7 +436,8 @@ class MeshTabView:
         label = (f"Professor ({brain}) · {where}" if brain and where
                  else (f"Professor · {where}" if where else "Professor"))
         self._chat.insert("end", label + "\n", ("who_prof",))
-        self._chat.insert("end", text + "\n\n", ("msg",))
+        self._insert_linked(text, "msg")
+        self._chat.insert("end", "\n\n", ("msg",))
         self._chat.see("end")
 
     def _start_pending(self):
