@@ -125,17 +125,28 @@ def fetch_url(url):
 
 def yt_transcript(url):
     """Pull a YouTube transcript via yt-dlp's subtitle download."""
-    if not shutil.which("yt-dlp"):
+    ytdlp = os.path.expanduser("~/.local/bin/yt-dlp")   # current build first —
+    if not os.path.exists(ytdlp):                       # apt's is often too old
+        ytdlp = shutil.which("yt-dlp")
+    if not ytdlp:
         return "yt-dlp is not installed on this machine — tell the user."
     with tempfile.TemporaryDirectory() as td:
-        subprocess.run(
-            ["yt-dlp", "--skip-download", "--write-auto-subs", "--write-subs",
-             "--sub-langs", "en.*,en", "--sub-format", "vtt",
+        r = subprocess.run(
+            [ytdlp, "--skip-download", "--write-auto-subs", "--write-subs",
+             "--sub-langs", "en.*,en,-live_chat", "--sub-format", "vtt",
              "-o", os.path.join(td, "t"), url],
             capture_output=True, timeout=180)
         vtts = [f for f in os.listdir(td) if f.endswith(".vtt")]
         if not vtts:
-            return "no transcript/captions available for that video"
+            # a tool failure must never masquerade as a fact about the video
+            if r.returncode != 0:
+                tail = r.stderr.decode("utf-8", "replace").strip().splitlines()[-2:]
+                return ("TOOL FAILURE (says nothing about the video itself): "
+                        f"yt-dlp exited {r.returncode}: {' | '.join(tail)} — "
+                        "report this to the user as a tool failure.")
+            return ("yt-dlp ran but wrote no caption file — the video may lack "
+                    "captions, or the extractor quietly failed. Report the "
+                    "uncertainty; do NOT assert the video has no transcript.")
         lines, last = [], None
         for raw in open(os.path.join(td, vtts[0]), encoding="utf-8",
                         errors="replace"):

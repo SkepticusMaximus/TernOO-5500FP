@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- Mesh-Chat — the ternary trio riding a speech bubble; same family as the
+       FlowCode mark (P + green, Z 0 blue, N − orange). -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1c2b4d"/>
+      <stop offset="1" stop-color="#0e1730"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="54" fill="url(#bg)" stroke="#31497c" stroke-width="5"/>
+  <path d="M68 64 H188 Q212 64 212 88 V152 Q212 176 188 176 H120 L82 212 V176 H68 Q44 176 44 152 V88 Q44 64 68 64 Z"
+        fill="#eef2fb" stroke="#8fb4ff" stroke-width="6"/>
+  <!-- trio inside the bubble -->
+  <circle cx="86"  cy="120" r="20" fill="#3fb950" stroke="#0b1226" stroke-width="4"/>
+  <circle cx="128" cy="120" r="20" fill="#5a7bd8" stroke="#0b1226" stroke-width="4"/>
+  <circle cx="170" cy="120" r="20" fill="#ff8f3f" stroke="#0b1226" stroke-width="4"/>
+  <g stroke="#0b1226" stroke-width="7" stroke-linecap="round" fill="none">
+    <line x1="86" y1="111" x2="86" y2="129"/>
+    <line x1="77" y1="120" x2="95" y2="120"/>
+    <circle cx="128" cy="120" r="8"/>
+    <line x1="161" y1="120" x2="179" y2="120"/>
+  </g>
+</svg>
