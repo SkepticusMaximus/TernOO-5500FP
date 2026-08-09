@@ -828,11 +828,13 @@ def build():
                         dpg.add_text("assistant notes", color=DIM)
                         dpg.add_input_text(tag="ed_notes", multiline=True,
                                            readonly=True, width=-1, height=150)
-            # the divider you can actually grab (a button can't stretch
-            # vertically in DPG — a child window can, so the grip is one)
-            with dpg.child_window(tag="hgrip", width=10, height=-1,
+            # the divider: a child window stretches to full height, and the
+            # tall button INSIDE it (clipped) provides the reliable
+            # press-and-hold state only buttons have in DPG
+            with dpg.child_window(tag="hgrip", width=12, height=-1,
                                   border=False, no_scrollbar=True):
-                pass
+                dpg.add_button(tag="hgrip_btn", label="", width=-1,
+                               height=2600)
             # ── right: the chat ───────────────────────────────────────────
             with dpg.group():
                 with dpg.group(horizontal=True):
@@ -841,10 +843,9 @@ def build():
                         dpg.bind_item_font(hdr, big)
                 dpg.add_input_text(multiline=True, width=-1, height=PROMPT_H,
                                    tag="prompt")
-                # drag this bar to give the ask-box more (or less) height
-                with dpg.child_window(tag="vgrip", width=-1, height=9,
-                                      border=False, no_scrollbar=True):
-                    pass
+                # drag this bar to give the ask-box more (or less) height —
+                # a plain button: the mechanism that provably worked
+                dpg.add_button(tag="vgrip_btn", label="", width=-1, height=10)
                 with dpg.group(horizontal=True):
                     dpg.add_button(label="Attach file",
                                    callback=lambda: dpg.show_item("filedlg"))
@@ -915,17 +916,22 @@ def build():
                          default_path=os.path.expanduser("~")):
         dpg.add_file_extension(".*")
 
+    with dpg.theme(tag="gripbtn"):
+        with dpg.theme_component(dpg.mvButton):
+            dpg.add_theme_color(dpg.mvThemeCol_Button, (44, 50, 66))
+            dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, BORDER)
+            dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, GRN)
     with dpg.theme(tag="grippane"):
         with dpg.theme_component(dpg.mvChildWindow):
             dpg.add_theme_color(dpg.mvThemeCol_ChildBg, (44, 50, 66))
     dpg.bind_item_theme("hgrip", "grippane")
-    dpg.bind_item_theme("vgrip", "grippane")
+    dpg.bind_item_theme("hgrip_btn", "gripbtn")
+    dpg.bind_item_theme("vgrip_btn", "gripbtn")
 
     with dpg.handler_registry():
         dpg.add_key_press_handler(dpg.mvKey_Return, callback=_ctrl_enter)
         dpg.add_key_press_handler(callback=_zoom_keys)
         dpg.add_mouse_wheel_handler(callback=_ctrl_wheel)
-        dpg.add_mouse_down_handler(callback=_grip_down)
         dpg.add_mouse_release_handler(callback=_grip_up)
         dpg.add_mouse_move_handler(callback=_drag_grips)
 
@@ -959,28 +965,25 @@ def _ctrl_wheel(_s, app_data):
 _DRAG = {"h": False, "v": False}
 
 
-def _grip_down(*_):
-    if dpg.is_item_hovered("hgrip"):
-        _DRAG["h"] = True
-    if dpg.is_item_hovered("vgrip"):
-        _DRAG["v"] = True
-
-
 def _grip_up(*_):
     if _DRAG["h"] or _DRAG["v"]:
         _cfg_save(CFGD)                        # settle the sculpt on release
-    _DRAG["h"] = _DRAG["v"] = False
+        _DRAG["h"] = _DRAG["v"] = False
 
 
 def _drag_grips(*_):
-    """The dividers you can actually grab — sizes remembered on release."""
-    if _DRAG["h"]:
+    """The dividers — held-button state (is_item_active) is the one drag
+    signal DPG makes bulletproof, and it persists even when the pointer
+    outruns the 12px strip mid-drag."""
+    if dpg.is_item_active("hgrip_btn"):
+        _DRAG["h"] = True
         x = dpg.get_mouse_pos(local=False)[0]
         left = dpg.get_item_rect_min("workshop")[0]
         w = max(260, min(int(x - left), 880))
         dpg.configure_item("workshop", width=w)
         CFGD["panel_w"] = w
-    if _DRAG["v"]:
+    if dpg.is_item_active("vgrip_btn"):
+        _DRAG["v"] = True
         y = dpg.get_mouse_pos(local=False)[1]
         top = dpg.get_item_rect_min("prompt")[1]
         h = max(60, min(int(y - top), 520))
