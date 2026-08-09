@@ -962,31 +962,32 @@ def _ctrl_wheel(_s, app_data):
         zoom(0.05 if app_data > 0 else -0.05)
 
 
-_DRAG = {"h": False, "v": False}
+_DRAG = {"h": None, "v": None}                 # base size at drag start
 
 
 def _grip_up(*_):
-    if _DRAG["h"] or _DRAG["v"]:
+    if _DRAG["h"] is not None or _DRAG["v"] is not None:
         _cfg_save(CFGD)                        # settle the sculpt on release
-        _DRAG["h"] = _DRAG["v"] = False
+        _DRAG["h"] = _DRAG["v"] = None
 
 
 def _drag_grips(*_):
-    """The dividers — held-button state (is_item_active) is the one drag
-    signal DPG makes bulletproof, and it persists even when the pointer
-    outruns the 12px strip mid-drag."""
+    """The dividers, delta-based: remember the size when grabbed, apply the
+    mouse's own movement offset. No absolute coordinates — mouse-pos and
+    item-rect live in different spaces in DPG, which is why the previous
+    math pinned the panel at its clamp floor (green light, no movement)."""
     if dpg.is_item_active("hgrip_btn"):
-        _DRAG["h"] = True
-        x = dpg.get_mouse_pos(local=False)[0]
-        left = dpg.get_item_rect_min("workshop")[0]
-        w = max(260, min(int(x - left), 880))
+        if _DRAG["h"] is None:
+            _DRAG["h"] = dpg.get_item_width("workshop") or 400
+        dx = dpg.get_mouse_drag_delta()[0]
+        w = max(260, min(int(_DRAG["h"] + dx), 880))
         dpg.configure_item("workshop", width=w)
         CFGD["panel_w"] = w
     if dpg.is_item_active("vgrip_btn"):
-        _DRAG["v"] = True
-        y = dpg.get_mouse_pos(local=False)[1]
-        top = dpg.get_item_rect_min("prompt")[1]
-        h = max(60, min(int(y - top), 520))
+        if _DRAG["v"] is None:
+            _DRAG["v"] = dpg.get_item_height("prompt") or 380
+        dy = dpg.get_mouse_drag_delta()[1]
+        h = max(60, min(int(_DRAG["v"] + dy), 520))
         dpg.configure_item("prompt", height=h)
         CFGD["prompt_h"] = h
 
