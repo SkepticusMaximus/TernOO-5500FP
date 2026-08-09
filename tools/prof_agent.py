@@ -55,8 +55,13 @@ def _confined(path):
 
 
 # ── the tools ────────────────────────────────────────────────────────────────
-def web_search(query):
-    """DuckDuckGo HTML results — no key, no dependency."""
+def _ddg_decode(href):
+    """DDG wraps result links as /l/?uddg=<real> — unwrap when present."""
+    q = urllib.parse.urlparse(href).query
+    return urllib.parse.parse_qs(q).get("uddg", [href])[0]
+
+
+def _ddg_html(query):
     url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(query)
     req = urllib.request.Request(url, headers=UA)
     with urllib.request.urlopen(req, timeout=30) as r:
@@ -65,13 +70,43 @@ def web_search(query):
     for m in re.finditer(
             r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>',
             page, re.S):
-        href, title = m.group(1), re.sub(r"<[^>]+>", "", m.group(2))
-        q = urllib.parse.urlparse(href).query          # DDG wraps as /l/?uddg=…
-        real = urllib.parse.parse_qs(q).get("uddg", [href])[0]
-        out.append(f"- {html.unescape(title).strip()}\n  {real}")
-        if len(out) >= 5:
-            break
-    return "\n".join(out) if out else "no results (or the search page changed)"
+        title = html.unescape(re.sub(r"<[^>]+>", "", m.group(2))).strip()
+        out.append(f"- {title}\n  {_ddg_decode(m.group(1))}")
+    return out
+
+
+def _ddg_lite(query):
+    """The bare-bones lite endpoint — different markup, often unblocked when
+    the html one is bot-walled (airport WiFi taught us this)."""
+    url = "https://lite.duckduckgo.com/lite/?q=" + urllib.parse.quote(query)
+    req = urllib.request.Request(url, headers=UA)
+    with urllib.request.urlopen(req, timeout=30) as r:
+        page = r.read(300_000).decode("utf-8", "replace")
+    out = []
+    for m in re.finditer(r'<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', page, re.S):
+        href = _ddg_decode(m.group(1))
+        title = html.unescape(re.sub(r"<[^>]+>", "", m.group(2))).strip()
+        if (not href.startswith("http") or "duckduckgo.com" in href
+                or len(title) < 5):
+            continue
+        out.append(f"- {title}\n  {href}")
+    return out
+
+
+def web_search(query):
+    """DuckDuckGo, two endpoints deep — and an HONEST failure when both dry up
+    (an empty search must read as a failure, never as license to invent)."""
+    for fetch in (_ddg_html, _ddg_lite):
+        try:
+            hits = fetch(query)
+        except Exception:                              # noqa: BLE001
+            hits = []
+        if hits:
+            return "\n".join(hits[:5])
+    return ("SEARCH FAILED: no results from either endpoint (this network may "
+            "be blocking the search engine). Report this failure to the user "
+            "plainly — do NOT supply links or facts from memory as if they "
+            "were search results.")
 
 
 def fetch_url(url):
@@ -174,7 +209,9 @@ PROTOCOL — your every reply must be EXACTLY ONE JSON object, nothing else:
 Rules: one tool per turn. After a tool runs, its output arrives in the next
 message as [TOOL RESULT]. Use tools when they help; when you have what you
 need, reply with "final". If a tool errors, adapt or report honestly in
-"final". Never invent tool output.""" % "\n".join(
+"final". Never invent tool output. A URL may appear in "final" ONLY if it
+appeared verbatim in a [TOOL RESULT] — if searches fail or return nothing,
+say exactly that instead of answering from memory.""" % "\n".join(
     f"  - {d}" for _, d in TOOLS.values())
 
 
@@ -253,6 +290,9 @@ def run(task, yolo=False, rounds=8, show=False):
             result = TOOLS[name][0](**args)
         except Exception as e:                       # noqa: BLE001 — to the model
             result = f"error: {e}"
+        if show:
+            print(f"─ tool result ─\n{str(result)[:400]}\n───────────────",
+                  file=sys.stderr)
         messages += [{"role": "assistant", "content": out},
                      {"role": "user",
                       "content": f"[TOOL RESULT {name}]\n{str(result)[:6000]}"}]
