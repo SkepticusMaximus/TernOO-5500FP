@@ -81,7 +81,7 @@ def _validate(spec):
 
 
 class MacroPanel:
-    WIDTH = 360
+    WIDTH = 400
 
     def __init__(self, tv, outer, C, root):
         import tkinter as tk
@@ -136,16 +136,29 @@ class MacroPanel:
         tk.Button(self._sliver, text="»", command=self.toggle, bg=C["bg"],
                   fg=C["dim"], relief="flat", font=("Monospace", 10)
                   ).pack(fill="both", expand=True)
+        # a draggable grip so the width is YOURS, not mine — wide for writing
+        # in the Editor, narrow for a button strip
+        self._grip = tk.Frame(outer, bg=C["bg"], width=6,
+                              cursor="sb_h_double_arrow")
+        self._grip.bind("<B1-Motion>", self._drag)
         self.toggle()                              # start OPEN
 
     # ── panel chrome ─────────────────────────────────────────────────────────
+    def _drag(self, e):
+        w = max(250, min(e.x_root - self.frame.winfo_rootx(), 720))
+        self.WIDTH = w
+        self.frame.config(width=w)
+
     def toggle(self):
         if self._shown:
             self.frame.pack_forget()
+            self._grip.pack_forget()
             self._sliver.pack(side="left", fill="y", before=self.tv._main)
         else:
             self._sliver.pack_forget()
+            self.frame.config(width=self.WIDTH)
             self.frame.pack(side="left", fill="y", before=self.tv._main)
+            self._grip.pack(side="left", fill="y", before=self.tv._main)
             self.refresh()
         self._shown = not self._shown
 
@@ -182,7 +195,12 @@ class MacroPanel:
         dlg = tk.Toplevel(self.root)
         dlg.title(spec.get("name", "macro"))
         dlg.configure(bg=C["palette"])
-        dlg.geometry("520x560")
+        dlg.transient(self.root)
+        # the button bar claims its ground FIRST (bottom) — pack gives space
+        # priority by packing order, and Run/Cancel must never be the widgets
+        # that get squeezed out of a small window
+        bar = tk.Frame(dlg, bg=C["palette"])
+        bar.pack(side="bottom", fill="x", padx=12, pady=(0, 10))
         if spec.get("desc"):
             tk.Label(dlg, text=spec["desc"], bg=C["palette"], fg=C["dim"],
                      font=("Monospace", 9), wraplength=480, justify="left"
@@ -283,13 +301,19 @@ class MacroPanel:
                 out.insert("end", f"error: {e}")
             out.config(state="disabled")
 
-        bar = tk.Frame(dlg, bg=C["palette"])
-        bar.pack(fill="x", padx=12, pady=(0, 10))
         tk.Button(bar, text="Cancel", command=dlg.destroy, bg=C["bg"],
                   fg=C["dim"], relief="flat").pack(side="right", padx=4)
         tk.Button(bar, text="  Run ▶  ", command=run, bg=self.tv.GRN,
                   fg="#0c0e14", relief="flat",
                   font=("Monospace", 11, "bold")).pack(side="right")
+        # size to the content, clamped to the screen — never bigger than the
+        # display, never small enough to hide the controls
+        dlg.update_idletasks()
+        sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+        w = max(560, min(dlg.winfo_reqwidth() + 24, sw - 80))
+        h = max(480, min(dlg.winfo_reqheight() + 24, sh - 80))
+        dlg.geometry(f"{w}x{h}")
+        dlg.minsize(520, 420)
 
     def _fire_prompt(self, text):
         """A prompt-macro rides the normal mesh Ask, exactly as if typed."""
