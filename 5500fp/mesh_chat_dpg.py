@@ -55,7 +55,37 @@ BLU = (109, 179, 255)
 RED = (224, 106, 106)
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 FONT_B = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
-FONT_SIZE = int(os.environ.get("MESH_DPG_FONT", "20"))
+FONT_SIZE = int(os.environ.get("MESH_DPG_FONT", "22"))
+CFG = os.path.expanduser("~/.config/ternoo-mesh-chat.json")
+
+
+def _cfg_load():
+    try:
+        return json.load(open(CFG))
+    except Exception:
+        return {}
+
+
+def _cfg_save(d):
+    try:
+        json.dump(d, open(CFG, "w"))
+    except Exception:
+        pass
+
+
+SCALE = float(_cfg_load().get("font_scale", 1.0))
+
+
+def zoom(delta):
+    """Live text zoom — remembered between sessions."""
+    global SCALE
+    SCALE = max(0.8, min(1.9, round(SCALE + delta, 2)))
+    dpg.set_global_font_scale(SCALE)
+    _cfg_save({"font_scale": SCALE})
+    try:
+        set_status(f"text zoom {int(SCALE * 100)}%")
+    except Exception:
+        pass
 
 PERSONA = ('[You are the Professor — the assistant in this dialogue. The '
            '"Professor:" lines are your own earlier replies; the "You:" '
@@ -728,6 +758,10 @@ def build():
                     dpg.add_button(label="Attach file",
                                    callback=lambda: dpg.show_item("filedlg"))
                     dpg.add_text("", tag="attachlbl", color=DIM)
+                    dpg.add_button(label="A-", small=True,
+                                   callback=lambda: zoom(-0.1))
+                    dpg.add_button(label="A+", small=True,
+                                   callback=lambda: zoom(+0.1))
                     dpg.add_button(label="New chat", callback=new_chat)
                     ask = dpg.add_button(label="   Ask   ", tag="askbtn",
                                          callback=on_ask)
@@ -789,6 +823,14 @@ def build():
 
     with dpg.handler_registry():
         dpg.add_key_press_handler(dpg.mvKey_Return, callback=_ctrl_enter)
+        dpg.add_mouse_wheel_handler(callback=_ctrl_wheel)
+
+
+def _ctrl_wheel(_s, app_data):
+    """Ctrl+scroll = live text zoom, the way every civilised app does it."""
+    if (dpg.is_key_down(dpg.mvKey_LControl)
+            or dpg.is_key_down(dpg.mvKey_RControl)):
+        zoom(0.05 if app_data > 0 else -0.05)
 
 
 def _ctrl_enter(*_):
@@ -830,6 +872,7 @@ def main():
     dpg.setup_dearpygui()
     dpg.show_viewport()
     dpg.set_primary_window("main", True)
+    dpg.set_global_font_scale(SCALE)          # your remembered zoom
     threading.Thread(target=_probe, daemon=True).start()
     threading.Thread(target=auto_loop, daemon=True).start()
     dpg.start_dearpygui()
