@@ -703,6 +703,11 @@ def run_gui():
     # ── Root ─────────────────────────────────────────────────────────────────
     root = tk.Tk()
     root.title("FlowCode v0.7.0 — TernOO-5500FP Visual IDE")
+    # size to the actual display — with no geometry set, Tk guesses from
+    # widget requests and every launch lands somewhere weird
+    _sw, _sh = root.winfo_screenwidth(), root.winfo_screenheight()
+    root.geometry(f"{min(1560, _sw - 40)}x{min(1000, _sh - 70)}+20+20")
+    root.minsize(min(1100, _sw - 40), min(700, _sh - 70))
     root.configure(bg=C['bg'])
     root.resizable(True,True)
     root.minsize(960, 600)   # Bundle 17 B1: usable at 1366×768
