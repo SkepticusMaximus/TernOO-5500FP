@@ -739,6 +739,7 @@ def _note(text):
     global LAST_NOTE
     LAST_NOTE = text
     import datetime as _dt
+    NOTES_LOG.append((f"{_dt.datetime.now():%H:%M}", text))
     try:
         w = dpg.get_item_rect_size("ed_notes")[0] - 26
     except Exception:
@@ -765,6 +766,179 @@ def _log_review(draft, note):
                     f"DRAFT HEAD: {draft[:120]!r}\n{note}\n")
     except Exception:
         pass
+
+
+# ── the standard kit: clipboard, menus, settings, help ───────────────────────
+NOTES_LOG = []                                 # [(stamp, text)] this session
+
+
+def copy_last_answer(*_):
+    for r, t in reversed(HISTORY):
+        if r == "assistant":
+            dpg.set_clipboard_text(t)
+            set_status("last answer copied", GRN)
+            return
+    set_status("no answer in this chat yet")
+
+
+def copy_whole_chat(*_):
+    if not HISTORY:
+        set_status("chat is empty")
+        return
+    dpg.set_clipboard_text("\n\n".join(
+        f"{'You' if r == 'user' else 'Professor'}: {t}" for r, t in HISTORY))
+    set_status("whole chat copied", GRN)
+
+
+def paste_into_prompt(*_):
+    txt = dpg.get_clipboard_text() or ""
+    if txt:
+        dpg.set_value("prompt", dpg.get_value("prompt") + txt)
+        set_status("pasted into the ask box")
+
+
+def prompt_copy(*_):
+    dpg.set_clipboard_text(dpg.get_value("prompt"))
+    set_status("ask box copied", GRN)
+
+
+def prompt_clear(*_):
+    dpg.set_value("prompt", "")
+
+
+def editor_copy_all(*_):
+    dpg.set_clipboard_text(dpg.get_value("editor"))
+    set_status("editor text copied", GRN)
+
+
+def editor_paste(*_):
+    dpg.set_value("editor", dpg.get_value("editor")
+                  + (dpg.get_clipboard_text() or ""))
+    ed_key()
+    set_status("pasted into the editor")
+
+
+def editor_clear(*_):
+    dpg.set_value("editor", "")
+    ed_key()
+
+
+def copy_all_reviews(*_):
+    if not NOTES_LOG:
+        set_status("no reviews this session")
+        return
+    dpg.set_clipboard_text("\n\n".join(f"— {s} —\n{t}" for s, t in NOTES_LOG))
+    set_status("all session reviews copied", GRN)
+
+
+def open_path(p):
+    try:
+        subprocess.Popen(["xdg-open", p], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL)
+    except Exception as e:                      # noqa: BLE001
+        set_status(f"couldn't open: {e}", RED)
+
+
+def zoom_abs(v):
+    global SCALE
+    SCALE = max(0.8, min(1.9, round(float(v), 2)))
+    dpg.set_global_font_scale(SCALE)
+    CFGD["font_scale"] = SCALE
+    _cfg_save(CFGD)
+
+
+def show_settings(*_):
+    tag = "cfgwin"
+    if dpg.does_item_exist(tag):
+        dpg.delete_item(tag)
+    with dpg.window(label="Settings", modal=True, tag=tag, width=600,
+                    height=430, pos=(320, 130)):
+        dpg.add_text("text zoom", color=DIM)
+        dpg.add_slider_float(default_value=SCALE, min_value=0.8,
+                             max_value=1.9, width=-1,
+                             callback=lambda _s, a: zoom_abs(a))
+        dpg.add_text("auto-review after this many idle seconds", color=DIM)
+        dpg.add_slider_int(default_value=int(CFGD.get("auto_idle", 90)),
+                           min_value=15, max_value=600, width=-1,
+                           callback=lambda _s, a: (
+                               CFGD.__setitem__("auto_idle", int(a)),
+                               _cfg_save(CFGD)))
+        dpg.add_spacer(height=6)
+        dpg.add_text("panel width, ask-box height and notes height are the\n"
+                     "draggable seams — set them by hand, they're remembered.",
+                     color=DIM)
+        dpg.add_spacer(height=6)
+        with dpg.group(horizontal=True):
+            dpg.add_button(label="config file",
+                           callback=lambda: open_path(CFG))
+            dpg.add_button(label="review log",
+                           callback=lambda: open_path(REVIEW_LOG))
+            dpg.add_button(label="macros folder",
+                           callback=lambda: open_path(MP.MACRO_DIR))
+            dpg.add_button(label="chats folder",
+                           callback=lambda: open_path(
+                               os.path.expanduser("~/.p2pcp/chats")))
+        dpg.add_spacer(height=8)
+        dpg.add_button(label="Close", callback=lambda: dpg.delete_item(tag))
+
+
+HELP_TEXT = """KEYBOARD
+  Ctrl+Enter        send the ask
+  Ctrl+S            save the editor
+  Ctrl + / Ctrl -   text zoom (also Ctrl+mouse-wheel, and A-/A+)
+  inside any text field: select with mouse/Shift, then
+  Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+A work natively
+
+RIGHT-CLICK
+  ask box   copy all - paste - clear
+  chat      copy last answer - copy whole chat - export
+  editor    copy all - paste - clear
+  notes     copy last review - copy all reviews - open the log
+
+THE SEAMS
+  drag the vertical strip to size the workshop panel;
+  the bar under the ask box sizes the ask box;
+  the bar above the notes sizes the notes. All remembered.
+
+THE WORKSHOP
+  Macros: buttons rendered from specs - dialogs preview the exact
+  command before anything runs. Forge: name a command, the
+  Professor reads its --help and proposes a pruning tree - tick,
+  tweak, Save mints the button. Editor: write with the Professor
+  reading over your shoulder (auto) or on demand (Review). Every
+  review is timestamped in the pane and appended to the log file.
+
+FILES
+  ~/.config/ternoo-mesh-chat.json          your layout + settings
+  ~/.config/ternoo-mesh-chat-reviews.log   every review, forever
+  ~/.p2pcp/chats/                          saved conversations
+  5500fp/macros/                           the macro library"""
+
+
+def show_help(*_):
+    tag = "helpwin"
+    if dpg.does_item_exist(tag):
+        dpg.delete_item(tag)
+    with dpg.window(label="Help — Mesh-Chat", modal=True, tag=tag, width=760,
+                    height=620, pos=(260, 60)):
+        with dpg.child_window(height=-46):
+            dpg.add_text(HELP_TEXT, wrap=690)
+        dpg.add_button(label="Close", callback=lambda: dpg.delete_item(tag))
+
+
+def show_about(*_):
+    tag = "aboutwin"
+    if dpg.does_item_exist(tag):
+        dpg.delete_item(tag)
+    with dpg.window(label="About", modal=True, tag=tag, width=560, height=260,
+                    pos=(340, 200)):
+        dpg.add_text("Mesh-Chat — TernOO P2PCP client", color=TEXT)
+        dpg.add_text("Dear PyGui face - the aesthetics sandbox for the\n"
+                     "FlowCode makeover and a rehearsal for PIGART,\n"
+                     "TernOO's native renderer.", color=DIM)
+        dpg.add_text("Stevo (SkepticusMaximus) + Claude (Anthropic), 2026",
+                     color=DIM)
+        dpg.add_button(label="Close", callback=lambda: dpg.delete_item(tag))
 
 
 def ed_key(*_):
@@ -846,7 +1020,7 @@ def auto_loop():
         time.sleep(5)
         try:
             if (dpg.get_value("ed_auto") and ED_DIRTY and not REVIEW_BUSY
-                    and not BUSY and time.time() - ED_LAST_KEY > 90):
+                    and not BUSY and time.time() - ED_LAST_KEY > int(CFGD.get("auto_idle", 90))):
                 ui(ed_review)
         except Exception:
             pass
@@ -907,7 +1081,42 @@ def build():
             dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (46, 160, 110))
             dpg.add_theme_color(dpg.mvThemeCol_Text, (12, 14, 20))
 
+    with dpg.viewport_menu_bar():
+        with dpg.menu(label="File"):
+            dpg.add_menu_item(label="Open in Editor...",
+                              callback=lambda: dpg.show_item("edopendlg"))
+            dpg.add_menu_item(label="Save Editor        Ctrl+S",
+                              callback=ed_save)
+            dpg.add_menu_item(label="Export chat...",
+                              callback=lambda: dpg.show_item("expdlg"))
+            dpg.add_separator()
+            dpg.add_menu_item(label="Settings...", callback=show_settings)
+            dpg.add_separator()
+            dpg.add_menu_item(label="Quit",
+                              callback=lambda: dpg.stop_dearpygui())
+        with dpg.menu(label="Edit"):
+            dpg.add_menu_item(label="Copy last answer",
+                              callback=copy_last_answer)
+            dpg.add_menu_item(label="Copy whole chat",
+                              callback=copy_whole_chat)
+            dpg.add_menu_item(label="Copy last review", callback=copy_note)
+            dpg.add_separator()
+            dpg.add_menu_item(label="Paste into ask box",
+                              callback=paste_into_prompt)
+            dpg.add_menu_item(label="New chat", callback=new_chat)
+        with dpg.menu(label="View"):
+            dpg.add_menu_item(label="Zoom in            Ctrl +",
+                              callback=lambda: zoom(+0.1))
+            dpg.add_menu_item(label="Zoom out           Ctrl -",
+                              callback=lambda: zoom(-0.1))
+            dpg.add_menu_item(label="Zoom 100%",
+                              callback=lambda: zoom_abs(1.0))
+        with dpg.menu(label="Help"):
+            dpg.add_menu_item(label="Help", callback=show_help)
+            dpg.add_menu_item(label="About", callback=show_about)
+
     with dpg.window(tag="main"):
+        dpg.add_spacer(height=26)              # room for the menu bar overlay
         with dpg.group(horizontal=True):
             # ── left: the macro workshop ──────────────────────────────────
             with dpg.child_window(width=PANEL_W, tag="workshop"):
@@ -1027,6 +1236,33 @@ def build():
     refresh_macro_buttons()
     refresh_chats()
 
+    # right-click context menus — capabilities by inheritance, not memory
+    def _ctx(parent, entries):
+        with dpg.popup(parent, mousebutton=dpg.mvMouseButton_Right):
+            for lbl, cb in entries:
+                if lbl == "-":
+                    dpg.add_separator()
+                elif cb is None:
+                    dpg.add_menu_item(label=lbl, enabled=False)
+                else:
+                    dpg.add_menu_item(label=lbl, callback=cb)
+    _ctx("prompt", [("Copy all", prompt_copy),
+                    ("Paste (append)", paste_into_prompt),
+                    ("Clear", prompt_clear), ("-", None),
+                    ("select text -> Ctrl+C/X/V/A", None)])
+    _ctx("chat", [("Copy last answer", copy_last_answer),
+                  ("Copy whole chat", copy_whole_chat), ("-", None),
+                  ("Export chat...",
+                   lambda: dpg.show_item("expdlg"))])
+    _ctx("editor", [("Copy all", editor_copy_all),
+                    ("Paste (append)", editor_paste),
+                    ("Clear", editor_clear), ("-", None),
+                    ("select text -> Ctrl+C/X/V/A", None)])
+    _ctx("ed_notes", [("Copy last review", copy_note),
+                      ("Copy all reviews", copy_all_reviews), ("-", None),
+                      ("Open review log",
+                       lambda: open_path(REVIEW_LOG))])
+
     with dpg.file_dialog(directory_selector=False, show=False, modal=True,
                          callback=on_attach_pick, tag="filedlg",
                          width=760, height=460,
@@ -1085,12 +1321,14 @@ def _ctrl_down():
 
 
 def _zoom_keys(_s, key):
-    """Ctrl + / Ctrl - (main row and numpad both)."""
+    """Ctrl + / Ctrl - zoom; Ctrl+S saves the editor."""
     if _ctrl_down():
         if key in _PLUS:
             zoom(+0.1)
         elif key in _MINUS:
             zoom(-0.1)
+        elif hasattr(dpg, "mvKey_S") and key == dpg.mvKey_S:
+            ed_save()
 
 
 def _ctrl_wheel(_s, app_data):
