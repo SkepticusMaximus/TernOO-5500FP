@@ -1,0 +1,18 @@
+{
+  "yt": {
+    "desc": "Pull a YouTube transcript and summarise it",
+    "template": "Fetch the transcript of {url} with yt_transcript, then give me a tight summary of its key points, with any concrete claims called out."
+  },
+  "research": {
+    "desc": "Web search a topic and digest the best sources",
+    "template": "Search the web for {topic}, pick the two most substantial results, fetch each with fetch_url, and give me a synthesis with the source URLs."
+  },
+  "findcode": {
+    "desc": "Find files by glob and describe them",
+    "template": "Use find_files to locate files matching {pattern} under {root}, then report the count and a one-line guess at each file's purpose from its name."
+  },
+  "openlog": {
+    "desc": "Open a file on my desktop",
+    "template": "Open {path} in my editor with open_editor and confirm what you opened."
+  }
+}

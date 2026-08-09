@@ -442,8 +442,9 @@ class MeshTabView:
                       f'"""\n{a["text"]}\n"""\n\n')
         persona = ('[You are the Professor — the assistant in this dialogue. The '
                    '"Professor:" lines are your own earlier replies; the "You:" '
-                   'lines are the user speaking to you. Answer the user\'s last '
-                   'message, as the Professor.]\n\n')
+                   'lines are the user speaking to you. The user is NOT the '
+                   'Professor — never address them by that title. Answer the '
+                   'user\'s last message, as the Professor.]\n\n')
         return persona + prefix + "".join(lines) + "Professor:"
 
     @staticmethod
