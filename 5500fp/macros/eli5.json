@@ -1,0 +1,9 @@
+{
+  "name": "ELI5 then engineer",
+  "kind": "prompt",
+  "desc": "Ask the Professor for a two-level explanation of anything.",
+  "template": "Explain {topic} twice: first as you would to a bright twelve-year-old, then at working-engineer depth. Keep the two clearly separated.",
+  "fields": [
+    {"arg": "topic", "label": "Topic", "type": "text", "default": ""}
+  ]
+}

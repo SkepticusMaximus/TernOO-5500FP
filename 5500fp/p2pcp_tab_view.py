@@ -56,6 +56,7 @@ class MeshTabView:
         self._store = None                        # portable saved-chat store
         self._chat_id = None                      # current saved chat (None = unsaved)
         self._attachment = None                   # {name,text,clipped} for the next Ask
+        self._macros = None                       # 🧰 side panel, built in _build
         self._build(parent)
 
     # ── layout ────────────────────────────────────────────────────────────────
@@ -91,6 +92,13 @@ class MeshTabView:
         self._chatmenu = tk.Menu(self._chatbtn, tearoff=0)
         self._chatbtn.config(menu=self._chatmenu)
         self._chatbtn.pack(side="right", padx=(0, 8))
+        self._macbtn = tk.Button(top, text="🧰", bg=C["palette"], fg=C["text"],
+                                 font=mono, relief="flat",
+                                 activebackground=C["bg"],
+                                 activeforeground=C["text"],
+                                 command=lambda: (self._macros
+                                                  and self._macros.toggle()))
+        self._macbtn.pack(side="right", padx=(0, 8))
 
         # the prompt — the dominant element
         tk.Label(self._main, text="Ask the mesh", bg=C["bg"], fg=C["text"],
@@ -148,6 +156,13 @@ class MeshTabView:
                             lambda _e: self._chat.config(cursor="hand2"))
         self._chat.tag_bind("link", "<Leave>",
                             lambda _e: self._chat.config(cursor=""))
+        # the collapsible 🧰 macro side panel — optional dressing; the chat must
+        # never die for the panel's sake
+        try:
+            self._macros = _load("macro_panel").MacroPanel(self, self._outer,
+                                                           C, self.root)
+        except Exception:
+            self._macros = None
         self._greeting()
         self._wire_editing(self._chat, editable=False)
 

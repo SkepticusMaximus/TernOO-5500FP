@@ -1,0 +1,13 @@
+{
+  "name": "File search",
+  "kind": "command",
+  "command": "ls",
+  "desc": "The forge's hello-world: ls as a dialog — tick flags, pick a sort, point it somewhere.",
+  "fields": [
+    {"flag": "-l", "label": "Long listing", "type": "check", "default": true},
+    {"flag": "-R", "label": "Recursive", "type": "check", "default": false},
+    {"flag": "-a", "label": "Hidden files", "type": "check", "default": false},
+    {"flag": "--sort", "label": "Sort by", "type": "choice", "options": ["", "size", "time", "extension"], "default": ""},
+    {"arg": "path", "label": "Where", "type": "path", "default": "~"}
+  ]
+}
