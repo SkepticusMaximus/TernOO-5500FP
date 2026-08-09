@@ -831,6 +831,21 @@ def copy_all_reviews(*_):
     set_status("all session reviews copied", GRN)
 
 
+_CTX_MAP = {}                                  # text surface -> its popup tag
+
+
+def _global_rclick(*_):
+    """One right-click handler for every text surface — child windows refuse
+    per-item click handlers, so the trigger checks what's under the cursor."""
+    for parent, pop in _CTX_MAP.items():
+        try:
+            if dpg.is_item_hovered(parent):
+                dpg.configure_item(pop, show=True)
+                return
+        except Exception:
+            pass
+
+
 def open_path(p):
     try:
         subprocess.Popen(["xdg-open", p], stdout=subprocess.DEVNULL,
@@ -1081,42 +1096,41 @@ def build():
             dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (46, 160, 110))
             dpg.add_theme_color(dpg.mvThemeCol_Text, (12, 14, 20))
 
-    with dpg.viewport_menu_bar():
-        with dpg.menu(label="File"):
-            dpg.add_menu_item(label="Open in Editor...",
-                              callback=lambda: dpg.show_item("edopendlg"))
-            dpg.add_menu_item(label="Save Editor        Ctrl+S",
-                              callback=ed_save)
-            dpg.add_menu_item(label="Export chat...",
-                              callback=lambda: dpg.show_item("expdlg"))
-            dpg.add_separator()
-            dpg.add_menu_item(label="Settings...", callback=show_settings)
-            dpg.add_separator()
-            dpg.add_menu_item(label="Quit",
-                              callback=lambda: dpg.stop_dearpygui())
-        with dpg.menu(label="Edit"):
-            dpg.add_menu_item(label="Copy last answer",
-                              callback=copy_last_answer)
-            dpg.add_menu_item(label="Copy whole chat",
-                              callback=copy_whole_chat)
-            dpg.add_menu_item(label="Copy last review", callback=copy_note)
-            dpg.add_separator()
-            dpg.add_menu_item(label="Paste into ask box",
-                              callback=paste_into_prompt)
-            dpg.add_menu_item(label="New chat", callback=new_chat)
-        with dpg.menu(label="View"):
-            dpg.add_menu_item(label="Zoom in            Ctrl +",
-                              callback=lambda: zoom(+0.1))
-            dpg.add_menu_item(label="Zoom out           Ctrl -",
-                              callback=lambda: zoom(-0.1))
-            dpg.add_menu_item(label="Zoom 100%",
-                              callback=lambda: zoom_abs(1.0))
-        with dpg.menu(label="Help"):
-            dpg.add_menu_item(label="Help", callback=show_help)
-            dpg.add_menu_item(label="About", callback=show_about)
-
     with dpg.window(tag="main"):
-        dpg.add_spacer(height=26)              # room for the menu bar overlay
+        with dpg.menu_bar():
+            with dpg.menu(label="File"):
+                dpg.add_menu_item(label="Open in Editor...",
+                                  callback=lambda: dpg.show_item("edopendlg"))
+                dpg.add_menu_item(label="Save Editor        Ctrl+S",
+                                  callback=ed_save)
+                dpg.add_menu_item(label="Export chat...",
+                                  callback=lambda: dpg.show_item("expdlg"))
+                dpg.add_separator()
+                dpg.add_menu_item(label="Settings...", callback=show_settings)
+                dpg.add_separator()
+                dpg.add_menu_item(label="Quit",
+                                  callback=lambda: dpg.stop_dearpygui())
+            with dpg.menu(label="Edit"):
+                dpg.add_menu_item(label="Copy last answer",
+                                  callback=copy_last_answer)
+                dpg.add_menu_item(label="Copy whole chat",
+                                  callback=copy_whole_chat)
+                dpg.add_menu_item(label="Copy last review", callback=copy_note)
+                dpg.add_separator()
+                dpg.add_menu_item(label="Paste into ask box",
+                                  callback=paste_into_prompt)
+                dpg.add_menu_item(label="New chat", callback=new_chat)
+            with dpg.menu(label="View"):
+                dpg.add_menu_item(label="Zoom in            Ctrl +",
+                                  callback=lambda: zoom(+0.1))
+                dpg.add_menu_item(label="Zoom out           Ctrl -",
+                                  callback=lambda: zoom(-0.1))
+                dpg.add_menu_item(label="Zoom 100%",
+                                  callback=lambda: zoom_abs(1.0))
+            with dpg.menu(label="Help"):
+                dpg.add_menu_item(label="Help", callback=show_help)
+                dpg.add_menu_item(label="About", callback=show_about)
+
         with dpg.group(horizontal=True):
             # ── left: the macro workshop ──────────────────────────────────
             with dpg.child_window(width=PANEL_W, tag="workshop"):
@@ -1236,16 +1250,22 @@ def build():
     refresh_macro_buttons()
     refresh_chats()
 
-    # right-click context menus — capabilities by inheritance, not memory
+    # right-click context menus — built from primitives (DPG 2.3's popup()
+    # helper is broken: its __enter__ pops a container it never pushed)
     def _ctx(parent, entries):
-        with dpg.popup(parent, mousebutton=dpg.mvMouseButton_Right):
+        pop_tag = f"ctx_{parent}"
+        with dpg.window(tag=pop_tag, popup=True, show=False, autosize=True):
             for lbl, cb in entries:
                 if lbl == "-":
                     dpg.add_separator()
                 elif cb is None:
                     dpg.add_menu_item(label=lbl, enabled=False)
                 else:
-                    dpg.add_menu_item(label=lbl, callback=cb)
+                    dpg.add_menu_item(
+                        label=lbl,
+                        callback=lambda _s, _a, f=cb: (
+                            dpg.configure_item(pop_tag, show=False), f()))
+        _CTX_MAP[parent] = pop_tag
     _ctx("prompt", [("Copy all", prompt_copy),
                     ("Paste (append)", paste_into_prompt),
                     ("Clear", prompt_clear), ("-", None),
@@ -1306,6 +1326,8 @@ def build():
         dpg.add_key_press_handler(callback=_zoom_keys)
         dpg.add_mouse_wheel_handler(callback=_ctrl_wheel)
         dpg.add_mouse_release_handler(callback=_grip_up)
+        dpg.add_mouse_click_handler(dpg.mvMouseButton_Right,
+                                    callback=_global_rclick)
         dpg.add_mouse_move_handler(callback=_drag_grips)
 
 
