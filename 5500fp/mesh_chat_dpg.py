@@ -35,18 +35,21 @@ MP = _load("macro_panel")                    # tk-free at module level: specs+va
 
 import dearpygui.dearpygui as dpg  # noqa: E402  (after the stdlib plumbing)
 
-# ── TernOO terminal-noir, as theme constants ─────────────────────────────────
-BG = (18, 20, 28)
-PANEL = (27, 30, 40)
-FIELD = (12, 14, 20)
-TEXT = (232, 232, 232)
-DIM = (138, 144, 160)
+# ── TernOO terminal-noir, second pour: lighter, layered, larger ──────────────
+BG = (26, 29, 40)                 # window
+PANEL = (33, 37, 51)              # raised surfaces (workshop, popups)
+FIELD = (42, 47, 63)              # inputs — clearly lighter than their ground
+CHAT_BG = (20, 23, 32)            # the transcript sits deepest
+BORDER = (66, 74, 98)
+TEXT = (238, 240, 245)
+DIM = (168, 175, 190)
 GRN = (63, 208, 143)
 ORN = (255, 143, 63)
 BLU = (109, 179, 255)
 RED = (224, 106, 106)
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 FONT_B = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
+FONT_SIZE = int(os.environ.get("MESH_DPG_FONT", "20"))   # your zoom knob
 
 PERSONA = ('[You are the Professor — the assistant in this dialogue. The '
            '"Professor:" lines are your own earlier replies; the "You:" '
@@ -321,34 +324,45 @@ def _command_macro_modal(spec):
 def build():
     with dpg.font_registry():
         if os.path.exists(FONT):
-            default = dpg.add_font(FONT, 17)
+            default = dpg.add_font(FONT, FONT_SIZE)
             dpg.bind_font(default)
-        big = dpg.add_font(FONT_B, 22) if os.path.exists(FONT_B) else None
+        big = (dpg.add_font(FONT_B, FONT_SIZE + 7)
+               if os.path.exists(FONT_B) else None)
 
     with dpg.theme() as t:
         with dpg.theme_component(dpg.mvAll):
             dpg.add_theme_color(dpg.mvThemeCol_WindowBg, BG)
-            dpg.add_theme_color(dpg.mvThemeCol_ChildBg, BG)
+            dpg.add_theme_color(dpg.mvThemeCol_ChildBg, PANEL)
             dpg.add_theme_color(dpg.mvThemeCol_PopupBg, PANEL)
+            dpg.add_theme_color(dpg.mvThemeCol_ModalWindowDimBg, (10, 12, 18, 160))
             dpg.add_theme_color(dpg.mvThemeCol_FrameBg, FIELD)
-            dpg.add_theme_color(dpg.mvThemeCol_FrameBgHovered, PANEL)
-            dpg.add_theme_color(dpg.mvThemeCol_FrameBgActive, PANEL)
+            dpg.add_theme_color(dpg.mvThemeCol_FrameBgHovered, (52, 58, 78))
+            dpg.add_theme_color(dpg.mvThemeCol_FrameBgActive, (58, 65, 88))
             dpg.add_theme_color(dpg.mvThemeCol_TitleBg, BG)
             dpg.add_theme_color(dpg.mvThemeCol_TitleBgActive, PANEL)
-            dpg.add_theme_color(dpg.mvThemeCol_Button, PANEL)
-            dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (40, 46, 62))
-            dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (52, 60, 80))
+            dpg.add_theme_color(dpg.mvThemeCol_Button, (48, 54, 72))
+            dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (60, 68, 90))
+            dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (72, 82, 108))
             dpg.add_theme_color(dpg.mvThemeCol_Text, TEXT)
+            dpg.add_theme_color(dpg.mvThemeCol_Border, BORDER)
             dpg.add_theme_color(dpg.mvThemeCol_Tab, BG)
-            dpg.add_theme_color(dpg.mvThemeCol_TabHovered, PANEL)
+            dpg.add_theme_color(dpg.mvThemeCol_TabHovered, FIELD)
+            dpg.add_theme_color(dpg.mvThemeCol_TabActive, PANEL)
             dpg.add_theme_color(dpg.mvThemeCol_ScrollbarBg, BG)
-            dpg.add_theme_color(dpg.mvThemeCol_ScrollbarGrab, PANEL)
+            dpg.add_theme_color(dpg.mvThemeCol_ScrollbarGrab, FIELD)
+            dpg.add_theme_color(dpg.mvThemeCol_CheckMark, GRN)
             dpg.add_theme_style(dpg.mvStyleVar_WindowRounding, 6)
+            dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, 6)
             dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
-            dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 9, 6)
-            dpg.add_theme_style(dpg.mvStyleVar_ItemSpacing, 8, 7)
-            dpg.add_theme_style(dpg.mvStyleVar_ScrollbarSize, 11)
+            dpg.add_theme_style(dpg.mvStyleVar_FrameBorderSize, 1)
+            dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 10, 7)
+            dpg.add_theme_style(dpg.mvStyleVar_ItemSpacing, 9, 8)
+            dpg.add_theme_style(dpg.mvStyleVar_ScrollbarSize, 12)
     dpg.bind_theme(t)
+
+    with dpg.theme() as chat_theme:               # the transcript sits deepest
+        with dpg.theme_component(dpg.mvChildWindow):
+            dpg.add_theme_color(dpg.mvThemeCol_ChildBg, CHAT_BG)
 
     with dpg.theme() as green_btn:
         with dpg.theme_component(dpg.mvButton):
@@ -360,7 +374,7 @@ def build():
     with dpg.window(tag="main"):
         with dpg.group(horizontal=True):
             # ── left: the macro workshop, always a citizen ────────────────
-            with dpg.child_window(width=300, tag="workshop"):
+            with dpg.child_window(width=340, tag="workshop"):
                 dpg.add_text("macro workshop", color=DIM)
                 dpg.add_separator()
                 for spec in MP._specs():
@@ -389,7 +403,7 @@ def build():
                     dpg.bind_item_theme(ask, green_btn)
                 with dpg.tab_bar():
                     with dpg.tab(label=" Chat "):
-                        with dpg.child_window(tag="chat", height=-28):
+                        with dpg.child_window(tag="chat", height=-32):
                             dpg.add_text("You're connected to the mesh — ask "
                                          "the Professor anything.",
                                          color=DIM, wrap=880)
@@ -421,6 +435,7 @@ def build():
                         dpg.add_node_link("n2o", "n3i", parent="nodes")
                 dpg.add_text("starting...", tag="status", color=DIM)
 
+    dpg.bind_item_theme("chat", chat_theme)
     with dpg.file_dialog(directory_selector=False, show=False, modal=True,
                          callback=on_attach_pick, tag="filedlg",
                          width=760, height=460,
