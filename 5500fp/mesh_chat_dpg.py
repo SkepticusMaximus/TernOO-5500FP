@@ -73,7 +73,10 @@ def _cfg_save(d):
         pass
 
 
-SCALE = float(_cfg_load().get("font_scale", 1.0))
+CFGD = _cfg_load()
+SCALE = float(CFGD.get("font_scale", 1.0))
+PANEL_W = int(CFGD.get("panel_w", 380))
+PROMPT_H = int(CFGD.get("prompt_h", 130))
 
 
 def zoom(delta):
@@ -81,7 +84,8 @@ def zoom(delta):
     global SCALE
     SCALE = max(0.8, min(1.9, round(SCALE + delta, 2)))
     dpg.set_global_font_scale(SCALE)
-    _cfg_save({"font_scale": SCALE})
+    CFGD["font_scale"] = SCALE
+    _cfg_save(CFGD)
     try:
         set_status(f"text zoom {int(SCALE * 100)}%")
     except Exception:
@@ -707,7 +711,7 @@ def build():
     with dpg.window(tag="main"):
         with dpg.group(horizontal=True):
             # ── left: the macro workshop ──────────────────────────────────
-            with dpg.child_window(width=380, tag="workshop"):
+            with dpg.child_window(width=PANEL_W, tag="workshop"):
                 dpg.add_text("macro workshop", color=DIM)
                 with dpg.tab_bar():
                     with dpg.tab(label=" Macros "):
@@ -746,14 +750,18 @@ def build():
                         dpg.add_text("assistant notes", color=DIM)
                         dpg.add_input_text(tag="ed_notes", multiline=True,
                                            readonly=True, width=-1, height=150)
+            # the divider you can actually grab: drag to resize the workshop
+            dpg.add_button(label="", tag="hgrip", width=9, height=-1)
             # ── right: the chat ───────────────────────────────────────────
             with dpg.group():
                 with dpg.group(horizontal=True):
                     hdr = dpg.add_text("Ask the mesh", color=TEXT)
                     if big:
                         dpg.bind_item_font(hdr, big)
-                dpg.add_input_text(multiline=True, width=-1, height=100,
+                dpg.add_input_text(multiline=True, width=-1, height=PROMPT_H,
                                    tag="prompt")
+                # drag this bar to give the ask-box more (or less) height
+                dpg.add_button(label="", tag="vgrip", width=-1, height=9)
                 with dpg.group(horizontal=True):
                     dpg.add_button(label="Attach file",
                                    callback=lambda: dpg.show_item("filedlg"))
@@ -823,14 +831,53 @@ def build():
 
     with dpg.handler_registry():
         dpg.add_key_press_handler(dpg.mvKey_Return, callback=_ctrl_enter)
+        dpg.add_key_press_handler(callback=_zoom_keys)
         dpg.add_mouse_wheel_handler(callback=_ctrl_wheel)
+        dpg.add_mouse_move_handler(callback=_drag_grips)
+
+
+_PLUS = {getattr(dpg, n) for n in ("mvKey_Plus", "mvKey_Add", "mvKey_Equal")
+         if hasattr(dpg, n)}
+_MINUS = {getattr(dpg, n) for n in ("mvKey_Minus", "mvKey_Subtract")
+          if hasattr(dpg, n)}
+
+
+def _ctrl_down():
+    return (dpg.is_key_down(dpg.mvKey_LControl)
+            or dpg.is_key_down(dpg.mvKey_RControl))
+
+
+def _zoom_keys(_s, key):
+    """Ctrl + / Ctrl - (main row and numpad both)."""
+    if _ctrl_down():
+        if key in _PLUS:
+            zoom(+0.1)
+        elif key in _MINUS:
+            zoom(-0.1)
 
 
 def _ctrl_wheel(_s, app_data):
     """Ctrl+scroll = live text zoom, the way every civilised app does it."""
-    if (dpg.is_key_down(dpg.mvKey_LControl)
-            or dpg.is_key_down(dpg.mvKey_RControl)):
+    if _ctrl_down():
         zoom(0.05 if app_data > 0 else -0.05)
+
+
+def _drag_grips(*_):
+    """The dividers you can actually grab — sizes remembered live."""
+    if dpg.is_item_active("hgrip"):
+        x = dpg.get_mouse_pos(local=False)[0]
+        left = dpg.get_item_rect_min("workshop")[0]
+        w = max(250, min(int(x - left), 860))
+        dpg.configure_item("workshop", width=w)
+        CFGD["panel_w"] = w
+        _cfg_save(CFGD)
+    if dpg.is_item_active("vgrip"):
+        y = dpg.get_mouse_pos(local=False)[1]
+        top = dpg.get_item_rect_min("prompt")[1]
+        h = max(60, min(int(y - top), 460))
+        dpg.configure_item("prompt", height=h)
+        CFGD["prompt_h"] = h
+        _cfg_save(CFGD)
 
 
 def _ctrl_enter(*_):
