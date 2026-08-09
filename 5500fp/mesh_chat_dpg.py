@@ -108,6 +108,14 @@ ATTACH = None
 BUYER = SVC.MeshService(worker_kind=None, seed="dpg-mesh")
 BUSY = False
 
+try:                                          # portable saved chats — the same
+    from p2pcp import chatstore as _cs        # store the tk client writes, so
+    STORE = _cs.ChatStore()                   # old conversations appear here
+except Exception:
+    STORE = None
+CHAT_ID = None
+CHATS = []                                    # [(cid, combo label)]
+
 FORGE_SPEC = None                 # the spec the Forge tree is editing
 FORGE_CMD = None
 ED_PATH = None
@@ -200,13 +208,77 @@ def set_status(msg, color=DIM):
 
 
 def new_chat(*_):
-    global HISTORY
+    global HISTORY, CHAT_ID
     HISTORY = []
+    CHAT_ID = None
     dpg.delete_item("chat", children_only=True)
     dpg.add_text("New chat — the Professor remembers this conversation as "
                  "you go.", parent="chat", color=DIM, wrap=880)
     dpg.add_spacer(height=6, parent="chat")
+    try:
+        dpg.set_value("chatsel", "")
+    except Exception:
+        pass
     set_status("fresh chat")
+
+
+# ── saved chats: the same portable store the tk client writes ────────────────
+def refresh_chats():
+    global CHATS
+    if not STORE:
+        return
+    try:
+        CHATS = [(cid, f"{ttl}  ·{cid[-4:]}")
+                 for cid, ttl, _u in STORE.list()[:30]]
+        dpg.configure_item("chatsel", items=[lab for _c, lab in CHATS])
+    except Exception:
+        pass
+
+
+def on_chat_pick(_s, label):
+    for cid, lab in CHATS:
+        if lab == label:
+            load_chat(cid)
+            return
+
+
+def load_chat(cid):
+    global HISTORY, CHAT_ID
+    rec = STORE.load(cid) if STORE else None
+    if not rec:
+        set_status("couldn't load that chat", RED)
+        return
+    CHAT_ID = cid
+    HISTORY = [(m.get("role", "user"), m.get("text", ""))
+               for m in rec.get("messages", [])]
+    dpg.delete_item("chat", children_only=True)
+    for m in rec.get("messages", []):
+        if m.get("role") == "user":
+            append_block("You", m.get("text", ""), DIM)
+        else:
+            via = m.get("via")
+            append_block(f"Professor · {via}" if via else "Professor",
+                         m.get("text", ""), GRN)
+    set_status(f"continuing: {rec.get('title', '')[:44]}", GRN)
+
+
+def save_chat(where=None):
+    global CHAT_ID
+    if not STORE or not HISTORY:
+        return
+    try:
+        if CHAT_ID is None:
+            CHAT_ID = STORE.new_id()
+        first = next((t for r, t in HISTORY if r == "user"), "")
+        rec = STORE.load(CHAT_ID)
+        created = rec.get("created") if rec else None
+        msgs = [{"role": r, "text": t} for r, t in HISTORY]
+        if where and msgs and msgs[-1]["role"] == "assistant":
+            msgs[-1]["via"] = where
+        STORE.save(CHAT_ID, STORE.title_for(first), msgs, created=created)
+        refresh_chats()
+    except Exception:
+        pass
 
 
 # ── the ask ──────────────────────────────────────────────────────────────────
@@ -255,6 +327,7 @@ def on_ask(*_):
                 append_block(f"Professor · {where}", a, GRN)
                 ATTACH = None
                 dpg.set_value("attachlbl", "")
+                save_chat(where)              # remembered as you go
                 set_status("ready", GRN)
             BUSY = False
             dpg.configure_item("askbtn", label="   Ask   ", enabled=True)
@@ -780,6 +853,8 @@ def build():
                                    callback=lambda: zoom(-0.1))
                     dpg.add_button(label="A+", small=True,
                                    callback=lambda: zoom(+0.1))
+                    dpg.add_combo([], tag="chatsel", width=300,
+                                  callback=on_chat_pick)
                     dpg.add_button(label="New chat", callback=new_chat)
                     ask = dpg.add_button(label="   Ask   ", tag="askbtn",
                                          callback=on_ask)
@@ -820,6 +895,7 @@ def build():
 
     dpg.bind_item_theme("chat", "chatpane")
     refresh_macro_buttons()
+    refresh_chats()
 
     with dpg.file_dialog(directory_selector=False, show=False, modal=True,
                          callback=on_attach_pick, tag="filedlg",

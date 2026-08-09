@@ -1,0 +1,114 @@
+# Mesh-Chat & the Macro Workshop — A Field Report
+
+**Author:** Stevo (SkepticusMaximus)
+**Collaborator:** Claude (Anthropic)
+**Date:** August 2026
+
+The state of the Mesh-Chat client, the macro workshop it carries, the agentic
+harness behind it, and the rendering change underneath all three.
+
+---
+
+## The client
+
+Mesh-Chat is the conversation surface of the P2PCP compute mesh: a prompt, an
+Ask, and answers bought from a live model — the Professor — over the network.
+The conversation is remembered as it goes and saved as a portable record (one
+JSON file per chat) that any P2PCP client can read and continue; conversations
+begun in one client can be picked up in another.
+
+The client now exists in two faces sharing one body. All of the logic — the
+mesh buyer, the saved-chat store, the macro specifications, the validation —
+lives in shared modules that know nothing about widgets. The original face is
+rendered by Tk inside the FlowCode IDE and as a standalone window. The new
+face is rendered by Dear PyGui: GPU-drawn, immediate-mode, restyled in the
+TernOO palette with layered dark surfaces, live text zoom, draggable dividers,
+and a window that remembers its own size and position. The two faces read the
+same organs; the toolkit is a costume, and proving that was the point.
+
+## The macro workshop
+
+The left panel carries a three-tab workshop.
+
+**Macros** is a library of buttons. Each button is a macro: a small JSON
+specification that names a command and a chosen subset of its parameters —
+a *subclass* of the command's parameter space. Clicking the button renders a
+dialog straight from the spec: a checkbox per flag, a dropdown per choice, a
+field per argument, with a live preview of the exact command line the choices
+assemble. Run executes that command directly and shows its output. No model
+is anywhere in that loop — a saved macro is pure clockwork. A second kind of
+macro fills a prompt template with the dialog's values and asks the Professor
+instead; the spec says which kind it is.
+
+**Forge** is where macros are made. Name any command on the machine and its
+real --help text is captured and sent to the Professor with a strict schema:
+he proposes a specification — which flags matter, what to call them in plain
+English, what the defaults should be. The proposal lands as a pruning tree:
+one line per field, tick to keep, labels and defaults editable in place. The
+human prunes; Save validates the result and mints the button into the
+library. The raw JSON stays reachable behind a { } toggle for those who want
+it. The division of labour is deliberate: the model proposes, a validator
+gates, the human curates, and the clockwork runs. A proposed flag the model
+invented cannot hide — the dialog previews the literal command line before
+anything executes, and the command itself rejects nonsense loudly.
+
+**Editor** is a writing pad with a shoulder-reading assistant. Text can be
+opened, edited, and saved; a Review button sends the draft over the mesh and
+returns terse notes — grammar, clarity, one fact worth checking. An auto
+switch reviews on its own after ninety seconds of typing idle, guarded so it
+never queues behind a conversation in flight. On current hardware a review
+pass takes a minute or two: a tutor who glances at the page, not a keystroke
+companion. A faster dedicated model for that seat is planned.
+
+## The agentic harness
+
+Separately from the chat, a command-line harness gives the Professor working
+hands under a strict contract. It drives any OpenAI-compatible local server
+through a one-JSON-object protocol: each model turn must be either a tool
+call or a final answer, nothing else. The tools are allowlisted — web search,
+page fetch, YouTube transcripts, file finding and reading, opening a file in
+the desktop editor — all confined to the home directory, read-only, and every
+call is shown and confirmed before it runs. Failures are honest by
+construction: a search that returns nothing says so and forbids invention; a
+transcript tool that breaks reports a tool failure, never a fact about the
+video; and a URL may appear in a final answer only if it arrived verbatim in
+a tool result. The macro system and the harness meet in named prompt
+templates with replaceable slots — the command-line ancestor of the workshop's
+buttons.
+
+The chat surface itself does not yet carry these tools: an Ask in Mesh-Chat
+is plain inference, and a model asked there to fetch or search can only
+describe fetching and searching. Wiring the tool loop into the chat's Ask is
+the designed next step; until it lands, hands live in the harness and
+conversation lives in the chat.
+
+## The rendering change
+
+The move to Dear PyGui is not cosmetic. It is a rehearsal. Dear PyGui is
+immediate-mode: the whole interface is drawn fresh every frame by the
+program's own loop — widgets are functions, not a retained foreign object
+tree. That is architecturally the shape TernOO's native renderer must take,
+where PIGART draws self-describing graphical words and a window manager
+resolves declared layout contracts rather than pixel demands. Every rule
+learned in this client is a line in that future protocol: window sizes as
+fractions of the screen, never fixed numbers; controls claim their ground
+before content can squeeze them out; capabilities like context menus and
+zoom arrive by inheritance, not by per-widget remembering; the house style
+is decided once, in the theme, and no surface can be accidentally ugly. The
+client is the sandbox where those rules are tested before the FlowCode IDE
+adopts them — and the toolkit's native node editor, GPU-panned and zoomed,
+is the organ that IDE's flowchart canvas would inherit.
+
+## What runs and what is designed
+
+Running today: the mesh conversation with saved, portable, cross-client
+chats; the macro library and its clockwork dialogs; the Forge with the
+Professor drafting specs from real --help text into a pruning tree; the
+Editor with manual and idle-triggered review; the harness with its
+allowlisted, confirm-gated tools; live zoom, draggable layout, remembered
+geometry.
+
+Designed and not yet built: tools inside the chat's Ask; a fast dedicated
+model in the shoulder-reader's seat; the FlowCode makeover on the sandbox's
+findings; and the eventual handover of rendering itself from toolkit to
+PIGART, when the machine draws its own world.
