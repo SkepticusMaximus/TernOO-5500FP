@@ -78,6 +78,7 @@ CFGD = _cfg_load()
 SCALE = float(CFGD.get("font_scale", 1.3))
 PANEL_W = int(CFGD.get("panel_w", 400))
 PROMPT_H = int(CFGD.get("prompt_h", 380))
+NOTES_H = int(CFGD.get("notes_h", 180))
 VP_W = int(CFGD.get("vp_w", 1460))
 VP_H = int(CFGD.get("vp_h", 1010))
 VP_X = int(CFGD.get("vp_x", 120))
@@ -122,6 +123,8 @@ ED_PATH = None
 ED_DIRTY = False
 ED_LAST_KEY = time.time()
 REVIEW_BUSY = False
+LAST_NOTE = ""
+REVIEW_LOG = os.path.expanduser("~/.config/ternoo-mesh-chat-reviews.log")
 
 
 def ui(fn):
@@ -730,6 +733,40 @@ def forge_start(cmd):
 
 
 # ── the Editor: writing pad + shoulder-reader ────────────────────────────────
+def _note(text):
+    """Append to the assistant-notes pane: timestamped, wrapped, scrolled —
+    nothing ever overwrites a review again."""
+    global LAST_NOTE
+    LAST_NOTE = text
+    import datetime as _dt
+    try:
+        w = dpg.get_item_rect_size("ed_notes")[0] - 26
+    except Exception:
+        w = 360
+    dpg.add_text(f"— {_dt.datetime.now():%H:%M} —", parent="ed_notes",
+                 color=DIM)
+    dpg.add_text(text, parent="ed_notes", color=TEXT, wrap=max(240, int(w)))
+    dpg.add_spacer(height=6, parent="ed_notes")
+    dpg.set_y_scroll("ed_notes", 999999.0)
+
+
+def copy_note(*_):
+    if LAST_NOTE:
+        dpg.set_clipboard_text(LAST_NOTE)
+        set_status("notes copied to clipboard", GRN)
+
+
+def _log_review(draft, note):
+    """Every review also lands in a permanent log — none is ever lost."""
+    import datetime as _dt
+    try:
+        with open(REVIEW_LOG, "a", encoding="utf-8") as f:
+            f.write(f"\n===== {_dt.datetime.now():%Y-%m-%d %H:%M} =====\n"
+                    f"DRAFT HEAD: {draft[:120]!r}\n{note}\n")
+    except Exception:
+        pass
+
+
 def ed_key(*_):
     global ED_DIRTY, ED_LAST_KEY
     ED_DIRTY = True
@@ -746,9 +783,9 @@ def ed_open_pick(_s, app_data):
                                      errors="replace").read())
         ED_PATH = path
         ED_DIRTY = False
-        dpg.set_value("ed_notes", f"opened {os.path.basename(path)}")
+        set_status(f"opened {os.path.basename(path)}", GRN)
     except Exception as e:                      # noqa: BLE001
-        dpg.set_value("ed_notes", f"couldn't open: {e}")
+        set_status(f"couldn't open: {e}", RED)
 
 
 def ed_save_pick(_s, app_data):
@@ -767,9 +804,9 @@ def ed_save(*_):
         return
     try:
         open(ED_PATH, "w", encoding="utf-8").write(dpg.get_value("editor"))
-        dpg.set_value("ed_notes", f"saved {os.path.basename(ED_PATH)}")
+        set_status(f"saved {os.path.basename(ED_PATH)}", GRN)
     except Exception as e:                      # noqa: BLE001
-        dpg.set_value("ed_notes", f"couldn't save: {e}")
+        set_status(f"couldn't save: {e}", RED)
 
 
 def ed_review(*_):
@@ -778,11 +815,11 @@ def ed_review(*_):
         return
     draft = dpg.get_value("editor").strip()
     if len(draft) < 40:
-        dpg.set_value("ed_notes", "(draft too short to review)")
+        set_status("(draft too short to review)")
         return
     REVIEW_BUSY = True
     ED_DIRTY = False
-    dpg.set_value("ed_notes", "the Professor is reading...")
+    set_status("the Professor is reading your draft...")
 
     def work():
         global REVIEW_BUSY
@@ -795,7 +832,10 @@ def ed_review(*_):
 
         def done():
             global REVIEW_BUSY
-            dpg.set_value("ed_notes", note)
+            _note(note)
+            _log_review(draft, note)
+            set_status("review in — every review is also kept in "
+                       "~/.config/ternoo-mesh-chat-reviews.log", GRN)
             REVIEW_BUSY = False
         ui(done)
     threading.Thread(target=work, daemon=True).start()
@@ -904,11 +944,18 @@ def build():
                             dpg.add_button(label="Review", callback=ed_review)
                             dpg.add_checkbox(label="auto", tag="ed_auto")
                         dpg.add_input_text(tag="editor", multiline=True,
-                                           width=-1, height=-190,
+                                           width=-1, height=-(NOTES_H + 62),
                                            callback=ed_key)
-                        dpg.add_text("assistant notes", color=DIM)
-                        dpg.add_input_text(tag="ed_notes", multiline=True,
-                                           readonly=True, width=-1, height=150)
+                        # drag this bar to resize the notes pane
+                        dpg.add_button(tag="ngrip_btn", label="", width=-1,
+                                       height=8)
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("assistant notes", color=DIM)
+                            dpg.add_button(label="copy", small=True,
+                                           callback=copy_note)
+                        with dpg.child_window(tag="ed_notes", width=-1,
+                                              height=NOTES_H):
+                            pass
             # the divider: a child window stretches to full height, and the
             # tall button INSIDE it (clipped) provides the reliable
             # press-and-hold state only buttons have in DPG
@@ -1016,6 +1063,7 @@ def build():
     dpg.bind_item_theme("hgrip", "grippane")
     dpg.bind_item_theme("hgrip_btn", "gripbtn")
     dpg.bind_item_theme("vgrip_btn", "gripbtn")
+    dpg.bind_item_theme("ngrip_btn", "gripbtn")
 
     with dpg.handler_registry():
         dpg.add_key_press_handler(dpg.mvKey_Return, callback=_ctrl_enter)
@@ -1051,13 +1099,13 @@ def _ctrl_wheel(_s, app_data):
         zoom(0.05 if app_data > 0 else -0.05)
 
 
-_DRAG = {"h": None, "v": None}                 # base size at drag start
+_DRAG = {"h": None, "v": None, "n": None}      # base size at drag start
 
 
 def _grip_up(*_):
-    if _DRAG["h"] is not None or _DRAG["v"] is not None:
+    if any(v is not None for v in _DRAG.values()):
         _cfg_save(CFGD)                        # settle the sculpt on release
-        _DRAG["h"] = _DRAG["v"] = None
+        _DRAG["h"] = _DRAG["v"] = _DRAG["n"] = None
 
 
 def _drag_grips(*_):
@@ -1079,6 +1127,14 @@ def _drag_grips(*_):
         h = max(60, min(int(_DRAG["v"] + dy), 520))
         dpg.configure_item("prompt", height=h)
         CFGD["prompt_h"] = h
+    if dpg.is_item_active("ngrip_btn"):
+        if _DRAG["n"] is None:
+            _DRAG["n"] = dpg.get_item_height("ed_notes") or 180
+        dy = dpg.get_mouse_drag_delta()[1]
+        h = max(80, min(int(_DRAG["n"] - dy), 540))   # drag UP grows notes
+        dpg.configure_item("ed_notes", height=h)
+        dpg.configure_item("editor", height=-(h + 62))
+        CFGD["notes_h"] = h
 
 
 def _ctrl_enter(*_):
