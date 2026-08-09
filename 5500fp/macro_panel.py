@@ -121,9 +121,9 @@ class MacroPanel:
         self._tab_macros = tk.Frame(nb, bg=C["palette"])
         self._tab_forge = tk.Frame(nb, bg=C["palette"])
         self._tab_edit = tk.Frame(nb, bg=C["palette"])
-        nb.add(self._tab_macros, text=" 🧰 Macros ")
-        nb.add(self._tab_forge, text=" 🛠 Constructor ")
-        nb.add(self._tab_edit, text=" ✍ Editor ")
+        nb.add(self._tab_macros, text=" Macros ")
+        nb.add(self._tab_forge, text=" Forge ")
+        nb.add(self._tab_edit, text=" Editor ")
 
         self._build_macros_tab()
         self._build_forge_tab()
@@ -229,6 +229,7 @@ class MacroPanel:
                              insertbackground=C["text"], relief="flat",
                              font=("Monospace", 11))
                 e.pack(side="left", fill="x", expand=True)
+                self.tv._wire_editing(e, editable=True)
                 if t == "path":
                     def browse(var=v):
                         from tkinter import filedialog
@@ -343,6 +344,10 @@ class MacroPanel:
                                    insertbackground=C["text"], relief="flat",
                                    font=("Monospace", 10), wrap="none", undo=True)
         self._forge_text.pack(fill="both", expand=True, padx=6)
+        # every text surface inherits the standard right-click menu — wiring is
+        # the inheritance point (skip it once and the captain will notice)
+        self.tv._wire_editing(self._forge_entry, editable=True)
+        self.tv._wire_editing(self._forge_text, editable=True)
         self._forge_msg = tk.Label(self._tab_forge, text="", bg=C["palette"],
                                    fg=C["dim"], font=("Monospace", 9),
                                    wraplength=330, justify="left")
@@ -409,6 +414,7 @@ class MacroPanel:
                            font=("Monospace", 11), wrap="word", padx=6, pady=6)
         self._ed.pack(fill="both", expand=True, padx=6)
         self._ed.bind("<KeyRelease>", self._ed_key)
+        self.tv._wire_editing(self._ed, editable=True)
         self._ed_path = None
 
         tk.Label(self._tab_edit, text="assistant notes", bg=C["palette"],
@@ -417,6 +423,7 @@ class MacroPanel:
                               relief="flat", font=("Monospace", 9), wrap="word",
                               state="disabled", padx=6, pady=4)
         self._notes.pack(fill="x", padx=6, pady=(0, 6))
+        self.tv._wire_editing(self._notes, editable=False)
         self.root.after(5000, self._auto_tick)
 
     def _ed_key(self, _e=None):

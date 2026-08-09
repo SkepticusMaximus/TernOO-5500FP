@@ -78,7 +78,7 @@ class MeshTabView:
         # top strip: live connection status + the Setup toggle
         top = tk.Frame(self._main, bg=C["bg"])
         top.pack(side="top", fill="x", padx=12, pady=(10, 2))
-        self._conn = tk.Label(top, text="◌  finding a model on the mesh…",
+        self._conn = tk.Label(top, text="◌  finding the mesh…",
                               bg=C["bg"], fg=C["dim"], font=mono, anchor="w")
         self._conn.pack(side="left")
         self._setupbtn = tk.Button(top, text="⚙ Setup", command=self._toggle_setup,
@@ -92,13 +92,6 @@ class MeshTabView:
         self._chatmenu = tk.Menu(self._chatbtn, tearoff=0)
         self._chatbtn.config(menu=self._chatmenu)
         self._chatbtn.pack(side="right", padx=(0, 8))
-        self._macbtn = tk.Button(top, text="🧰", bg=C["palette"], fg=C["text"],
-                                 font=mono, relief="flat",
-                                 activebackground=C["bg"],
-                                 activeforeground=C["text"],
-                                 command=lambda: (self._macros
-                                                  and self._macros.toggle()))
-        self._macbtn.pack(side="right", padx=(0, 8))
 
         # the prompt — the dominant element
         tk.Label(self._main, text="Ask the mesh", bg=C["bg"], fg=C["text"],
@@ -537,8 +530,12 @@ class MeshTabView:
             text.bind("<Button-2>", lambda e: "break")   # no middle-click paste
 
     def _select_all(self, text):
-        text.tag_add("sel", "1.0", "end-1c")
-        text.mark_set("insert", "1.0")
+        if hasattr(text, "tag_add"):               # a Text widget
+            text.tag_add("sel", "1.0", "end-1c")
+            text.mark_set("insert", "1.0")
+        else:                                      # an Entry — different API
+            text.select_range(0, "end")
+            text.icursor("end")
         return "break"
 
     @staticmethod
@@ -781,14 +778,13 @@ class MeshTabView:
                      if st.online and "compute:float" in st.caps)
         online = sum(1 for st in self._board_states if st.online)
         if models:
-            self._conn.config(text=f"●  ready — talking to the mesh  ·  {models} "
-                              f"model{'s' if models != 1 else ''} online", fg=GRN)
+            self._conn.config(text=f"●  mesh ready · {models} "
+                              f"model{'s' if models != 1 else ''}", fg=GRN)
         elif online:
-            self._conn.config(text=f"◐  {online} node(s) online, but no model right "
-                              "now — try ⚙ Setup", fg=DIM)
+            self._conn.config(text=f"◐  {online} node(s) · no model — ⚙ Setup",
+                              fg=DIM)
         else:
-            self._conn.config(text="○  no nodes online — open ⚙ Setup to check",
-                              fg=RED)
+            self._conn.config(text="○  no nodes — check ⚙ Setup", fg=RED)
         for (st, hd, bl, sb, cv, rt) in self._cards:
             dot = "● online" if st.online else "○ offline"
             hd.config(text=f"{st.addr}   {dot}   {st.account}",
