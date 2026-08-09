@@ -1,9 +1,14 @@
 {
-  "name": "ELI5 then engineer",
+  "name": "Two-level explain",
   "kind": "prompt",
-  "desc": "Ask the Professor for a two-level explanation of anything.",
+  "desc": "One topic, twice: for a bright kid, then for a working engineer.",
   "template": "Explain {topic} twice: first as you would to a bright twelve-year-old, then at working-engineer depth. Keep the two clearly separated.",
   "fields": [
-    {"arg": "topic", "label": "Topic", "type": "text", "default": ""}
+    {
+      "arg": "topic",
+      "label": "Topic",
+      "type": "text",
+      "default": ""
+    }
   ]
 }

@@ -45,6 +45,34 @@ REVIEW_PROMPT = (
     "2) one reference or fact worth double-checking, if any. No rewrite, no "
     "praise, just the notes.\n\nDRAFT:\n")
 
+FORGE_HEAD = """You are drafting a macro spec for a GUI dialog builder. Reply with \
+EXACTLY one JSON object and nothing else — no prose, no code fences. Schema by \
+example:
+{"name": "Disk usage", "kind": "command", "command": "du",
+ "desc": "one line saying what it does",
+ "fields": [
+   {"flag": "-h", "label": "Human-readable sizes", "type": "check", "default": true},
+   {"flag": "--max-depth", "label": "Depth", "type": "choice", "options": ["1","2","3"], "default": "1"},
+   {"arg": "path", "label": "Where", "type": "path", "default": "~"}]}
+RULES: use ONLY flags that appear in the help text below — never invent one. At
+most 8 fields; pick the most useful for everyday use. Positional arguments become
+"arg" fields (type "path" for files/dirs, else "text"). Labels in plain English.
+"""
+
+
+def _first_json(text):
+    """The first balanced JSON object in `text` — models add prose despite rules."""
+    import json as _json
+    dec = _json.JSONDecoder()
+    for i, ch in enumerate(text or ""):
+        if ch == "{":
+            try:
+                obj, _ = dec.raw_decode(text[i:])
+                return obj
+            except ValueError:
+                continue
+    return None
+
 
 def _specs():
     """Load every macro spec in MACRO_DIR, sorted by name; skip broken ones."""
@@ -81,7 +109,7 @@ def _validate(spec):
 
 
 class MacroPanel:
-    WIDTH = 400
+    WIDTH = 450
 
     def __init__(self, tv, outer, C, root):
         import tkinter as tk
@@ -94,6 +122,8 @@ class MacroPanel:
         self._last_key = time.time()
         self._auto = tk.IntVar(value=0)
         self._rev_result = None
+        self._forge_result = None
+        self._forge_cmd = None
 
         self.frame = tk.Frame(outer, bg=C["palette"], width=self.WIDTH)
         self.frame.pack_propagate(False)
@@ -358,12 +388,18 @@ class MacroPanel:
         tk.Button(bar, text="skeleton", command=self._forge_skeleton, bg=C["bg"],
                   fg=C["text"], relief="flat", font=("Monospace", 9)
                   ).pack(side="left")
-        tk.Button(bar, text="🤖 forge from --help (piece 2)", state="disabled",
-                  bg=C["bg"], fg=C["dim"], relief="flat", font=("Monospace", 9)
+        tk.Button(bar, text="🤖 Forge from a command", command=self._ai_forge,
+                  bg=C["bg"], fg=C["text"], relief="flat", font=("Monospace", 9)
                   ).pack(side="left", padx=4)
         tk.Button(bar, text="💾 Save", command=self._forge_save, bg=self.tv.GRN,
                   fg="#0c0e14", relief="flat", font=("Monospace", 10, "bold")
                   ).pack(side="right")
+        # never an empty mystery box: land with the skeleton + instructions up
+        self._forge_skeleton()
+        self._forge_msg.config(
+            text="the workshop: 🤖 forge a spec from any command's --help (the "
+                 "Professor proposes, YOU prune), or edit this skeleton by hand. "
+                 "💾 Save lands it in Macros.")
 
     def _forge_skeleton(self):
         self._forge_text.delete("1.0", "end")
@@ -389,6 +425,103 @@ class MacroPanel:
         json.dump(spec, open(path, "w", encoding="utf-8"), indent=2)
         self._forge_msg.config(text=f"saved {os.path.basename(path)} ✓")
         self.refresh()
+
+    # ── the AI forge: command --help → the Professor drafts, YOU prune ───────
+    def _ai_forge(self):
+        tk, C = self.tk, self.C
+        dlg = tk.Toplevel(self.root)
+        dlg.title("🤖 Forge from a command")
+        dlg.configure(bg=C["palette"])
+        dlg.transient(self.root)
+        tk.Label(dlg, text="Command to forge (must exist on this machine):",
+                 bg=C["palette"], fg=C["text"], font=("Monospace", 10)
+                 ).pack(padx=14, pady=(12, 4), anchor="w")
+        v = tk.StringVar()
+        e = tk.Entry(dlg, textvariable=v, bg=C["bg"], fg=C["text"],
+                     insertbackground=C["text"], relief="flat",
+                     font=("Monospace", 12), width=28)
+        e.pack(padx=14, pady=4, fill="x")
+        self.tv._wire_editing(e, editable=True)
+        e.focus_set()
+        tk.Label(dlg, text="Its --help goes to the Professor; he proposes a\n"
+                           "spec; it lands in the Forge editor for YOUR pruning.",
+                 bg=C["palette"], fg=C["dim"], font=("Monospace", 9),
+                 justify="left").pack(padx=14, pady=(2, 6), anchor="w")
+
+        def go(_e=None):
+            cmd = (v.get().strip().split() or [""])[0]
+            dlg.destroy()
+            if cmd:
+                self._forge_start(cmd)
+        e.bind("<Return>", go)
+        bar = tk.Frame(dlg, bg=C["palette"])
+        bar.pack(fill="x", padx=14, pady=(0, 12))
+        tk.Button(bar, text="Cancel", command=dlg.destroy, bg=C["bg"],
+                  fg=C["dim"], relief="flat").pack(side="right", padx=4)
+        tk.Button(bar, text="  Forge ▶  ", command=go, bg=self.tv.GRN,
+                  fg="#0c0e14", relief="flat",
+                  font=("Monospace", 10, "bold")).pack(side="right")
+
+    def _forge_start(self, cmd):
+        import shutil
+        if not shutil.which(cmd):
+            self._forge_msg.config(text=f"no such command on this machine: {cmd}")
+            return
+        try:
+            r = subprocess.run([cmd, "--help"], capture_output=True, timeout=10)
+            help_text = (r.stdout or r.stderr).decode("utf-8", "replace")
+            if len(help_text.strip()) < 40:
+                r = subprocess.run([cmd, "-h"], capture_output=True, timeout=10)
+                help_text = (r.stdout or r.stderr).decode("utf-8", "replace")
+        except Exception as e:                      # noqa: BLE001 — to the user
+            self._forge_msg.config(text=f"couldn't read {cmd} --help: {e}")
+            return
+        self._forge_cmd = cmd
+        self._forge_name.set(cmd)
+        self._forge_msg.config(
+            text=f"🤖 the Professor is reading `{cmd} --help`… (a minute or two)")
+        prompt = FORGE_HEAD + f"\nCOMMAND: {cmd}\nHELP TEXT:\n{help_text[:5000]}"
+        tv = self.tv
+        local = ("127.0.0.1", 9000)
+        cands = [local] + [(s.host, s.port) for s in tv._board_states
+                           if (s.host, s.port) != local]
+
+        def work():
+            try:
+                _w, ans = tv._buyer.ask_mesh(prompt, candidates=cands)
+                self._forge_result = ans or "(no model answered)"
+            except Exception as ex:                 # noqa: BLE001 — to the user
+                self._forge_result = f"(forge failed: {ex})"
+        threading.Thread(target=work, daemon=True).start()
+        self._poll_forge()
+
+    def _poll_forge(self):
+        if self._forge_result is None:
+            self.root.after(400, self._poll_forge)
+            return
+        text = self._forge_result
+        self._forge_result = None
+        obj = _first_json(text)
+        self._forge_text.delete("1.0", "end")
+        if obj is None:
+            self._forge_text.insert("1.0", text)
+            self._forge_msg.config(
+                text="the Professor went off-protocol — raw reply above; "
+                     "salvage it by hand or 🤖 retry")
+            return
+        # the model proposes; the clockwork corrects what it can't be trusted on
+        obj["kind"] = "command"
+        if self._forge_cmd:
+            obj["command"] = self._forge_cmd
+        self._forge_text.insert("1.0", json.dumps(obj, indent=2))
+        err = _validate(obj)
+        if err:
+            self._forge_msg.config(text=f"proposed, but fix this before saving: {err}")
+        else:
+            self._forge_msg.config(
+                text="the Professor proposes — PRUNE what you don't want "
+                     "(he may have invented a flag; the preview will expose it), "
+                     "then 💾 Save")
 
     # ── Editor tab: the shoulder-reader ──────────────────────────────────────
     def _build_editor_tab(self):

@@ -665,7 +665,7 @@ def run_gui():
         print("tkinter not available — sudo apt install python3-tk")
         run_headless_demo(); return
 
-    PALETTE_W = 140
+    PALETTE_W = 190   # 140 truncated every tool label ("Termin…", "Word Dum…")
 
     canvas_model = FCCanvas()      # Phase 6C: kept for execution only (do_run/do_dump/do_load)
     cpu = CPU5500FP(); cpu.write_cs(0,1000); cpu.write_ds(0,2000)
