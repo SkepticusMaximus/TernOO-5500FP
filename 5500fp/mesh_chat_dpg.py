@@ -74,9 +74,14 @@ def _cfg_save(d):
 
 
 CFGD = _cfg_load()
-SCALE = float(CFGD.get("font_scale", 1.0))
-PANEL_W = int(CFGD.get("panel_w", 380))
-PROMPT_H = int(CFGD.get("prompt_h", 130))
+# shipped defaults = the captain's sculpt of 09-08 (zoom 130%, tall ask-box)
+SCALE = float(CFGD.get("font_scale", 1.3))
+PANEL_W = int(CFGD.get("panel_w", 400))
+PROMPT_H = int(CFGD.get("prompt_h", 380))
+VP_W = int(CFGD.get("vp_w", 1460))
+VP_H = int(CFGD.get("vp_h", 1010))
+VP_X = int(CFGD.get("vp_x", 120))
+VP_Y = int(CFGD.get("vp_y", 30))
 
 
 def zoom(delta):
@@ -750,8 +755,11 @@ def build():
                         dpg.add_text("assistant notes", color=DIM)
                         dpg.add_input_text(tag="ed_notes", multiline=True,
                                            readonly=True, width=-1, height=150)
-            # the divider you can actually grab: drag to resize the workshop
-            dpg.add_button(label="", tag="hgrip", width=9, height=-1)
+            # the divider you can actually grab (a button can't stretch
+            # vertically in DPG — a child window can, so the grip is one)
+            with dpg.child_window(tag="hgrip", width=10, height=-1,
+                                  border=False, no_scrollbar=True):
+                pass
             # ── right: the chat ───────────────────────────────────────────
             with dpg.group():
                 with dpg.group(horizontal=True):
@@ -761,7 +769,9 @@ def build():
                 dpg.add_input_text(multiline=True, width=-1, height=PROMPT_H,
                                    tag="prompt")
                 # drag this bar to give the ask-box more (or less) height
-                dpg.add_button(label="", tag="vgrip", width=-1, height=9)
+                with dpg.child_window(tag="vgrip", width=-1, height=9,
+                                      border=False, no_scrollbar=True):
+                    pass
                 with dpg.group(horizontal=True):
                     dpg.add_button(label="Attach file",
                                    callback=lambda: dpg.show_item("filedlg"))
@@ -829,10 +839,18 @@ def build():
                          default_path=os.path.expanduser("~")):
         dpg.add_file_extension(".*")
 
+    with dpg.theme(tag="grippane"):
+        with dpg.theme_component(dpg.mvChildWindow):
+            dpg.add_theme_color(dpg.mvThemeCol_ChildBg, (44, 50, 66))
+    dpg.bind_item_theme("hgrip", "grippane")
+    dpg.bind_item_theme("vgrip", "grippane")
+
     with dpg.handler_registry():
         dpg.add_key_press_handler(dpg.mvKey_Return, callback=_ctrl_enter)
         dpg.add_key_press_handler(callback=_zoom_keys)
         dpg.add_mouse_wheel_handler(callback=_ctrl_wheel)
+        dpg.add_mouse_down_handler(callback=_grip_down)
+        dpg.add_mouse_release_handler(callback=_grip_up)
         dpg.add_mouse_move_handler(callback=_drag_grips)
 
 
@@ -862,22 +880,36 @@ def _ctrl_wheel(_s, app_data):
         zoom(0.05 if app_data > 0 else -0.05)
 
 
+_DRAG = {"h": False, "v": False}
+
+
+def _grip_down(*_):
+    if dpg.is_item_hovered("hgrip"):
+        _DRAG["h"] = True
+    if dpg.is_item_hovered("vgrip"):
+        _DRAG["v"] = True
+
+
+def _grip_up(*_):
+    if _DRAG["h"] or _DRAG["v"]:
+        _cfg_save(CFGD)                        # settle the sculpt on release
+    _DRAG["h"] = _DRAG["v"] = False
+
+
 def _drag_grips(*_):
-    """The dividers you can actually grab — sizes remembered live."""
-    if dpg.is_item_active("hgrip"):
+    """The dividers you can actually grab — sizes remembered on release."""
+    if _DRAG["h"]:
         x = dpg.get_mouse_pos(local=False)[0]
         left = dpg.get_item_rect_min("workshop")[0]
-        w = max(250, min(int(x - left), 860))
+        w = max(260, min(int(x - left), 880))
         dpg.configure_item("workshop", width=w)
         CFGD["panel_w"] = w
-        _cfg_save(CFGD)
-    if dpg.is_item_active("vgrip"):
+    if _DRAG["v"]:
         y = dpg.get_mouse_pos(local=False)[1]
         top = dpg.get_item_rect_min("prompt")[1]
-        h = max(60, min(int(y - top), 460))
+        h = max(60, min(int(y - top), 520))
         dpg.configure_item("prompt", height=h)
         CFGD["prompt_h"] = h
-        _cfg_save(CFGD)
 
 
 def _ctrl_enter(*_):
@@ -915,7 +947,7 @@ def main():
         dpg.destroy_context()
         return
     dpg.create_viewport(title="Mesh-Chat — TernOO (Dear PyGui)",
-                        width=1380, height=940, x_pos=40, y_pos=40)
+                        width=VP_W, height=VP_H, x_pos=VP_X, y_pos=VP_Y)
     dpg.setup_dearpygui()
     dpg.show_viewport()
     dpg.set_primary_window("main", True)
@@ -923,6 +955,14 @@ def main():
     threading.Thread(target=_probe, daemon=True).start()
     threading.Thread(target=auto_loop, daemon=True).start()
     dpg.start_dearpygui()
+    try:                                       # remember the window itself too
+        CFGD["vp_w"] = dpg.get_viewport_width()
+        CFGD["vp_h"] = dpg.get_viewport_height()
+        pos = dpg.get_viewport_pos()
+        CFGD["vp_x"], CFGD["vp_y"] = int(pos[0]), int(pos[1])
+        _cfg_save(CFGD)
+    except Exception:
+        pass
     dpg.destroy_context()
 
 
