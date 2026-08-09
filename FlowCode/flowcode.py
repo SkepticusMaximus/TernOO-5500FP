@@ -703,11 +703,17 @@ def run_gui():
     # ── Root ─────────────────────────────────────────────────────────────────
     root = tk.Tk()
     root.title("FlowCode v0.7.0 — TernOO-5500FP Visual IDE")
-    # size to the actual display — with no geometry set, Tk guesses from
-    # widget requests and every launch lands somewhere weird
+    # the IDE opens MAXIMISED — the tool palette + actions column genuinely
+    # need the full screen height, and an IDE is a whole-screen citizen anyway.
+    # The geometry line beneath is the restore-size (fraction of the screen,
+    # never a fixed number) for when the captain un-maximises.
     _sw, _sh = root.winfo_screenwidth(), root.winfo_screenheight()
-    root.geometry(f"{min(1560, _sw - 40)}x{min(1000, _sh - 70)}+20+20")
+    root.geometry(f"{int(_sw * 0.92)}x{int(_sh * 0.9)}+{int(_sw * 0.03)}+20")
     root.minsize(min(1100, _sw - 40), min(700, _sh - 70))
+    try:
+        root.attributes("-zoomed", True)
+    except Exception:
+        pass                                   # non-Linux WMs: fraction stands
     root.configure(bg=C['bg'])
     root.resizable(True,True)
     root.minsize(960, 600)   # Bundle 17 B1: usable at 1366×768

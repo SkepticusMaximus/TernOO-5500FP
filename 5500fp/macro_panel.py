@@ -354,7 +354,7 @@ class MacroPanel:
         tv._prompt.config(fg=self.C["text"])
         tv._ask()
 
-    # ── Constructor tab: hand-forge v1 (the AI forge is piece 2) ─────────────
+    # ── Forge tab: the pruning TREE is the interface; JSON is plumbing ───────
     def _build_forge_tab(self):
         tk, C = self.tk, self.C
         top = tk.Frame(self._tab_forge, bg=C["palette"])
@@ -369,53 +369,160 @@ class MacroPanel:
         self._forge_entry.pack(side="left", fill="x", expand=True, padx=4)
         tk.Label(top, text=".json", bg=C["palette"], fg=C["dim"],
                  font=("Monospace", 9)).pack(side="left")
-
-        self._forge_text = tk.Text(self._tab_forge, bg=C["bg"], fg=C["text"],
-                                   insertbackground=C["text"], relief="flat",
-                                   font=("Monospace", 10), wrap="none", undo=True)
-        self._forge_text.pack(fill="both", expand=True, padx=6)
-        # every text surface inherits the standard right-click menu — wiring is
-        # the inheritance point (skip it once and the captain will notice)
         self.tv._wire_editing(self._forge_entry, editable=True)
-        self.tv._wire_editing(self._forge_text, editable=True)
+
+        # bottom claims its ground FIRST — controls must never be the widgets
+        # squeezed out of a small panel (the captain caught this twice)
+        bar = tk.Frame(self._tab_forge, bg=C["palette"])
+        bar.pack(side="bottom", fill="x", padx=6, pady=6)
         self._forge_msg = tk.Label(self._tab_forge, text="", bg=C["palette"],
                                    fg=C["dim"], font=("Monospace", 9),
-                                   wraplength=330, justify="left")
-        self._forge_msg.pack(fill="x", padx=6)
+                                   wraplength=380, justify="left")
+        self._forge_msg.pack(side="bottom", fill="x", padx=6)
+        self._forge_body = tk.Frame(self._tab_forge, bg=C["palette"])
+        self._forge_body.pack(fill="both", expand=True, padx=6)
 
-        bar = tk.Frame(self._tab_forge, bg=C["palette"])
-        bar.pack(fill="x", padx=6, pady=6)
-        tk.Button(bar, text="skeleton", command=self._forge_skeleton, bg=C["bg"],
-                  fg=C["text"], relief="flat", font=("Monospace", 9)
-                  ).pack(side="left")
         tk.Button(bar, text="🤖 Forge from a command", command=self._ai_forge,
                   bg=C["bg"], fg=C["text"], relief="flat", font=("Monospace", 9)
+                  ).pack(side="left")
+        tk.Button(bar, text="skeleton", command=self._load_skeleton, bg=C["bg"],
+                  fg=C["dim"], relief="flat", font=("Monospace", 9)
+                  ).pack(side="left", padx=4)
+        tk.Button(bar, text="{ }", command=self._toggle_raw, bg=C["bg"],
+                  fg=C["dim"], relief="flat", font=("Monospace", 9)
                   ).pack(side="left", padx=4)
         tk.Button(bar, text="💾 Save", command=self._forge_save, bg=self.tv.GRN,
                   fg="#0c0e14", relief="flat", font=("Monospace", 10, "bold")
                   ).pack(side="right")
-        # never an empty mystery box: land with the skeleton + instructions up
-        self._forge_skeleton()
+        self._load_skeleton()
         self._forge_msg.config(
-            text="the workshop: 🤖 forge a spec from any command's --help (the "
-                 "Professor proposes, YOU prune), or edit this skeleton by hand. "
-                 "💾 Save lands it in Macros.")
+            text="🤖 forges a pruning tree from any command's --help — tick what "
+                 "to keep, tweak labels and defaults, 💾 Save mints the button. "
+                 "{ } shows the raw spec if you want it.")
 
-    def _forge_skeleton(self):
-        self._forge_text.delete("1.0", "end")
-        self._forge_text.insert("1.0", json.dumps(SKELETON, indent=2))
-        self._forge_msg.config(text="edit, name it, save — it lands in macros/")
+    def _load_skeleton(self):
+        self._forge_spec = json.loads(json.dumps(SKELETON))
+        if not self._forge_name.get().strip():
+            self._forge_name.set("my-macro")
+        self._show_tree()
+
+    def _clear_body(self):
+        for w in self._forge_body.winfo_children():
+            w.destroy()
+
+    def _show_tree(self):
+        """The 90% interface: the spec as a tick-box pruning tree."""
+        tk, C = self.tk, self.C
+        self._forge_raw = False
+        self._clear_body()
+        s = self._forge_spec or {}
+        tk.Label(self._forge_body, text=f"command: {s.get('command', '?')}",
+                 bg=C["palette"], fg=C["dim"], font=("Monospace", 9),
+                 anchor="w").pack(fill="x", pady=(4, 0))
+        hr = tk.Frame(self._forge_body, bg=C["palette"])
+        hr.pack(fill="x", pady=2)
+        tk.Label(hr, text="button name", bg=C["palette"], fg=C["dim"],
+                 font=("Monospace", 8)).pack(side="left")
+        self._t_name = tk.StringVar(value=s.get("name", ""))
+        ne = tk.Entry(hr, textvariable=self._t_name, bg=C["bg"], fg=C["text"],
+                      insertbackground=C["text"], relief="flat",
+                      font=("Monospace", 10))
+        ne.pack(side="left", fill="x", expand=True, padx=4)
+        self.tv._wire_editing(ne, editable=True)
+        tk.Label(self._forge_body, text="tick = keep · edit labels & defaults",
+                 bg=C["palette"], fg=C["dim"], font=("Monospace", 8),
+                 anchor="w").pack(fill="x", pady=(2, 4))
+        self._t_rows = []
+        for f in s.get("fields", []):
+            row = tk.Frame(self._forge_body, bg=C["palette"])
+            row.pack(fill="x", pady=1)
+            inc = tk.IntVar(value=1)
+            tk.Checkbutton(row, variable=inc, bg=C["palette"],
+                           activebackground=C["palette"]).pack(side="left")
+            lv = tk.StringVar(value=f.get("label", ""))
+            le = tk.Entry(row, textvariable=lv, bg=C["bg"], fg=C["text"],
+                          insertbackground=C["text"], relief="flat",
+                          font=("Monospace", 10), width=16)
+            le.pack(side="left", padx=(2, 4))
+            self.tv._wire_editing(le, editable=True)
+            code = f.get("flag", f.get("arg", "?"))
+            tk.Label(row, text=f"{code}", bg=C["palette"], fg=C["dim"],
+                     font=("Monospace", 9), width=12, anchor="w"
+                     ).pack(side="left")
+            t = f.get("type")
+            if t == "check":
+                dv = tk.IntVar(value=1 if f.get("default") else 0)
+                tk.Checkbutton(row, variable=dv, bg=C["palette"],
+                               activebackground=C["palette"]).pack(side="left")
+            elif t == "choice":
+                dv = tk.StringVar(value=str(f.get("default", "")))
+                opts = [str(o) for o in f.get("options", [])] or [""]
+                tk.OptionMenu(row, dv, *opts).pack(side="left")
+            else:
+                dv = tk.StringVar(value=str(f.get("default", "")))
+                de = tk.Entry(row, textvariable=dv, bg=C["bg"], fg=C["text"],
+                              insertbackground=C["text"], relief="flat",
+                              font=("Monospace", 10), width=10)
+                de.pack(side="left")
+                self.tv._wire_editing(de, editable=True)
+            self._t_rows.append((f, inc, lv, dv))
+
+    def _tree_to_spec(self):
+        """Fold the tree back into the spec — unticked fields fall away."""
+        s = self._forge_spec or {}
+        s["name"] = self._t_name.get().strip() or s.get("name", "macro")
+        fields = []
+        for f, inc, lv, dv in self._t_rows:
+            if not inc.get():
+                continue
+            f2 = dict(f)
+            f2["label"] = lv.get().strip() or f.get("label", "")
+            f2["default"] = (bool(dv.get()) if f.get("type") == "check"
+                             else dv.get())
+            fields.append(f2)
+        s["fields"] = fields
+        self._forge_spec = s
+
+    def _show_raw(self):
+        """The 10% view: the spec as raw JSON, for those who ask."""
+        tk, C = self.tk, self.C
+        self._forge_raw = True
+        self._clear_body()
+        self._forge_text = tk.Text(self._forge_body, bg=C["bg"], fg=C["text"],
+                                   insertbackground=C["text"], relief="flat",
+                                   font=("Monospace", 10), wrap="none",
+                                   undo=True)
+        self._forge_text.pack(fill="both", expand=True)
+        self.tv._wire_editing(self._forge_text, editable=True)
+        self._forge_text.insert("1.0", json.dumps(self._forge_spec, indent=2))
+
+    def _toggle_raw(self):
+        if getattr(self, "_forge_raw", False):
+            try:
+                self._forge_spec = json.loads(
+                    self._forge_text.get("1.0", "end"))
+            except Exception as e:                  # noqa: BLE001 — to the user
+                self._forge_msg.config(text=f"raw spec isn't valid JSON: {e}")
+                return
+            self._show_tree()
+        else:
+            self._tree_to_spec()
+            self._show_raw()
 
     def _forge_save(self):
         name = self._forge_name.get().strip()
         if not name:
             self._forge_msg.config(text="give it a file name first")
             return
-        try:
-            spec = json.loads(self._forge_text.get("1.0", "end"))
-        except Exception as e:                      # noqa: BLE001 — to the user
-            self._forge_msg.config(text=f"not valid JSON: {e}")
-            return
+        if getattr(self, "_forge_raw", False):
+            try:
+                spec = json.loads(self._forge_text.get("1.0", "end"))
+            except Exception as e:                  # noqa: BLE001 — to the user
+                self._forge_msg.config(text=f"not valid JSON: {e}")
+                return
+        else:
+            self._tree_to_spec()
+            spec = self._forge_spec
         err = _validate(spec)
         if err:
             self._forge_msg.config(text=f"spec problem: {err}")
@@ -423,7 +530,8 @@ class MacroPanel:
         os.makedirs(MACRO_DIR, exist_ok=True)
         path = os.path.join(MACRO_DIR, name + ".json")
         json.dump(spec, open(path, "w", encoding="utf-8"), indent=2)
-        self._forge_msg.config(text=f"saved {os.path.basename(path)} ✓")
+        self._forge_msg.config(text=f"saved {os.path.basename(path)} ✓ — "
+                                    "it's in Macros now")
         self.refresh()
 
     # ── the AI forge: command --help → the Professor drafts, YOU prune ───────
@@ -502,26 +610,34 @@ class MacroPanel:
         text = self._forge_result
         self._forge_result = None
         obj = _first_json(text)
-        self._forge_text.delete("1.0", "end")
         if obj is None:
+            # off-protocol prose → the raw view, labelled as salvage
+            self._forge_spec = {"name": self._forge_cmd or "macro",
+                                "kind": "command",
+                                "command": self._forge_cmd or "",
+                                "fields": []}
+            self._show_raw()
+            self._forge_text.delete("1.0", "end")
             self._forge_text.insert("1.0", text)
             self._forge_msg.config(
-                text="the Professor went off-protocol — raw reply above; "
-                     "salvage it by hand or 🤖 retry")
+                text="the Professor went off-protocol — his raw reply is above; "
+                     "salvage by hand or 🤖 retry")
             return
         # the model proposes; the clockwork corrects what it can't be trusted on
         obj["kind"] = "command"
         if self._forge_cmd:
             obj["command"] = self._forge_cmd
-        self._forge_text.insert("1.0", json.dumps(obj, indent=2))
+        self._forge_spec = obj
+        self._show_tree()
         err = _validate(obj)
         if err:
-            self._forge_msg.config(text=f"proposed, but fix this before saving: {err}")
+            self._forge_msg.config(
+                text=f"proposed, but fix this before saving: {err}")
         else:
             self._forge_msg.config(
-                text="the Professor proposes — PRUNE what you don't want "
-                     "(he may have invented a flag; the preview will expose it), "
-                     "then 💾 Save")
+                text="the Professor proposes — untick what you don't want, "
+                     "tweak labels and defaults (he may have invented a flag; "
+                     "the dialog preview will expose it), then 💾 Save")
 
     # ── Editor tab: the shoulder-reader ──────────────────────────────────────
     def _build_editor_tab(self):
@@ -542,6 +658,17 @@ class MacroPanel:
                   bg=C["bg"], fg=C["text"], relief="flat", font=("Monospace", 9)
                   ).pack(side="right", padx=4)
 
+        # notes claim the bottom FIRST so the writing pad can never squeeze
+        # them (or itself) out of a short panel
+        self._notes = tk.Text(self._tab_edit, height=7, bg=C["bg"], fg=C["dim"],
+                              relief="flat", font=("Monospace", 9), wrap="word",
+                              state="disabled", padx=6, pady=4)
+        self._notes.pack(side="bottom", fill="x", padx=6, pady=(0, 6))
+        tk.Label(self._tab_edit, text="assistant notes", bg=C["palette"],
+                 fg=C["dim"], font=("Monospace", 8)
+                 ).pack(side="bottom", anchor="w", padx=8)
+        self.tv._wire_editing(self._notes, editable=False)
+
         self._ed = tk.Text(self._tab_edit, bg=C["bg"], fg=C["text"],
                            insertbackground=C["text"], relief="flat", undo=True,
                            font=("Monospace", 11), wrap="word", padx=6, pady=6)
@@ -549,14 +676,6 @@ class MacroPanel:
         self._ed.bind("<KeyRelease>", self._ed_key)
         self.tv._wire_editing(self._ed, editable=True)
         self._ed_path = None
-
-        tk.Label(self._tab_edit, text="assistant notes", bg=C["palette"],
-                 fg=C["dim"], font=("Monospace", 8)).pack(anchor="w", padx=8)
-        self._notes = tk.Text(self._tab_edit, height=7, bg=C["bg"], fg=C["dim"],
-                              relief="flat", font=("Monospace", 9), wrap="word",
-                              state="disabled", padx=6, pady=4)
-        self._notes.pack(fill="x", padx=6, pady=(0, 6))
-        self.tv._wire_editing(self._notes, editable=False)
         self.root.after(5000, self._auto_tick)
 
     def _ed_key(self, _e=None):
