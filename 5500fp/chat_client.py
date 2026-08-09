@@ -33,8 +33,11 @@ def main(argv=None):
 
     root = tk.Tk()
     root.title("Mesh-Chat — TernOO P2PCP")
-    root.geometry("780x860")
-    root.minsize(520, 560)
+    # size to the screen, not to a constant — the docked macro panel needs
+    # real width, and a laptop panel must never open bigger than the display
+    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+    root.geometry(f"{min(1220, sw - 60)}x{min(880, sh - 90)}+30+30")
+    root.minsize(min(980, sw - 60), 600)
     root.configure(bg=C["bg"])
 
     frame = tk.Frame(root, bg=C["bg"])
