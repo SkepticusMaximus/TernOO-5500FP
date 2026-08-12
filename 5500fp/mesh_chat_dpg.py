@@ -183,11 +183,13 @@ def trim_followups(ans):
 
 # ── chat rendering ───────────────────────────────────────────────────────────
 def _wrap_width():
+    """DPG wrap is in PRE-font-scale pixels — divide by SCALE, or scaled
+    text overflows the pane instead of wrapping (the no-wrap bug)."""
     try:
         w = dpg.get_item_rect_size("chat")[0]
-        return max(320, int(w) - 28)
+        return max(240, int((int(w) - 28) / max(0.5, SCALE)))
     except Exception:
-        return 880
+        return int(880 / max(0.5, SCALE))
 
 
 def append_block(who, text, who_color):
@@ -216,7 +218,7 @@ def new_chat(*_):
     CHAT_ID = None
     dpg.delete_item("chat", children_only=True)
     dpg.add_text("New chat — the Professor remembers this conversation as "
-                 "you go.", parent="chat", color=DIM, wrap=880)
+                 "you go.", parent="chat", color=DIM, wrap=int(880 / max(0.5, SCALE)))
     dpg.add_spacer(height=6, parent="chat")
     try:
         dpg.set_value("chatsel", "")
@@ -276,7 +278,7 @@ def chat_menu(*_):
                     height=250, pos=(300, 200)):
         if not rec:
             dpg.add_text("No saved chat yet — ask something first, or pick "
-                         "one from the dropdown.", color=DIM, wrap=520)
+                         "one from the dropdown.", color=DIM, wrap=int(520 / max(0.5, SCALE)))
             dpg.add_button(label="Close",
                            callback=lambda: dpg.delete_item(tag))
             return
@@ -481,7 +483,7 @@ def _prompt_macro_modal(spec):
         dpg.delete_item(tag)
     with dpg.window(label=spec.get("name", "macro"), modal=True, tag=tag,
                     width=560, height=300, pos=(220, 160)):
-        dpg.add_text(spec.get("desc", ""), color=DIM, wrap=520)
+        dpg.add_text(spec.get("desc", ""), color=DIM, wrap=int(520 / max(0.5, SCALE)))
         entries = []
         for f in spec.get("fields", []):
             dpg.add_text(f.get("label", f.get("arg", "?")), color=TEXT)
@@ -509,7 +511,7 @@ def _command_macro_modal(spec):
     with dpg.window(label=spec.get("name", "macro"), modal=True, tag=tag,
                     width=680, height=580, pos=(200, 90)):
         if spec.get("desc"):
-            dpg.add_text(spec["desc"], color=DIM, wrap=640)
+            dpg.add_text(spec["desc"], color=DIM, wrap=int(640 / max(0.5, SCALE)))
         prev = None
 
         def refresh(*_):
@@ -535,7 +537,7 @@ def _command_macro_modal(spec):
                                        default_value=str(f.get("default", "")))
             widgets.append(w)
         dpg.add_spacer(height=6)
-        prev = dpg.add_text("", color=BLU, wrap=640)
+        prev = dpg.add_text("", color=BLU, wrap=int(640 / max(0.5, SCALE)))
         out = dpg.add_input_text(multiline=True, readonly=True, width=-1,
                                  height=210)
 
@@ -564,37 +566,58 @@ def _command_macro_modal(spec):
 
 
 # ── the Forge: pruning tree + the AI forge ───────────────────────────────────
+def _field_group(f):
+    return f.get("group") or ("Arguments" if "arg" in f else "Options")
+
+
 def forge_show_tree():
     dpg.delete_item("fg_rows", children_only=True)
     s = FORGE_SPEC or {}
-    dpg.set_value("fg_cmdlbl", f"command: {s.get('command', '?')}")
+    dpg.set_value("fg_cmd", s.get("command", ""))
     dpg.set_value("fg_name", s.get("name", ""))
-    for i, f in enumerate(s.get("fields", [])):
-        with dpg.group(parent="fg_rows"):
-            with dpg.group(horizontal=True):
-                dpg.add_checkbox(tag=f"fr{i}_inc", default_value=True)
-                dpg.add_input_text(tag=f"fr{i}_lbl", width=-1,
-                                   default_value=f.get("label", ""))
-            with dpg.group(horizontal=True):
-                dpg.add_spacer(width=26)
-                dpg.add_text(f.get("flag", f.get("arg", "?")), color=DIM)
-                t = f.get("type")
-                if t == "check":
-                    dpg.add_checkbox(tag=f"fr{i}_dv", label="on by default",
-                                     default_value=bool(f.get("default")))
-                elif t == "choice":
-                    opts = [str(o) for o in f.get("options", [])] or [""]
-                    dpg.add_combo(opts, tag=f"fr{i}_dv", width=160,
-                                  default_value=str(f.get("default", "")))
-                else:
-                    dpg.add_input_text(tag=f"fr{i}_dv", width=160,
-                                       default_value=str(f.get("default", "")))
-        dpg.add_spacer(height=3, parent="fg_rows")
+    fields = s.get("fields", [])
+    groups = []
+    for f in fields:
+        g = _field_group(f)
+        if g not in groups:
+            groups.append(g)
+    for g in groups:
+        opened = any(f.get("suggest", True)
+                     for f in fields if _field_group(f) == g)
+        with dpg.tree_node(label=g, parent="fg_rows", default_open=opened):
+            for i, f in enumerate(fields):
+                if _field_group(f) != g:
+                    continue
+                with dpg.group(horizontal=True):
+                    dpg.add_checkbox(tag=f"fr{i}_inc",
+                                     default_value=bool(f.get("suggest",
+                                                              True)))
+                    dpg.add_input_text(tag=f"fr{i}_lbl", width=-1,
+                                       default_value=f.get("label", ""))
+                with dpg.group(horizontal=True):
+                    dpg.add_spacer(width=26)
+                    dpg.add_text(f.get("flag", f.get("arg", "?")), color=DIM)
+                    t = f.get("type")
+                    if t == "check":
+                        dpg.add_checkbox(tag=f"fr{i}_dv", label="on by default",
+                                         default_value=bool(f.get("default")))
+                    elif t == "choice":
+                        opts = [str(o) for o in f.get("options", [])] or [""]
+                        dpg.add_combo(opts, tag=f"fr{i}_dv", width=160,
+                                      default_value=str(f.get("default", "")))
+                    else:
+                        dpg.add_input_text(tag=f"fr{i}_dv", width=160,
+                                           default_value=str(f.get("default",
+                                                                   "")))
+                dpg.add_spacer(height=3)
 
 
 def forge_tree_to_spec():
     s = FORGE_SPEC or {}
     s["name"] = dpg.get_value("fg_name").strip() or s.get("name", "macro")
+    cmd = (dpg.get_value("fg_cmd") or "").strip()
+    if cmd:
+        s["command"] = cmd
     fields = []
     for i, f in enumerate(s.get("fields", [])):
         if not dpg.get_value(f"fr{i}_inc"):
@@ -609,13 +632,15 @@ def forge_tree_to_spec():
 
 
 def forge_new(*_):
+    """A truly blank macro — not the ls skeleton reborn."""
     global FORGE_SPEC, FORGE_CMD
-    FORGE_SPEC = json.loads(json.dumps(MP.SKELETON))
-    FORGE_CMD = FORGE_SPEC.get("command")
-    if not dpg.get_value("fg_file").strip():
-        dpg.set_value("fg_file", "my-macro")
+    FORGE_SPEC = {"name": "", "kind": "command", "command": "", "fields": []}
+    FORGE_CMD = None
+    dpg.set_value("fg_file", "my-macro")
     forge_show_tree()
-    dpg.set_value("fg_msg", "skeleton loaded — prune, name, Save")
+    dpg.set_value("fg_msg", "blank macro — type the command, then Forge... "
+                            "fetches its FULL option tree from the Professor "
+                            "(or hand-write fields via { })")
 
 
 def forge_raw(*_):
@@ -668,7 +693,8 @@ def forge_ai(*_):
                     width=520, height=230, pos=(260, 180)):
         dpg.add_text("Command to forge (must exist on this machine):",
                      color=TEXT)
-        cmd_in = dpg.add_input_text(width=-1)
+        cmd_in = dpg.add_input_text(
+            width=-1, default_value=(dpg.get_value("fg_cmd") or "").strip())
         dpg.add_text("Its --help goes to the Professor; his proposed\n"
                      "spec lands in the tree for YOUR pruning.", color=DIM)
 
@@ -684,7 +710,7 @@ def forge_ai(*_):
 
 
 def forge_start(cmd):
-    global FORGE_CMD
+    global FORGE_CMD, FORGE_SPEC
     if not shutil.which(cmd):
         dpg.set_value("fg_msg", f"no such command on this machine: {cmd}")
         return
@@ -698,7 +724,9 @@ def forge_start(cmd):
         dpg.set_value("fg_msg", f"couldn't read {cmd} --help: {e}")
         return
     FORGE_CMD = cmd
+    FORGE_SPEC = {"name": cmd, "kind": "command", "command": cmd, "fields": []}
     dpg.set_value("fg_file", cmd)
+    forge_show_tree()                 # clear any stale tree — no ls ghosts
     dpg.set_value("fg_msg", f"the Professor is reading `{cmd} --help`... "
                             "(a minute or two)")
     prompt = MP.FORGE_HEAD + f"\nCOMMAND: {cmd}\nHELP TEXT:\n{help_text[:5000]}"
@@ -746,14 +774,15 @@ def _note(text):
         w = 360
     dpg.add_text(f"— {_dt.datetime.now():%H:%M} —", parent="ed_notes",
                  color=DIM)
-    dpg.add_text(text, parent="ed_notes", color=TEXT, wrap=max(240, int(w)))
+    dpg.add_text(text, parent="ed_notes", color=TEXT,
+                 wrap=max(200, int(w / max(0.5, SCALE))))
     dpg.add_spacer(height=6, parent="ed_notes")
     dpg.set_y_scroll("ed_notes", 999999.0)
 
 
 def copy_note(*_):
     if LAST_NOTE:
-        dpg.set_clipboard_text(LAST_NOTE)
+        clip_set(LAST_NOTE)
         set_status("notes copied to clipboard", GRN)
 
 
@@ -769,13 +798,95 @@ def _log_review(draft, note):
 
 
 # ── the standard kit: clipboard, menus, settings, help ───────────────────────
+
+CLIP_FILE = os.path.expanduser("~/.config/ternoo-mesh-chat-clip.txt")
+
+
+def clip_set(text):
+    """Copy that actually lands. DPG's clipboard is app-internal on this box
+    (probed: X never sees it), so xclip/xsel take the X clipboard, DPG's
+    buffer is set too for in-field Ctrl+V, and a mirror file means the text
+    is never unreachable even with no clipboard tool installed."""
+    text = text or ""
+    for tool in (["xclip", "-selection", "clipboard"], ["xsel", "-b", "-i"]):
+        if shutil.which(tool[0]):
+            try:
+                subprocess.run(tool, input=text.encode(),
+                               stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, timeout=3)
+                break
+            except Exception:                   # noqa: BLE001
+                pass
+    try:
+        dpg.set_clipboard_text(text)
+    except Exception:                           # noqa: BLE001
+        pass
+    try:
+        open(CLIP_FILE, "w", encoding="utf-8").write(text)
+    except Exception:                           # noqa: BLE001
+        pass
+
+
+def clip_get():
+    """Paste from the real system clipboard first; DPG's buffer as fallback."""
+    for tool in (["xclip", "-selection", "clipboard", "-o"],
+                 ["xsel", "-b", "-o"]):
+        if shutil.which(tool[0]):
+            try:
+                r = subprocess.run(tool, capture_output=True, timeout=3)
+                if r.returncode == 0 and r.stdout:
+                    return r.stdout.decode("utf-8", "replace")
+            except Exception:                   # noqa: BLE001
+                pass
+    try:
+        return dpg.get_clipboard_text() or ""
+    except Exception:                           # noqa: BLE001
+        return ""
+
+
+def _ctrl_pull(*_):
+    """Ctrl just went down: pull the X clipboard into DPG's buffer, so a
+    Ctrl+V one keystroke later pastes what the SYSTEM holds."""
+    t = clip_get()
+    try:
+        if t and t != dpg.get_clipboard_text():
+            dpg.set_clipboard_text(t)
+    except Exception:                           # noqa: BLE001
+        pass
+
+
+def _ctrl_push(*_):
+    """Ctrl+C/X pressed: ImGui puts the field SELECTION into DPG's buffer —
+    a frame later, push it out to the X clipboard where it belongs."""
+    if not (dpg.is_key_down(dpg.mvKey_LControl)
+            or dpg.is_key_down(dpg.mvKey_RControl)):
+        return
+
+    def later():
+        try:
+            t = dpg.get_clipboard_text() or ""
+        except Exception:                       # noqa: BLE001
+            return
+        if t:
+            for tool in (["xclip", "-selection", "clipboard"],
+                         ["xsel", "-b", "-i"]):
+                if shutil.which(tool[0]):
+                    try:
+                        subprocess.run(tool, input=t.encode(),
+                                       stdout=subprocess.DEVNULL,
+                                       stderr=subprocess.DEVNULL, timeout=3)
+                        return
+                    except Exception:           # noqa: BLE001
+                        pass
+    ui(later)
+
 NOTES_LOG = []                                 # [(stamp, text)] this session
 
 
 def copy_last_answer(*_):
     for r, t in reversed(HISTORY):
         if r == "assistant":
-            dpg.set_clipboard_text(t)
+            clip_set(t)
             set_status("last answer copied", GRN)
             return
     set_status("no answer in this chat yet")
@@ -785,20 +896,20 @@ def copy_whole_chat(*_):
     if not HISTORY:
         set_status("chat is empty")
         return
-    dpg.set_clipboard_text("\n\n".join(
+    clip_set("\n\n".join(
         f"{'You' if r == 'user' else 'Professor'}: {t}" for r, t in HISTORY))
     set_status("whole chat copied", GRN)
 
 
 def paste_into_prompt(*_):
-    txt = dpg.get_clipboard_text() or ""
+    txt = clip_get()
     if txt:
         dpg.set_value("prompt", dpg.get_value("prompt") + txt)
         set_status("pasted into the ask box")
 
 
 def prompt_copy(*_):
-    dpg.set_clipboard_text(dpg.get_value("prompt"))
+    clip_set(dpg.get_value("prompt"))
     set_status("ask box copied", GRN)
 
 
@@ -807,13 +918,13 @@ def prompt_clear(*_):
 
 
 def editor_copy_all(*_):
-    dpg.set_clipboard_text(dpg.get_value("editor"))
+    clip_set(dpg.get_value("editor"))
     set_status("editor text copied", GRN)
 
 
 def editor_paste(*_):
     dpg.set_value("editor", dpg.get_value("editor")
-                  + (dpg.get_clipboard_text() or ""))
+                  + (clip_get()))
     ed_key()
     set_status("pasted into the editor")
 
@@ -827,7 +938,7 @@ def copy_all_reviews(*_):
     if not NOTES_LOG:
         set_status("no reviews this session")
         return
-    dpg.set_clipboard_text("\n\n".join(f"— {s} —\n{t}" for s, t in NOTES_LOG))
+    clip_set("\n\n".join(f"— {s} —\n{t}" for s, t in NOTES_LOG))
     set_status("all session reviews copied", GRN)
 
 
@@ -937,7 +1048,7 @@ def show_help(*_):
     with dpg.window(label="Help — Mesh-Chat", modal=True, tag=tag, width=760,
                     height=620, pos=(260, 60)):
         with dpg.child_window(height=-46):
-            dpg.add_text(HELP_TEXT, wrap=690)
+            dpg.add_text(HELP_TEXT, wrap=int(690 / max(0.5, SCALE)))
         dpg.add_button(label="Close", callback=lambda: dpg.delete_item(tag))
 
 
@@ -1143,7 +1254,10 @@ def build():
                         with dpg.group(horizontal=True):
                             dpg.add_text("file (.json):", color=DIM)
                             dpg.add_input_text(tag="fg_file", width=-1)
-                        dpg.add_text("command: ?", tag="fg_cmdlbl", color=DIM)
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("command", color=DIM)
+                            dpg.add_input_text(tag="fg_cmd", width=-1,
+                                               hint="what this macro runs")
                         with dpg.group(horizontal=True):
                             dpg.add_text("button name", color=DIM)
                             dpg.add_input_text(tag="fg_name", width=-1)
@@ -1154,7 +1268,7 @@ def build():
                             dpg.add_button(label="new", callback=forge_new)
                             dpg.add_button(label="{ }", callback=forge_raw)
                             dpg.add_button(label="Save", callback=forge_save)
-                        dpg.add_text("", tag="fg_msg", color=DIM, wrap=340)
+                        dpg.add_text("", tag="fg_msg", color=DIM, wrap=int(340 / max(0.5, SCALE)))
                         dpg.add_text("tick = keep - edit labels & defaults",
                                      color=DIM)
                         with dpg.child_window(tag="fg_rows", height=-1):
@@ -1217,7 +1331,7 @@ def build():
                         with dpg.child_window(tag="chat", height=-32):
                             dpg.add_text("You're connected to the mesh — ask "
                                          "the Professor anything. Ctrl+Enter "
-                                         "sends.", color=DIM, wrap=880)
+                                         "sends.", color=DIM, wrap=int(880 / max(0.5, SCALE)))
                             dpg.add_spacer(height=6)
                     with dpg.tab(label=" FlowCode taste "):
                         dpg.add_text("DPG's native node editor — FlowCode's "
@@ -1324,6 +1438,11 @@ def build():
     with dpg.handler_registry():
         dpg.add_key_press_handler(dpg.mvKey_Return, callback=_ctrl_enter)
         dpg.add_key_press_handler(callback=_zoom_keys)
+        # keep DPG's app-internal clipboard in step with the real X one
+        dpg.add_key_press_handler(dpg.mvKey_LControl, callback=_ctrl_pull)
+        dpg.add_key_press_handler(dpg.mvKey_RControl, callback=_ctrl_pull)
+        dpg.add_key_press_handler(dpg.mvKey_C, callback=_ctrl_push)
+        dpg.add_key_press_handler(dpg.mvKey_X, callback=_ctrl_push)
         dpg.add_mouse_wheel_handler(callback=_ctrl_wheel)
         dpg.add_mouse_release_handler(callback=_grip_up)
         dpg.add_mouse_click_handler(dpg.mvMouseButton_Right,
@@ -1437,6 +1556,7 @@ def main():
     dpg.show_viewport()
     dpg.set_primary_window("main", True)
     dpg.set_global_font_scale(SCALE)          # your remembered zoom
+    _ctrl_pull()                              # prime DPG buffer from X
     threading.Thread(target=_probe, daemon=True).start()
     threading.Thread(target=auto_loop, daemon=True).start()
     dpg.start_dearpygui()
