@@ -51,12 +51,18 @@ example:
 {"name": "Disk usage", "kind": "command", "command": "du",
  "desc": "one line saying what it does",
  "fields": [
-   {"flag": "-h", "label": "Human-readable sizes", "type": "check", "default": true},
+   {"flag": "-h", "label": "Human-readable sizes", "type": "check",
+    "default": true, "group": "Common", "suggest": true},
    {"flag": "--max-depth", "label": "Depth", "type": "choice", "options": ["1","2","3"], "default": "1"},
    {"arg": "path", "label": "Where", "type": "path", "default": "~"}]}
-RULES: use ONLY flags that appear in the help text below — never invent one. At
-most 8 fields; pick the most useful for everyday use. Positional arguments become
-"arg" fields (type "path" for files/dirs, else "text"). Labels in plain English.
+RULES: cover EVERY option that appears in the help text below — the human does
+the pruning in a tree, so do NOT pre-select for them. Never invent a flag. Sort
+fields into 3-7 "group" buckets (e.g. "Common", "Output", "Filtering",
+"Advanced"). Set "suggest": true on only the handful (max 6) an everyday user
+reaches for first; every other field gets "suggest": false. Positional
+arguments become "arg" fields (type "path" for files/dirs, else "text") in an
+"Arguments" group with "suggest": true. Labels in plain English, short. If
+space runs short, prefer covering more distinct flags over long labels.
 """
 
 
