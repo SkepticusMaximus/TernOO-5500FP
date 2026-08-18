@@ -101,7 +101,8 @@ GS = {
 
 
 def is_dirty():
-    return bool(GS["dirty"]) and bool(GS["widgets"])
+    has = bool(GS["widgets"])
+    return has and (bool(GS["dirty"]) or GS["file"] is None)
 
 
 def autosave(path):
