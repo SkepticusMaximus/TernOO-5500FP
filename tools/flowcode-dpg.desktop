@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=FlowCode (Dear PyGui)
+GenericName=TernOO IDE — the new GPU face
+Comment=The Dear PyGui face of FlowCode — node editor + Shell bound to the native C core
+Exec=/home/steven/.venvs/p2pcp/bin/python /home/steven/dev/SkepticusMaximus/TernOO-5500FP/FlowCode/flowcode_dpg.py
+Path=/home/steven/dev/SkepticusMaximus/TernOO-5500FP/FlowCode
+Icon=/home/steven/dev/SkepticusMaximus/TernOO-5500FP/tools/flowcode.svg
+Terminal=false
+Categories=Development;IDE;
+StartupNotify=true
