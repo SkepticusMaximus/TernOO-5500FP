@@ -280,18 +280,8 @@ def redraw():
     for wid, w in GS["widgets"].items():
         x, y = w["x"] * Z, w["y"] * Z
         ww, hh = w["w"] * Z, w["h"] * Z
-        is_ct = w["kind"] in CONTAINER_KINDS
-        fill = (30, 41, 66) if is_ct else (42, 47, 63)
-        dpg.draw_rectangle((x, y), (x + ww, y + hh), fill=fill,
-                           color=C["BORDER"], parent=D)
-        if is_ct and hh > 34:
-            dpg.draw_rectangle((x, y), (x + ww, y + 18),
-                               fill=(24, 33, 54), color=C["BORDER"],
-                               parent=D)
         label = w.get("label") or w["kind"][4:]
-        dpg.draw_text((x + max(4, ww / 2 - len(label) * 4 * Z),
-                       y + hh / 2 - 8 * Z), label, size=14 * Z,
-                      color=C["TEXT"], parent=D)
+        _render_widget(D, w["kind"], x, y, ww, hh, label=label)
         if wid == GS["sel"]:
             dpg.draw_rectangle((x - 2, y - 2), (x + ww + 2, y + hh + 2),
                                color=(255, 120, 50), thickness=2, parent=D)
@@ -304,6 +294,285 @@ def redraw():
             cap = f"{w.get('name', '')}  #{wid} ({w['x']},{w['y']})"
             dpg.draw_text((x, y + hh + 8 * Z), cap, size=13 * Z,
                           color=(255, 140, 70), parent=D)
+
+
+# ── the widget-face renderer — ONE vocabulary for palette icons and the
+#    canvas, WYSIWYG doctrine: a checkbox looks like a checkbox at 40px in
+#    the toolbar and at full size on the canvas. Hand-drawn primitives are
+#    a stand-in until the CC-09 RNODE widget-geometry organ renders canon
+#    shapes; this renderer is built to be swapped out for it. ─────────────
+def _render_widget(D, kind, x, y, w, h, label=""):
+    B = (96, 116, 160)
+    T = (238, 240, 245)
+    DIMc = (150, 158, 175)
+    ACC = (74, 158, 255)
+    FLD = (214, 219, 228)
+    PANEL = (44, 52, 72)
+    DARK = (30, 38, 56)
+    k = kind[4:] if kind.startswith("gui_") else kind
+    small = w < 64
+
+    def R(x0, y0, x1, y1, fill=None, col=B, r=0, th=1):
+        dpg.draw_rectangle((x + x0 * w, y + y0 * h), (x + x1 * w, y + y1 * h),
+                           fill=fill, color=col, rounding=r, thickness=th,
+                           parent=D)
+
+    def L(x0, y0, x1, y1, col=B, th=1):
+        dpg.draw_line((x + x0 * w, y + y0 * h), (x + x1 * w, y + y1 * h),
+                      color=col, thickness=th, parent=D)
+
+    def C(cx, cy, rr, fill=None, col=B):
+        dpg.draw_circle((x + cx * w, y + cy * h), rr * min(w, h),
+                        fill=fill, color=col, parent=D)
+
+    def TXT(tx, ty, text, col=T, size=13):
+        if not small:
+            dpg.draw_text((x + tx * w, y + ty * h), text, color=col,
+                          size=max(9, min(size, h * 0.3)), parent=D)
+
+    R(0, 0, 1, 1, fill=PANEL, col=B, r=2)                # base body
+    if k in ("window", "dialog", "messagedialog", "aboutdialog",
+             "assistant", "popover"):
+        R(0, 0, 1, 0.22, fill=DARK, col=B)               # titlebar
+        C(0.92, 0.11, 0.055, fill=(220, 90, 80), col=(220, 90, 80))
+        if k == "dialog":
+            R(0.55, 0.75, 0.75, 0.92, fill=DARK)
+            R(0.78, 0.75, 0.95, 0.92, fill=(52, 90, 150))
+        elif k == "messagedialog":
+            TXT(0.12, 0.4, "!", (255, 200, 90), 22)
+            C(0.14, 0.55, 0.1, col=(255, 200, 90))
+        elif k == "aboutdialog":
+            C(0.5, 0.5, 0.14, col=ACC)
+            TXT(0.465, 0.36, "i", ACC, 16)
+        elif k == "assistant":
+            dpg.draw_arrow((x + 0.85 * w, y + 0.55 * h),
+                           (x + 0.35 * w, y + 0.55 * h), color=ACC,
+                           thickness=2, size=6, parent=D)
+        elif k == "popover":
+            dpg.draw_triangle((x + 0.42 * w, y + h), (x + 0.58 * w, y + h),
+                              (x + 0.5 * w, y + 1.25 * h), fill=PANEL,
+                              color=B, parent=D)
+    elif k in ("box", "bin", "eventbox", "alignment", "aspectframe",
+               "handlebox", "revealer", "overlay", "scrolled", "stack",
+               "expander", "flowbox"):
+        if k == "box":
+            L(0.05, 0.36, 0.95, 0.36)
+            L(0.05, 0.66, 0.95, 0.66)
+        elif k == "scrolled":
+            R(0.86, 0.08, 0.94, 0.92, fill=DARK)
+            R(0.87, 0.15, 0.93, 0.45, fill=B)
+        elif k == "stack":
+            R(0.18, 0.2, 0.82, 0.85, fill=DARK, col=B)
+            R(0.1, 0.1, 0.74, 0.75, fill=PANEL, col=ACC)
+        elif k == "expander":
+            dpg.draw_triangle((x + 0.08 * w, y + 0.18 * h),
+                              (x + 0.08 * w, y + 0.42 * h),
+                              (x + 0.2 * w, y + 0.3 * h), fill=T, parent=D)
+            L(0.28, 0.3, 0.9, 0.3, T)
+        elif k == "revealer":
+            R(0.05, 0.5, 0.95, 0.95, fill=DARK)
+            dpg.draw_arrow((x + 0.5 * w, y + 0.45 * h),
+                           (x + 0.5 * w, y + 0.15 * h), color=ACC,
+                           thickness=2, size=5, parent=D)
+        elif k == "overlay":
+            R(0.3, 0.3, 0.95, 0.95, fill=DARK)
+        elif k == "flowbox":
+            for i2 in range(3):
+                R(0.06 + i2 * 0.32, 0.15, 0.3 + i2 * 0.32, 0.45, fill=DARK)
+            R(0.06, 0.55, 0.3, 0.85, fill=DARK)
+        elif k == "eventbox":
+            for i2 in range(6):
+                L(0.05 + i2 * 0.16, 0.05, 0.13 + i2 * 0.16, 0.05, ACC)
+                L(0.05 + i2 * 0.16, 0.95, 0.13 + i2 * 0.16, 0.95, ACC)
+        elif k == "alignment":
+            L(0.5, 0.1, 0.5, 0.9)
+            L(0.1, 0.5, 0.9, 0.5)
+        elif k == "aspectframe":
+            L(0.05, 0.95, 0.95, 0.05)
+        elif k == "handlebox":
+            for i2 in range(3):
+                C(0.09, 0.25 + i2 * 0.25, 0.035, fill=DIMc, col=DIMc)
+    elif k == "grid":
+        L(0.5, 0.05, 0.5, 0.95)
+        L(0.05, 0.5, 0.95, 0.5)
+    elif k == "frame":
+        R(0.12, 0.0, 0.55, 0.16, fill=PANEL, col=PANEL)
+        TXT(0.14, 0.0, label or "frame", DIMc, 11)
+    elif k == "notebook":
+        R(0.02, 0.02, 0.3, 0.24, fill=(58, 96, 160), col=B)
+        R(0.32, 0.02, 0.6, 0.24, fill=DARK, col=B)
+        L(0.02, 0.24, 0.98, 0.24, ACC)
+    elif k == "paned":
+        L(0.5, 0.05, 0.5, 0.95, ACC, 3)
+    elif k == "listbox" or k == "treeview":
+        rows = 3 if small else max(3, int(h / 26))
+        for i2 in range(rows):
+            yy = (i2 + 0.15) / rows
+            if k == "treeview":
+                ind = 0.08 + (i2 % 3) * 0.09
+                dpg.draw_triangle((x + (ind - 0.045) * w, y + (yy - 0.04) * h),
+                                  (x + (ind - 0.045) * w, y + (yy + 0.10) * h),
+                                  (x + (ind + 0.02) * w, y + (yy + 0.03) * h),
+                                  fill=DIMc, parent=D)
+                L(ind + 0.05, yy + 0.03, 0.9, yy + 0.03, DIMc, 2)
+            else:
+                L(0.08, yy + 0.03, 0.9, yy + 0.03, DIMc, 2)
+        if k == "listbox":
+            R(0.04, 0.08, 0.96, 0.36, fill=(52, 90, 150, 90), col=(0, 0, 0, 0))
+    elif k in ("headerbar", "actionbar", "menubar", "toolbar", "statusbar"):
+        if k == "headerbar":
+            R(0, 0, 1, 1, fill=DARK, col=B, r=2)
+            C(0.08, 0.5, 0.13, fill=(220, 90, 80))
+            C(0.2, 0.5, 0.13, fill=(240, 180, 80))
+            TXT(0.4, 0.22, label or "title", T)
+        elif k == "actionbar":
+            R(0, 0, 1, 1, fill=DARK, col=B)
+            R(0.62, 0.2, 0.78, 0.8, fill=(52, 90, 150))
+            R(0.82, 0.2, 0.97, 0.8, fill=PANEL)
+        elif k == "menubar":
+            R(0, 0, 1, 1, fill=DARK, col=B)
+            for i2, ww2 in enumerate((0.12, 0.1, 0.14)):
+                L(0.05 + i2 * 0.2, 0.5, 0.05 + i2 * 0.2 + ww2, 0.5, T, 2)
+        elif k == "toolbar":
+            R(0, 0, 1, 1, fill=DARK, col=B)
+            for i2 in range(4):
+                R(0.05 + i2 * 0.14, 0.2, 0.15 + i2 * 0.14, 0.8, fill=PANEL)
+        else:
+            R(0, 0, 1, 1, fill=DARK, col=B)
+            L(0.05, 0.5, 0.4, 0.5, DIMc, 2)
+    elif k in ("button", "toggle", "menubutton", "link"):
+        R(0.05, 0.12, 0.95, 0.88,
+          fill=(58, 96, 160) if k != "toggle" else (36, 60, 104),
+          col=ACC if k == "toggle" else B, r=4)
+        if k == "menubutton":
+            dpg.draw_triangle((x + 0.78 * w, y + 0.42 * h),
+                              (x + 0.92 * w, y + 0.42 * h),
+                              (x + 0.85 * w, y + 0.62 * h), fill=T, parent=D)
+            TXT(0.12, 0.3, label or "menu", T)
+        elif k == "link":
+            TXT(0.15, 0.28, label or "link", ACC)
+            L(0.15, 0.75, 0.6, 0.75, ACC)
+        else:
+            TXT(0.5 - 0.05 * len(label or "btn"), 0.3, label or "btn", T)
+    elif k == "check":
+        R(0.06, 0.25, 0.34, 0.78, fill=FLD, col=B, r=2)
+        L(0.11, 0.55, 0.18, 0.7, (30, 120, 60), 3)
+        L(0.18, 0.7, 0.3, 0.32, (30, 120, 60), 3)
+        TXT(0.42, 0.3, label or "check", T)
+    elif k == "radio":
+        C(0.18, 0.5, 0.16, fill=FLD, col=B)
+        C(0.18, 0.5, 0.075, fill=(30, 120, 60), col=(30, 120, 60))
+        TXT(0.42, 0.3, label or "radio", T)
+    elif k == "switch":
+        R(0.08, 0.25, 0.6, 0.75, fill=(46, 140, 90), col=B, r=h * 0.25)
+        C(0.47, 0.5, 0.2, fill=T, col=T)
+    elif k in ("entry", "searchentry", "spinbutton", "combobox"):
+        R(0.04, 0.15, 0.96, 0.85, fill=FLD, col=B, r=2)
+        if k == "entry":
+            L(0.1, 0.28, 0.1, 0.72, (40, 44, 55), 2)
+        elif k == "searchentry":
+            C(0.14, 0.45, 0.11, col=(90, 96, 110))
+            L(0.2, 0.62, 0.27, 0.78, (90, 96, 110), 2)
+        elif k == "spinbutton":
+            R(0.8, 0.15, 0.96, 0.5, fill=(200, 205, 215), col=B)
+            R(0.8, 0.5, 0.96, 0.85, fill=(200, 205, 215), col=B)
+            dpg.draw_triangle((x + 0.84 * w, y + 0.4 * h),
+                              (x + 0.92 * w, y + 0.4 * h),
+                              (x + 0.88 * w, y + 0.24 * h),
+                              fill=(60, 66, 80), parent=D)
+            dpg.draw_triangle((x + 0.84 * w, y + 0.6 * h),
+                              (x + 0.92 * w, y + 0.6 * h),
+                              (x + 0.88 * w, y + 0.76 * h),
+                              fill=(60, 66, 80), parent=D)
+        else:
+            dpg.draw_triangle((x + 0.8 * w, y + 0.4 * h),
+                              (x + 0.94 * w, y + 0.4 * h),
+                              (x + 0.87 * w, y + 0.65 * h),
+                              fill=(60, 66, 80), parent=D)
+        if k in ("entry", "combobox"):
+            TXT(0.16, 0.3, label or "", (60, 66, 80))
+    elif k == "textview":
+        R(0.03, 0.05, 0.97, 0.95, fill=FLD, col=B)
+        for i2 in range(3 if small else max(3, int(h / 22))):
+            L(0.08, 0.18 + i2 * 0.22, 0.9 - (i2 % 2) * 0.15,
+              0.18 + i2 * 0.22, (120, 126, 140), 2)
+    elif k == "calendar":
+        R(0.05, 0.05, 0.95, 0.28, fill=(52, 90, 150), col=B)
+        for r2 in range(2):
+            for c2 in range(4):
+                R(0.08 + c2 * 0.22, 0.38 + r2 * 0.28,
+                  0.24 + c2 * 0.22, 0.58 + r2 * 0.28, fill=FLD, col=B)
+    elif k == "colorchooser":
+        for i2, col2 in enumerate(((220, 90, 80), (240, 180, 80),
+                                   (63, 208, 143), (74, 158, 255))):
+            R(0.06 + i2 * 0.23, 0.25, 0.24 + i2 * 0.23, 0.75,
+              fill=col2, col=B)
+    elif k == "fontchooser":
+        TXT(0.12, 0.15, "Aa", T, 20)
+        L(0.1, 0.8, 0.9, 0.8, DIMc)
+    elif k == "filechooser":
+        dpg.draw_quad((x + 0.08 * w, y + 0.28 * h), (x + 0.3 * w, y + 0.28 * h),
+                      (x + 0.34 * w, y + 0.38 * h), (x + 0.08 * w, y + 0.38 * h),
+                      fill=(240, 180, 80), parent=D)
+        R(0.08, 0.36, 0.6, 0.8, fill=(240, 180, 80), col=(180, 130, 50))
+        R(0.66, 0.36, 0.94, 0.8, fill=FLD, col=B)
+    elif k == "label":
+        TXT(0.1, 0.28, label or "label", T)
+        if small:
+            L(0.1, 0.4, 0.7, 0.4, T, 2)
+            L(0.1, 0.65, 0.5, 0.65, DIMc, 2)
+    elif k == "image":
+        R(0.06, 0.08, 0.94, 0.92, fill=DARK, col=B)
+        C(0.72, 0.3, 0.09, fill=(240, 200, 90), col=(240, 200, 90))
+        dpg.draw_triangle((x + 0.12 * w, y + 0.9 * h),
+                          (x + 0.42 * w, y + 0.45 * h),
+                          (x + 0.68 * w, y + 0.9 * h),
+                          fill=(70, 120, 90), parent=D)
+        dpg.draw_triangle((x + 0.5 * w, y + 0.9 * h),
+                          (x + 0.72 * w, y + 0.58 * h),
+                          (x + 0.92 * w, y + 0.9 * h),
+                          fill=(60, 100, 80), parent=D)
+    elif k == "progress":
+        R(0.05, 0.32, 0.95, 0.68, fill=DARK, col=B, r=3)
+        R(0.05, 0.32, 0.62, 0.68, fill=(63, 208, 143),
+          col=(63, 208, 143), r=3)
+    elif k == "level":
+        for i2 in range(5):
+            R(0.06 + i2 * 0.19, 0.3, 0.21 + i2 * 0.19, 0.7,
+              fill=(63, 208, 143) if i2 < 3 else DARK, col=B)
+    elif k == "scale":
+        L(0.06, 0.5, 0.94, 0.5, DARK, 4)
+        L(0.06, 0.5, 0.55, 0.5, ACC, 4)
+        C(0.55, 0.5, 0.16, fill=T, col=B)
+    elif k == "separator":
+        L(0.05, 0.5, 0.95, 0.5, DIMc, 2)
+    elif k == "iconview":
+        for r2 in range(2):
+            for c2 in range(3):
+                R(0.08 + c2 * 0.31, 0.12 + r2 * 0.45,
+                  0.3 + c2 * 0.31, 0.42 + r2 * 0.45, fill=(52, 90, 150),
+                  col=B)
+    elif k == "infobar":
+        R(0, 0.2, 1, 0.8, fill=(60, 90, 140), col=ACC)
+        C(0.1, 0.5, 0.14, col=T)
+        TXT(0.085, 0.3, "i", T)
+    elif k == "canvas":
+        L(0.05, 0.05, 0.95, 0.95, DIMc)
+        L(0.95, 0.05, 0.05, 0.95, DIMc)
+    elif k in ("menu", "menuitem"):
+        if k == "menu":
+            for i2 in range(3):
+                L(0.12, 0.22 + i2 * 0.28, 0.85, 0.22 + i2 * 0.28, DIMc, 2)
+            R(0.06, 0.1, 0.94, 0.36, fill=(52, 90, 150, 90),
+              col=(0, 0, 0, 0))
+        else:
+            L(0.12, 0.5, 0.7, 0.5, T, 2)
+            dpg.draw_triangle((x + 0.85 * w, y + 0.35 * h),
+                              (x + 0.85 * w, y + 0.65 * h),
+                              (x + 0.95 * w, y + 0.5 * h), fill=DIMc,
+                              parent=D)
+    else:
+        TXT(0.1, 0.3, label or k, T)
 
 
 # ── selection + properties panel sync ───────────────────────────────────────
@@ -607,10 +876,17 @@ def build_gui_tab(style):
                 with dpg.collapsing_header(label=sec,
                                            default_open=(sec == "CONTAINERS")):
                     for k in kinds:
-                        dpg.add_button(label=f" {k[4:]} ", width=-1,
-                                       user_data=k,
-                                       callback=lambda s, a, u:
-                                       _pick_kind(u))
+                        with dpg.group(horizontal=True):
+                            dl = dpg.add_drawlist(width=46, height=28)
+                            _render_widget(dl, k, 2, 2, 42, 24)
+                            dpg.add_button(label=f" {k[4:]} ", width=-1,
+                                           user_data=k,
+                                           callback=lambda s, a, u:
+                                           _pick_kind(u))
+                        with dpg.item_handler_registry() as hreg:
+                            dpg.add_item_clicked_handler(
+                                callback=lambda s, a, u=k: _pick_kind(u))
+                        dpg.bind_item_handler_registry(dl, hreg)
             dpg.add_spacer(height=6)
             dpg.add_text("ACTIONS", color=C["DIM"])
             dpg.add_button(label=" Save ", width=-1, callback=_save_clicked)

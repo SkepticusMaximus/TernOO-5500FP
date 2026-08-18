@@ -626,6 +626,13 @@ def main():
             print("FLOW ROUND-TRIP OK — .flow/.fc schema + preservation "
                   "verified")
         if os.environ.get("FLOW_DPG_TEST") and GUI_ORGAN:
+            # every widget kind must render a face without error
+            allk = [k for _s, ks in GUI_ORGAN.PALETTE for k in ks]
+            for k in allk:
+                GUI_ORGAN._render_widget("guic_draw", k, 0, 0, 120, 80,
+                                         label="x")
+            dpg.delete_item("guic_draw", children_only=True)
+            print(f"WIDGET FACES OK — {len(allk)} kinds render")
             import tempfile
             tmp = os.path.join(tempfile.gettempdir(), "fdpg-test.gui")
             GUI_ORGAN.add_widget("gui_dialog", 248, 160)
