@@ -19,6 +19,11 @@ zoom. Each rides a later leg of this tab's port.
 import json
 import math
 import os
+import subprocess
+import sys
+import tempfile
+import threading
+import time
 
 import dearpygui.dearpygui as dpg
 
@@ -43,10 +48,321 @@ KINDS = [
 FS = {
     "syms": {}, "raw": {}, "edges": [], "rawdoc": None,
     "next": 0, "sel": None, "sel_edge": None, "file": None,
-    "tool": "select", "edge_src": None, "drag": None, "grip": None,
-    "zoom": 1.0,
+    "tool": "select", "edge_src": None, "edge_wps": [], "drag": None,
+    "wpdrag": None, "grip": None, "zoom": 1.0,
     "undo": [], "redo": [],
 }
+
+# ── the execution layer (lazy: flowcode.py imports headless — the Tk app
+#    only launches under __main__ — so FCCanvas/FCSymbol, the interpreter,
+#    WordStream and the Stage-6 compiler are all REUSED, one source of
+#    truth, no copies) ─────────────────────────────────────────────────────
+_EXEC = {}
+_ENG = [None]          # persistent native-core engine for Load→EMU
+_RUN_PROC = [None]     # the SDL engine subprocess
+_STEPPING = [False]
+BARE = {"flow_terminator": "terminator", "flow_process": "process",
+        "flow_decision": "decision", "flow_io": "io",
+        "flow_subroutine": "process", "flow_connector": "io"}
+
+
+def _exec_mods():
+    if _EXEC.get("ready") or _EXEC.get("err"):
+        return _EXEC
+    try:
+        import importlib.util as ilu
+        here = os.path.dirname(os.path.abspath(__file__))
+        five = os.path.join(os.path.dirname(here), "5500fp")
+        if five not in sys.path:
+            sys.path.insert(0, five)
+        import word_stream as WS
+        import compile_to_t5asm as CT
+        import ternoo_interpreter as TI
+        spec = ilu.spec_from_file_location(
+            "flowcode_mod", os.path.join(here, "flowcode.py"))
+        FC = ilu.module_from_spec(spec)
+        spec.loader.exec_module(FC)
+        _EXEC.update(ready=True, WS=WS, CT=CT, TI=TI, FC=FC,
+                     engine=os.path.join(
+                         os.path.dirname(here),
+                         "NASM-TernOO-5500FP-Emulator", "c_emulator",
+                         "5500fp"))
+    except Exception as e:                      # noqa: BLE001
+        _EXEC["err"] = str(e)
+    return _EXEC
+
+
+def _ui(fn):
+    """Schedule a UI mutation from a worker thread onto the render thread."""
+    try:
+        dpg.set_frame_callback(dpg.get_frame_count() + 1,
+                               lambda: fn())
+    except Exception:                           # noqa: BLE001
+        pass
+
+
+def _out(text, color=None):
+    if not dpg.does_item_exist("flowc_out"):
+        return
+    dpg.add_text(text, parent="flowc_out",
+                 color=color or STYLE.get("TEXT", (238, 240, 245)),
+                 wrap=int(1000 / max(0.5, FS["zoom"])))
+    dpg.set_y_scroll("flowc_out", 999999.0)
+
+
+def _out_clear(*_):
+    if dpg.does_item_exist("flowc_out"):
+        dpg.delete_item("flowc_out", children_only=True)
+
+
+def _sync_canvas(E):
+    """FS dicts -> FCCanvas, mirroring the Tk face's sync verbatim."""
+    c = E["FC"].FCCanvas()
+    Sym = E["FC"].FCSymbol
+    for sid, sym in sorted(FS["syms"].items()):
+        s = Sym(BARE.get(sym.get("kind", ""), "process"),
+                sym["x"], sym["y"], sym.get("label", ""))
+        s.id = sid
+        c.symbols[sid] = s
+    Sym._next_id = (max(FS["syms"].keys()) + 1) if FS["syms"] else 1
+    for e in FS["edges"]:
+        if e["src"] in c.symbols and e["dst"] in c.symbols:
+            c.add_edge(e["src"], e["dst"],
+                       waypoints=[tuple(w) for w in e.get("waypoints", [])],
+                       condition=e.get("condition", ""))
+    return c
+
+
+def do_word_dump(*_):
+    E = _exec_mods()
+    if E.get("err"):
+        _out(f"✗ execution layer unavailable: {E['err']}", (255, 120, 90))
+        return
+    c = _sync_canvas(E)
+    words = c.to_word_program()
+    import contextlib
+    import io as _io
+    buf = _io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        c.print_word_dump()
+    _out(f"⬇ Word Dump — {len(words)} TernOO words", (74, 158, 255))
+    for line in buf.getvalue().splitlines():
+        _out("  " + line, STYLE.get("DIM"))
+    _status(f"word dump → Output ({len(words)} words)")
+
+
+def do_load_emu(*_):
+    E = _exec_mods()
+    if E.get("err"):
+        _out(f"✗ execution layer unavailable: {E['err']}", (255, 120, 90))
+        return
+    bridge = STYLE.get("BRIDGE")
+    if bridge is None:
+        _out("✗ native bridge unavailable — build libternoo_c.so",
+             (255, 120, 90))
+        return
+    c = _sync_canvas(E)
+    words = c.to_word_program()
+    if _ENG[0] is None:
+        _ENG[0] = bridge.TernOONativeEngine("c")
+    _ENG[0].load_program(words, start_addr=100)
+    _out(f"▶ Loaded {len(words)} words → NATIVE C core "
+         f"(addr 100–{100 + len(words) - 1})", (63, 208, 143))
+    _status(f"loaded {len(words)} words → native C core at addr 100")
+
+
+def do_step(*_):
+    """▶ Step — walk the flow via the interpreter, live-highlighting each
+    symbol on the canvas (runs in a worker; UI updates per step)."""
+    if _STEPPING[0]:
+        _status("step-run already in progress", ok=False)
+        return
+    E = _exec_mods()
+    if E.get("err"):
+        _out(f"✗ execution layer unavailable: {E['err']}", (255, 120, 90))
+        return
+    if not FS["syms"]:
+        _out("✗ Flow canvas is empty — place symbols first", (255, 120, 90))
+        return
+    data = {"symbols": [{**s, "kind": BARE.get(s.get("kind", ""), "process")}
+                        for s in FS["syms"].values()],
+            "edges": [dict(e) for e in FS["edges"]]}
+    _out(f"▶ Step-running flow ({len(FS['syms'])} symbols)…",
+         (74, 158, 255))
+
+    def work():
+        _STEPPING[0] = True
+        try:
+            interp = E["TI"].TernOOInterpreter(trace=False)
+            orig = interp._execute_node
+
+            def patched(node, end_ids, depth):
+                sym = FS["syms"].get(node.id)
+                lbl = sym.get("label", "?") if sym else "?"
+                knd = sym.get("kind", "?") if sym else "?"
+
+                def show(nid=node.id, t=f"  ► {lbl}  [{knd}]"):
+                    FS["sel"] = nid
+                    redraw()
+                    _out(t)
+                    _selinfo(f"► {lbl}  [{knd}]")
+                _ui(show)
+                time.sleep(0.25)
+                return orig(node, end_ids, depth)
+            interp._execute_node = patched
+            interp.load_dict(data)
+            result = interp.run()
+            _ui(lambda: (_out(f"✓ Done — {result['steps']} step(s)",
+                              (63, 208, 143)),
+                         _status(f"step-run complete — "
+                                 f"{result['steps']} steps")))
+        except Exception as ex:                 # noqa: BLE001
+            _ui(lambda ex=ex: (_out(f"✗ Error: {ex}", (255, 120, 90)),
+                               _status(f"step-run error: {ex}", ok=False)))
+        finally:
+            _STEPPING[0] = False
+    threading.Thread(target=work, daemon=True).start()
+
+
+def _entry_meta():
+    """Flow meta for the compiler, with is_entry synthesized on the first
+    terminator that has no incoming edge (unless a loaded file already
+    carries an explicit is_entry property)."""
+    meta = {sid: dict(s, properties=[dict(p) if isinstance(p, dict) else p
+                                     for p in s.get("properties", [])])
+            for sid, s in FS["syms"].items()}
+    have = any(isinstance(p, dict) and p.get("name") == "is_entry"
+               and p.get("value")
+               for s in meta.values() for p in s.get("properties", []))
+    if not have:
+        incoming = {e["dst"] for e in FS["edges"]}
+        for sid in sorted(meta):
+            s = meta[sid]
+            if s.get("kind") == "flow_terminator" and sid not in incoming:
+                s.setdefault("properties", []).append(
+                    {"name": "is_entry", "value": True})
+                return meta, s.get("label", "")
+    return meta, None
+
+
+def do_run_sdl(*_):
+    """▶▶ Run — compile the flow to t5asm and execute it on the native C
+    engine (SDL window), exactly as the Tk face does."""
+    E = _exec_mods()
+    if E.get("err"):
+        _out(f"✗ execution layer unavailable: {E['err']}", (255, 120, 90))
+        return
+    if not FS["syms"]:
+        _out("✗ Flow canvas is empty — place symbols first", (255, 120, 90))
+        return
+    engine = E["engine"]
+    if not (os.path.isfile(engine) and os.access(engine, os.X_OK)):
+        _out(f"✗ Engine not found: {engine}\n  Run `make` in "
+             "NASM-TernOO-5500FP-Emulator/c_emulator/ first.",
+             (255, 120, 90))
+        return
+    _out("▶ Compiling…", (74, 158, 255))
+    c = _sync_canvas(E)
+    ws = E["WS"].WordStream(c.to_word_program())
+    meta, auto_entry = _entry_meta()
+    ws._flow_meta = meta
+    ws._flow_edges = [dict(e) for e in FS["edges"]]
+    if auto_entry is not None:
+        _out(f"  entry: \"{auto_entry}\" (auto-detected — no-incoming "
+             "terminator)", STYLE.get("DIM"))
+    try:
+        t5 = E["CT"].compile_wordstream_to_t5asm(
+            ws, source_path=FS["file"] or "<in-memory>")
+    except E["CT"].CompileError as ce:
+        _out(f"✗ CompileError: {ce}", (255, 120, 90))
+        _status(f"compile error: {ce}", ok=False)
+        return
+    except Exception:                           # noqa: BLE001
+        import traceback
+        _out("✗ Internal compiler error:\n" + traceback.format_exc(),
+             (255, 120, 90))
+        return
+    tmp = os.path.join(tempfile.gettempdir(),
+                       f"flowcode_dpg_{os.getpid()}.t5asm")
+    open(tmp, "w", encoding="utf-8").write(t5)
+    _out(f"  compiled {len(t5.splitlines())} lines → {tmp}",
+         STYLE.get("DIM"))
+    try:
+        proc = subprocess.Popen([engine, "--display", "sdl", "--run", tmp],
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, bufsize=1)
+    except OSError as oe:
+        _out(f"✗ Launch failed: {oe}", (255, 120, 90))
+        return
+    _RUN_PROC[0] = proc
+    _out("▶ SDL window is open — close it when finished (or ⬛ Stop).",
+         (63, 208, 143))
+    _status("SDL engine running — close its window or press Stop")
+
+    def drain(pipe, tag):
+        for line in pipe:
+            _ui(lambda t=line.rstrip(): _out("  " + t, STYLE.get(tag)))
+
+    threading.Thread(target=drain, args=(proc.stdout, "DIM"),
+                     daemon=True).start()
+    threading.Thread(target=drain, args=(proc.stderr, "AMB"),
+                     daemon=True).start()
+
+    def watch():
+        rc = proc.wait()
+        _ui(lambda: (_out(f"■ engine exited (rc={rc})", (74, 158, 255)),
+                     _status("engine finished")))
+    threading.Thread(target=watch, daemon=True).start()
+
+
+def do_stop(*_):
+    proc = _RUN_PROC[0]
+    if proc and proc.poll() is None:
+        proc.terminate()
+        _out("⬛ engine stopped", (255, 120, 90))
+        _status("SDL engine stopped")
+    else:
+        _status("nothing running")
+
+
+def _import_merge(path):
+    try:
+        doc = json.load(open(path, encoding="utf-8"))
+    except Exception as e:                      # noqa: BLE001
+        _status(f"import failed: {e}", ok=False)
+        return
+    syms = doc.get("flow_symbols", [])
+    if not syms:
+        _status("no flow symbols in that file", ok=False)
+        return
+    _snapshot()
+    idmap = {}
+    base = FS["next"]
+    for i, sym in enumerate(sorted(syms, key=lambda s: s["id"])):
+        nid = base + i
+        idmap[int(sym["id"])] = nid
+        FS["syms"][nid] = {
+            "id": nid, "kind": sym.get("kind", "flow_process"),
+            "x": sym.get("x", 0) + 48, "y": sym.get("y", 0) + 48,
+            "w": sym.get("w", SYMBOL_W), "h": sym.get("h", SYMBOL_H),
+            "label": sym.get("label", ""),
+            "name": f"{sym.get('kind', 'flow')}_{nid}",
+            "parent_scope": sym.get("parent_scope"),
+            "properties": list(sym.get("properties", [])),
+        }
+    FS["next"] = base + len(syms)
+    added_e = 0
+    for e in doc.get("flow_edges", []):
+        if e.get("src") in idmap and e.get("dst") in idmap:
+            ne = dict(e)
+            ne["src"], ne["dst"] = idmap[e["src"]], idmap[e["dst"]]
+            ne["waypoints"] = [[wx + 48, wy + 48]
+                               for wx, wy in e.get("waypoints", [])]
+            FS["edges"].append(ne)
+            added_e += 1
+    redraw()
+    _status(f"imported {len(syms)} symbols + {added_e} edges "
+            f"from {os.path.basename(path)} (merged, offset +48)")
 
 
 def zoom_step(direction):
@@ -195,7 +511,7 @@ def add_symbol(kind, x, y, label=""):
     return sid
 
 
-def add_edge(src_id, dst_id):
+def add_edge(src_id, dst_id, waypoints=None):
     if src_id == dst_id or src_id not in FS["syms"] \
             or dst_id not in FS["syms"]:
         return None
@@ -204,7 +520,9 @@ def add_edge(src_id, dst_id):
             _status("edge already exists", ok=False)
             return None
     _snapshot()
-    edge = {"src": src_id, "dst": dst_id, "waypoints": [], "condition": ""}
+    edge = {"src": src_id, "dst": dst_id,
+            "waypoints": [list(w) for w in (waypoints or [])],
+            "condition": ""}
     FS["edges"].append(edge)
     redraw()
     _status(f"Edge {FS['syms'][src_id]['label']} → "
@@ -371,6 +689,11 @@ def redraw():
             dpg.draw_line(a, b, color=col, thickness=2, parent=D)
         dpg.draw_arrow(pts[-1], pts[-2], color=col, thickness=2,
                        size=8 * Z, parent=D)
+        if i == FS["sel_edge"]:
+            for wx, wy in e.get("waypoints", []):
+                dpg.draw_rectangle((wx * Z - 4, wy * Z - 4),
+                                   (wx * Z + 4, wy * Z + 4),
+                                   fill=COL["selected"], parent=D)
         if e.get("condition"):
             mx = (pts[0][0] + pts[-1][0]) / 2
             my = (pts[0][1] + pts[-1][1]) / 2
@@ -411,19 +734,25 @@ def _on_click(*_):
         return
     if tool == "edge":
         sid = _hit_symbol(mx, my)
-        if sid is None:
-            FS["edge_src"] = None
-            set_tool(None, None, "select")
-            _status("edge cancelled")
-            return
         if FS["edge_src"] is None:
+            if sid is None:
+                set_tool(None, None, "select")
+                _status("edge cancelled")
+                return
             FS["edge_src"] = sid
+            FS["edge_wps"] = []
             dpg.set_value("flowc_tool",
-                          f"tool: Edge — {FS['syms'][sid]['label']} → "
-                          "click the DESTINATION")
+                          f"tool: Edge — {FS['syms'][sid]['label']} → click "
+                          "DESTINATION (empty canvas adds a waypoint)")
             return
-        add_edge(FS["edge_src"], sid)
+        if sid is None:
+            FS["edge_wps"].append([snap(mx), snap(my)])
+            _status(f"waypoint {len(FS['edge_wps'])} — click the "
+                    "destination symbol (or more waypoints)")
+            return
+        add_edge(FS["edge_src"], sid, FS["edge_wps"])
         FS["edge_src"] = None
+        FS["edge_wps"] = []
         FS["tool"] = "select"
         set_tool(None, None, "select")
         return
@@ -436,7 +765,15 @@ def _on_click(*_):
         if ei is not None:
             delete_edge(ei)
         return
-    # select tool
+    # select tool — a selected edge's waypoints are draggable handles
+    if FS["sel_edge"] is not None and FS["sel_edge"] < len(FS["edges"]):
+        e = FS["edges"][FS["sel_edge"]]
+        for j, wp in enumerate(e.get("waypoints", [])):
+            if math.hypot(mx - wp[0], my - wp[1]) <= 8:
+                _snapshot()
+                FS["wpdrag"] = {"e": FS["sel_edge"], "j": j,
+                                "orig": (wp[0], wp[1])}
+                return
     sid = _hit_symbol(mx, my)
     FS["sel"] = sid
     FS["sel_edge"] = None
@@ -466,6 +803,18 @@ def _on_drag(sender, app_data):
         dpg.configure_item("flowc_panel",
                            width=max(140, min(int(FS["grip"] + gdx), 480)))
         return
+    if FS["wpdrag"] is not None:
+        _b, dx, dy = app_data
+        z = FS["zoom"]
+        w = FS["wpdrag"]
+        try:
+            wp = FS["edges"][w["e"]]["waypoints"][w["j"]]
+            wp[0] = w["orig"][0] + dx / z
+            wp[1] = w["orig"][1] + dy / z
+            redraw()
+        except (IndexError, KeyError):
+            FS["wpdrag"] = None
+        return
     if FS["drag"] is None or FS["sel"] is None:
         return
     _b, dx, dy = app_data
@@ -479,6 +828,15 @@ def _on_drag(sender, app_data):
 
 
 def _on_release(*_):
+    if FS["wpdrag"] is not None:
+        w = FS["wpdrag"]
+        FS["wpdrag"] = None
+        try:
+            wp = FS["edges"][w["e"]]["waypoints"][w["j"]]
+            wp[0], wp[1] = snap(wp[0]), snap(wp[1])
+            redraw()
+        except (IndexError, KeyError):
+            pass
     if FS["grip"] is not None:
         FS["grip"] = None
         cfg = STYLE.get("CFG")
@@ -647,42 +1005,61 @@ def build_flow_tab(style):
         dpg.add_file_extension(".fc", color=(63, 208, 143))
         dpg.add_file_extension(".flow", color=(74, 158, 255))
         dpg.add_file_extension(".*")
+    with dpg.file_dialog(directory_selector=False, show=False, modal=True,
+                         tag="flowc_import_dlg", width=780, height=480,
+                         default_path=_designs, default_filename="",
+                         callback=lambda s, a: _import_merge(_picked(a))):
+        dpg.add_file_extension(".fc", color=(63, 208, 143))
+        dpg.add_file_extension(".flow", color=(74, 158, 255))
+        dpg.add_file_extension(".*")
 
     with dpg.group(horizontal=True):
         with dpg.child_window(width=int(C.get("CFG", {})
                               .get("flow_panel_w", 320)),
                               tag="flowc_panel"):
-            dpg.add_text("TOOLS", color=C["DIM"])
-            dpg.add_button(label=" Select ", width=-1, user_data="select",
-                           callback=set_tool)
-            dpg.add_button(label=" Delete ", width=-1, user_data="delete",
-                           callback=set_tool)
-            dpg.add_spacer(height=6)
-            dpg.add_text("SYMBOLS → UDP", color=C["DIM"])
-            for kind, name, sub in KINDS:
-                dpg.add_button(label=f" {name} ", width=-1, user_data=kind,
+            with dpg.collapsing_header(label="TOOLS", default_open=True):
+                dpg.add_button(label=" Select ", width=-1,
+                               user_data="select", callback=set_tool)
+                dpg.add_button(label=" Delete ", width=-1,
+                               user_data="delete", callback=set_tool)
+            with dpg.collapsing_header(label="SYMBOLS → UDP",
+                                       default_open=True):
+                for kind, name, sub in KINDS:
+                    dpg.add_button(label=f" {name} ", width=-1,
+                                   user_data=kind, callback=set_tool)
+                    dpg.add_text("  " + sub, color=C["DIM"])
+            with dpg.collapsing_header(label="CONNECT → EXEC",
+                                       default_open=True):
+                dpg.add_button(label=" Edge ", width=-1, user_data="edge",
                                callback=set_tool)
-                dpg.add_text("  " + sub, color=C["DIM"])
-            dpg.add_spacer(height=6)
-            dpg.add_text("CONNECT → EXEC", color=C["DIM"])
-            dpg.add_button(label=" Edge ", width=-1, user_data="edge",
-                           callback=set_tool)
-            dpg.add_text("  src→[wp]→dst", color=C["DIM"])
-            dpg.add_spacer(height=6)
-            dpg.add_text("ACTIONS", color=C["DIM"])
-            dpg.add_button(label=" Save ", width=-1, callback=_save_clicked)
-            dpg.add_button(label=" Save as... ", width=-1,
-                           callback=lambda: dpg.show_item("flowc_save_dlg"))
-            dpg.add_button(label=" Open ", width=-1,
-                           callback=lambda: dpg.show_item("flowc_open_dlg"))
-            dpg.add_button(label=" Clear ", width=-1, callback=clear_all)
-            dpg.add_button(label=" Undo ", width=-1, callback=undo)
-            dpg.add_button(label=" Redo ", width=-1, callback=redo)
+                dpg.add_text("  src→[wp]→dst", color=C["DIM"])
+            with dpg.collapsing_header(label="ACTIONS", default_open=True):
+                dpg.add_button(label=" ⬇ Word Dump ", width=-1,
+                               callback=do_word_dump)
+                dpg.add_button(label=" ▶ Load→EMU (native) ", width=-1,
+                               callback=do_load_emu)
+                dpg.add_button(label=" ▶ Step ", width=-1, callback=do_step)
+                dpg.add_button(label=" ▶▶ Run (SDL) ", width=-1,
+                               callback=do_run_sdl)
+                dpg.add_button(label=" ⬛ Stop ", width=-1, callback=do_stop)
+                dpg.add_spacer(height=4)
+                dpg.add_button(label=" Save ", width=-1,
+                               callback=_save_clicked)
+                dpg.add_button(label=" Save as... ", width=-1,
+                               callback=lambda:
+                               dpg.show_item("flowc_save_dlg"))
+                dpg.add_button(label=" Open ", width=-1,
+                               callback=lambda:
+                               dpg.show_item("flowc_open_dlg"))
+                dpg.add_button(label=" 📥 Import ", width=-1,
+                               callback=lambda:
+                               dpg.show_item("flowc_import_dlg"))
+                dpg.add_button(label=" Clear ", width=-1, callback=clear_all)
+                dpg.add_button(label=" Undo ", width=-1, callback=undo)
+                dpg.add_button(label=" Redo ", width=-1, callback=redo)
             dpg.add_spacer(height=8)
-            dpg.add_text("not yet ported:\n Word Dump · Load→EMU\n "
-                         "Step/Run/Stop · Import\n Learn · Suggest\n "
-                         "waypoint editing\n pocket scopes",
-                         color=C["DIM"])
+            dpg.add_text("not yet ported:\n Learn · Suggest\n "
+                         "pocket scopes", color=C["DIM"])
         with dpg.child_window(width=10, height=-1, no_scrollbar=True,
                               border=False):
             dpg.add_button(tag="flowc_grip", label="", width=-1,
@@ -702,7 +1079,16 @@ def build_flow_tab(style):
                      "divider for panel width", color=C["DIM"])
     dpg.add_text("Flow ready — reads/writes the Tk face's .fc/.flow",
                  tag="flowc_status", color=C["DIM"])
+    with dpg.collapsing_header(label="Output", default_open=True):
+        with dpg.group(horizontal=True):
+            dpg.add_button(label=" clear output ", callback=_out_clear)
+        with dpg.child_window(tag="flowc_out", height=170):
+            dpg.add_text("execution output appears here — Word Dump · "
+                         "Load→EMU (native C core) · Step (interpreter "
+                         "walk with live highlight) · Run (compile + SDL "
+                         "engine)", color=C["DIM"])
 
+    _register_handlers()
     cfg0 = C.get("CFG", {})
     with dpg.window(tag="flowc_mm", no_title_bar=True, no_resize=True,
                     no_collapse=True, width=MM_W + 14, height=MM_H + 14,
@@ -711,6 +1097,49 @@ def build_flow_tab(style):
                     show=bool(cfg0.get("flow_minimap", True))):
         with dpg.drawlist(width=MM_W, height=MM_H, tag="flowc_mmdraw"):
             pass
+    redraw()
+
+
+def _selftest_exec():
+    """Headless gate: dump -> compile -> interpret -> import round-trip."""
+    E = _exec_mods()
+    if E.get("err"):
+        raise AssertionError(f"exec layer failed to load: {E['err']}")
+    clear_all()
+    FS["undo"].clear()
+    a = add_symbol("flow_terminator", 200, 80, "START")
+    b = add_symbol("flow_process", 200, 240)
+    c2 = add_symbol("flow_terminator", 200, 400, "END")
+    add_edge(a, b, [[400, 160]])
+    add_edge(b, c2)
+    canvas = _sync_canvas(E)
+    words = canvas.to_word_program()
+    assert words, "no words from canvas"
+    ws = E["WS"].WordStream(words)
+    meta, entry = _entry_meta()
+    ws._flow_meta = meta
+    ws._flow_edges = [dict(e) for e in FS["edges"]]
+    t5 = E["CT"].compile_wordstream_to_t5asm(ws, source_path="gate")
+    assert len(t5) > 100, "compile produced nothing"
+    data = {"symbols": [{**s, "kind": BARE.get(s.get("kind", ""),
+                                               "process")}
+                        for s in FS["syms"].values()],
+            "edges": [dict(e) for e in FS["edges"]]}
+    interp = E["TI"].TernOOInterpreter(trace=False)
+    interp.load_dict(data)
+    res = interp.run()
+    assert res.get("steps", 0) >= 3, f"interpreter walked {res}"
+    import tempfile as _tf
+    tmpf = os.path.join(_tf.gettempdir(), "fdpg-exec-test.flow")
+    save_to(tmpf)
+    _import_merge(tmpf)
+    assert len(FS["syms"]) == 6, "import merge failed"
+    clear_all()
+    return {"words": len(words), "t5_chars": len(t5),
+            "steps": res["steps"], "entry": entry}
+
+
+def _register_handlers():
     with dpg.handler_registry():
         dpg.add_mouse_click_handler(dpg.mvMouseButton_Left,
                                     callback=_on_click)
@@ -721,4 +1150,3 @@ def build_flow_tab(style):
         dpg.add_mouse_double_click_handler(dpg.mvMouseButton_Left,
                                            callback=_on_dblclick)
         dpg.add_key_press_handler(dpg.mvKey_Delete, callback=_on_del_key)
-    redraw()

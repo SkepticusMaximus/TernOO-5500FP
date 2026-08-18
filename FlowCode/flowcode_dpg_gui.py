@@ -124,7 +124,11 @@ def _status(msg, ok=True):
 
 # ── properties helpers (the Tk 'properties' list of [name, value]) ──────────
 def _prop_get(w, name, default=""):
+    """Tk properties are dicts {'name': n, 'value': v}; tolerate legacy
+    [name, value] pairs from this organ's first day."""
     for p in w.get("properties", []):
+        if isinstance(p, dict) and p.get("name") == name:
+            return p.get("value")
         if isinstance(p, (list, tuple)) and len(p) >= 2 and p[0] == name:
             return p[1]
     return default
@@ -132,11 +136,12 @@ def _prop_get(w, name, default=""):
 
 def _prop_set(w, name, value):
     props = w.setdefault("properties", [])
-    for p in props:
-        if isinstance(p, list) and len(p) >= 2 and p[0] == name:
-            p[1] = value
+    for i, p in enumerate(props):
+        if (isinstance(p, dict) and p.get("name") == name) or \
+                (isinstance(p, list) and len(p) >= 2 and p[0] == name):
+            props[i] = {"name": name, "value": value}
             return
-    props.append([name, value])
+    props.append({"name": name, "value": value})
 
 
 # ── undo / redo ─────────────────────────────────────────────────────────────

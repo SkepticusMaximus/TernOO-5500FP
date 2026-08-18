@@ -357,7 +357,8 @@ def build_ui():
                             FLOW_ORGAN.build_flow_tab(
                                 {"BORDER": BORDER, "TEXT": TEXT,
                                  "DIM": DIM, "GRN": GRN, "AMB": AMB,
-                                 "CFG": CFGD, "SAVE": save_cfg})
+                                 "CFG": CFGD, "SAVE": save_cfg,
+                                 "BRIDGE": BRIDGE})
                         else:
                             dpg.add_text("Flow organ failed to load: "
                                          + FLOW_ORGAN_ERR, color=AMB)
@@ -366,7 +367,8 @@ def build_ui():
                             GUI_ORGAN.build_gui_tab(
                                 {"BORDER": BORDER, "TEXT": TEXT,
                                  "DIM": DIM, "GRN": GRN, "AMB": AMB,
-                                 "CFG": CFGD, "SAVE": save_cfg})
+                                 "CFG": CFGD, "SAVE": save_cfg,
+                                 "BRIDGE": BRIDGE})
                         else:
                             dpg.add_text("GUI organ failed to load: "
                                          + GUI_ORGAN_ERR, color=AMB)
@@ -416,7 +418,7 @@ def main():
                             "mvAppItemType::mvMenuItem"):
                         continue
                     lbl = dpg.get_item_label(it) or ""
-                    if "Launch" in lbl or "Quit" in lbl:
+                    if "Launch" in lbl or "Quit" in lbl or "▶▶" in lbl:
                         continue
                     cb = dpg.get_item_callback(it)
                     if cb is not None:
@@ -438,6 +440,10 @@ def main():
             assert not bad, f"CLICK-PATH FAILURES: {bad}"
             print(f"CLICK-PATH OK — {fired} controls fired clean")
         if os.environ.get("FLOW_DPG_TEST") and FLOW_ORGAN:
+            ex = FLOW_ORGAN._selftest_exec()
+            print(f"EXEC PIPELINE OK — {ex['words']} words, "
+                  f"{ex['t5_chars']} t5asm chars, {ex['steps']} interp "
+                  f"steps, entry={ex['entry']!r}")
             import tempfile
             FLOW_ORGAN.clear_all()
             FLOW_ORGAN.FS["undo"].clear()
