@@ -163,9 +163,14 @@ def do_load_emu(*_):
         return
     c = _sync_canvas(E)
     words = c.to_word_program()
-    if _ENG[0] is None:
-        _ENG[0] = bridge.TernOONativeEngine("c")
-    _ENG[0].load_program(words, start_addr=100)
+    try:
+        if _ENG[0] is None:
+            _ENG[0] = bridge.TernOONativeEngine("c")
+        _ENG[0].load_program(words, start_addr=100)
+    except Exception as ex:                     # noqa: BLE001
+        _out(f"✗ native core unavailable: {ex}", (255, 120, 90))
+        _status("native core unavailable — see Output", ok=False)
+        return
     _out(f"▶ Loaded {len(words)} words → NATIVE C core "
          f"(addr 100–{100 + len(words) - 1})", (63, 208, 143))
     _status(f"loaded {len(words)} words → native C core at addr 100")
