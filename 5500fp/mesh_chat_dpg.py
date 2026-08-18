@@ -838,6 +838,18 @@ def clip_get():
                     return r.stdout.decode("utf-8", "replace")
             except Exception:                   # noqa: BLE001
                 pass
+    try:                                        # no xclip/xsel (the HP)? Tk
+        import tkinter as _tk                   # can still READ the X clipboard
+        rt = _tk.Tk()
+        rt.withdraw()
+        try:
+            t = rt.clipboard_get()
+        finally:
+            rt.destroy()
+        if t:
+            return t
+    except Exception:                           # noqa: BLE001
+        pass
     try:
         return dpg.get_clipboard_text() or ""
     except Exception:                           # noqa: BLE001
