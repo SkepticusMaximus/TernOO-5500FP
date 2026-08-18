@@ -50,6 +50,7 @@ FS = {
     "next": 0, "sel": None, "sel_edge": None, "file": None,
     "tool": "select", "edge_src": None, "edge_wps": [], "drag": None,
     "wpdrag": None, "grip": None, "zoom": 1.0, "dirty": False,
+    "multi": set(), "lasso": None,
     "undo": [], "redo": [],
 }
 
@@ -578,10 +579,40 @@ def delete_edge(idx):
 
 
 def delete_selected(*_):
-    if FS["sel"] is not None:
+    if len(FS["multi"]) > 1:
+        _snapshot()
+        n = len(FS["multi"])
+        for sid in list(FS["multi"]):
+            FS["syms"].pop(sid, None)
+            FS["raw"].pop(sid, None)
+        FS["edges"] = [e for e in FS["edges"]
+                       if e["src"] in FS["syms"] and e["dst"] in FS["syms"]]
+        FS["multi"] = set()
+        FS["sel"] = None
+        redraw()
+        _status(f"deleted {n} symbols (+ their edges)")
+    elif FS["sel"] is not None:
         delete_symbol(FS["sel"])
     elif FS["sel_edge"] is not None:
         delete_edge(FS["sel_edge"])
+
+
+def _lasso_apply(rect):
+    """Select every symbol intersecting the lasso rectangle."""
+    x0, y0, x1, y1 = rect
+    hits = {sid for sid, s in FS["syms"].items()
+            if s["x"] < x1 and s["x"] + s["w"] > x0
+            and s["y"] < y1 and s["y"] + s["h"] > y0
+            and s.get("parent_scope") is None}
+    FS["multi"] = hits
+    FS["sel"] = next(iter(hits)) if len(hits) == 1 else None
+    redraw()
+    if hits:
+        _selinfo(f"lasso: {len(hits)} selected — drag any to move the "
+                 "group · Del deletes all")
+        _status(f"{len(hits)} symbols selected")
+    else:
+        _selinfo("")
 
 
 def clear_all(*_):
@@ -725,7 +756,14 @@ def redraw():
     for sid, s in FS["syms"].items():
         if s.get("parent_scope") is not None:
             continue                        # pocket interiors: next leg
-        _draw_symbol(s, sid == FS["sel"])
+        _draw_symbol(s, sid == FS["sel"] or sid in FS["multi"])
+    if FS["lasso"] is not None:
+        Z = FS["zoom"]
+        ax, ay = FS["lasso"]["a"]
+        bx, by = FS["lasso"]["b"]
+        dpg.draw_rectangle((ax * Z, ay * Z), (bx * Z, by * Z),
+                           color=COL["selected"], thickness=1,
+                           fill=(255, 107, 53, 24), parent="flowc_draw")
 
 
 # ── tools + mouse ───────────────────────────────────────────────────────────
@@ -783,6 +821,51 @@ def _icon_btn(draw_fn, label, sub, tool):
     dpg.bind_item_handler_registry(dl, h)
 
 
+def _act_icon(name):
+    W = (238, 240, 245)
+
+    def draw(D):
+        if name == "save":                      # floppy
+            dpg.draw_rectangle((6, 4), (34, 26), fill=(52, 90, 150),
+                               color=W, parent=D)
+            dpg.draw_rectangle((12, 4), (28, 12), fill=(20, 23, 32),
+                               color=W, parent=D)
+            dpg.draw_rectangle((11, 16), (29, 26), fill=(200, 205, 215),
+                               parent=D)
+        elif name == "open":                    # folder
+            dpg.draw_quad((5, 8), (16, 8), (19, 12), (5, 12),
+                          fill=(240, 180, 80), parent=D)
+            dpg.draw_rectangle((5, 11), (35, 26), fill=(240, 180, 80),
+                               color=(180, 130, 50), parent=D)
+        elif name == "import":                  # folder + in-arrow
+            dpg.draw_rectangle((5, 11), (35, 26), fill=(240, 180, 80),
+                               color=(180, 130, 50), parent=D)
+            dpg.draw_arrow((20, 22), (20, 2), color=(63, 208, 143),
+                           thickness=3, size=6, parent=D)
+        elif name == "clear":                   # trash can
+            dpg.draw_rectangle((10, 10), (30, 26), fill=(120, 60, 60),
+                               color=W, parent=D)
+            dpg.draw_rectangle((7, 6), (33, 10), fill=(160, 80, 80),
+                               color=W, parent=D)
+            dpg.draw_line((16, 13), (16, 23), color=W, parent=D)
+            dpg.draw_line((24, 13), (24, 23), color=W, parent=D)
+        elif name == "stop":                    # red square
+            dpg.draw_rectangle((9, 6), (29, 24), fill=(220, 80, 80),
+                               color=(255, 136, 136), parent=D)
+    return draw
+
+
+def _icon_act(draw_fn, label, cb, fg=None):
+    """Action row with a DRAWN icon (font-independent), icon clickable."""
+    with dpg.group(horizontal=True):
+        dl = dpg.add_drawlist(width=38, height=28)
+        draw_fn(dl)
+        _abtn(label, cb, fg)
+    with dpg.item_handler_registry() as h:
+        dpg.add_item_clicked_handler(callback=lambda *_: cb())
+    dpg.bind_item_handler_registry(dl, h)
+
+
 def _abtn(label, cb, fg=None):
     """Action button with the Tk face's accent colours."""
     b = dpg.add_button(label=label, width=-1, callback=cb)
@@ -797,8 +880,8 @@ def _abtn(label, cb, fg=None):
 def set_tool(sender, app_data, tool):
     FS["tool"] = tool
     FS["edge_src"] = None
-    names = {"select": "Select — click to select · drag to move · "
-                       "dbl-click to rename",
+    names = {"select": "Select — click/drag symbols · drag empty canvas "
+                       "to LASSO a group · dbl-click renames",
              "delete": "Delete — click a symbol or edge to delete it",
              "edge": "Edge — click the SOURCE symbol"}
     label = names.get(tool, f"place {tool.split('_', 1)[-1]} — "
@@ -863,22 +946,35 @@ def _on_click(*_):
                                 "orig": (wp[0], wp[1])}
                 return
     sid = _hit_symbol(mx, my)
-    FS["sel"] = sid
     FS["sel_edge"] = None
     if sid is not None:
-        s = FS["syms"][sid]
-        _snapshot()
-        FS["drag"] = {"orig": (s["x"], s["y"])}
-        _selinfo(f"{s['label']}  {s['name']}  ({s['x']},{s['y']})")
+        if sid in FS["multi"] and len(FS["multi"]) > 1:
+            _snapshot()          # group drag: move every selected symbol
+            FS["sel"] = sid
+            FS["drag"] = {"group": {i: (FS["syms"][i]["x"],
+                                        FS["syms"][i]["y"])
+                                    for i in FS["multi"]
+                                    if i in FS["syms"]}}
+            _selinfo(f"group of {len(FS['multi'])} — drag to move")
+        else:
+            FS["multi"] = {sid}
+            FS["sel"] = sid
+            s = FS["syms"][sid]
+            _snapshot()
+            FS["drag"] = {"orig": (s["x"], s["y"])}
+            _selinfo(f"{s['label']}  {s['name']}  ({s['x']},{s['y']})")
     else:
         ei = _hit_edge(mx, my)
         FS["sel_edge"] = ei
+        FS["sel"] = None
+        FS["multi"] = set()
         if ei is not None:
             e = FS["edges"][ei]
             _selinfo(f"Edge  {FS['syms'][e['src']]['label']} → "
                      f"{FS['syms'][e['dst']]['label']}  "
                      f"({len(e.get('waypoints', []))} waypoints)")
-        else:
+        else:                    # empty canvas: begin the lasso
+            FS["lasso"] = {"a": (mx, my), "b": (mx, my)}
             _selinfo("")
     redraw()
 
@@ -903,10 +999,27 @@ def _on_drag(sender, app_data):
         except (IndexError, KeyError):
             FS["wpdrag"] = None
         return
-    if FS["drag"] is None or FS["sel"] is None:
+    if FS["lasso"] is not None:
+        _b, dx, dy = app_data
+        z = FS["zoom"]
+        ax, ay = FS["lasso"]["a"]
+        FS["lasso"]["b"] = (ax + dx / z, ay + dy / z)
+        redraw()
+        return
+    if FS["drag"] is None:
         return
     _b, dx, dy = app_data
     z = FS["zoom"]
+    if "group" in FS["drag"]:
+        for i, (ox, oy) in FS["drag"]["group"].items():
+            gs = FS["syms"].get(i)
+            if gs:
+                gs["x"] = max(0, int(ox + dx / z))
+                gs["y"] = max(0, int(oy + dy / z))
+        redraw()
+        return
+    if FS["sel"] is None:
+        return
     s = FS["syms"].get(FS["sel"])
     if s is None:
         return
@@ -932,9 +1045,23 @@ def _on_release(*_):
             cfg["flow_panel_w"] = dpg.get_item_width("flowc_panel")
             if STYLE.get("SAVE"):
                 STYLE["SAVE"]()
+    if FS["lasso"] is not None:
+        ax, ay = FS["lasso"]["a"]
+        bx, by = FS["lasso"]["b"]
+        FS["lasso"] = None
+        _lasso_apply((min(ax, bx), min(ay, by), max(ax, bx), max(ay, by)))
+        return
     if FS["drag"] is None:
         return
+    grp = FS["drag"].get("group") if isinstance(FS["drag"], dict) else None
     FS["drag"] = None
+    if grp:
+        for i in grp:
+            gs = FS["syms"].get(i)
+            if gs:
+                gs["x"], gs["y"] = max(0, snap(gs["x"])), max(0, snap(gs["y"]))
+        redraw()
+        return
     s = FS["syms"].get(FS["sel"])
     if s:
         s["x"], s["y"] = max(0, snap(s["x"])), max(0, snap(s["y"]))
@@ -1126,15 +1253,17 @@ def build_flow_tab(style):
                       (122, 255, 122))
                 _abtn(" ▶ Step ", do_step, (255, 221, 87))
                 _abtn(" ▶▶ Run (SDL) ", do_run_sdl, (122, 255, 122))
-                _abtn(" ⬛ Stop ", do_stop, (255, 136, 136))
+                _icon_act(_act_icon("stop"), " Stop ", do_stop,
+                          (255, 136, 136))
                 dpg.add_spacer(height=4)
-                _abtn(" 💾 Save ", _save_clicked)
-                _abtn(" 💾 Save as... ",
-                      lambda: dpg.show_item("flowc_save_dlg"))
-                _abtn(" 📂 Open ", lambda: dpg.show_item("flowc_open_dlg"))
-                _abtn(" 📥 Import ",
-                      lambda: dpg.show_item("flowc_import_dlg"))
-                _abtn(" 🗑 Clear ", clear_all)
+                _icon_act(_act_icon("save"), " Save ", _save_clicked)
+                _icon_act(_act_icon("save"), " Save as... ",
+                          lambda: dpg.show_item("flowc_save_dlg"))
+                _icon_act(_act_icon("open"), " Open ",
+                          lambda: dpg.show_item("flowc_open_dlg"))
+                _icon_act(_act_icon("import"), " Import ",
+                          lambda: dpg.show_item("flowc_import_dlg"))
+                _icon_act(_act_icon("clear"), " Clear ", clear_all)
                 _abtn(" ↩ Undo ", undo)
                 _abtn(" ↪ Redo ", redo)
             dpg.add_spacer(height=8)
