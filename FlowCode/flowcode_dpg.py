@@ -279,10 +279,12 @@ def _offer_recovery():
         def restore():
             if os.path.exists(AUTOSAVE_FLOW) and FLOW_ORGAN:
                 FLOW_ORGAN.load_from(AUTOSAVE_FLOW)
-                FLOW_ORGAN.FS["file"] = None
+                FLOW_ORGAN.FS["file"] = None    # rescued work has no home:
+                FLOW_ORGAN.FS["dirty"] = True   # stays DIRTY until saved
             if os.path.exists(AUTOSAVE_GUI) and GUI_ORGAN:
                 GUI_ORGAN.load_from(AUTOSAVE_GUI)
                 GUI_ORGAN.GS["file"] = None
+                GUI_ORGAN.GS["dirty"] = True
             discard(keep_state=True)
 
         def discard(keep_state=False):
@@ -568,6 +570,23 @@ def main():
             assert not bad, f"CLICK-PATH FAILURES: {bad}"
             print(f"CLICK-PATH OK — {fired} controls fired clean")
         if os.environ.get("FLOW_DPG_TEST") and FLOW_ORGAN:
+            # dirty-semantics regression (19-08 loss bug): content with no
+            # file home must ALWAYS read dirty — incl. restored rescues
+            FLOW_ORGAN.clear_all()
+            FLOW_ORGAN.FS["file"] = None
+            FLOW_ORGAN.FS["dirty"] = False
+            sid = FLOW_ORGAN.add_symbol("flow_process", 200, 200)
+            assert FLOW_ORGAN.is_dirty(), "unsaved sketch must be dirty"
+            import tempfile as _tfd
+            _p = os.path.join(_tfd.gettempdir(), "fdpg-dirty.flow")
+            FLOW_ORGAN.save_to(_p)
+            assert not FLOW_ORGAN.is_dirty(), "saved must be clean"
+            FLOW_ORGAN.FS["file"] = None      # the restore() situation
+            FLOW_ORGAN.FS["dirty"] = False    # even with the flag cleared
+            assert FLOW_ORGAN.is_dirty(), \
+                "homeless content must stay dirty (rescue-loss bug)"
+            FLOW_ORGAN.clear_all()
+            print("DIRTY SEMANTICS OK — homeless content always dirty")
             ex = FLOW_ORGAN._selftest_exec()
             print(f"EXEC PIPELINE OK — {ex['words']} words, "
                   f"{ex['t5_chars']} t5asm chars, {ex['steps']} interp "

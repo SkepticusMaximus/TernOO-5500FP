@@ -55,7 +55,10 @@ FS = {
 
 
 def is_dirty():
-    return bool(FS["dirty"]) and bool(FS["syms"] or FS["edges"])
+    """Content with NO file home is always dirty — a restored rescue or a
+    never-saved sketch can never read as clean (19-08 loss bug)."""
+    has = bool(FS["syms"] or FS["edges"])
+    return has and (bool(FS["dirty"]) or FS["file"] is None)
 
 
 def autosave(path):
@@ -726,6 +729,71 @@ def redraw():
 
 
 # ── tools + mouse ───────────────────────────────────────────────────────────
+# ── toolbar eye-candy: drawn shape/tool icons + Tk action colours ──────────
+def _sym_icon(kind):
+    col = COL.get(kind, COL["flow_process"])
+
+    def draw(D):
+        if kind == "flow_terminator":
+            dpg.draw_rectangle((4, 5), (44, 25), fill=col,
+                               color=COL["border"], rounding=10, parent=D)
+        elif kind == "flow_decision":
+            dpg.draw_quad((24, 3), (45, 15), (24, 27), (3, 15), fill=col,
+                          color=COL["border"], parent=D)
+        elif kind == "flow_io":
+            dpg.draw_quad((10, 5), (46, 5), (38, 25), (2, 25), fill=col,
+                          color=COL["border"], parent=D)
+        else:
+            dpg.draw_rectangle((4, 5), (44, 25), fill=col,
+                               color=COL["border"], parent=D)
+    return draw
+
+
+def _tool_icon(name):
+    def draw(D):
+        if name == "select":
+            dpg.draw_triangle((16, 4), (16, 24), (28, 18),
+                              fill=(238, 240, 245), parent=D)
+            dpg.draw_line((24, 17), (32, 26), color=(238, 240, 245),
+                          thickness=3, parent=D)
+        elif name == "delete":
+            dpg.draw_line((14, 6), (34, 24), color=COL["selected"],
+                          thickness=4, parent=D)
+            dpg.draw_line((34, 6), (14, 24), color=COL["selected"],
+                          thickness=4, parent=D)
+        elif name == "edge":
+            dpg.draw_arrow((42, 8), (6, 24), color=COL["border"],
+                           thickness=3, size=10, parent=D)
+    return draw
+
+
+def _icon_btn(draw_fn, label, sub, tool):
+    """A toolbar row: drawn icon + button; both select the tool."""
+    with dpg.group(horizontal=True):
+        dl = dpg.add_drawlist(width=50, height=30)
+        draw_fn(dl)
+        with dpg.group():
+            dpg.add_button(label=label, width=-1, user_data=tool,
+                           callback=set_tool)
+            if sub:
+                dpg.add_text(" " + sub, color=STYLE.get("DIM"))
+    with dpg.item_handler_registry() as h:
+        dpg.add_item_clicked_handler(
+            callback=lambda s, a, u=tool: set_tool(None, None, u))
+    dpg.bind_item_handler_registry(dl, h)
+
+
+def _abtn(label, cb, fg=None):
+    """Action button with the Tk face's accent colours."""
+    b = dpg.add_button(label=label, width=-1, callback=cb)
+    if fg:
+        with dpg.theme() as th:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Text, fg)
+        dpg.bind_item_theme(b, th)
+    return b
+
+
 def set_tool(sender, app_data, tool):
     FS["tool"] = tool
     FS["edge_src"] = None
@@ -1040,45 +1108,35 @@ def build_flow_tab(style):
                               .get("flow_panel_w", 320)),
                               tag="flowc_panel"):
             with dpg.collapsing_header(label="TOOLS", default_open=True):
-                dpg.add_button(label=" Select ", width=-1,
-                               user_data="select", callback=set_tool)
-                dpg.add_button(label=" Delete ", width=-1,
-                               user_data="delete", callback=set_tool)
+                _icon_btn(_tool_icon("select"), " Select ", "move · edit",
+                          "select")
+                _icon_btn(_tool_icon("delete"), " Delete ", "click to del",
+                          "delete")
             with dpg.collapsing_header(label="SYMBOLS → UDP",
                                        default_open=True):
                 for kind, name, sub in KINDS:
-                    dpg.add_button(label=f" {name} ", width=-1,
-                                   user_data=kind, callback=set_tool)
-                    dpg.add_text("  " + sub, color=C["DIM"])
+                    _icon_btn(_sym_icon(kind), f" {name} ", sub, kind)
             with dpg.collapsing_header(label="CONNECT → EXEC",
                                        default_open=True):
-                dpg.add_button(label=" Edge ", width=-1, user_data="edge",
-                               callback=set_tool)
-                dpg.add_text("  src→[wp]→dst", color=C["DIM"])
+                _icon_btn(_tool_icon("edge"), " Edge ", "src→[wp]→dst",
+                          "edge")
             with dpg.collapsing_header(label="ACTIONS", default_open=True):
-                dpg.add_button(label=" ⬇ Word Dump ", width=-1,
-                               callback=do_word_dump)
-                dpg.add_button(label=" ▶ Load→EMU (native) ", width=-1,
-                               callback=do_load_emu)
-                dpg.add_button(label=" ▶ Step ", width=-1, callback=do_step)
-                dpg.add_button(label=" ▶▶ Run (SDL) ", width=-1,
-                               callback=do_run_sdl)
-                dpg.add_button(label=" ⬛ Stop ", width=-1, callback=do_stop)
+                _abtn(" ⬇ Word Dump ", do_word_dump)
+                _abtn(" ▶ Load→EMU (native) ", do_load_emu,
+                      (122, 255, 122))
+                _abtn(" ▶ Step ", do_step, (255, 221, 87))
+                _abtn(" ▶▶ Run (SDL) ", do_run_sdl, (122, 255, 122))
+                _abtn(" ⬛ Stop ", do_stop, (255, 136, 136))
                 dpg.add_spacer(height=4)
-                dpg.add_button(label=" Save ", width=-1,
-                               callback=_save_clicked)
-                dpg.add_button(label=" Save as... ", width=-1,
-                               callback=lambda:
-                               dpg.show_item("flowc_save_dlg"))
-                dpg.add_button(label=" Open ", width=-1,
-                               callback=lambda:
-                               dpg.show_item("flowc_open_dlg"))
-                dpg.add_button(label=" 📥 Import ", width=-1,
-                               callback=lambda:
-                               dpg.show_item("flowc_import_dlg"))
-                dpg.add_button(label=" Clear ", width=-1, callback=clear_all)
-                dpg.add_button(label=" Undo ", width=-1, callback=undo)
-                dpg.add_button(label=" Redo ", width=-1, callback=redo)
+                _abtn(" 💾 Save ", _save_clicked)
+                _abtn(" 💾 Save as... ",
+                      lambda: dpg.show_item("flowc_save_dlg"))
+                _abtn(" 📂 Open ", lambda: dpg.show_item("flowc_open_dlg"))
+                _abtn(" 📥 Import ",
+                      lambda: dpg.show_item("flowc_import_dlg"))
+                _abtn(" 🗑 Clear ", clear_all)
+                _abtn(" ↩ Undo ", undo)
+                _abtn(" ↪ Redo ", redo)
             dpg.add_spacer(height=8)
             dpg.add_text("not yet ported:\n Learn · Suggest\n "
                          "pocket scopes", color=C["DIM"])
