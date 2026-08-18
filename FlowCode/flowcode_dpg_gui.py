@@ -95,9 +95,22 @@ GS = {
     "file": None,
     "pending": None,  # kind waiting to be placed
     "drag": None,     # {"mode": move|nw|ne|sw|se, "orig": (x,y,w,h)}
-    "grip": None, "grip2": None, "zoom": 1.0,
+    "grip": None, "grip2": None, "zoom": 1.0, "dirty": False,
     "undo": [], "redo": [],
 }
+
+
+def is_dirty():
+    return bool(GS["dirty"]) and bool(GS["widgets"])
+
+
+def autosave(path):
+    try:
+        json.dump(_payload(path), open(path, "w", encoding="utf-8"),
+                  indent=1)
+        return True
+    except Exception:                           # noqa: BLE001
+        return False
 
 
 def zoom_step(direction):
@@ -146,6 +159,7 @@ def _prop_set(w, name, value):
 
 # ── undo / redo ─────────────────────────────────────────────────────────────
 def _snapshot():
+    GS["dirty"] = True
     GS["undo"].append(json.dumps({"w": GS["widgets"], "e": GS["edges"],
                                   "n": GS["next"]}))
     GS["undo"] = GS["undo"][-50:]
@@ -498,6 +512,7 @@ def save_to(path):
     try:
         json.dump(_payload(path), open(path, "w", encoding="utf-8"), indent=1)
         GS["file"] = path
+        GS["dirty"] = False
         _status(f"saved {os.path.basename(path)} — "
                 f"{len(GS['widgets'])} widgets (Tk-readable .gui)")
     except Exception as e:                      # noqa: BLE001
@@ -535,6 +550,7 @@ def load_from(path):
         GS["next"] = max(GS["next"], wid + 1)
     GS["edges"] = [dict(e) for e in doc.get("edges", [])]
     GS["file"] = path
+    GS["dirty"] = False
     redraw()
     _sync_props()
     _status(f"opened {os.path.basename(path)} — "
