@@ -539,8 +539,9 @@ def build_gui_tab(style):
                                            default_open=(sec == "CONTAINERS")):
                     for k in kinds:
                         dpg.add_button(label=f" {k[4:]} ", width=-1,
-                                       callback=lambda s, a, kk=k:
-                                       _pick_kind(kk))
+                                       user_data=k,
+                                       callback=lambda s, a, u:
+                                       _pick_kind(u))
             dpg.add_spacer(height=6)
             dpg.add_text("ACTIONS", color=C["DIM"])
             dpg.add_button(label=" Save ", width=-1, callback=_save_clicked)
@@ -572,8 +573,9 @@ def build_gui_tab(style):
                 with dpg.group(horizontal=True):
                     dpg.add_text(f"{f:5s}", color=C["DIM"])
                     dpg.add_input_int(tag=f"gp_{f}", width=-1,
-                                      callback=lambda s, a, ff=f:
-                                      _apply_prop(s, a, ff))
+                                      user_data=f,
+                                      callback=lambda s, a, u:
+                                      _apply_prop(s, a, u))
             dpg.add_text("Appearance", color=C["DIM"])
             with dpg.group(horizontal=True):
                 dpg.add_text("label", color=C["DIM"])
