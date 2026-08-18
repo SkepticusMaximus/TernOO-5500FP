@@ -42,6 +42,13 @@ info:
 $(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+# ---- Shared library with the ternoo_* ABI (mirror of the NASM libternoo.so
+#      surface) so ternoo_bridge.py can load the C core as a backend ----
+LIB_SRC = $(filter-out src/main.c,$(SRC)) src/c_api.c
+
+libternoo_c.so: $(LIB_SRC)
+	$(CC) $(CFLAGS) -fPIC -shared $(LIB_SRC) -o $@ $(LDFLAGS)
+
 src/%.o: src/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
