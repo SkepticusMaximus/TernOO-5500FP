@@ -8,6 +8,7 @@ extern uint64_t cpu_read_reg(int reg);
 extern void cpu_write_reg(int reg, uint64_t val);
 extern void cpu_mem_write(uint64_t addr, uint64_t val);
 extern uint64_t cpu_mem_read(uint64_t addr);
+extern void     cpu_load_word(uint64_t addr, uint64_t val);
 
 // Exported C-API
 void ternoo_init(void) { cpu_init(); }
@@ -17,3 +18,4 @@ uint64_t ternoo_read_reg(int reg) { return cpu_read_reg(reg); }
 void ternoo_write_reg(int reg, uint64_t val) { cpu_write_reg(reg, val); }
 void ternoo_mem_write(uint64_t addr, uint64_t val) { cpu_mem_write(addr, val); }
 uint64_t ternoo_mem_read(uint64_t addr) { return cpu_mem_read(addr); }
+void ternoo_load_word(uint64_t addr, uint64_t val) { cpu_load_word(addr, val); }
