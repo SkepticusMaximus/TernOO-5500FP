@@ -281,7 +281,7 @@ def redraw():
         x, y = w["x"] * Z, w["y"] * Z
         ww, hh = w["w"] * Z, w["h"] * Z
         label = w.get("label") or w["kind"][4:]
-        _render_widget(D, w["kind"], x, y, ww, hh, label=label)
+        _render_widget(D, w["kind"], x, y, ww, hh, label=label, px=Z)
         if wid == GS["sel"]:
             dpg.draw_rectangle((x - 2, y - 2), (x + ww + 2, y + hh + 2),
                                color=(255, 120, 50), thickness=2, parent=D)
@@ -301,7 +301,14 @@ def redraw():
 #    the toolbar and at full size on the canvas. Hand-drawn primitives are
 #    a stand-in until the CC-09 RNODE widget-geometry organ renders canon
 #    shapes; this renderer is built to be swapped out for it. ─────────────
-def _render_widget(D, kind, x, y, w, h, label=""):
+def _render_widget(D, kind, x, y, w, h, label="", px=1.0):
+    """px = pixel-unit scale (canvas zoom). CHROME is fixed-size in px
+    units (titlebars, scrollbars, row pitch, checkbox glyphs) and only
+    the CONTENT area scales with the widget — a taller treeview gets
+    MORE rows, not stretched rows; a bigger window keeps its titlebar."""
+    u = max(0.35, px)
+    TB = min(20 * u, h * 0.34)          # titlebar height
+    PITCH = max(9.0, 18 * u)            # list/text row pitch
     B = (96, 116, 160)
     T = (238, 240, 245)
     DIMc = (150, 158, 175)
@@ -333,11 +340,19 @@ def _render_widget(D, kind, x, y, w, h, label=""):
     R(0, 0, 1, 1, fill=PANEL, col=B, r=2)                # base body
     if k in ("window", "dialog", "messagedialog", "aboutdialog",
              "assistant", "popover"):
-        R(0, 0, 1, 0.22, fill=DARK, col=B)               # titlebar
-        C(0.92, 0.11, 0.055, fill=(220, 90, 80), col=(220, 90, 80))
+        dpg.draw_rectangle((x, y), (x + w, y + TB), fill=DARK, color=B,
+                           parent=D)                     # FIXED titlebar
+        dpg.draw_circle((x + w - 0.55 * TB, y + 0.5 * TB), 0.26 * TB,
+                        fill=(220, 90, 80), color=(220, 90, 80), parent=D)
         if k == "dialog":
-            R(0.55, 0.75, 0.75, 0.92, fill=DARK)
-            R(0.78, 0.75, 0.95, 0.92, fill=(52, 90, 150))
+            bh = min(18 * u, h * 0.25)
+            bw = min(44 * u, w * 0.3)
+            dpg.draw_rectangle((x + w - 2 * bw - 12 * u, y + h - bh - 5 * u),
+                               (x + w - bw - 8 * u, y + h - 5 * u),
+                               fill=DARK, color=B, parent=D)
+            dpg.draw_rectangle((x + w - bw - 5 * u, y + h - bh - 5 * u),
+                               (x + w - 5 * u, y + h - 5 * u),
+                               fill=(52, 90, 150), color=B, parent=D)
         elif k == "messagedialog":
             TXT(0.12, 0.4, "!", (255, 200, 90), 22)
             C(0.14, 0.55, 0.1, col=(255, 200, 90))
@@ -359,8 +374,13 @@ def _render_widget(D, kind, x, y, w, h, label=""):
             L(0.05, 0.36, 0.95, 0.36)
             L(0.05, 0.66, 0.95, 0.66)
         elif k == "scrolled":
-            R(0.86, 0.08, 0.94, 0.92, fill=DARK)
-            R(0.87, 0.15, 0.93, 0.45, fill=B)
+            sw = min(10 * u, w * 0.2)
+            dpg.draw_rectangle((x + w - sw - 3 * u, y + 3 * u),
+                               (x + w - 3 * u, y + h - 3 * u),
+                               fill=DARK, parent=D)
+            dpg.draw_rectangle((x + w - sw - 2 * u, y + 5 * u),
+                               (x + w - 4 * u, y + 5 * u + (h - 10 * u) * 0.4),
+                               fill=B, parent=D)
         elif k == "stack":
             R(0.18, 0.2, 0.82, 0.85, fill=DARK, col=B)
             R(0.1, 0.1, 0.74, 0.75, fill=PANEL, col=ACC)
@@ -399,31 +419,48 @@ def _render_widget(D, kind, x, y, w, h, label=""):
         R(0.12, 0.0, 0.55, 0.16, fill=PANEL, col=PANEL)
         TXT(0.14, 0.0, label or "frame", DIMc, 11)
     elif k == "notebook":
-        R(0.02, 0.02, 0.3, 0.24, fill=(58, 96, 160), col=B)
-        R(0.32, 0.02, 0.6, 0.24, fill=DARK, col=B)
-        L(0.02, 0.24, 0.98, 0.24, ACC)
+        th = min(16 * u, h * 0.4)
+        tw = min(34 * u, w * 0.3)
+        dpg.draw_rectangle((x + 2 * u, y + 2 * u),
+                           (x + 2 * u + tw, y + 2 * u + th),
+                           fill=(58, 96, 160), color=B, parent=D)
+        dpg.draw_rectangle((x + 4 * u + tw, y + 2 * u),
+                           (x + 4 * u + 2 * tw, y + 2 * u + th),
+                           fill=DARK, color=B, parent=D)
+        dpg.draw_line((x + 2 * u, y + 2 * u + th),
+                      (x + w - 2 * u, y + 2 * u + th), color=ACC, parent=D)
     elif k == "paned":
         L(0.5, 0.05, 0.5, 0.95, ACC, 3)
     elif k == "listbox" or k == "treeview":
-        rows = 3 if small else max(3, int(h / 26))
+        rows = max(2, int((h - 6 * u) / PITCH))
         for i2 in range(rows):
-            yy = (i2 + 0.15) / rows
+            ry = y + 4 * u + (i2 + 0.55) * PITCH
+            if ry > y + h - 4 * u:
+                break
             if k == "treeview":
-                ind = 0.08 + (i2 % 3) * 0.09
-                dpg.draw_triangle((x + (ind - 0.045) * w, y + (yy - 0.04) * h),
-                                  (x + (ind - 0.045) * w, y + (yy + 0.10) * h),
-                                  (x + (ind + 0.02) * w, y + (yy + 0.03) * h),
-                                  fill=DIMc, parent=D)
-                L(ind + 0.05, yy + 0.03, 0.9, yy + 0.03, DIMc, 2)
+                ix = x + 8 * u + (i2 % 3) * 12 * u
+                t = 4.5 * u
+                dpg.draw_triangle((ix, ry - t), (ix, ry + t),
+                                  (ix + 1.6 * t, ry), fill=DIMc, parent=D)
+                dpg.draw_line((ix + 2.2 * t, ry), (x + w * 0.9, ry),
+                              color=DIMc, thickness=max(1, 1.6 * u),
+                              parent=D)
             else:
-                L(0.08, yy + 0.03, 0.9, yy + 0.03, DIMc, 2)
+                dpg.draw_line((x + 8 * u, ry), (x + w * 0.9, ry),
+                              color=DIMc, thickness=max(1, 1.6 * u),
+                              parent=D)
         if k == "listbox":
-            R(0.04, 0.08, 0.96, 0.36, fill=(52, 90, 150, 90), col=(0, 0, 0, 0))
+            dpg.draw_rectangle((x + 3 * u, y + 4 * u),
+                               (x + w - 3 * u, y + 4 * u + PITCH),
+                               fill=(52, 90, 150, 90), parent=D)
     elif k in ("headerbar", "actionbar", "menubar", "toolbar", "statusbar"):
         if k == "headerbar":
             R(0, 0, 1, 1, fill=DARK, col=B, r=2)
-            C(0.08, 0.5, 0.13, fill=(220, 90, 80))
-            C(0.2, 0.5, 0.13, fill=(240, 180, 80))
+            dr = min(6 * u, h * 0.28)
+            dpg.draw_circle((x + 10 * u, y + h * 0.5), dr,
+                            fill=(220, 90, 80), parent=D)
+            dpg.draw_circle((x + 10 * u + 2.6 * dr, y + h * 0.5), dr,
+                            fill=(240, 180, 80), parent=D)
             TXT(0.4, 0.22, label or "title", T)
         elif k == "actionbar":
             R(0, 0, 1, 1, fill=DARK, col=B)
@@ -455,47 +492,81 @@ def _render_widget(D, kind, x, y, w, h, label=""):
         else:
             TXT(0.5 - 0.05 * len(label or "btn"), 0.3, label or "btn", T)
     elif k == "check":
-        R(0.06, 0.25, 0.34, 0.78, fill=FLD, col=B, r=2)
-        L(0.11, 0.55, 0.18, 0.7, (30, 120, 60), 3)
-        L(0.18, 0.7, 0.3, 0.32, (30, 120, 60), 3)
+        bx = min(16 * u, h * 0.6)
+        cy0 = y + h * 0.5
+        dpg.draw_rectangle((x + 5 * u, cy0 - bx / 2),
+                           (x + 5 * u + bx, cy0 + bx / 2),
+                           fill=FLD, color=B, rounding=2, parent=D)
+        dpg.draw_line((x + 5 * u + 0.2 * bx, cy0 + 0.05 * bx),
+                      (x + 5 * u + 0.42 * bx, cy0 + 0.3 * bx),
+                      color=(30, 120, 60), thickness=max(2, 2.2 * u),
+                      parent=D)
+        dpg.draw_line((x + 5 * u + 0.42 * bx, cy0 + 0.3 * bx),
+                      (x + 5 * u + 0.82 * bx, cy0 - 0.32 * bx),
+                      color=(30, 120, 60), thickness=max(2, 2.2 * u),
+                      parent=D)
         TXT(0.42, 0.3, label or "check", T)
     elif k == "radio":
-        C(0.18, 0.5, 0.16, fill=FLD, col=B)
-        C(0.18, 0.5, 0.075, fill=(30, 120, 60), col=(30, 120, 60))
+        rr = min(8 * u, h * 0.3)
+        dpg.draw_circle((x + 5 * u + rr, y + h * 0.5), rr, fill=FLD,
+                        color=B, parent=D)
+        dpg.draw_circle((x + 5 * u + rr, y + h * 0.5), rr * 0.45,
+                        fill=(30, 120, 60), color=(30, 120, 60), parent=D)
         TXT(0.42, 0.3, label or "radio", T)
     elif k == "switch":
         R(0.08, 0.25, 0.6, 0.75, fill=(46, 140, 90), col=B, r=h * 0.25)
         C(0.47, 0.5, 0.2, fill=T, col=T)
     elif k in ("entry", "searchentry", "spinbutton", "combobox"):
         R(0.04, 0.15, 0.96, 0.85, fill=FLD, col=B, r=2)
+        mid = y + h * 0.5
         if k == "entry":
-            L(0.1, 0.28, 0.1, 0.72, (40, 44, 55), 2)
+            dpg.draw_line((x + 8 * u, mid - 7 * u), (x + 8 * u, mid + 7 * u),
+                          color=(40, 44, 55), thickness=max(1, 1.6 * u),
+                          parent=D)
         elif k == "searchentry":
-            C(0.14, 0.45, 0.11, col=(90, 96, 110))
-            L(0.2, 0.62, 0.27, 0.78, (90, 96, 110), 2)
+            r0 = 5.5 * u
+            dpg.draw_circle((x + 10 * u, mid - 1.5 * u), r0,
+                            color=(90, 96, 110), parent=D)
+            dpg.draw_line((x + 10 * u + 0.7 * r0, mid - 1.5 * u + 0.7 * r0),
+                          (x + 10 * u + 1.8 * r0, mid - 1.5 * u + 1.8 * r0),
+                          color=(90, 96, 110), thickness=max(1, 1.8 * u),
+                          parent=D)
         elif k == "spinbutton":
-            R(0.8, 0.15, 0.96, 0.5, fill=(200, 205, 215), col=B)
-            R(0.8, 0.5, 0.96, 0.85, fill=(200, 205, 215), col=B)
-            dpg.draw_triangle((x + 0.84 * w, y + 0.4 * h),
-                              (x + 0.92 * w, y + 0.4 * h),
-                              (x + 0.88 * w, y + 0.24 * h),
+            bw2 = min(16 * u, w * 0.22)
+            dpg.draw_rectangle((x + w - bw2 - 2 * u, y + h * 0.15),
+                               (x + w - 2 * u, mid),
+                               fill=(200, 205, 215), color=B, parent=D)
+            dpg.draw_rectangle((x + w - bw2 - 2 * u, mid),
+                               (x + w - 2 * u, y + h * 0.85),
+                               fill=(200, 205, 215), color=B, parent=D)
+            cxx = x + w - 2 * u - bw2 / 2
+            dpg.draw_triangle((cxx - 3.5 * u, mid - 3 * u),
+                              (cxx + 3.5 * u, mid - 3 * u),
+                              (cxx, mid - 8 * u),
                               fill=(60, 66, 80), parent=D)
-            dpg.draw_triangle((x + 0.84 * w, y + 0.6 * h),
-                              (x + 0.92 * w, y + 0.6 * h),
-                              (x + 0.88 * w, y + 0.76 * h),
+            dpg.draw_triangle((cxx - 3.5 * u, mid + 3 * u),
+                              (cxx + 3.5 * u, mid + 3 * u),
+                              (cxx, mid + 8 * u),
                               fill=(60, 66, 80), parent=D)
         else:
-            dpg.draw_triangle((x + 0.8 * w, y + 0.4 * h),
-                              (x + 0.94 * w, y + 0.4 * h),
-                              (x + 0.87 * w, y + 0.65 * h),
+            ax = x + w - 12 * u
+            dpg.draw_triangle((ax - 5 * u, mid - 3 * u),
+                              (ax + 5 * u, mid - 3 * u),
+                              (ax, mid + 5 * u),
                               fill=(60, 66, 80), parent=D)
         if k in ("entry", "combobox"):
             TXT(0.16, 0.3, label or "", (60, 66, 80))
     elif k == "textview":
         R(0.03, 0.05, 0.97, 0.95, fill=FLD, col=B)
-        for i2 in range(3 if small else max(3, int(h / 22))):
-            L(0.08, 0.18 + i2 * 0.22, 0.9 - (i2 % 2) * 0.15,
-              0.18 + i2 * 0.22, (120, 126, 140), 2)
+        lines = max(2, int((h - 10 * u) / PITCH))
+        for i2 in range(lines):
+            ly = y + 7 * u + (i2 + 0.5) * PITCH
+            if ly > y + h - 6 * u:
+                break
+            dpg.draw_line((x + 8 * u, ly),
+                          (x + w * (0.9 - (i2 % 2) * 0.15), ly),
+                          color=(120, 126, 140),
+                          thickness=max(1, 1.6 * u), parent=D)
     elif k == "calendar":
         R(0.05, 0.05, 0.95, 0.28, fill=(52, 90, 150), col=B)
         for r2 in range(2):
@@ -627,15 +698,22 @@ def _hit(mx, my):
 
 
 def _handle_hit(mx, my):
+    """All EIGHT handles: corners resize both axes, edge midpoints
+    resize ONE axis (the one you grabbed) — per the captain, 19-08."""
     wid = GS["sel"]
     if wid is None or wid not in GS["widgets"]:
         return None
     w = GS["widgets"][wid]
-    corners = {"nw": (w["x"], w["y"]), "ne": (w["x"] + w["w"], w["y"]),
+    handles = {"nw": (w["x"], w["y"]), "ne": (w["x"] + w["w"], w["y"]),
                "sw": (w["x"], w["y"] + w["h"]),
-               "se": (w["x"] + w["w"], w["y"] + w["h"])}
-    for mode, (hx, hy) in corners.items():
-        if abs(mx - hx) <= 6 and abs(my - hy) <= 6:
+               "se": (w["x"] + w["w"], w["y"] + w["h"]),
+               "n": (w["x"] + w["w"] / 2, w["y"]),
+               "s": (w["x"] + w["w"] / 2, w["y"] + w["h"]),
+               "w": (w["x"], w["y"] + w["h"] / 2),
+               "e": (w["x"] + w["w"], w["y"] + w["h"] / 2)}
+    tol = 7 / max(0.5, GS["zoom"])
+    for mode, (hx, hy) in handles.items():
+        if abs(mx - hx) <= tol and abs(my - hy) <= tol:
             return mode
     return None
 
@@ -703,6 +781,16 @@ def _on_drag(sender, app_data):
     elif m == "sw":
         w["x"] = max(0, int(ox + dx))
         w["w"], w["h"] = max(MIN_SIZE, int(ow - dx)), max(MIN_SIZE, int(oh + dy))
+    elif m == "e":
+        w["w"] = max(MIN_SIZE, int(ow + dx))
+    elif m == "s":
+        w["h"] = max(MIN_SIZE, int(oh + dy))
+    elif m == "w":
+        w["x"] = max(0, int(ox + dx))
+        w["w"] = max(MIN_SIZE, int(ow - dx))
+    elif m == "n":
+        w["y"] = max(0, int(oy + dy))
+        w["h"] = max(MIN_SIZE, int(oh - dy))
     redraw()
 
 
@@ -878,7 +966,7 @@ def build_gui_tab(style):
                     for k in kinds:
                         with dpg.group(horizontal=True):
                             dl = dpg.add_drawlist(width=46, height=28)
-                            _render_widget(dl, k, 2, 2, 42, 24)
+                            _render_widget(dl, k, 2, 2, 42, 24, px=0.55)
                             dpg.add_button(label=f" {k[4:]} ", width=-1,
                                            user_data=k,
                                            callback=lambda s, a, u:
