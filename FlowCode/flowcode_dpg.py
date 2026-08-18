@@ -587,6 +587,14 @@ def main():
                 "homeless content must stay dirty (rescue-loss bug)"
             FLOW_ORGAN.clear_all()
             print("DIRTY SEMANTICS OK — homeless content always dirty")
+            # lasso regression: rect over two symbols selects + deletes both
+            a1 = FLOW_ORGAN.add_symbol("flow_process", 200, 200)
+            a2 = FLOW_ORGAN.add_symbol("flow_process", 400, 200)
+            FLOW_ORGAN._lasso_apply((150, 150, 600, 320))
+            assert len(FLOW_ORGAN.FS["multi"]) == 2, "lasso missed"
+            FLOW_ORGAN.delete_selected()
+            assert not FLOW_ORGAN.FS["syms"], "group delete failed"
+            print("LASSO OK — group select + delete")
             ex = FLOW_ORGAN._selftest_exec()
             print(f"EXEC PIPELINE OK — {ex['words']} words, "
                   f"{ex['t5_chars']} t5asm chars, {ex['steps']} interp "
