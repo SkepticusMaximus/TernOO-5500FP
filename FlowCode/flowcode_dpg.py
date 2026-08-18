@@ -80,12 +80,25 @@ try:
 except Exception as e:                          # noqa: BLE001
     BRIDGE_ERR = str(e)
 
+
+def _load_organ(name):
+    spec = _ilu.spec_from_file_location(name, os.path.join(_HERE, name + ".py"))
+    mod = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+GUI_ORGAN = None
+GUI_ORGAN_ERR = ""
+try:
+    GUI_ORGAN = _load_organ("flowcode_dpg_gui")
+except Exception as e:                          # noqa: BLE001
+    GUI_ORGAN_ERR = str(e)
+
 # ── the application manifest — the Tk TAB_CHROME, carried over whole ────────
 TAB_CHROME = [
     {"key": "flow",        "title": "Flow",          "live": True},
-    {"key": "gui",         "title": "GUI",           "live": False,
-     "charter": "The GHOST GUI builder — drag widgets, wire named\n"
-                "handlers, auto-wiring per Phase 7c."},
+    {"key": "gui",         "title": "GUI",           "live": True},
     {"key": "sheet",       "title": "Sheet",         "live": False,
      "charter": "The Sheet leg — cells, formulas and flows on the\n"
                 "grid, per the Stage 8 design memo."},
@@ -93,8 +106,7 @@ TAB_CHROME = [
      "charter": "The canvas-based connector view — sockets, wires\n"
                 "and mesh plumbing between organs."},
     {"key": "shell",       "title": "Shell",         "live": True},
-    {"key": "text",        "title": "Text",          "live": False,
-     "charter": "The plain text editor pane."},
+    {"key": "text",        "title": "Text",          "live": True},
     {"key": "babble-fish", "title": "Babble-Fish",   "live": False,
      "charter": "GristMill translation — TernOO words in and out of\n"
                 "human tongues."},
@@ -288,6 +300,60 @@ def show_about(*_):
         dpg.add_button(label="  Close  ", callback=lambda: dpg.delete_item(tag))
 
 
+# ── Text tab: a real editor pane ────────────────────────────────────────────
+TEXT_FILE = [None]
+
+
+def _text_picked(app_data):
+    sels = app_data.get("selections") or {}
+    if sels:
+        return list(sels.values())[0]
+    p = app_data.get("file_path_name", "")
+    return p[:-2] if p.endswith(".*") else p
+
+
+def text_open(path):
+    try:
+        dpg.set_value("txt_edit", open(path, encoding="utf-8",
+                                       errors="replace").read())
+        TEXT_FILE[0] = path
+        dpg.set_value("txt_status", f"opened {os.path.basename(path)}")
+    except Exception as e:                      # noqa: BLE001
+        dpg.set_value("txt_status", f"open failed: {e}")
+
+
+def text_save(path=None):
+    path = path or TEXT_FILE[0]
+    if not path:
+        dpg.show_item("txt_save_dlg")
+        return
+    try:
+        open(path, "w", encoding="utf-8").write(dpg.get_value("txt_edit"))
+        TEXT_FILE[0] = path
+        dpg.set_value("txt_status", f"saved {os.path.basename(path)}")
+    except Exception as e:                      # noqa: BLE001
+        dpg.set_value("txt_status", f"save failed: {e}")
+
+
+def build_text_tab():
+    for tag, cb in (("txt_open_dlg", lambda s, a: text_open(_text_picked(a))),
+                    ("txt_save_dlg", lambda s, a: text_save(_text_picked(a)))):
+        with dpg.file_dialog(directory_selector=False, show=False, tag=tag,
+                             width=640, height=420,
+                             default_path=os.path.expanduser("~"),
+                             callback=cb):
+            dpg.add_file_extension(".*")
+    with dpg.group(horizontal=True):
+        dpg.add_button(label=" Open ",
+                       callback=lambda: dpg.show_item("txt_open_dlg"))
+        dpg.add_button(label=" Save ", callback=lambda: text_save())
+        dpg.add_button(label=" Save as... ",
+                       callback=lambda: dpg.show_item("txt_save_dlg"))
+        dpg.add_text("plain editor — no word wrap in stock DPG (roadmap)",
+                     tag="txt_status", color=DIM)
+    dpg.add_input_text(tag="txt_edit", multiline=True, width=-1, height=-1)
+
+
 # ── build ───────────────────────────────────────────────────────────────────
 def build_ui():
     with dpg.theme() as th:
@@ -380,6 +446,16 @@ def build_ui():
                                                callback=shell_run)
                             dpg.add_button(label=" Clear ",
                                            callback=shell_clear)
+                    elif row["key"] == "gui":
+                        if GUI_ORGAN:
+                            GUI_ORGAN.build_gui_tab(
+                                {"BORDER": BORDER, "TEXT": TEXT,
+                                 "DIM": DIM, "GRN": GRN, "AMB": AMB})
+                        else:
+                            dpg.add_text("GUI organ failed to load: "
+                                         + GUI_ORGAN_ERR, color=AMB)
+                    elif row["key"] == "text":
+                        build_text_tab()
                     elif row["key"] == "mesh":
                         dpg.add_text("Mesh-Chat lives as the standalone DPG "
                                      "client — one codebase,\ntwo doors. "
@@ -408,7 +484,23 @@ def main():
     dpg.create_context()
     build_ui()
     if os.environ.get("SMOKE"):
-        print("SMOKE OK — FlowCode DPG keel builds clean")
+        if os.environ.get("FLOW_DPG_TEST") and GUI_ORGAN:
+            import tempfile
+            tmp = os.path.join(tempfile.gettempdir(), "fdpg-test.gui")
+            GUI_ORGAN.add_widget("gui_dialog", 248, 160)
+            GUI_ORGAN.GS["widgets"][0]["w"] = 377
+            GUI_ORGAN._prop_set(GUI_ORGAN.GS["widgets"][0], "title", "Hello")
+            GUI_ORGAN.save_to(tmp)
+            GUI_ORGAN.clear_all()
+            GUI_ORGAN.load_from(tmp)
+            w0 = GUI_ORGAN.GS["widgets"][0]
+            assert w0["kind"] == "gui_dialog" and w0["x"] == 248
+            assert w0["w"] == 377
+            assert GUI_ORGAN._prop_get(w0, "title") == "Hello"
+            doc = json.load(open(tmp, encoding="utf-8"))
+            assert doc["ternoo_version"] == "0.3" and doc["symbols"]
+            print("GUI ROUND-TRIP OK — Tk-schema .gui verified")
+        print("SMOKE OK — FlowCode DPG builds clean")
         dpg.destroy_context()
         return
     dpg.create_viewport(title="FlowCode — TernOO (Dear PyGui face)",
