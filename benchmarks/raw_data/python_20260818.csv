@@ -1,0 +1,13 @@
+target,workload,iterations,total_sec,avg_us,result,emu_cycles
+pure_python,fibonacci_30,1000,0.001174271,1.174,832040,N/A
+pure_python,factorial_12,1000,0.000538599,0.539,479001600,N/A
+pure_python,array_sum_1000,1000,0.018648736,18.649,500500,N/A
+pure_python,arith_loop_3000,1000,0.142207268,142.207,3,N/A
+py_5500fp_emu,fibonacci_30,5,0.023624974,4724.995,832040,N/A
+py_5500fp_emu,factorial_12,5,0.009158555,1831.711,479001600,N/A
+py_5500fp_emu,array_sum_1000,5,0.450868411,90173.682,500500,N/A
+py_5500fp_emu,arith_loop_3000,5,1.853548417,370709.683,3,N/A
+py_ternoo_v03,fibonacci_30,5,0.030493961,6098.792,832040,N/A
+py_ternoo_v03,factorial_12,5,0.011667904,2333.581,479001600,N/A
+py_ternoo_v03,array_sum_1000,5,0.573653330,114730.666,500500,N/A
+py_ternoo_v03,arith_loop_3000,5,2.500669772,500133.954,3,N/A

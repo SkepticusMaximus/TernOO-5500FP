@@ -14,6 +14,7 @@ Produces:
   benchmark_summary.md        — markdown summary table
 """
 
+import os as _os
 import csv
 import os
 import sys
@@ -24,7 +25,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
 
-OUT_DIR = '/home/ubuntu/benchmarks'
+OUT_DIR = _os.path.dirname(_os.path.abspath(__file__))
 
 # ── Raw data from C runs (copy from terminal output) ─────────────────────────
 # These are the actual measured values from the C benchmarks.

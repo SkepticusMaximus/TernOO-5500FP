@@ -18,8 +18,8 @@ import sys, os, time, csv, importlib.util, unittest.mock
 
 # ── Locate emulator modules ───────────────────────────────────────────────────
 
-REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                    '..', 'TernOO-5500FP', '5500fp')
+REPO = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))), "5500fp")
 
 def _load_module(name, path):
     spec = importlib.util.spec_from_file_location(name, path)

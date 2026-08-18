@@ -12,6 +12,7 @@ Part B: Semantic workloads (Word dispatch, Het stream, Tribble, Obj pool, Graph 
 Part C: NASM speedup summary
 """
 
+import os as _os
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -19,7 +20,7 @@ import matplotlib.ticker as ticker
 import numpy as np
 import csv, os
 
-OUT = "/home/ubuntu/benchmarks"
+OUT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
 GHZ = 2.4   # approximate sandbox CPU frequency
 
 # ── Colour palette ─────────────────────────────────────────────────────────────
