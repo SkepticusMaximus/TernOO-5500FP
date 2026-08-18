@@ -53,15 +53,21 @@ str_test_done:
 str_bench_hdr:
     db  0x0A, "=== Benchmark ===", 0x0A, 0
 str_bench_fib:
-    db  "  Fibonacci(25)     : ", 0
+    db  "  Fibonacci(30)     : ", 0
 str_bench_fact:
-    db  "  Factorial(10)     : ", 0
+    db  "  Factorial(12)     : ", 0
 str_bench_arith:
     db  "  Arith loop (3000) : ", 0
 str_bench_word:
     db  "  TernOO word build : ", 0
+str_bench_array:
+    db  "  Array sum (1000)  : ", 0
 str_bench_cycles:
     db  " cycles (RDTSC)", 0x0A, 0
+vname_bench_fib:   db  "bench verify fib(30)", 0
+vname_bench_fact:  db  "bench verify fact(12)", 0
+vname_bench_array: db  "bench verify array_sum", 0
+vname_bench_arith: db  "bench verify arith_loop", 0
 
 str_demo_hdr:
     db  0x0A, "=== Demo Programs ===", 0x0A, 0
@@ -1376,63 +1382,61 @@ run_benchmarks:
     lea     rdi, [rel str_bench_hdr]
     call    print_cstr
 
-    ; Benchmark 1: Fibonacci(25)
+    ; Benchmark 1: Fibonacci(30) — CANONICAL (build_fib30: 29 iters, result R11)
     lea     rdi, [rel str_bench_fib]
     call    print_cstr
-    ; build fib25 program
     lea     rdi, [rel cpu_struct]
     lea     rsi, [rel cpu_memory]
     call    cpu_init
     lea     rbx, [rel prog_buf]
     mov     rdi, OP_LDI
-    mov     rsi, 41
+    mov     rsi, 10
     mov     rdx, 0
     call    encode_ldi
     mov     [rbx], rax
     mov     rdi, OP_LDI
-    mov     rsi, 42
+    mov     rsi, 11
     mov     rdx, 1
     call    encode_ldi
     mov     [rbx + 8], rax
     mov     rdi, OP_LDI
-    mov     rsi, 43
-    mov     rdx, 25
+    mov     rsi, 12
+    mov     rdx, 29
     call    encode_ldi
     mov     [rbx + 16], rax
-    mov     rdi, OP_ADD
-    mov     rsi, 44
-    mov     rdx, 41
-    mov     rcx, 42
-    call    encode_rrr
+    mov     rdi, OP_JEQ
+    mov     rsi, 12
+    mov     rdx, 0
+    mov     rcx, 5
+    call    encode_branch
     mov     [rbx + 24], rax
-    mov     rdi, OP_MOV
-    mov     rsi, 41
-    mov     rdx, 42
-    mov     rcx, 0
+    mov     rdi, OP_ADD
+    mov     rsi, 13
+    mov     rdx, 10
+    mov     rcx, 11
     call    encode_rrr
     mov     [rbx + 32], rax
     mov     rdi, OP_MOV
-    mov     rsi, 42
-    mov     rdx, 44
+    mov     rsi, 10
+    mov     rdx, 11
     mov     rcx, 0
     call    encode_rrr
     mov     [rbx + 40], rax
+    mov     rdi, OP_MOV
+    mov     rsi, 11
+    mov     rdx, 13
+    mov     rcx, 0
+    call    encode_rrr
+    mov     [rbx + 48], rax
     mov     rdi, OP_SUBI
-    mov     rsi, 43
-    mov     rdx, 43
+    mov     rsi, 12
+    mov     rdx, 12
     mov     rcx, 1
     call    encode_rri
-    mov     [rbx + 48], rax
-    mov     rdi, OP_LDI
-    mov     rsi, 45
-    mov     rdx, 0
-    call    encode_ldi
     mov     [rbx + 56], rax
-    mov     rdi, OP_JNE
-    mov     rsi, 43
-    mov     rdx, 45
-    mov     rcx, -6
-    call    encode_branch
+    mov     rdi, OP_JMP
+    mov     rsi, 3
+    call    encode_jmp
     mov     [rbx + 64], rax
     mov     rdi, OP_HLT
     call    encode_hlt
@@ -1442,7 +1446,6 @@ run_benchmarks:
     mov     rdx, 10
     xor     rcx, rcx
     call    cpu_load_program
-    ; RDTSC start
     cpuid
     rdtsc
     shl     rdx, 32
@@ -1462,8 +1465,14 @@ run_benchmarks:
     call    print_int64
     lea     rdi, [rel str_bench_cycles]
     call    print_cstr
+    lea     rdi, [rel cpu_struct]
+    mov     rsi, 11
+    call    cpu_read_reg
+    lea     rsi, [rel vname_bench_fib]
+    mov     rdx, 832040
+    call    check_eq
 
-    ; Benchmark 2: Factorial(10)
+    ; Benchmark 2: Factorial(12) — CANONICAL (build_fact12, result R11)
     lea     rdi, [rel str_bench_fact]
     call    print_cstr
     lea     rdi, [rel cpu_struct]
@@ -1471,37 +1480,36 @@ run_benchmarks:
     call    cpu_init
     lea     rbx, [rel prog_buf]
     mov     rdi, OP_LDI
-    mov     rsi, 41
-    mov     rdx, 10
+    mov     rsi, 10
+    mov     rdx, 12
     call    encode_ldi
     mov     [rbx], rax
     mov     rdi, OP_LDI
-    mov     rsi, 42
+    mov     rsi, 11
     mov     rdx, 1
     call    encode_ldi
     mov     [rbx + 8], rax
-    mov     rdi, OP_LDI
-    mov     rsi, 43
+    mov     rdi, OP_JEQ
+    mov     rsi, 10
     mov     rdx, 0
-    call    encode_ldi
+    mov     rcx, 3
+    call    encode_branch
     mov     [rbx + 16], rax
     mov     rdi, OP_MUL
-    mov     rsi, 42
-    mov     rdx, 42
-    mov     rcx, 41
+    mov     rsi, 11
+    mov     rdx, 11
+    mov     rcx, 10
     call    encode_rrr
     mov     [rbx + 24], rax
     mov     rdi, OP_SUBI
-    mov     rsi, 41
-    mov     rdx, 41
+    mov     rsi, 10
+    mov     rdx, 10
     mov     rcx, 1
     call    encode_rri
     mov     [rbx + 32], rax
-    mov     rdi, OP_JNE
-    mov     rsi, 41
-    mov     rdx, 43
-    mov     rcx, -3
-    call    encode_branch
+    mov     rdi, OP_JMP
+    mov     rsi, 2
+    call    encode_jmp
     mov     [rbx + 40], rax
     mov     rdi, OP_HLT
     call    encode_hlt
@@ -1530,54 +1538,158 @@ run_benchmarks:
     call    print_int64
     lea     rdi, [rel str_bench_cycles]
     call    print_cstr
+    lea     rdi, [rel cpu_struct]
+    mov     rsi, 11
+    call    cpu_read_reg
+    lea     rsi, [rel vname_bench_fact]
+    mov     rdx, 479001600
+    call    check_eq
 
-    ; Benchmark 3: Arith loop 3000 iterations
+    ; Benchmark 3: Array sum 1..1000 — CANONICAL (build_array_sum_1000, result R3)
+    lea     rdi, [rel str_bench_array]
+    call    print_cstr
+    lea     rdi, [rel cpu_struct]
+    lea     rsi, [rel cpu_memory]
+    call    cpu_init
+    lea     rbx, [rel prog_buf]
+    mov     rdi, OP_LDI
+    mov     rsi, 3
+    mov     rdx, 0
+    call    encode_ldi
+    mov     [rbx], rax
+    mov     rdi, OP_LDI
+    mov     rsi, 4
+    mov     rdx, 1
+    call    encode_ldi
+    mov     [rbx + 8], rax
+    mov     rdi, OP_LDI
+    mov     rsi, 5
+    mov     rdx, 1001
+    call    encode_ldi
+    mov     [rbx + 16], rax
+    mov     rdi, OP_JEQ
+    mov     rsi, 4
+    mov     rdx, 5
+    mov     rcx, 3
+    call    encode_branch
+    mov     [rbx + 24], rax
+    mov     rdi, OP_ADD
+    mov     rsi, 3
+    mov     rdx, 3
+    mov     rcx, 4
+    call    encode_rrr
+    mov     [rbx + 32], rax
+    mov     rdi, OP_ADDI
+    mov     rsi, 4
+    mov     rdx, 4
+    mov     rcx, 1
+    call    encode_rri
+    mov     [rbx + 40], rax
+    mov     rdi, OP_JMP
+    mov     rsi, 3
+    call    encode_jmp
+    mov     [rbx + 48], rax
+    mov     rdi, OP_HLT
+    call    encode_hlt
+    mov     [rbx + 56], rax
+    lea     rdi, [rel cpu_struct]
+    lea     rsi, [rel prog_buf]
+    mov     rdx, 8
+    xor     rcx, rcx
+    call    cpu_load_program
+    cpuid
+    rdtsc
+    shl     rdx, 32
+    or      rax, rdx
+    mov     [rel bench_start], rax
+    lea     rdi, [rel cpu_struct]
+    mov     rsi, 100000
+    call    cpu_run
+    cpuid
+    rdtsc
+    shl     rdx, 32
+    or      rax, rdx
+    mov     [rel bench_end], rax
+    mov     rax, [rel bench_end]
+    sub     rax, [rel bench_start]
+    mov     rdi, rax
+    call    print_int64
+    lea     rdi, [rel str_bench_cycles]
+    call    print_cstr
+    lea     rdi, [rel cpu_struct]
+    mov     rsi, 3
+    call    cpu_read_reg
+    lea     rsi, [rel vname_bench_array]
+    mov     rdx, 500500
+    call    check_eq
+
+    ; Benchmark 4: Arith loop 3000 — CANONICAL (build_arith_loop_3000, result R12)
     lea     rdi, [rel str_bench_arith]
     call    print_cstr
     lea     rdi, [rel cpu_struct]
     lea     rsi, [rel cpu_memory]
     call    cpu_init
     lea     rbx, [rel prog_buf]
-    ; LDI R41, 3000; LDI R42, 0; ADDI R42, R42, 1; SUBI R41, R41, 1; LDI R43, 0; JNE R41, R43, -3; HLT
     mov     rdi, OP_LDI
-    mov     rsi, 41
-    mov     rdx, 3000
+    mov     rsi, 10
+    mov     rdx, 1
     call    encode_ldi
     mov     [rbx], rax
     mov     rdi, OP_LDI
-    mov     rsi, 42
-    mov     rdx, 0
+    mov     rsi, 11
+    mov     rdx, 2
     call    encode_ldi
     mov     [rbx + 8], rax
-    mov     rdi, OP_ADDI
-    mov     rsi, 42
-    mov     rdx, 42
-    mov     rcx, 1
-    call    encode_rri
-    mov     [rbx + 16], rax
-    mov     rdi, OP_SUBI
-    mov     rsi, 41
-    mov     rdx, 41
-    mov     rcx, 1
-    call    encode_rri
-    mov     [rbx + 24], rax
     mov     rdi, OP_LDI
-    mov     rsi, 43
+    mov     rsi, 12
     mov     rdx, 0
     call    encode_ldi
-    mov     [rbx + 32], rax
-    mov     rdi, OP_JNE
-    mov     rsi, 41
-    mov     rdx, 43
-    mov     rcx, -3
+    mov     [rbx + 16], rax
+    mov     rdi, OP_LDI
+    mov     rsi, 13
+    mov     rdx, 3000
+    call    encode_ldi
+    mov     [rbx + 24], rax
+    mov     rdi, OP_JEQ
+    mov     rsi, 13
+    mov     rdx, 0
+    mov     rcx, 5
     call    encode_branch
+    mov     [rbx + 32], rax
+    mov     rdi, OP_ADD
+    mov     rsi, 12
+    mov     rdx, 10
+    mov     rcx, 11
+    call    encode_rrr
     mov     [rbx + 40], rax
+    mov     rdi, OP_MOV
+    mov     rsi, 10
+    mov     rdx, 11
+    mov     rcx, 0
+    call    encode_rrr
+    mov     [rbx + 48], rax
+    mov     rdi, OP_SUB
+    mov     rsi, 11
+    mov     rdx, 12
+    mov     rcx, 10
+    call    encode_rrr
+    mov     [rbx + 56], rax
+    mov     rdi, OP_SUBI
+    mov     rsi, 13
+    mov     rdx, 13
+    mov     rcx, 1
+    call    encode_rri
+    mov     [rbx + 64], rax
+    mov     rdi, OP_JMP
+    mov     rsi, 4
+    call    encode_jmp
+    mov     [rbx + 72], rax
     mov     rdi, OP_HLT
     call    encode_hlt
-    mov     [rbx + 48], rax
+    mov     [rbx + 80], rax
     lea     rdi, [rel cpu_struct]
     lea     rsi, [rel prog_buf]
-    mov     rdx, 7
+    mov     rdx, 11
     xor     rcx, rcx
     call    cpu_load_program
     cpuid
@@ -1599,8 +1711,14 @@ run_benchmarks:
     call    print_int64
     lea     rdi, [rel str_bench_cycles]
     call    print_cstr
+    lea     rdi, [rel cpu_struct]
+    mov     rsi, 12
+    call    cpu_read_reg
+    lea     rsi, [rel vname_bench_arith]
+    mov     rdx, 3
+    call    check_eq
 
-    ; Benchmark 4: TernOO word construction (10000 iterations)
+    ; Benchmark 5: TernOO word construction (10000 iterations)
     lea     rdi, [rel str_bench_word]
     call    print_cstr
     cpuid

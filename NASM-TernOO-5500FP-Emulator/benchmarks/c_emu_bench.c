@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <x86intrin.h>
 
 #define REPEAT  10   /* fewer repeats — emulator is slower */
 
@@ -40,10 +41,15 @@ static void run_bench(const char *label, const char *workload,
     double t0 = now_sec();
     int64_t result = 0;
     uint64_t cycles = 0;
+    uint64_t rdtsc_min = UINT64_MAX;   /* host cycles around cpu_run alone —
+                                          the same window the NASM bench times */
     for (int r = 0; r < repeat; r++) {
         cpu_t *cpu = cpu_create(65536);
         cpu_load_program(cpu, program, len, 0);
+        uint64_t h0 = __rdtsc();
         cpu_run(cpu);
+        uint64_t h1 = __rdtsc();
+        if (h1 - h0 < rdtsc_min) rdtsc_min = h1 - h0;
         result = cpu->reg[result_reg];
         cycles = cpu->cycle_count;
         cpu_destroy(cpu);
@@ -54,9 +60,10 @@ static void run_bench(const char *label, const char *workload,
                 workload, (long long)result, (long long)expected);
         exit(1);
     }
-    printf("c_emu_5500fp,%s,%d,%.9f,%.3f,%lld,%llu\n",
+    printf("c_emu_5500fp,%s,%d,%.9f,%.3f,%lld,%llu,%llu\n",
            workload, repeat, elapsed, elapsed/repeat*1e6,
-           (long long)result, (unsigned long long)cycles);
+           (long long)result, (unsigned long long)cycles,
+           (unsigned long long)rdtsc_min);
 }
 
 /* ── Benchmark programs ───────────────────────────────────────────────────── */
@@ -125,7 +132,7 @@ static const char *arith_loop_src =
     "HALT\n";
 
 int main(void) {
-    printf("target,workload,iterations,total_sec,avg_us,result,emu_cycles\n");
+    printf("target,workload,iterations,total_sec,avg_us,result,emu_cycles,host_rdtsc_min\n");
 
     run_bench("c_emu", "fibonacci_30",    fib30_src,      REPEAT, 11, 832040);
     run_bench("c_emu", "factorial_12",    fact12_src,     REPEAT, 11, 479001600);

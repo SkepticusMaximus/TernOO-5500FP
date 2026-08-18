@@ -28,9 +28,9 @@ python:
 
 nasm:
 	@which nasm >/dev/null || { echo "nasm not installed — run: sudo apt install -y nasm"; exit 1; }
-	$(MAKE) -C $(NASMDIR)
+	$(MAKE) -C $(NASMDIR)/nasm_emulator -B
 	mkdir -p $(OUT)
-	$(NASMDIR)/ternoo5500fp --bench | tee $(OUT)/nasm_$(STAMP).csv
+	$(NASMDIR)/nasm_emulator/ternoo5500fp --bench | tee $(OUT)/nasm_$(STAMP).txt
 
 clean:
 	rm -f $(NASMDIR)/benchmarks/c_emu_bench
