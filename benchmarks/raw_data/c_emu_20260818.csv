@@ -1,5 +1,5 @@
-target,workload,iterations,total_sec,avg_us,result,emu_cycles
-c_emu_5500fp,fibonacci_30,10,0.000941730,94.173,832040,179
-c_emu_5500fp,factorial_12,10,0.000293709,29.371,479001600,52
-c_emu_5500fp,array_sum_1000,10,0.014524663,1452.466,500500,4005
-c_emu_5500fp,arith_loop_3000,10,0.052691975,5269.198,3,18006
+target,workload,iterations,total_sec,avg_us,result,emu_cycles,host_rdtsc_min
+c_emu_5500fp,fibonacci_30,10,0.001032537,103.254,832040,179,135882
+c_emu_5500fp,factorial_12,10,0.000329065,32.906,479001600,52,29169
+c_emu_5500fp,array_sum_1000,10,0.014496611,1449.661,500500,4005,3602010
+c_emu_5500fp,arith_loop_3000,10,0.052544731,5254.473,3,18006,13080360
