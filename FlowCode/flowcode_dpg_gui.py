@@ -552,24 +552,25 @@ def _pick_kind(kind):
 def build_gui_tab(style):
     STYLE.update(style)
     C = STYLE
-    with dpg.file_dialog(directory_selector=False, show=False,
-                         tag="guic_save_dlg", width=640, height=420,
-                         default_path=os.path.expanduser("~"),
+    _designs = os.path.dirname(os.path.abspath(__file__))
+    with dpg.file_dialog(directory_selector=False, show=False, modal=True,
+                         tag="guic_save_dlg", width=780, height=480,
+                         default_path=_designs, default_filename="design",
                          callback=lambda s, a: save_to(_picked(a))):
-        dpg.add_file_extension(".gui")
+        dpg.add_file_extension(".gui", color=(74, 158, 255))
         dpg.add_file_extension(".*")
-    with dpg.file_dialog(directory_selector=False, show=False,
-                         tag="guic_open_dlg", width=640, height=420,
-                         default_path=os.path.expanduser("~"),
+    with dpg.file_dialog(directory_selector=False, show=False, modal=True,
+                         tag="guic_open_dlg", width=780, height=480,
+                         default_path=_designs, default_filename="",
                          callback=lambda s, a: load_from(_picked(a))):
-        dpg.add_file_extension(".gui")
-        dpg.add_file_extension(".fc")
+        dpg.add_file_extension(".gui", color=(74, 158, 255))
+        dpg.add_file_extension(".fc", color=(63, 208, 143))
         dpg.add_file_extension(".*")
 
     with dpg.group(horizontal=True):
         # ── left: tools + palette ──
         with dpg.child_window(width=int(C.get("CFG", {})
-                              .get("gui_panel_w", 185)),
+                              .get("gui_panel_w", 320)),
                               tag="guic_panel"):
             dpg.add_text("TOOLS", color=C["DIM"])
             dpg.add_button(label=" Select ", width=-1,
