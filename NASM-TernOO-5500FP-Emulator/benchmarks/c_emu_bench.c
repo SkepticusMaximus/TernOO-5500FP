@@ -4,12 +4,12 @@
  * Runs the four benchmark workloads inside our binary-encoded ternary
  * 5500FP emulator and reports wall-clock time and emulated cycle counts.
  *
- * Compiled against the emulator sources in ../5500fp_emulator/
+ * Compiled against the emulator sources in ../c_emulator/
  */
 
 #define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
-#include "../5500fp_emulator/include/cpu.h"
+#include "../c_emulator/include/cpu.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

@@ -17,9 +17,10 @@ Benchmarks:
   5. Graph walk                (FlowCode-style DFS)
 """
 
+import os as _os
 import sys, os, time, csv, importlib.util
 
-REPO = "/home/ubuntu/TernOO-5500FP/5500fp"
+REPO = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))), "5500fp")
 sys.path.insert(0, REPO)
 
 def load_module(name, path):
