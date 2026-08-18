@@ -43,7 +43,6 @@ GRN = (63, 208, 143)
 AMB = (240, 180, 80)
 
 CFG = os.path.expanduser("~/.config/ternoo-flowcode-dpg.json")
-GRAPH = os.path.expanduser("~/.config/ternoo-flowcode-dpg-graph.json")
 try:
     CFGD = json.load(open(CFG, encoding="utf-8"))
 except Exception:                               # noqa: BLE001
@@ -95,6 +94,13 @@ try:
 except Exception as e:                          # noqa: BLE001
     GUI_ORGAN_ERR = str(e)
 
+FLOW_ORGAN = None
+FLOW_ORGAN_ERR = ""
+try:
+    FLOW_ORGAN = _load_organ("flowcode_dpg_flow")
+except Exception as e:                          # noqa: BLE001
+    FLOW_ORGAN_ERR = str(e)
+
 # ── the application manifest — the Tk TAB_CHROME, carried over whole ────────
 TAB_CHROME = [
     {"key": "flow",        "title": "Flow",          "live": True},
@@ -119,106 +125,6 @@ TAB_CHROME = [
      "charter": "The helpdown viewer — index, search, raw/preview\n"
                 "editing with atomic saves."},
 ]
-
-# ── Flow tab: node-editor scaffold state ────────────────────────────────────
-NODES = {}          # node tag -> {"kind": str, "label": str}
-LINKS = {}          # link tag -> (out_attr, in_attr)
-_NODE_N = [0]
-SYMBOL_KINDS = ["DATA", "EXEC", "MAP", "NEURAL", "I-O"]
-
-
-def _flow_note(msg, color=DIM):
-    dpg.set_value("flow_note", msg)
-    dpg.configure_item("flow_note", color=color)
-
-
-def add_node(kind):
-    _NODE_N[0] += 1
-    tag = f"fnode_{_NODE_N[0]}"
-    label = f"{kind} {_NODE_N[0]}"
-    with dpg.node(label=label, tag=tag, parent="flow_editor",
-                  pos=(120 + 30 * (_NODE_N[0] % 8), 80 + 24 * (_NODE_N[0] % 9))):
-        with dpg.node_attribute(tag=f"{tag}_in",
-                                attribute_type=dpg.mvNode_Attr_Input):
-            dpg.add_text("in")
-        with dpg.node_attribute(tag=f"{tag}_out",
-                                attribute_type=dpg.mvNode_Attr_Output):
-            dpg.add_text("out")
-    NODES[tag] = {"kind": kind, "label": label}
-    _flow_note(f"added {label} — drag pins to wire", GRN)
-
-
-def on_link(sender, app_data):
-    out_attr, in_attr = app_data
-    tag = dpg.add_node_link(out_attr, in_attr, parent=sender)
-    LINKS[tag] = (dpg.get_item_alias(out_attr) or out_attr,
-                  dpg.get_item_alias(in_attr) or in_attr)
-    _flow_note("wired", GRN)
-
-
-def on_delink(sender, app_data):
-    LINKS.pop(app_data, None)
-    dpg.delete_item(app_data)
-    _flow_note("unwired")
-
-
-def del_selected(*_):
-    for ln in dpg.get_selected_links("flow_editor"):
-        LINKS.pop(ln, None)
-        dpg.delete_item(ln)
-    for nd in dpg.get_selected_nodes("flow_editor"):
-        alias = dpg.get_item_alias(nd) or nd
-        NODES.pop(alias, None)
-        dead = [t for t, (o, i) in LINKS.items()
-                if str(o).startswith(str(alias)) or str(i).startswith(str(alias))]
-        for t in dead:
-            LINKS.pop(t, None)
-        dpg.delete_item(nd)
-    _flow_note("selection deleted")
-
-
-def graph_save(*_):
-    data = {"nodes": [{"tag": t, "kind": n["kind"], "label": n["label"],
-                       "pos": dpg.get_item_pos(t)} for t, n in NODES.items()],
-            "links": [[str(o), str(i)] for (o, i) in LINKS.values()]}
-    try:
-        json.dump(data, open(GRAPH, "w", encoding="utf-8"), indent=1)
-        _flow_note(f"graph saved — {len(NODES)} nodes, {len(LINKS)} links "
-                   f"(scaffold JSON, not yet .flow)", GRN)
-    except Exception as e:                      # noqa: BLE001
-        _flow_note(f"save failed: {e}", AMB)
-
-
-def graph_load(*_):
-    try:
-        data = json.load(open(GRAPH, encoding="utf-8"))
-    except Exception as e:                      # noqa: BLE001
-        _flow_note(f"no saved graph: {e}", AMB)
-        return
-    for t in list(NODES):
-        if dpg.does_item_exist(t):
-            dpg.delete_item(t)
-    NODES.clear()
-    LINKS.clear()
-    for nd in data.get("nodes", []):
-        tag = nd["tag"]
-        with dpg.node(label=nd["label"], tag=tag, parent="flow_editor",
-                      pos=nd.get("pos", (100, 100))):
-            with dpg.node_attribute(tag=f"{tag}_in",
-                                    attribute_type=dpg.mvNode_Attr_Input):
-                dpg.add_text("in")
-            with dpg.node_attribute(tag=f"{tag}_out",
-                                    attribute_type=dpg.mvNode_Attr_Output):
-                dpg.add_text("out")
-        NODES[tag] = {"kind": nd["kind"], "label": nd["label"]}
-        n = int(tag.rsplit("_", 1)[-1])
-        _NODE_N[0] = max(_NODE_N[0], n)
-    for o, i in data.get("links", []):
-        if dpg.does_item_exist(o) and dpg.does_item_exist(i):
-            tag = dpg.add_node_link(o, i, parent="flow_editor")
-            LINKS[tag] = (o, i)
-    _flow_note(f"graph loaded — {len(NODES)} nodes, {len(LINKS)} links", GRN)
-
 
 # ── Shell tab: the native console ───────────────────────────────────────────
 SHELL_DEMO = (
@@ -389,9 +295,6 @@ def build_ui():
     with dpg.window(tag="main"):
         with dpg.menu_bar():
             with dpg.menu(label=" File "):
-                dpg.add_menu_item(label="Save Flow graph", callback=graph_save)
-                dpg.add_menu_item(label="Load Flow graph", callback=graph_load)
-                dpg.add_separator()
                 dpg.add_menu_item(label="Quit", callback=dpg.stop_dearpygui)
             with dpg.menu(label=" View "):
                 dpg.add_menu_item(label="Zoom in        Ctrl +",
@@ -406,46 +309,13 @@ def build_ui():
             for row in TAB_CHROME:
                 with dpg.tab(label=f"  {row['title']}  "):
                     if row["key"] == "flow":
-                        with dpg.group(horizontal=True):
-                            dpg.add_text("add symbol:", color=DIM)
-                            for kind in SYMBOL_KINDS:
-                                dpg.add_button(
-                                    label=f" {kind} ",
-                                    callback=lambda s, a, k=kind: add_node(k))
-                            dpg.add_button(label=" Delete selected ",
-                                           callback=del_selected)
-                            dpg.add_button(label=" Save ", callback=graph_save)
-                            dpg.add_button(label=" Load ", callback=graph_load)
-                        dpg.add_text("scaffold graphs only — the real "
-                                     ".fc/.flow model rides the next leg",
-                                     tag="flow_note", color=DIM)
-                        with dpg.node_editor(tag="flow_editor",
-                                             callback=on_link,
-                                             delink_callback=on_delink,
-                                             minimap=True,
-                                             minimap_location=dpg.
-                                             mvNodeMiniMap_Location_BottomRight):
-                            pass
-                    elif row["key"] == "shell":
-                        core = ("C core (crowned spine) via ternoo_bridge"
-                                if BRIDGE else
-                                f"NATIVE CORE UNAVAILABLE: {BRIDGE_ERR}")
-                        dpg.add_text(f"t5asm in -> {core}",
-                                     color=GRN if BRIDGE else AMB)
-                        with dpg.group(horizontal=True):
-                            dpg.add_input_text(tag="shell_src", multiline=True,
-                                               width=520, height=300,
-                                               default_value=SHELL_DEMO)
-                            with dpg.child_window(tag="shell_log", width=-1,
-                                                  height=300):
-                                dpg.add_text("output appears here — the "
-                                             "demo program is fib(30); "
-                                             "expect R11=832040", color=DIM)
-                        with dpg.group(horizontal=True):
-                            b = dpg.add_button(label="  Run on native core  ",
-                                               callback=shell_run)
-                            dpg.add_button(label=" Clear ",
-                                           callback=shell_clear)
+                        if FLOW_ORGAN:
+                            FLOW_ORGAN.build_flow_tab(
+                                {"BORDER": BORDER, "TEXT": TEXT,
+                                 "DIM": DIM, "GRN": GRN, "AMB": AMB})
+                        else:
+                            dpg.add_text("Flow organ failed to load: "
+                                         + FLOW_ORGAN_ERR, color=AMB)
                     elif row["key"] == "gui":
                         if GUI_ORGAN:
                             GUI_ORGAN.build_gui_tab(
@@ -484,6 +354,64 @@ def main():
     dpg.create_context()
     build_ui()
     if os.environ.get("SMOKE"):
+        if os.environ.get("FLOW_DPG_TEST"):
+            # CLICK-PATH SWEEP — fire every button/menu callback exactly the
+            # way DPG does (sender, app_data, user_data), so callback-arity
+            # bugs can never pass the gate again (19-08 lesson: user_data
+            # None clobbered bound-default lambdas; tests had bypassed the
+            # click path entirely).
+            fired, bad = 0, []
+            for it in dpg.get_all_items():
+                try:
+                    t = dpg.get_item_type(it)
+                    if t not in ("mvAppItemType::mvButton",
+                                 "mvAppItemType::mvMenuItem"):
+                        continue
+                    lbl = dpg.get_item_label(it) or ""
+                    if "Launch" in lbl or "Quit" in lbl:
+                        continue
+                    cb = dpg.get_item_callback(it)
+                    if cb is None:
+                        continue
+                    import inspect
+                    try:
+                        arity = len(inspect.signature(cb).parameters)
+                    except (TypeError, ValueError):
+                        arity = 3
+                    args = (it, None, dpg.get_item_user_data(it))[:arity]
+                    cb(*args)          # exactly how DPG dispatches: up to
+                    fired += 1         # 3 positional args, arity-adapted
+                except Exception as ex:         # noqa: BLE001
+                    bad.append((lbl, repr(ex)[:70]))
+            assert not bad, f"CLICK-PATH FAILURES: {bad}"
+            print(f"CLICK-PATH OK — {fired} controls fired clean")
+        if os.environ.get("FLOW_DPG_TEST") and FLOW_ORGAN:
+            import tempfile
+            FLOW_ORGAN.clear_all()
+            FLOW_ORGAN.FS["undo"].clear()
+            a = FLOW_ORGAN.add_symbol("flow_terminator", 240, 120)
+            b = FLOW_ORGAN.add_symbol("flow_process", 240, 280)
+            FLOW_ORGAN.add_edge(a, b)
+            assert FLOW_ORGAN.FS["syms"][a]["label"] == f"T{a}"
+            tmpf = os.path.join(tempfile.gettempdir(), "fdpg-test.flow")
+            FLOW_ORGAN.save_to(tmpf)
+            FLOW_ORGAN.clear_all()
+            FLOW_ORGAN.load_from(tmpf)
+            assert len(FLOW_ORGAN.FS["syms"]) == 2
+            assert len(FLOW_ORGAN.FS["edges"]) == 1
+            assert FLOW_ORGAN.FS["syms"][a]["kind"] == "flow_terminator"
+            assert FLOW_ORGAN.FS["syms"][a]["x"] % 40 == 0   # snapped
+            # .fc section preservation: unknown sections survive the trip
+            tmpc = os.path.join(tempfile.gettempdir(), "fdpg-test.fc")
+            doc = json.load(open(tmpf, encoding="utf-8"))
+            doc["academy_marker"] = {"keep": "me"}
+            json.dump(doc, open(tmpc, "w", encoding="utf-8"))
+            FLOW_ORGAN.load_from(tmpc)
+            FLOW_ORGAN.save_to(tmpc)
+            doc2 = json.load(open(tmpc, encoding="utf-8"))
+            assert doc2["academy_marker"] == {"keep": "me"}
+            print("FLOW ROUND-TRIP OK — .flow/.fc schema + preservation "
+                  "verified")
         if os.environ.get("FLOW_DPG_TEST") and GUI_ORGAN:
             import tempfile
             tmp = os.path.join(tempfile.gettempdir(), "fdpg-test.gui")
