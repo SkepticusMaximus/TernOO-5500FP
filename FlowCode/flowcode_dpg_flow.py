@@ -43,9 +43,25 @@ KINDS = [
 FS = {
     "syms": {}, "raw": {}, "edges": [], "rawdoc": None,
     "next": 0, "sel": None, "sel_edge": None, "file": None,
-    "tool": "select", "edge_src": None, "drag": None,
+    "tool": "select", "edge_src": None, "drag": None, "grip": None,
+    "zoom": 1.0,
     "undo": [], "redo": [],
 }
+
+
+def zoom_step(direction):
+    """CANVAS zoom (the drawing itself), not UI-text zoom."""
+    z = FS["zoom"] * (1.2 if direction > 0 else 1 / 1.2)
+    FS["zoom"] = max(0.3, min(3.0, round(z, 3)))
+    if dpg.does_item_exist("flowc_zoomlbl"):
+        dpg.set_value("flowc_zoomlbl", f"   Zoom: {int(FS['zoom'] * 100)}%")
+    redraw()
+
+
+def _mpos():
+    mx, my = dpg.get_drawing_mouse_pos()
+    z = FS["zoom"]
+    return mx / z, my / z
 STYLE = {}
 
 
@@ -238,7 +254,8 @@ def _hit_edge(mx, my):
 # ── drawing ─────────────────────────────────────────────────────────────────
 def _draw_symbol(s, selected):
     D = "flowc_draw"
-    x, y, w, h = s["x"], s["y"], s["w"], s["h"]
+    Z = FS["zoom"]
+    x, y, w, h = s["x"] * Z, s["y"] * Z, s["w"] * Z, s["h"] * Z
     fill = COL.get(s["kind"], COL["flow_process"])
     border = COL["selected"] if selected else COL["border"]
     th = 3 if selected else 2
@@ -259,40 +276,45 @@ def _draw_symbol(s, selected):
         dpg.draw_rectangle((x, y), (x + w, y + h), fill=fill, color=border,
                            thickness=th, parent=D)
     lbl = s.get("label", "")
-    dpg.draw_text((x + w / 2 - len(lbl) * 4.2, y + h / 2 - 8), lbl,
-                  size=15, color=STYLE.get("TEXT", (238, 240, 245)),
+    dpg.draw_text((x + w / 2 - len(lbl) * 4.2 * Z, y + h / 2 - 8 * Z), lbl,
+                  size=15 * Z, color=STYLE.get("TEXT", (238, 240, 245)),
                   parent=D)
     kindword = s["kind"].split("_", 1)[-1]
-    dpg.draw_text((x + w / 2 - len(kindword) * 3.2, y + h + 4), kindword,
-                  size=11, color=STYLE.get("DIM", (168, 175, 190)), parent=D)
+    dpg.draw_text((x + w / 2 - len(kindword) * 3.2 * Z, y + h + 4 * Z),
+                  kindword, size=max(8, 11 * Z),
+                  color=STYLE.get("DIM", (168, 175, 190)), parent=D)
     if selected:
-        dpg.draw_text((x, y - 16), f"({s['x']},{s['y']})", size=12,
+        dpg.draw_text((x, y - 16 * Z), f"({s['x']},{s['y']})", size=12 * Z,
                       color=COL["selected"], parent=D)
 
 
 def redraw():
     D = "flowc_draw"
+    Z = FS["zoom"]
+    if dpg.does_item_exist(D):
+        dpg.configure_item(D, width=int(CANVAS_W * Z),
+                           height=int(CANVAS_H * Z))
     dpg.delete_item(D, children_only=True)
     for gx in range(0, CANVAS_W + 1, GRID):
-        dpg.draw_line((gx, 0), (gx, CANVAS_H), color=(40, 46, 62, 80),
-                      parent=D)
+        dpg.draw_line((gx * Z, 0), (gx * Z, CANVAS_H * Z),
+                      color=(40, 46, 62, 80), parent=D)
     for gy in range(0, CANVAS_H + 1, GRID):
-        dpg.draw_line((0, gy), (CANVAS_W, gy), color=(40, 46, 62, 80),
-                      parent=D)
+        dpg.draw_line((0, gy * Z), (CANVAS_W * Z, gy * Z),
+                      color=(40, 46, 62, 80), parent=D)
     for i, e in enumerate(FS["edges"]):
-        pts = _edge_points(e)
+        pts = [(px * Z, py * Z) for px, py in _edge_points(e)]
         if len(pts) < 2:
             continue
         col = COL["selected"] if i == FS["sel_edge"] else COL["border"]
         for a, b in zip(pts, pts[1:-1]):
             dpg.draw_line(a, b, color=col, thickness=2, parent=D)
-        dpg.draw_arrow(pts[-1], pts[-2], color=col, thickness=2, size=8,
-                       parent=D)
+        dpg.draw_arrow(pts[-1], pts[-2], color=col, thickness=2,
+                       size=8 * Z, parent=D)
         if e.get("condition"):
             mx = (pts[0][0] + pts[-1][0]) / 2
             my = (pts[0][1] + pts[-1][1]) / 2
-            dpg.draw_text((mx + 4, my - 14), e["condition"], size=12,
-                          color=STYLE.get("DIM"), parent=D)
+            dpg.draw_text((mx + 4, my - 14 * Z), e["condition"],
+                          size=12 * Z, color=STYLE.get("DIM"), parent=D)
     for sid, s in FS["syms"].items():
         if s.get("parent_scope") is not None:
             continue                        # pocket interiors: next leg
@@ -315,7 +337,7 @@ def set_tool(sender, app_data, tool):
 def _on_click(*_):
     if not dpg.is_item_hovered("flowc_draw"):
         return
-    mx, my = dpg.get_drawing_mouse_pos()
+    mx, my = _mpos()
     tool = FS["tool"]
     if tool.startswith("flow_"):
         add_symbol(tool, mx - SYMBOL_W / 2, my - SYMBOL_H / 2)
@@ -372,18 +394,33 @@ def _on_click(*_):
 
 
 def _on_drag(sender, app_data):
+    if dpg.is_item_active("flowc_grip") and FS["grip"] is None:
+        FS["grip"] = dpg.get_item_width("flowc_panel") or 185
+    if FS["grip"] is not None:
+        _b, gdx, _gdy = app_data
+        dpg.configure_item("flowc_panel",
+                           width=max(140, min(int(FS["grip"] + gdx), 480)))
+        return
     if FS["drag"] is None or FS["sel"] is None:
         return
     _b, dx, dy = app_data
+    z = FS["zoom"]
     s = FS["syms"].get(FS["sel"])
     if s is None:
         return
     ox, oy = FS["drag"]["orig"]
-    s["x"], s["y"] = max(0, int(ox + dx)), max(0, int(oy + dy))
+    s["x"], s["y"] = max(0, int(ox + dx / z)), max(0, int(oy + dy / z))
     redraw()
 
 
 def _on_release(*_):
+    if FS["grip"] is not None:
+        FS["grip"] = None
+        cfg = STYLE.get("CFG")
+        if cfg is not None:
+            cfg["flow_panel_w"] = dpg.get_item_width("flowc_panel")
+            if STYLE.get("SAVE"):
+                STYLE["SAVE"]()
     if FS["drag"] is None:
         return
     FS["drag"] = None
@@ -397,7 +434,7 @@ def _on_release(*_):
 def _on_dblclick(*_):
     if not dpg.is_item_hovered("flowc_draw"):
         return
-    mx, my = dpg.get_drawing_mouse_pos()
+    mx, my = _mpos()
     sid = _hit_symbol(mx, my)
     if sid is None:
         return
@@ -546,7 +583,9 @@ def build_flow_tab(style):
         dpg.add_file_extension(".*")
 
     with dpg.group(horizontal=True):
-        with dpg.child_window(width=185):
+        with dpg.child_window(width=int(C.get("CFG", {})
+                              .get("flow_panel_w", 185)),
+                              tag="flowc_panel"):
             dpg.add_text("TOOLS", color=C["DIM"])
             dpg.add_button(label=" Select ", width=-1, user_data="select",
                            callback=set_tool)
@@ -576,8 +615,12 @@ def build_flow_tab(style):
             dpg.add_spacer(height=8)
             dpg.add_text("not yet ported:\n Word Dump · Load→EMU\n "
                          "Step/Run/Stop · Import\n Learn · Suggest\n "
-                         "waypoint editing\n pocket scopes · zoom",
+                         "waypoint editing\n pocket scopes",
                          color=C["DIM"])
+        with dpg.child_window(width=10, height=-1, no_scrollbar=True,
+                              border=False):
+            dpg.add_button(tag="flowc_grip", label="", width=-1,
+                           height=2600)
         with dpg.child_window(tag="flowc_wrap", width=-1,
                               horizontal_scrollbar=True):
             dpg.add_text("MainFlow", color=(74, 158, 255))
@@ -588,7 +631,9 @@ def build_flow_tab(style):
     with dpg.group(horizontal=True):
         dpg.add_text("tool: Select — click to select · drag to move · "
                      "dbl-click to rename", tag="flowc_tool", color=C["DIM"])
-        dpg.add_text("   Zoom: 100%", color=C["DIM"])
+        dpg.add_text("   Zoom: 100%", tag="flowc_zoomlbl", color=C["DIM"])
+        dpg.add_text("  Ctrl+wheel / Ctrl± zooms the canvas · drag the "
+                     "divider for panel width", color=C["DIM"])
     dpg.add_text("Flow ready — reads/writes the Tk face's .fc/.flow",
                  tag="flowc_status", color=C["DIM"])
 

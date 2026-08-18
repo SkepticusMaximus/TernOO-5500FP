@@ -95,8 +95,24 @@ GS = {
     "file": None,
     "pending": None,  # kind waiting to be placed
     "drag": None,     # {"mode": move|nw|ne|sw|se, "orig": (x,y,w,h)}
+    "grip": None, "grip2": None, "zoom": 1.0,
     "undo": [], "redo": [],
 }
+
+
+def zoom_step(direction):
+    """CANVAS zoom (the drawing), not UI-text zoom."""
+    z = GS["zoom"] * (1.2 if direction > 0 else 1 / 1.2)
+    GS["zoom"] = max(0.3, min(3.0, round(z, 3)))
+    if dpg.does_item_exist("guic_zoomlbl"):
+        dpg.set_value("guic_zoomlbl", f"Zoom: {int(GS['zoom'] * 100)}%")
+    redraw()
+
+
+def _mpos():
+    mx, my = dpg.get_drawing_mouse_pos()
+    z = GS["zoom"]
+    return mx / z, my / z
 STYLE = {}
 
 
@@ -229,16 +245,21 @@ def _assign_parent(wid):
 # ── drawing ─────────────────────────────────────────────────────────────────
 def redraw():
     D = "guic_draw"
+    Z = GS["zoom"]
+    if dpg.does_item_exist(D):
+        dpg.configure_item(D, width=int(CANVAS_W * Z),
+                           height=int(CANVAS_H * Z))
     dpg.delete_item(D, children_only=True)
     C = STYLE
     for gx in range(0, CANVAS_W + 1, GRID_STEP):
-        dpg.draw_line((gx, 0), (gx, CANVAS_H), color=(40, 46, 62, 90),
-                      parent=D)
+        dpg.draw_line((gx * Z, 0), (gx * Z, CANVAS_H * Z),
+                      color=(40, 46, 62, 90), parent=D)
     for gy in range(0, CANVAS_H + 1, GRID_STEP):
-        dpg.draw_line((0, gy), (CANVAS_W, gy), color=(40, 46, 62, 90),
-                      parent=D)
+        dpg.draw_line((0, gy * Z), (CANVAS_W * Z, gy * Z),
+                      color=(40, 46, 62, 90), parent=D)
     for wid, w in GS["widgets"].items():
-        x, y, ww, hh = w["x"], w["y"], w["w"], w["h"]
+        x, y = w["x"] * Z, w["y"] * Z
+        ww, hh = w["w"] * Z, w["h"] * Z
         is_ct = w["kind"] in CONTAINER_KINDS
         fill = (30, 41, 66) if is_ct else (42, 47, 63)
         dpg.draw_rectangle((x, y), (x + ww, y + hh), fill=fill,
@@ -248,8 +269,8 @@ def redraw():
                                fill=(24, 33, 54), color=C["BORDER"],
                                parent=D)
         label = w.get("label") or w["kind"][4:]
-        dpg.draw_text((x + max(4, ww / 2 - len(label) * 4),
-                       y + hh / 2 - 8), label, size=14,
+        dpg.draw_text((x + max(4, ww / 2 - len(label) * 4 * Z),
+                       y + hh / 2 - 8 * Z), label, size=14 * Z,
                       color=C["TEXT"], parent=D)
         if wid == GS["sel"]:
             dpg.draw_rectangle((x - 2, y - 2), (x + ww + 2, y + hh + 2),
@@ -260,8 +281,8 @@ def redraw():
                            (x + ww, y + hh / 2)):
                 dpg.draw_rectangle((hx - 3, hy - 3), (hx + 3, hy + 3),
                                    fill=(255, 120, 50), parent=D)
-            cap = f"{w.get('name', '')}  #{wid} ({x},{y})"
-            dpg.draw_text((x, y + hh + 8), cap, size=13,
+            cap = f"{w.get('name', '')}  #{wid} ({w['x']},{w['y']})"
+            dpg.draw_text((x, y + hh + 8 * Z), cap, size=13 * Z,
                           color=(255, 140, 70), parent=D)
 
 
@@ -333,7 +354,7 @@ def _handle_hit(mx, my):
 def _on_click(*_):
     if not dpg.is_item_hovered("guic_draw"):
         return
-    mx, my = dpg.get_drawing_mouse_pos()
+    mx, my = _mpos()
     if GS["pending"]:
         add_widget(GS["pending"], mx, my)
         GS["pending"] = None
@@ -357,9 +378,24 @@ def _on_click(*_):
 
 
 def _on_drag(sender, app_data):
+    for grip, key, panel, lo, hi, inv in (
+            ("guic_grip", "grip", "guic_panel", 140, 420, False),
+            ("guic_grip2", "grip2", "guic_props", 200, 480, True)):
+        if dpg.is_item_active(grip) and GS[key] is None:
+            GS[key] = dpg.get_item_width(panel) or 200
+        if GS[key] is not None:
+            _b, gdx, _gdy = app_data
+            d = -gdx if inv else gdx
+            w = max(lo, min(int(GS[key] + d), hi))
+            dpg.configure_item(panel, width=w)
+            if panel == "guic_props":
+                dpg.configure_item("guic_wrap", width=-(w + 16))
+            return
     if GS["drag"] is None or GS["sel"] is None:
         return
     _btn, dx, dy = app_data
+    z = GS["zoom"]
+    dx, dy = dx / z, dy / z
     w = GS["widgets"].get(GS["sel"])
     if w is None:
         return
@@ -382,6 +418,14 @@ def _on_drag(sender, app_data):
 
 
 def _on_release(*_):
+    if GS["grip"] is not None or GS["grip2"] is not None:
+        cfg = STYLE.get("CFG")
+        if cfg is not None:
+            cfg["gui_panel_w"] = dpg.get_item_width("guic_panel")
+            cfg["gui_props_w"] = dpg.get_item_width("guic_props")
+            if STYLE.get("SAVE"):
+                STYLE["SAVE"]()
+        GS["grip"] = GS["grip2"] = None
     if GS["drag"] is None:
         return
     GS["drag"] = None
@@ -524,7 +568,9 @@ def build_gui_tab(style):
 
     with dpg.group(horizontal=True):
         # ── left: tools + palette ──
-        with dpg.child_window(width=185):
+        with dpg.child_window(width=int(C.get("CFG", {})
+                              .get("gui_panel_w", 185)),
+                              tag="guic_panel"):
             dpg.add_text("TOOLS", color=C["DIM"])
             dpg.add_button(label=" Select ", width=-1,
                            callback=lambda: (GS.update(pending=None),
@@ -552,15 +598,23 @@ def build_gui_tab(style):
             dpg.add_button(label=" Clear ", width=-1, callback=clear_all)
             dpg.add_button(label=" Undo ", width=-1, callback=undo)
             dpg.add_button(label=" Redo ", width=-1, callback=redo)
+        with dpg.child_window(width=10, height=-1, no_scrollbar=True,
+                              border=False):
+            dpg.add_button(tag="guic_grip", label="", width=-1, height=2600)
         # ── centre: the canvas ──
-        with dpg.child_window(tag="guic_wrap", width=-320,
+        props_w = int(C.get("CFG", {}).get("gui_props_w", 300))
+        with dpg.child_window(tag="guic_wrap", width=-(props_w + 16),
                               horizontal_scrollbar=True):
             with dpg.drawlist(width=CANVAS_W, height=CANVAS_H,
                               tag="guic_draw"):
                 pass
+        with dpg.child_window(width=10, height=-1, no_scrollbar=True,
+                              border=False):
+            dpg.add_button(tag="guic_grip2", label="", width=-1, height=2600)
         # ── right: properties ──
-        with dpg.child_window(width=-1):
+        with dpg.child_window(width=props_w, tag="guic_props"):
             dpg.add_text("PROPERTIES", color=C["DIM"])
+            dpg.add_text("Zoom: 100%", tag="guic_zoomlbl", color=C["DIM"])
             dpg.add_text("nothing selected", tag="gp_kind", color=C["GRN"])
             dpg.add_text("Identity", color=C["DIM"])
             with dpg.group(horizontal=True):

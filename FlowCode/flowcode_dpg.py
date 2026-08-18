@@ -181,12 +181,43 @@ def zoom(delta):
     dpg.set_value("statusbar", f"text zoom {int(SCALE * 100)}%")
 
 
+ACTIVE_TAB = ["flow"]
+
+
+def _canvas_zoom(direction):
+    """Route Ctrl +/- and Ctrl+wheel to the ACTIVE tab's canvas zoom;
+    UI-text zoom lives in the View menu on tabs without a canvas."""
+    if ACTIVE_TAB[0] == "flow" and FLOW_ORGAN:
+        FLOW_ORGAN.zoom_step(direction)
+    elif ACTIVE_TAB[0] == "gui" and GUI_ORGAN:
+        GUI_ORGAN.zoom_step(direction)
+    else:
+        zoom(0.1 * direction)
+
+
 def _zoom_keys(sender, key):
     if dpg.is_key_down(dpg.mvKey_LControl) or dpg.is_key_down(dpg.mvKey_RControl):
         if key in (dpg.mvKey_Plus, dpg.mvKey_Add):
-            zoom(+0.1)
+            _canvas_zoom(+1)
         elif key in (dpg.mvKey_Minus, dpg.mvKey_Subtract):
-            zoom(-0.1)
+            _canvas_zoom(-1)
+
+
+def _wheel(sender, app_data):
+    if not (dpg.is_key_down(dpg.mvKey_LControl)
+            or dpg.is_key_down(dpg.mvKey_RControl)):
+        return
+    d = 1 if app_data > 0 else -1
+    if FLOW_ORGAN and dpg.is_item_hovered("flowc_draw"):
+        FLOW_ORGAN.zoom_step(d)
+    elif GUI_ORGAN and dpg.is_item_hovered("guic_draw"):
+        GUI_ORGAN.zoom_step(d)
+
+
+def _on_tab(sender, app_data):
+    alias = dpg.get_item_alias(app_data) or ""
+    if alias.startswith("tab_"):
+        ACTIVE_TAB[0] = alias[4:]
 
 
 def show_about(*_):
@@ -297,22 +328,29 @@ def build_ui():
             with dpg.menu(label=" File "):
                 dpg.add_menu_item(label="Quit", callback=dpg.stop_dearpygui)
             with dpg.menu(label=" View "):
-                dpg.add_menu_item(label="Zoom in        Ctrl +",
+                dpg.add_menu_item(label="Canvas zoom in   Ctrl +",
+                                  callback=lambda: _canvas_zoom(+1))
+                dpg.add_menu_item(label="Canvas zoom out  Ctrl -",
+                                  callback=lambda: _canvas_zoom(-1))
+                dpg.add_separator()
+                dpg.add_menu_item(label="UI text larger",
                                   callback=lambda: zoom(+0.1))
-                dpg.add_menu_item(label="Zoom out       Ctrl -",
+                dpg.add_menu_item(label="UI text smaller",
                                   callback=lambda: zoom(-0.1))
             with dpg.menu(label=" Help "):
                 dpg.add_menu_item(label="About / port charter",
                                   callback=show_about)
 
-        with dpg.tab_bar():
+        with dpg.tab_bar(callback=_on_tab):
             for row in TAB_CHROME:
-                with dpg.tab(label=f"  {row['title']}  "):
+                with dpg.tab(label=f"  {row['title']}  ",
+                             tag=f"tab_{row['key']}"):
                     if row["key"] == "flow":
                         if FLOW_ORGAN:
                             FLOW_ORGAN.build_flow_tab(
                                 {"BORDER": BORDER, "TEXT": TEXT,
-                                 "DIM": DIM, "GRN": GRN, "AMB": AMB})
+                                 "DIM": DIM, "GRN": GRN, "AMB": AMB,
+                                 "CFG": CFGD, "SAVE": save_cfg})
                         else:
                             dpg.add_text("Flow organ failed to load: "
                                          + FLOW_ORGAN_ERR, color=AMB)
@@ -320,7 +358,8 @@ def build_ui():
                         if GUI_ORGAN:
                             GUI_ORGAN.build_gui_tab(
                                 {"BORDER": BORDER, "TEXT": TEXT,
-                                 "DIM": DIM, "GRN": GRN, "AMB": AMB})
+                                 "DIM": DIM, "GRN": GRN, "AMB": AMB,
+                                 "CFG": CFGD, "SAVE": save_cfg})
                         else:
                             dpg.add_text("GUI organ failed to load: "
                                          + GUI_ORGAN_ERR, color=AMB)
@@ -348,6 +387,7 @@ def build_ui():
 
     with dpg.handler_registry():
         dpg.add_key_press_handler(callback=_zoom_keys)
+        dpg.add_mouse_wheel_handler(callback=_wheel)
 
 
 def main():
@@ -360,28 +400,33 @@ def main():
             # bugs can never pass the gate again (19-08 lesson: user_data
             # None clobbered bound-default lambdas; tests had bypassed the
             # click path entirely).
-            fired, bad = 0, []
+            import inspect
+            targets = []
             for it in dpg.get_all_items():
-                try:
-                    t = dpg.get_item_type(it)
-                    if t not in ("mvAppItemType::mvButton",
-                                 "mvAppItemType::mvMenuItem"):
+                try:      # inventory pass FIRST — callbacks fired later
+                    if dpg.get_item_type(it) not in (
+                            "mvAppItemType::mvButton",
+                            "mvAppItemType::mvMenuItem"):
                         continue
                     lbl = dpg.get_item_label(it) or ""
                     if "Launch" in lbl or "Quit" in lbl:
                         continue
                     cb = dpg.get_item_callback(it)
-                    if cb is None:
-                        continue
-                    import inspect
+                    if cb is not None:
+                        targets.append((it, lbl, cb,
+                                        dpg.get_item_user_data(it)))
+                except Exception:               # noqa: BLE001
+                    continue    # dead/anonymous item — not a target
+            fired, bad = 0, []
+            for it, lbl, cb, ud in targets:
+                try:
                     try:
                         arity = len(inspect.signature(cb).parameters)
                     except (TypeError, ValueError):
                         arity = 3
-                    args = (it, None, dpg.get_item_user_data(it))[:arity]
-                    cb(*args)          # exactly how DPG dispatches: up to
-                    fired += 1         # 3 positional args, arity-adapted
-                except Exception as ex:         # noqa: BLE001
+                    cb(*(it, None, ud)[:arity])   # DPG's dispatch: up to 3
+                    fired += 1                    # positional, arity-adapted
+                except Exception as ex:           # noqa: BLE001
                     bad.append((lbl, repr(ex)[:70]))
             assert not bad, f"CLICK-PATH FAILURES: {bad}"
             print(f"CLICK-PATH OK — {fired} controls fired clean")
