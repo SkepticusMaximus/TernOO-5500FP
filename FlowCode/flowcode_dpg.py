@@ -43,6 +43,10 @@ GRN = (63, 208, 143)
 AMB = (240, 180, 80)
 
 CFG = os.path.expanduser("~/.config/ternoo-flowcode-dpg.json")
+AUTOSAVE_FLOW = os.path.expanduser(
+    "~/.config/ternoo-flowcode-dpg-autosave.flow")
+AUTOSAVE_GUI = os.path.expanduser(
+    "~/.config/ternoo-flowcode-dpg-autosave.gui")
 try:
     CFGD = json.load(open(CFG, encoding="utf-8"))
 except Exception:                               # noqa: BLE001
@@ -182,6 +186,115 @@ def zoom(delta):
 
 
 ACTIVE_TAB = ["flow"]
+TEXT_DIRTY = [False]
+
+
+def _menu_save(*_):
+    t = ACTIVE_TAB[0]
+    if t == "flow" and FLOW_ORGAN:
+        FLOW_ORGAN._save_clicked()
+    elif t == "gui" and GUI_ORGAN:
+        GUI_ORGAN._save_clicked()
+    elif t == "text":
+        text_save()
+    else:
+        dpg.set_value("statusbar", "no file actions on this tab")
+
+
+def _menu_save_as(*_):
+    t = ACTIVE_TAB[0]
+    if t == "flow" and FLOW_ORGAN:
+        dpg.show_item("flowc_save_dlg")
+    elif t == "gui" and GUI_ORGAN:
+        dpg.show_item("guic_save_dlg")
+    elif t == "text":
+        dpg.show_item("txt_save_dlg")
+    else:
+        dpg.set_value("statusbar", "no file actions on this tab")
+
+
+def _menu_open(*_):
+    t = ACTIVE_TAB[0]
+    if t == "flow" and FLOW_ORGAN:
+        dpg.show_item("flowc_open_dlg")
+    elif t == "gui" and GUI_ORGAN:
+        dpg.show_item("guic_open_dlg")
+    elif t == "text":
+        dpg.show_item("txt_open_dlg")
+    else:
+        dpg.set_value("statusbar", "no file actions on this tab")
+
+
+def _any_dirty():
+    d = []
+    if FLOW_ORGAN and FLOW_ORGAN.is_dirty():
+        d.append("Flow")
+    if GUI_ORGAN and GUI_ORGAN.is_dirty():
+        d.append("GUI")
+    if TEXT_DIRTY[0] and dpg.does_item_exist("txt_edit") \
+            and dpg.get_value("txt_edit").strip():
+        d.append("Text")
+    return d
+
+
+def _autosave_dirty():
+    if FLOW_ORGAN and FLOW_ORGAN.is_dirty():
+        FLOW_ORGAN.autosave(AUTOSAVE_FLOW)
+    if GUI_ORGAN and GUI_ORGAN.is_dirty():
+        GUI_ORGAN.autosave(AUTOSAVE_GUI)
+
+
+def do_quit(*_):
+    dirty = _any_dirty()
+    if not dirty:
+        dpg.stop_dearpygui()
+        return
+    tag = "quitconfirm"
+    if dpg.does_item_exist(tag):
+        dpg.delete_item(tag)
+    with dpg.window(label="Unsaved changes", tag=tag, modal=True,
+                    width=520, height=180, pos=(360, 260)):
+        dpg.add_text(f"Unsaved work on: {', '.join(dirty)}", color=AMB)
+        dpg.add_text("Quit anyway? An autosave will be kept and offered\n"
+                     "back on the next launch.", color=TEXT)
+        with dpg.group(horizontal=True):
+            dpg.add_button(label="  Quit (autosave kept)  ",
+                           callback=lambda: (_autosave_dirty(),
+                                             dpg.stop_dearpygui()))
+            dpg.add_button(label="  Cancel  ",
+                           callback=lambda: dpg.delete_item(tag))
+
+
+def _offer_recovery():
+    have = [p for p in (AUTOSAVE_FLOW, AUTOSAVE_GUI) if os.path.exists(p)]
+    if not have:
+        return
+    tag = "recoverwin"
+    with dpg.window(label="Rescued work", tag=tag, modal=True, width=560,
+                    height=190, pos=(340, 250)):
+        dpg.add_text("Unsaved work from your last session was rescued.",
+                     color=GRN)
+        dpg.add_text("Restore it onto the canvases?", color=TEXT)
+
+        def restore():
+            if os.path.exists(AUTOSAVE_FLOW) and FLOW_ORGAN:
+                FLOW_ORGAN.load_from(AUTOSAVE_FLOW)
+                FLOW_ORGAN.FS["file"] = None
+            if os.path.exists(AUTOSAVE_GUI) and GUI_ORGAN:
+                GUI_ORGAN.load_from(AUTOSAVE_GUI)
+                GUI_ORGAN.GS["file"] = None
+            discard(keep_state=True)
+
+        def discard(keep_state=False):
+            for p in (AUTOSAVE_FLOW, AUTOSAVE_GUI):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+            dpg.delete_item(tag)
+        with dpg.group(horizontal=True):
+            dpg.add_button(label="  Restore  ", callback=lambda: restore())
+            dpg.add_button(label="  Discard  ", callback=lambda: discard())
 
 
 def _canvas_zoom(direction):
@@ -201,6 +314,10 @@ def _zoom_keys(sender, key):
             _canvas_zoom(+1)
         elif key in (dpg.mvKey_Minus, dpg.mvKey_Subtract):
             _canvas_zoom(-1)
+        elif key == dpg.mvKey_S:
+            _menu_save()
+        elif key == dpg.mvKey_Q:
+            do_quit()
 
 
 def _wheel(sender, app_data):
@@ -267,6 +384,7 @@ def text_save(path=None):
     try:
         open(path, "w", encoding="utf-8").write(dpg.get_value("txt_edit"))
         TEXT_FILE[0] = path
+        TEXT_DIRTY[0] = False
         dpg.set_value("txt_status", f"saved {os.path.basename(path)}")
     except Exception as e:                      # noqa: BLE001
         dpg.set_value("txt_status", f"save failed: {e}")
@@ -288,7 +406,8 @@ def build_text_tab():
                        callback=lambda: dpg.show_item("txt_save_dlg"))
         dpg.add_text("plain editor — no word wrap in stock DPG (roadmap)",
                      tag="txt_status", color=DIM)
-    dpg.add_input_text(tag="txt_edit", multiline=True, width=-1, height=-1)
+    dpg.add_input_text(tag="txt_edit", multiline=True, width=-1, height=-1,
+                       callback=lambda *_: TEXT_DIRTY.__setitem__(0, True))
 
 
 # ── build ───────────────────────────────────────────────────────────────────
@@ -329,7 +448,16 @@ def build_ui():
     with dpg.window(tag="main"):
         with dpg.menu_bar():
             with dpg.menu(label=" File "):
-                dpg.add_menu_item(label="Quit", callback=dpg.stop_dearpygui)
+                dpg.add_menu_item(label="Save            Ctrl+S",
+                                  callback=_menu_save)
+                dpg.add_menu_item(label="Save as...", callback=_menu_save_as)
+                dpg.add_menu_item(label="Open...", callback=_menu_open)
+                dpg.add_menu_item(label="Import into Flow...",
+                                  callback=lambda: FLOW_ORGAN and
+                                  dpg.show_item("flowc_import_dlg"))
+                dpg.add_separator()
+                dpg.add_menu_item(label="Quit            Ctrl+Q",
+                                  callback=do_quit)
             with dpg.menu(label=" View "):
                 dpg.add_menu_item(label="Flow minimap on/off",
                                   callback=lambda: FLOW_ORGAN and
@@ -498,6 +626,9 @@ def main():
     dpg.show_viewport()
     dpg.set_primary_window("main", True)
     dpg.set_global_font_scale(SCALE)
+    dpg.set_exit_callback(_autosave_dirty)    # X-button can't be vetoed in
+    _offer_recovery()                         # DPG — rescue instead, and
+                                              # offer it back on launch
     frames = int(os.environ.get("SMOKE_FRAMES", "0"))
     if frames:
         for _ in range(frames):

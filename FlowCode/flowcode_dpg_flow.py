@@ -49,9 +49,23 @@ FS = {
     "syms": {}, "raw": {}, "edges": [], "rawdoc": None,
     "next": 0, "sel": None, "sel_edge": None, "file": None,
     "tool": "select", "edge_src": None, "edge_wps": [], "drag": None,
-    "wpdrag": None, "grip": None, "zoom": 1.0,
+    "wpdrag": None, "grip": None, "zoom": 1.0, "dirty": False,
     "undo": [], "redo": [],
 }
+
+
+def is_dirty():
+    return bool(FS["dirty"]) and bool(FS["syms"] or FS["edges"])
+
+
+def autosave(path):
+    """Emergency rescue on exit — no side effects on FS['file']."""
+    try:
+        json.dump(_payload(path), open(path, "w", encoding="utf-8"),
+                  indent=1)
+        return True
+    except Exception:                           # noqa: BLE001
+        return False
 
 # ── the execution layer (lazy: flowcode.py imports headless — the Tk app
 #    only launches under __main__ — so FCCanvas/FCSymbol, the interpreter,
@@ -462,6 +476,7 @@ def _selinfo(msg=""):
 
 # ── undo / redo ─────────────────────────────────────────────────────────────
 def _snapshot():
+    FS["dirty"] = True
     FS["undo"].append(json.dumps({"s": FS["syms"], "e": FS["edges"],
                                   "n": FS["next"]}))
     FS["undo"] = FS["undo"][-50:]
@@ -940,6 +955,7 @@ def save_to(path):
         json.dump(_payload(path), open(path, "w", encoding="utf-8"),
                   indent=1)
         FS["file"] = path
+        FS["dirty"] = False
         kept = " (other .fc sections preserved)" \
             if FS["rawdoc"] and path.endswith(".fc") else ""
         _status(f"saved {os.path.basename(path)} — {len(FS['syms'])} "
@@ -975,6 +991,7 @@ def load_from(path):
         FS["next"] = max(FS["next"], sid + 1)
     FS["edges"] = [dict(e) for e in doc.get("flow_edges", [])]
     FS["file"] = path
+    FS["dirty"] = False
     nested = sum(1 for s in FS["syms"].values()
                  if s.get("parent_scope") is not None)
     redraw()
