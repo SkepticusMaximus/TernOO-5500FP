@@ -47,7 +47,7 @@ try:
     CFGD = json.load(open(CFG, encoding="utf-8"))
 except Exception:                               # noqa: BLE001
     CFGD = {}
-SCALE = float(CFGD.get("font_scale", 1.25))
+SCALE = float(CFGD.get("font_scale", 1.0))
 FONT_SIZE = int(os.environ.get("FLOW_DPG_FONT", "20"))
 
 
@@ -300,9 +300,12 @@ def build_ui():
             dpg.add_theme_color(dpg.mvThemeCol_FrameBg, FIELD)
             dpg.add_theme_color(dpg.mvThemeCol_Text, TEXT)
             dpg.add_theme_color(dpg.mvThemeCol_Border, BORDER)
-            dpg.add_theme_color(dpg.mvThemeCol_Tab, PANEL)
-            dpg.add_theme_color(dpg.mvThemeCol_TabActive, FIELD)
-            dpg.add_theme_color(dpg.mvThemeCol_TabHovered, BORDER)
+            dpg.add_theme_color(dpg.mvThemeCol_Tab, (36, 56, 100))
+            dpg.add_theme_color(dpg.mvThemeCol_TabActive, (74, 120, 190))
+            dpg.add_theme_color(dpg.mvThemeCol_TabHovered, (90, 150, 230))
+            dpg.add_theme_color(dpg.mvThemeCol_TabUnfocused, (32, 48, 84))
+            dpg.add_theme_color(dpg.mvThemeCol_TabUnfocusedActive,
+                                (60, 100, 160))
             dpg.add_theme_color(dpg.mvThemeCol_TitleBgActive, PANEL)
             dpg.add_theme_color(dpg.mvThemeCol_Button, FIELD)
             dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, BORDER)
@@ -328,6 +331,10 @@ def build_ui():
             with dpg.menu(label=" File "):
                 dpg.add_menu_item(label="Quit", callback=dpg.stop_dearpygui)
             with dpg.menu(label=" View "):
+                dpg.add_menu_item(label="Flow minimap on/off",
+                                  callback=lambda: FLOW_ORGAN and
+                                  FLOW_ORGAN.toggle_minimap())
+                dpg.add_separator()
                 dpg.add_menu_item(label="Canvas zoom in   Ctrl +",
                                   callback=lambda: _canvas_zoom(+1))
                 dpg.add_menu_item(label="Canvas zoom out  Ctrl -",

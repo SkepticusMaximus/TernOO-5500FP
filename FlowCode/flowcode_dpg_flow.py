@@ -62,6 +62,66 @@ def _mpos():
     mx, my = dpg.get_drawing_mouse_pos()
     z = FS["zoom"]
     return mx / z, my / z
+
+
+# ── minimap (the little viewport, back by request) ──────────────────────────
+MM_W, MM_H = 220, 146
+MM_F = min(MM_W / CANVAS_W, MM_H / CANVAS_H)
+
+
+def toggle_minimap():
+    if not dpg.does_item_exist("flowc_mm"):
+        return
+    show = not dpg.is_item_shown("flowc_mm")
+    dpg.configure_item("flowc_mm", show=show)
+    cfg = STYLE.get("CFG")
+    if cfg is not None:
+        cfg["flow_minimap"] = show
+        if STYLE.get("SAVE"):
+            STYLE["SAVE"]()
+    if show:
+        _mm_redraw()
+
+
+def _mm_redraw():
+    D = "flowc_mmdraw"
+    if not dpg.does_item_exist(D) or not dpg.is_item_shown("flowc_mm"):
+        return
+    dpg.delete_item(D, children_only=True)
+    dpg.draw_rectangle((0, 0), (MM_W, MM_H), fill=(16, 19, 28),
+                       color=(74, 158, 255), parent=D)
+    for s in FS["syms"].values():
+        if s.get("parent_scope") is not None:
+            continue
+        col = COL.get(s["kind"], COL["flow_process"])
+        dpg.draw_rectangle((s["x"] * MM_F, s["y"] * MM_F),
+                           ((s["x"] + s["w"]) * MM_F,
+                            (s["y"] + s["h"]) * MM_F),
+                           fill=col, parent=D)
+    try:                       # the visible-region rectangle
+        z = FS["zoom"]
+        vx = dpg.get_x_scroll("flowc_wrap") / z
+        vy = dpg.get_y_scroll("flowc_wrap") / z
+        vw, vh = dpg.get_item_rect_size("flowc_wrap")
+        dpg.draw_rectangle((vx * MM_F, vy * MM_F),
+                           ((vx + vw / z) * MM_F, (vy + vh / z) * MM_F),
+                           color=(238, 240, 245), thickness=1, parent=D)
+    except Exception:                           # noqa: BLE001
+        pass
+
+
+def _mm_jump():
+    """Click on the minimap -> centre the canvas there."""
+    mx, my = dpg.get_drawing_mouse_pos()
+    z = FS["zoom"]
+    cx, cy = mx / MM_F * z, my / MM_F * z
+    try:
+        vw, vh = dpg.get_item_rect_size("flowc_wrap")
+        dpg.set_x_scroll("flowc_wrap", max(0, cx - vw / 2))
+        dpg.set_y_scroll("flowc_wrap", max(0, cy - vh / 2))
+    except Exception:                           # noqa: BLE001
+        pass
+    _mm_redraw()
 STYLE = {}
 
 
@@ -289,6 +349,7 @@ def _draw_symbol(s, selected):
 
 
 def redraw():
+    _mm_redraw()
     D = "flowc_draw"
     Z = FS["zoom"]
     if dpg.does_item_exist(D):
@@ -335,6 +396,10 @@ def set_tool(sender, app_data, tool):
 
 
 def _on_click(*_):
+    if dpg.does_item_exist("flowc_mmdraw") \
+            and dpg.is_item_hovered("flowc_mmdraw"):
+        _mm_jump()
+        return
     if not dpg.is_item_hovered("flowc_draw"):
         return
     mx, my = _mpos()
@@ -567,24 +632,25 @@ def _save_clicked(*_):
 def build_flow_tab(style):
     STYLE.update(style)
     C = STYLE
-    with dpg.file_dialog(directory_selector=False, show=False,
-                         tag="flowc_save_dlg", width=640, height=420,
-                         default_path=os.path.expanduser("~"),
+    _designs = os.path.dirname(os.path.abspath(__file__))
+    with dpg.file_dialog(directory_selector=False, show=False, modal=True,
+                         tag="flowc_save_dlg", width=780, height=480,
+                         default_path=_designs, default_filename="design",
                          callback=lambda s, a: save_to(_picked(a))):
-        dpg.add_file_extension(".flow")
-        dpg.add_file_extension(".fc")
+        dpg.add_file_extension(".flow", color=(74, 158, 255))
+        dpg.add_file_extension(".fc", color=(63, 208, 143))
         dpg.add_file_extension(".*")
-    with dpg.file_dialog(directory_selector=False, show=False,
-                         tag="flowc_open_dlg", width=640, height=420,
-                         default_path=os.path.expanduser("~"),
+    with dpg.file_dialog(directory_selector=False, show=False, modal=True,
+                         tag="flowc_open_dlg", width=780, height=480,
+                         default_path=_designs, default_filename="",
                          callback=lambda s, a: load_from(_picked(a))):
-        dpg.add_file_extension(".fc")
-        dpg.add_file_extension(".flow")
+        dpg.add_file_extension(".fc", color=(63, 208, 143))
+        dpg.add_file_extension(".flow", color=(74, 158, 255))
         dpg.add_file_extension(".*")
 
     with dpg.group(horizontal=True):
         with dpg.child_window(width=int(C.get("CFG", {})
-                              .get("flow_panel_w", 185)),
+                              .get("flow_panel_w", 320)),
                               tag="flowc_panel"):
             dpg.add_text("TOOLS", color=C["DIM"])
             dpg.add_button(label=" Select ", width=-1, user_data="select",
@@ -637,6 +703,14 @@ def build_flow_tab(style):
     dpg.add_text("Flow ready — reads/writes the Tk face's .fc/.flow",
                  tag="flowc_status", color=C["DIM"])
 
+    cfg0 = C.get("CFG", {})
+    with dpg.window(tag="flowc_mm", no_title_bar=True, no_resize=True,
+                    no_collapse=True, width=MM_W + 14, height=MM_H + 14,
+                    pos=(int(cfg0.get("vp_w", 1460)) - MM_W - 60,
+                         int(cfg0.get("vp_h", 980)) - MM_H - 90),
+                    show=bool(cfg0.get("flow_minimap", True))):
+        with dpg.drawlist(width=MM_W, height=MM_H, tag="flowc_mmdraw"):
+            pass
     with dpg.handler_registry():
         dpg.add_mouse_click_handler(dpg.mvMouseButton_Left,
                                     callback=_on_click)
