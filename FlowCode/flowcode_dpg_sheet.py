@@ -486,6 +486,83 @@ def _save_clicked(*_):
 
 
 # ── build ───────────────────────────────────────────────────────────────────
+def _typing_keymap():
+    """DPG 2.3.1 has no char handler — map the principal keys."""
+    km = {}
+    for i in range(26):
+        km[dpg.mvKey_A + i] = chr(ord("a") + i)
+    for i in range(10):
+        km[dpg.mvKey_0 + i] = str(i)
+    for name, ch in (("mvKey_Minus", "-"), ("mvKey_Period", "."),
+                     ("mvKey_Comma", ","), ("mvKey_Plus", "="),
+                     ("mvKey_Equal", "="), ("mvKey_Spacebar", " ")):
+        k = getattr(dpg, name, None)
+        if k is not None:
+            km[k] = ch
+    return km
+
+
+_KEYMAP = None
+
+
+def _grid_type(sender, key):
+    """Click a cell and just TYPE — spreadsheet manners: the first
+    keystroke opens the formula bar seeded with that character."""
+    global _KEYMAP
+    if STYLE.get("ACTIVE", lambda: "")() != "sheet":
+        return
+    if dpg.is_item_focused("shc_input") or dpg.is_item_focused("shc_name"):
+        return
+    if not (dpg.is_item_hovered("shc_draw")
+            or dpg.is_item_hovered("shc_wrap")):
+        return
+    if dpg.is_key_down(dpg.mvKey_LControl) \
+            or dpg.is_key_down(dpg.mvKey_RControl):
+        return
+    if _KEYMAP is None:
+        _KEYMAP = _typing_keymap()
+    ch = _KEYMAP.get(key)
+    if ch is None:
+        return
+    if ch.isalpha() and (dpg.is_key_down(dpg.mvKey_LShift)
+                         or dpg.is_key_down(dpg.mvKey_RShift)):
+        ch = ch.upper()
+    dpg.set_value("shc_input", ch)
+    dpg.focus_item("shc_input")
+
+
+def _grid_f2(sender, key):
+    if STYLE.get("ACTIVE", lambda: "")() != "sheet":
+        return
+    if key == dpg.mvKey_F2:
+        dpg.focus_item("shc_input")
+    elif key == dpg.mvKey_Escape and dpg.is_item_focused("shc_input"):
+        _sync_bar()
+
+
+def _cell_copy(raw=False):
+    cell = SS["cells"].get(tuple(SS["sel"]), {})
+    CLIP = STYLE.get("CLIP")
+    if CLIP:
+        CLIP.clip_set(str(cell.get("value", "")) if raw
+                      else str(_display(cell)))
+
+
+def _cell_paste():
+    CLIP = STYLE.get("CLIP")
+    if CLIP:
+        r, c = SS["sel"]
+        set_cell(r, c, CLIP.clip_get().strip())
+        _sync_bar()
+
+
+def _cell_cut():
+    _cell_copy(raw=True)
+    r, c = SS["sel"]
+    set_cell(r, c, "")
+    _sync_bar()
+
+
 def build_sheet_tab(style):
     STYLE.update(style)
     C = STYLE
@@ -544,6 +621,18 @@ def build_sheet_tab(style):
         dpg.add_mouse_click_handler(dpg.mvMouseButton_Left,
                                     callback=_on_click)
         dpg.add_key_press_handler(dpg.mvKey_Delete, callback=_del_cell)
+        dpg.add_key_press_handler(callback=_grid_type)
+        dpg.add_key_press_handler(callback=_grid_f2)
+    CLIP = STYLE.get("CLIP")
+    if CLIP:
+        CLIP.input_menu("shc_input", "formula")
+        CLIP.input_menu("shc_name", "name")
+        CLIP.menu("shc_draw", [
+            ("Copy cell (shown value)", lambda: _cell_copy(False)),
+            ("Copy cell (raw formula)", lambda: _cell_copy(True)),
+            ("Paste into cell", _cell_paste),
+            ("Cut cell", _cell_cut), None,
+            ("Clear cell", _cell_cut)])
     redraw()
     _sync_bar()
 

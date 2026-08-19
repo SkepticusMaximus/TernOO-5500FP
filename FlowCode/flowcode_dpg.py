@@ -137,6 +137,8 @@ try:
 except Exception as e:                          # noqa: BLE001
     SHELL_ORGAN_ERR = str(e)
 
+CLIP = _load_organ("flowcode_dpg_clip")   # the text service — mandatory
+
 # ── the application manifest — the Tk TAB_CHROME, carried over whole ────────
 TAB_CHROME = [
     {"key": "flow",        "title": "Flow",          "live": True},
@@ -585,6 +587,35 @@ def text_save(path=None):
         dpg.set_value("txt_status", f"save failed: {e}")
 
 
+TEXT_RING = {"buf": [""], "i": 0}
+
+
+def _text_snap(*_):
+    TEXT_DIRTY[0] = True
+    v = dpg.get_value("txt_edit")
+    ring = TEXT_RING
+    if v == ring["buf"][ring["i"]]:
+        return
+    ring["buf"] = ring["buf"][:ring["i"] + 1][-80:]
+    ring["buf"].append(v)
+    ring["i"] = len(ring["buf"]) - 1
+
+
+def _text_undo_keys(sender, key):
+    if not dpg.is_item_focused("txt_edit"):
+        return
+    if not (dpg.is_key_down(dpg.mvKey_LControl)
+            or dpg.is_key_down(dpg.mvKey_RControl)):
+        return
+    ring = TEXT_RING
+    if key == dpg.mvKey_Z and ring["i"] > 0:
+        ring["i"] -= 1
+        dpg.set_value("txt_edit", ring["buf"][ring["i"]])
+    elif key == dpg.mvKey_Y and ring["i"] < len(ring["buf"]) - 1:
+        ring["i"] += 1
+        dpg.set_value("txt_edit", ring["buf"][ring["i"]])
+
+
 def build_text_tab():
     for tag, cb in (("txt_open_dlg", lambda s, a: text_open(_text_picked(a))),
                     ("txt_save_dlg", lambda s, a: text_save(_text_picked(a)))):
@@ -602,7 +633,9 @@ def build_text_tab():
         dpg.add_text("plain editor — no word wrap in stock DPG (roadmap)",
                      tag="txt_status", color=DIM)
     dpg.add_input_text(tag="txt_edit", multiline=True, width=-1, height=-1,
-                       callback=lambda *_: TEXT_DIRTY.__setitem__(0, True))
+                       callback=_text_snap)
+    with dpg.handler_registry():
+        dpg.add_key_press_handler(callback=_text_undo_keys)
 
 
 # ── build ───────────────────────────────────────────────────────────────────
@@ -682,7 +715,8 @@ def build_ui():
                             FLOW_ORGAN.build_flow_tab(
                                 {"BORDER": BORDER, "TEXT": TEXT,
                                  "DIM": DIM, "GRN": GRN, "AMB": AMB,
-                                 "CFG": CFGD, "SAVE": save_cfg,
+                                 "CFG": CFGD, "SAVE": save_cfg, "CLIP": CLIP,
+                                 "ACTIVE": lambda: ACTIVE_TAB[0],
                                  "BRIDGE": BRIDGE})
                         else:
                             dpg.add_text("Flow organ failed to load: "
@@ -692,7 +726,8 @@ def build_ui():
                             SHEET_ORGAN.build_sheet_tab(
                                 {"BORDER": BORDER, "TEXT": TEXT,
                                  "DIM": DIM, "GRN": GRN, "AMB": AMB,
-                                 "CFG": CFGD, "SAVE": save_cfg,
+                                 "CFG": CFGD, "SAVE": save_cfg, "CLIP": CLIP,
+                                 "ACTIVE": lambda: ACTIVE_TAB[0],
                                  "GUI": GUI_ORGAN})
                         else:
                             dpg.add_text("Sheet organ failed to load: "
@@ -702,7 +737,8 @@ def build_ui():
                             CONN_ORGAN.build_conn_tab(
                                 {"BORDER": BORDER, "TEXT": TEXT,
                                  "DIM": DIM, "GRN": GRN, "AMB": AMB,
-                                 "CFG": CFGD, "SAVE": save_cfg})
+                                 "CFG": CFGD, "SAVE": save_cfg, "CLIP": CLIP,
+                                 "ACTIVE": lambda: ACTIVE_TAB[0]})
                         else:
                             dpg.add_text("Connectors organ failed to "
                                          "load: " + CONN_ORGAN_ERR,
@@ -712,7 +748,8 @@ def build_ui():
                             GUI_ORGAN.build_gui_tab(
                                 {"BORDER": BORDER, "TEXT": TEXT,
                                  "DIM": DIM, "GRN": GRN, "AMB": AMB,
-                                 "CFG": CFGD, "SAVE": save_cfg,
+                                 "CFG": CFGD, "SAVE": save_cfg, "CLIP": CLIP,
+                                 "ACTIVE": lambda: ACTIVE_TAB[0],
                                  "BRIDGE": BRIDGE})
                         else:
                             dpg.add_text("GUI organ failed to load: "
@@ -722,7 +759,7 @@ def build_ui():
                             SHELL_ORGAN.build_shell_repl(
                                 {"BORDER": BORDER, "TEXT": TEXT,
                                  "DIM": DIM, "GRN": GRN, "AMB": AMB,
-                                 "CONN": CONN_ORGAN})
+                                 "CONN": CONN_ORGAN, "CLIP": CLIP})
                         else:
                             dpg.add_text("Shell REPL organ failed: "
                                          + SHELL_ORGAN_ERR, color=AMB)
@@ -754,7 +791,8 @@ def build_ui():
                         if MESH_ORGAN:
                             MESH_ORGAN.build_mesh_tab(
                                 {"BORDER": BORDER, "TEXT": TEXT,
-                                 "DIM": DIM, "GRN": GRN, "AMB": AMB})
+                                 "DIM": DIM, "GRN": GRN, "AMB": AMB,
+                                 "CLIP": CLIP})
                         else:
                             dpg.add_text("Mesh organ failed to load: "
                                          + MESH_ORGAN_ERR, color=AMB)
@@ -770,6 +808,16 @@ def build_ui():
     with dpg.handler_registry():
         dpg.add_key_press_handler(callback=_zoom_keys)
         dpg.add_mouse_wheel_handler(callback=_wheel)
+    CLIP.install()          # system-true Ctrl+C/X/V + right-click menus
+    CLIP.input_menu("txt_edit", "editor text")
+    CLIP.input_menu("shell_src", "t5asm source")
+    CLIP.menu("shell_log", [
+        ("Copy all output", lambda: CLIP.clip_set("\n".join(
+            dpg.get_value(c) for c in
+            dpg.get_item_children("shell_log", 1) or []
+            if dpg.get_item_type(c) == "mvAppItemType::mvText"
+            for _ in [0]) or "")),
+        ("Clear output", shell_clear)])
 
 
 def main():
@@ -906,6 +954,13 @@ def main():
             assert doc2["academy_marker"] == {"keep": "me"}
             print("FLOW ROUND-TRIP OK — .flow/.fc schema + preservation "
                   "verified")
+        if os.environ.get("FLOW_DPG_TEST"):
+            CLIP.clip_set("CLIPSVC-77")
+            got = CLIP.clip_get()
+            assert "CLIPSVC-77" in got, repr(got)
+            assert len(CLIP._CTX) >= 8, f"only {len(CLIP._CTX)} menus"
+            print(f"CLIP SERVICE OK — system round-trip + "
+                  f"{len(CLIP._CTX)} context menus registered")
         if os.environ.get("FLOW_DPG_TEST") and SHELL_ORGAN:
             shres = SHELL_ORGAN._selftest()
             print(f"SHELL REPL OK — engine reused, out={shres['out']!r}, "

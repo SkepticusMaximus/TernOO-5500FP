@@ -212,6 +212,30 @@ def build_mesh_tab(style):
             on_ask()
     with dpg.handler_registry():
         dpg.add_key_press_handler(callback=_ctrl_enter)
+    CLIP = STYLE.get("CLIP")
+    if CLIP:
+        CLIP.input_menu("meshc_prompt", "prompt")
+
+        def _copy_last():
+            MC = _mc()
+            if MC:
+                for role, text in reversed(MC.HISTORY):
+                    if role == "assistant":
+                        CLIP.clip_set(text)
+                        return
+
+        def _copy_all():
+            MC = _mc()
+            if MC:
+                CLIP.clip_set("\n\n".join(
+                    f"{'You' if r == 'user' else 'Professor'}: {t}"
+                    for r, t in MC.HISTORY))
+        CLIP.menu("meshc_log", [
+            ("Copy last answer", _copy_last),
+            ("Copy whole chat", _copy_all),
+            ("Paste into prompt", lambda: dpg.set_value(
+                "meshc_prompt", (dpg.get_value("meshc_prompt") or "")
+                + CLIP.clip_get()))])
     if _mc() is not None:
         refresh_chats()
     else:
