@@ -153,6 +153,13 @@ try:
 except Exception as e:                          # noqa: BLE001
     BABBLE_ORGAN_ERR = str(e)
 
+ACAD_ORGAN = None
+ACAD_ORGAN_ERR = ""
+try:
+    ACAD_ORGAN = _load_organ("flowcode_dpg_academy")
+except Exception as e:                          # noqa: BLE001
+    ACAD_ORGAN_ERR = str(e)
+
 # ── the application manifest — the Tk TAB_CHROME, carried over whole ────────
 TAB_CHROME = [
     {"key": "flow",        "title": "Flow",          "live": True},
@@ -162,10 +169,7 @@ TAB_CHROME = [
     {"key": "shell",       "title": "Shell",         "live": True},
     {"key": "text",        "title": "Text",          "live": True},
     {"key": "babble-fish", "title": "Babble-Fish",   "live": True},
-    {"key": "academy",     "title": "Academy",       "live": False,
-     "charter": "The classroom: board and book GlyphSurfaces, the\n"
-                "GHOST router and humility gate, consent-gated Bonsai,\n"
-                "belt tests, brain scan, curriculum editor, Backstage."},
+    {"key": "academy",     "title": "Academy",       "live": True},
     {"key": "mesh",        "title": "Mesh-Chat",     "live": True},
     {"key": "docs",        "title": "Documentation", "live": False,
      "charter": "The helpdown viewer — index, search, raw/preview\n"
@@ -419,6 +423,11 @@ def _on_tab(sender, app_data):
         if BABBLE_ORGAN and ACTIVE_TAB[0] == "babble-fish":
             try:
                 BABBLE_ORGAN.on_show()      # re-babel from live design
+            except Exception:               # noqa: BLE001
+                pass
+        if ACAD_ORGAN and ACTIVE_TAB[0] == "academy":
+            try:
+                ACAD_ORGAN.on_show()        # refresh classroom furniture
             except Exception:               # noqa: BLE001
                 pass
 
@@ -826,6 +835,17 @@ def build_ui():
                         else:
                             dpg.add_text("Babble-Fish organ failed: "
                                          + BABBLE_ORGAN_ERR, color=AMB)
+                    elif row["key"] == "academy":
+                        if ACAD_ORGAN:
+                            ACAD_ORGAN.build_academy_tab(
+                                {"BORDER": BORDER, "TEXT": TEXT,
+                                 "DIM": DIM, "GRN": GRN, "AMB": AMB,
+                                 "CLIP": CLIP,
+                                 "SET_STATUS": lambda msg:
+                                 dpg.set_value("statusbar", msg)})
+                        else:
+                            dpg.add_text("Academy organ failed: "
+                                         + ACAD_ORGAN_ERR, color=AMB)
                     elif row["key"] == "mesh":
                         if MESH_ORGAN:
                             MESH_ORGAN.build_mesh_tab(
@@ -879,8 +899,9 @@ def main():
                         continue
                     lbl = dpg.get_item_label(it) or ""
                     if "Launch" in lbl or "Quit" in lbl or "▶▶" in lbl \
-                            or "Learn" in lbl:
-                        continue
+                            or "Learn" in lbl or "Train" in lbl:
+                        continue   # Train: real belt-test thread; app exit
+                        #            mid-write could truncate the brain file
                     cb = dpg.get_item_callback(it)
                     if cb is not None:
                         targets.append((it, lbl, cb,
@@ -1013,6 +1034,11 @@ def main():
             print(f"BABBLE-FISH OK — {bres['dialects']} tongues, "
                   f"{bres['vocab_sections']} vocab sections, "
                   f"python def={bres['python_has_def']}")
+        if os.environ.get("FLOW_DPG_TEST") and ACAD_ORGAN:
+            ares = ACAD_ORGAN._selftest()
+            print(f"ACADEMY OK — {ares['classes']} classes, "
+                  f"route={ares['route']!r}, {ares['glyphs']} glyphs "
+                  f"planned+stroked, prof={ares['prof']}")
         if os.environ.get("FLOW_DPG_TEST") and MESH_ORGAN:
             mres = MESH_ORGAN._selftest()
             print(f"MESH PANE OK — core reused, store={mres['store']}")

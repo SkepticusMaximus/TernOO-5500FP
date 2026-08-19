@@ -127,3 +127,26 @@ affected.
   Flow to map)" when no stream has been built — the DPG face has no
   always-live WordStream subscription yet (Tk subscribes on_stream_change).
   Flag for the parity ledger, not user-facing docs.
+
+## 2026-08-19 — Academy tab live on the DPG face
+- `FlowCode/flowcode_dpg_academy.py`: the classroom organ. ALL engines
+  reused untouched: ghost_harness (router/!learn/train/majors/.chat IO),
+  ghost_bonsai (BonsaiProcess + consent ceremony + consistency gate),
+  ghost_tab_view's pure presenters + frozen art-contract constants,
+  ternoo_glyph (house font codec + O4 ledger), glyph_canvas pure layout.
+- NEW DpgGlyphSurface: chalk/ink voices re-rendered on a drawlist from
+  glyph_canvas.plan_layout plans; same deterministic jitter recipe
+  (line*1009+ox) so chalk never shimmers. DIFFERENCE vs Tk: curved
+  strokes draw as raw polylines (no spline smoothing in drawlists) —
+  doc screenshots of board writing should come from whichever face ships
+  them consistently. Panes are fixed-height (no Tk relative reflow).
+- Backstage is a FLOATING panel on the DPG face (Tk: in-tab 30% column).
+  Same corridor rules hold by construction: never touches harness.turns,
+  teaching refused, own log files.
+- Satellites ported: Curriculum, Brain scan (NEURAL_CONNECTION words),
+  Chars (house-font specimen to the board), ASCII/Unicode→glyph-string
+  Translate window (both voices + O4 unknown reporting).
+- Bonsai discovery is SKIPPED under SMOKE (gates never launch a model
+  subprocess); CLICK-PATH sweep now also excludes "Train" buttons — a
+  swept real training thread killed at app exit could truncate the
+  node-private brain file.
