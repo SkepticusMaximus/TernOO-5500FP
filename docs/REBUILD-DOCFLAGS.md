@@ -150,3 +150,19 @@ affected.
   subprocess); CLICK-PATH sweep now also excludes "Train" buttons — a
   swept real training thread killed at app exit could truncate the
   node-private brain file.
+
+## 2026-08-19 — Mesh-Chat tab: full client IN-PANE (captain's ruling)
+- Stevo's review: the conversation-only pane + "Full client" launcher
+  button was "inconsistent, tacked on, an arbitrary extra step". Ruling:
+  the tab IS the client, built into the parent interface.
+- `flowcode_dpg_mesh.py` rebuilt: it now constructs the STANDALONE'S OWN
+  tag layout in-pane (workshop: Macros/Forge/Editor+reviews; chat column
+  with attach/saved-chat management/export) and delegates every action to
+  mesh_chat_dpg's module functions — zero forked logic. Draggable seams
+  (panel/ask-box/notes) reused and persisted to the SHARED client config.
+- The launcher button is GONE. Not wired from the standalone: its global
+  zoom/clipboard/right-click layers (FlowCode's shell + CLIP own those),
+  menu-bar chrome, and the "FlowCode taste" node demo (this IS FlowCode).
+- Docs implication: Mesh-Chat tab docs should show the full in-pane
+  client; the standalone remains for solo use (Prof's box) — same
+  codebase, same chats, same macros, two mounts.
