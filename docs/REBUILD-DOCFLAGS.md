@@ -91,3 +91,11 @@ affected.
   char handler), F2 edits, Del clears. Text tab gains Ctrl+Z/Y ring undo.
   RULE GOING FORWARD: no new text surface ships without CLIP menus.
   → user-facing docs / help.
+- 19-08 · TED (Text tab) + native glyph plane · editor gains find/replace,
+  live counts, Ctrl+Z/Y; the NATIVE GLYPH PLANE pane encodes text as XYZ
+  glyph words per the CAPTURED park-session design (private/DeepAI-Consult-
+  Glyph-Word-Brief.md) — the "undocumented" charmap work was documented
+  there all along. FORMATIVE assumptions marked in-app: tribble order
+  X-high/Z-low, space=caseless 27, digits 30–39, punct 40+, Z=0. Rulings
+  Q1–Q6 requested from CF5 (POBOX). v0.3's STRING_TERNARY (+1 @T19) is the
+  ruled hook this plugs into. → glyph-plane canon doc (CF5 charter).
