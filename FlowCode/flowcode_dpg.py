@@ -800,6 +800,38 @@ def main():
             FLOW_ORGAN.do_suggest()          # with a symbol: predict path
             FLOW_ORGAN.clear_all()
             print("BRAIN SUGGEST OK — no-crash on empty and populated")
+            # pocket scopes: scope-local placement, cross-scope refusal,
+            # port-bound crossing, round-trip of scopes + ports
+            F = FLOW_ORGAN
+            F.clear_all()
+            F.FS["undo"].clear()
+            F.set_scope(None)
+            box = F.add_symbol("flow_process", 200, 200, "BOX")
+            box_name = F.FS["syms"][box]["name"]
+            F.set_scope(box_name)
+            kid = F.add_symbol("flow_terminator", 240, 240, "KID")
+            assert F.FS["syms"][kid]["parent_scope"] == box_name
+            F.set_scope(None)
+            top2 = F.add_symbol("flow_io", 600, 200, "IO")
+            assert F.add_edge(top2, kid) is None      # cross-scope refused
+            F.FS["syms"][box]["entry_points"].append({"name": "in0"})
+            e = F.add_edge(top2, box, bound_port_name="in0")
+            assert e and e.get("bound_port_name") == "in0"
+            import tempfile as _tfp
+            pth = os.path.join(_tfp.gettempdir(), "fdpg-pocket.flow")
+            F.save_to(pth)
+            F.clear_all()
+            F.load_from(pth)
+            names = {s2.get("name"): s2 for s2 in F.FS["syms"].values()}
+            assert names[box_name]["entry_points"] == [{"name": "in0"}]
+            kids = [s2 for s2 in F.FS["syms"].values()
+                    if s2.get("parent_scope") == box_name]
+            assert len(kids) == 1
+            assert any(e2.get("bound_port_name") == "in0"
+                       for e2 in F.FS["edges"])
+            F.clear_all()
+            F.set_scope(None)
+            print("POCKET SCOPES OK — scoping, port binding, round-trip")
             ex = FLOW_ORGAN._selftest_exec()
             print(f"EXEC PIPELINE OK — {ex['words']} words, "
                   f"{ex['t5_chars']} t5asm chars, {ex['steps']} interp "

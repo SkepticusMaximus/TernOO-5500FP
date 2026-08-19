@@ -64,3 +64,8 @@ affected.
   red mismatch pipes (compile = hard gate) — Tk parity. NOT yet: REPL
   capture-to-pipeline, pocket interiors; no partial extension (.shell
   reserved, unemitted) so saves are .fc only. → Stage-9 docs as-built.
+- 19-08 · Flow pocket scopes (DPG) · full 7c-4/-4b port: scope-local
+  render+placement, 📦 top-right drill-in, breadcrumb bar (MainFlow › …),
+  Esc up, cross-scope edges refused unless bound to a named port, Ports…
+  editor (entry/exit lists on containers), scopes+ports round-trip .fc/.flow.
+  Flow tab now has NO unported items. → 7c-4 docs as-built.

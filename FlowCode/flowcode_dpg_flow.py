@@ -50,9 +50,101 @@ FS = {
     "next": 0, "sel": None, "sel_edge": None, "file": None,
     "tool": "select", "edge_src": None, "edge_wps": [], "drag": None,
     "wpdrag": None, "grip": None, "zoom": 1.0, "dirty": False,
-    "multi": set(), "lasso": None,
+    "multi": set(), "lasso": None, "scope": None,
     "undo": [], "redo": [],
 }
+
+CONTAINER_KINDS = {"flow_process", "flow_subroutine"}
+
+
+def _in_scope(sym):
+    return sym.get("parent_scope") == FS["scope"]
+
+
+def _sym_by_name(name):
+    for sy in FS["syms"].values():
+        if sy.get("name") == name:
+            return sy
+    return None
+
+
+def _has_pocket(sym):
+    nm = sym.get("name")
+    return bool(nm) and any(sy.get("parent_scope") == nm
+                            for sy in FS["syms"].values())
+
+
+def _scope_path():
+    path, cur, seen = [], FS["scope"], set()
+    while cur and cur not in seen:
+        seen.add(cur)
+        path.append(cur)
+        sym = _sym_by_name(cur)
+        cur = sym.get("parent_scope") if sym else None
+    return list(reversed(path))
+
+
+def set_scope(scope_name):
+    """Drill into / out of a pocket; rebuild breadcrumb; clear selection."""
+    FS["scope"] = scope_name
+    FS["sel"] = None
+    FS["sel_edge"] = None
+    FS["multi"] = set()
+    _build_breadcrumb()
+    redraw()
+    _status(f"opened pocket: {scope_name}" if scope_name
+            else "back to MainFlow")
+
+
+def leave_scope(*_):
+    cur = FS["scope"]
+    if cur is None:
+        return
+    sym = _sym_by_name(cur)
+    set_scope(sym.get("parent_scope") if sym else None)
+
+
+def _build_breadcrumb():
+    bar = "flowc_crumbs"
+    if not dpg.does_item_exist(bar):
+        return
+    dpg.delete_item(bar, children_only=True)
+    segs = [("MainFlow", None)] + [(nm, nm) for nm in _scope_path()]
+    for i, (label, scope) in enumerate(segs):
+        if i:
+            dpg.add_text("›", parent=bar, color=STYLE.get("DIM"))
+        dpg.add_button(label=f" {label} ", parent=bar, small=True,
+                       user_data=scope,
+                       callback=lambda s2, a2, u: set_scope(u))
+
+
+def _port_positions(sym):
+    """Entry ports on the left edge, exit ports on the right (7c-4b)."""
+    out = {"entry": [], "exit": []}
+    if sym.get("kind") not in CONTAINER_KINDS:
+        return out
+    hw, hh = sym["w"] / 2, sym["h"] / 2
+    top, bot = sym["y"], sym["y"] + sym["h"]
+    for edge, key, ex in (("entry", "entry_points", sym["x"]),
+                          ("exit", "exit_points", sym["x"] + sym["w"])):
+        ports = sym.get(key) or []
+        n = len(ports)
+        for i, p in enumerate(ports):
+            py = top + (bot - top) * (i + 1) / (n + 1)
+            out[edge].append((p, ex, py))
+    return out
+
+
+def _port_at(x, y, tol=9):
+    for sy in reversed(list(FS["syms"].values())):
+        if not _in_scope(sy):
+            continue
+        pp = _port_positions(sy)
+        for edge in ("entry", "exit"):
+            for port, px, py in pp[edge]:
+                if abs(px - x) <= tol and abs(py - y) <= tol:
+                    return sy, edge, port
+    return None
 
 
 def is_dirty():
@@ -494,7 +586,7 @@ def _mm_redraw():
     dpg.draw_rectangle((0, 0), (MM_W, MM_H), fill=(16, 19, 28),
                        color=(74, 158, 255), parent=D)
     for s in FS["syms"].values():
-        if s.get("parent_scope") is not None:
+        if not _in_scope(s):
             continue
         col = COL.get(s["kind"], COL["flow_process"])
         dpg.draw_rectangle((s["x"] * MM_F, s["y"] * MM_F),
@@ -591,17 +683,27 @@ def add_symbol(kind, x, y, label=""):
     FS["syms"][sid] = {
         "id": sid, "kind": kind, "x": snap(x), "y": snap(y),
         "w": SYMBOL_W, "h": SYMBOL_H, "label": lbl,
-        "name": f"{kind}_{sid}", "parent_scope": None, "properties": [],
+        "name": f"{kind}_{sid}", "parent_scope": FS["scope"],
+        "properties": [],
     }
+    if kind in CONTAINER_KINDS:
+        FS["syms"][sid]["entry_points"] = []
+        FS["syms"][sid]["exit_points"] = []
     FS["sel"] = sid
     redraw()
     _status(f"placed {lbl}")
     return sid
 
 
-def add_edge(src_id, dst_id, waypoints=None):
+def add_edge(src_id, dst_id, waypoints=None, bound_port_name=""):
     if src_id == dst_id or src_id not in FS["syms"] \
             or dst_id not in FS["syms"]:
+        return None
+    src, dst = FS["syms"][src_id], FS["syms"][dst_id]
+    if not bound_port_name \
+            and src.get("parent_scope") != dst.get("parent_scope"):
+        _status("can't connect across pocket scopes — bind to a named "
+                "port", ok=False)
         return None
     for e in FS["edges"]:
         if e["src"] == src_id and e["dst"] == dst_id:
@@ -611,6 +713,8 @@ def add_edge(src_id, dst_id, waypoints=None):
     edge = {"src": src_id, "dst": dst_id,
             "waypoints": [list(w) for w in (waypoints or [])],
             "condition": ""}
+    if bound_port_name:
+        edge["bound_port_name"] = bound_port_name
     FS["edges"].append(edge)
     redraw()
     _status(f"Edge {FS['syms'][src_id]['label']} → "
@@ -667,7 +771,7 @@ def _lasso_apply(rect):
     hits = {sid for sid, s in FS["syms"].items()
             if s["x"] < x1 and s["x"] + s["w"] > x0
             and s["y"] < y1 and s["y"] + s["h"] > y0
-            and s.get("parent_scope") is None}
+            and _in_scope(s)}
     FS["multi"] = hits
     FS["sel"] = next(iter(hits)) if len(hits) == 1 else None
     redraw()
@@ -799,6 +903,10 @@ def redraw():
         dpg.draw_line((0, gy * Z), (CANVAS_W * Z, gy * Z),
                       color=(40, 46, 62, 80), parent=D)
     for i, e in enumerate(FS["edges"]):
+        s1 = FS["syms"].get(e["src"])
+        s2 = FS["syms"].get(e["dst"])
+        if not s1 or not s2 or not _in_scope(s1) or not _in_scope(s2):
+            continue
         pts = [(px * Z, py * Z) for px, py in _edge_points(e)]
         if len(pts) < 2:
             continue
@@ -818,9 +926,31 @@ def redraw():
             dpg.draw_text((mx + 4, my - 14 * Z), e["condition"],
                           size=12 * Z, color=STYLE.get("DIM"), parent=D)
     for sid, s in FS["syms"].items():
-        if s.get("parent_scope") is not None:
-            continue                        # pocket interiors: next leg
+        if not _in_scope(s):
+            continue                        # other scopes render when entered
         _draw_symbol(s, sid == FS["sel"] or sid in FS["multi"])
+        if _has_pocket(s):                  # 📦 affordance, top-right
+            bx = (s["x"] + s["w"]) * Z
+            by = s["y"] * Z
+            dpg.draw_rectangle((bx - 14 * Z, by + 2 * Z),
+                               (bx - 2 * Z, by + 12 * Z),
+                               fill=(240, 180, 80), color=(180, 130, 50),
+                               parent="flowc_draw")
+            dpg.draw_line((bx - 14 * Z, by + 5 * Z), (bx - 2 * Z, by + 5 * Z),
+                          color=(120, 90, 40), parent="flowc_draw")
+        pp = _port_positions(s)
+        for port, px, py in pp["entry"]:
+            dpg.draw_circle((px * Z, py * Z), 4.5 * Z,
+                            fill=(80, 200, 255), parent="flowc_draw")
+            dpg.draw_text(((px + 7) * Z, (py - 7) * Z),
+                          str(port.get("name", "")), size=10 * Z,
+                          color=(80, 200, 255), parent="flowc_draw")
+        for port, px, py in pp["exit"]:
+            dpg.draw_circle((px * Z, py * Z), 4.5 * Z,
+                            fill=(63, 208, 143), parent="flowc_draw")
+            dpg.draw_text(((px - 40) * Z, (py - 7) * Z),
+                          str(port.get("name", "")), size=10 * Z,
+                          color=(63, 208, 143), parent="flowc_draw")
     if FS["lasso"] is not None:
         Z = FS["zoom"]
         ax, ay = FS["lasso"]["a"]
@@ -983,6 +1113,14 @@ def _on_click(*_):
         return
     mx, my = _mpos()
     tool = FS["tool"]
+    if tool == "select":
+        for sy in FS["syms"].values():      # 📦 drill-in, top-right ±14
+            if not _in_scope(sy) or not _has_pocket(sy):
+                continue
+            bx, by = sy["x"] + sy["w"], sy["y"]
+            if abs(mx - bx) <= 14 and abs(my - by) <= 14:
+                set_scope(sy["name"])
+                return
     if tool.startswith("flow_"):
         add_symbol(tool, mx - SYMBOL_W / 2, my - SYMBOL_H / 2)
         FS["tool"] = "select"
@@ -1000,6 +1138,16 @@ def _on_click(*_):
             dpg.set_value("flowc_tool",
                           f"tool: Edge — {FS['syms'][sid]['label']} → click "
                           "DESTINATION (empty canvas adds a waypoint)")
+            return
+        port_hit = _port_at(mx, my)
+        if port_hit is not None:            # 7c-4b: bind to a named port
+            psym, _pedge, port = port_hit
+            add_edge(FS["edge_src"], psym["id"], FS["edge_wps"],
+                     bound_port_name=str(port.get("name", "")))
+            FS["edge_src"] = None
+            FS["edge_wps"] = []
+            FS["tool"] = "select"
+            set_tool(None, None, "select")
             return
         if sid is None:
             FS["edge_wps"].append([snap(mx), snap(my)])
@@ -1183,6 +1331,75 @@ def _on_dblclick(*_):
                            callback=lambda: dpg.delete_item(tag))
 
 
+def show_ports(*_):
+    """Port editor for the selected container (7c-4b)."""
+    sid = FS["sel"]
+    sym = FS["syms"].get(sid) if sid is not None else None
+    if sym is None or sym.get("kind") not in CONTAINER_KINDS:
+        _status("select a Process/Subroutine first — ports live on "
+                "containers", ok=False)
+        return
+    tag = "flowc_ports"
+    if dpg.does_item_exist(tag):
+        dpg.delete_item(tag)
+
+    def refresh():
+        for lst, key in (("fpl_entry", "entry_points"),
+                         ("fpl_exit", "exit_points")):
+            dpg.delete_item(lst, children_only=True)
+            for i, p in enumerate(sym.get(key) or []):
+                with dpg.group(horizontal=True, parent=lst):
+                    dpg.add_text(str(p.get("name", "?")))
+                    dpg.add_button(label=" x ", user_data=(key, i),
+                                   callback=lambda s2, a2, u:
+                                   (_snapshot(),
+                                    sym[u[0]].pop(u[1]),
+                                    refresh(), redraw()))
+
+    def add(key, inp):
+        nm = dpg.get_value(inp).strip()
+        if not nm:
+            return
+        _snapshot()
+        sym.setdefault(key, []).append({"name": nm})
+        dpg.set_value(inp, "")
+        refresh()
+        redraw()
+
+    with dpg.window(label=f"Ports — {sym['label']}", tag=tag, modal=True,
+                    width=460, height=360, pos=(380, 200)):
+        dpg.add_text("Entry ports (left edge) / exit ports (right edge). "
+                     "Edges from other scopes bind to these by name.",
+                     color=STYLE.get("DIM"))
+        with dpg.group(horizontal=True):
+            with dpg.group():
+                dpg.add_text("ENTRY", color=(80, 200, 255))
+                with dpg.child_window(tag="fpl_entry", width=200,
+                                      height=180):
+                    pass
+                ei = dpg.add_input_text(width=140, hint="port name")
+                dpg.add_button(label=" + entry ",
+                               callback=lambda s2, a2, u=None:
+                               add("entry_points", ei))
+            with dpg.group():
+                dpg.add_text("EXIT", color=(63, 208, 143))
+                with dpg.child_window(tag="fpl_exit", width=200,
+                                      height=180):
+                    pass
+                xi = dpg.add_input_text(width=140, hint="port name")
+                dpg.add_button(label=" + exit ",
+                               callback=lambda s2, a2, u=None:
+                               add("exit_points", xi))
+        dpg.add_button(label="  Close  ",
+                       callback=lambda: dpg.delete_item(tag))
+    refresh()
+
+
+def _on_esc(*_):
+    if dpg.is_item_hovered("flowc_draw") or dpg.is_item_hovered("flowc_wrap"):
+        leave_scope()
+
+
 def _on_del_key(*_):
     if dpg.is_item_hovered("flowc_wrap") or dpg.is_item_hovered("flowc_draw"):
         delete_selected()
@@ -1267,15 +1484,22 @@ def load_from(path):
             "parent_scope": sym.get("parent_scope"),
             "properties": list(sym.get("properties", [])),
         }
+        if sym.get("kind") in CONTAINER_KINDS:
+            FS["syms"][sid]["entry_points"] = list(
+                sym.get("entry_points", []))
+            FS["syms"][sid]["exit_points"] = list(
+                sym.get("exit_points", []))
         FS["raw"][sid] = dict(sym)
         FS["next"] = max(FS["next"], sid + 1)
     FS["edges"] = [dict(e) for e in doc.get("flow_edges", [])]
     FS["file"] = path
     FS["dirty"] = False
+    FS["scope"] = None
+    _build_breadcrumb()
     nested = sum(1 for s in FS["syms"].values()
                  if s.get("parent_scope") is not None)
     redraw()
-    note = f" ({nested} in pocket scopes — preserved, shown next leg)" \
+    note = f" ({nested} in pockets — 📦 on their containers to enter)" \
         if nested else ""
     _status(f"opened {os.path.basename(path)} — {len(FS['syms'])} symbols, "
             f"{len(FS['edges'])} edges{note}")
@@ -1332,6 +1556,9 @@ def build_flow_tab(style):
                                        default_open=True):
                 _icon_btn(_tool_icon("edge"), " Edge ", "src→[wp]→dst",
                           "edge")
+                _abtn(" Ports... ", show_ports, (80, 200, 255))
+                dpg.add_text("  📦 top-right corner opens a\n  pocket · "
+                             "Esc goes back up", color=C["DIM"])
             with dpg.collapsing_header(label="ACTIONS", default_open=True):
                 _abtn(" ⬇ Word Dump ", do_word_dump)
                 _abtn(" ▶ Load→EMU (native) ", do_load_emu,
@@ -1356,15 +1583,15 @@ def build_flow_tab(style):
                 _abtn(" ↩ Undo ", undo)
                 _abtn(" ↪ Redo ", redo)
             dpg.add_spacer(height=8)
-            dpg.add_text("not yet ported:\n pocket scopes (7c-4)",
-                         color=C["DIM"])
+
         with dpg.child_window(width=10, height=-1, no_scrollbar=True,
                               border=False):
             dpg.add_button(tag="flowc_grip", label="", width=-1,
                            height=2600)
         with dpg.child_window(tag="flowc_wrap", width=-1,
                               horizontal_scrollbar=True):
-            dpg.add_text("MainFlow", color=(74, 158, 255))
+            with dpg.group(horizontal=True, tag="flowc_crumbs"):
+                pass
             with dpg.drawlist(width=CANVAS_W, height=CANVAS_H,
                               tag="flowc_draw"):
                 pass
@@ -1448,3 +1675,4 @@ def _register_handlers():
         dpg.add_mouse_double_click_handler(dpg.mvMouseButton_Left,
                                            callback=_on_dblclick)
         dpg.add_key_press_handler(dpg.mvKey_Delete, callback=_on_del_key)
+        dpg.add_key_press_handler(dpg.mvKey_Escape, callback=_on_esc)
