@@ -215,3 +215,21 @@ affected.
 - Docs: describe layouts as opt-in via the properties combo; describe
   the stacking tools; the quit flow is Save & Quit / Quit without
   saving / Cancel.
+
+## 2026-08-20 — Captain's design rulings (morning session)
+- GROUPS: first-class SAVED objects with NAMES (not a selection
+  convenience) — ruled, build rides the GUI-designer leg.
+- PROPERTY MODEL: one shape (name · type · default · domain · filter),
+  every symbol family declares its properties in that shape, the panel
+  builds itself for ALL tabs — approved.
+- AUTOSAVE: periodic timed autosave to the side files (default 120s,
+  `autosave_secs` config key) IN ADDITION to the close-event save —
+  ruled and BUILT this morning.
+- WORD-TYPE REGISTRY (captain's new architecture card): a system-wide
+  reference index of SECONDARY word types — per primary, the 81
+  qualifier-field slots, each DEFINED (name/format/handler) or left
+  explicitly NULL/open; new types (e.g. MAP → SAT-NAV/GPS) REGISTER
+  into slots rather than being hard-coded. Design-time face of the
+  Double Null mechanism (Companion Q4). FlowCode's typed I/O filters
+  and property domains read this registry. → Language Audit companion,
+  whitepaper ISA section, FlowCode docs once built.
