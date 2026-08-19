@@ -565,22 +565,31 @@ MM_F = min(MM_W / CANVAS_W, MM_H / CANVAS_H)
 
 
 def set_minimap_visible(on_flow_tab):
-    """The minimap is a floating window — leash it to the Flow tab."""
+    """Leash the floating minimap to the Flow tab; clamp its position to
+    the LIVE viewport (remembered dims could park it off-screen)."""
     FS["on_flow_tab"] = bool(on_flow_tab)
     if not dpg.does_item_exist("flowc_mm"):
         return
-    pref = bool(STYLE.get("CFG", {}).get("flow_minimap", True))
+    pref = bool(STYLE.get("CFG", {}).get("flow_minimap2", True))
     show = FS["on_flow_tab"] and pref
     dpg.configure_item("flowc_mm", show=show)
     if show:
+        try:
+            vw = dpg.get_viewport_client_width()
+            vh = dpg.get_viewport_client_height()
+            if vw > 300 and vh > 260:
+                dpg.set_item_pos("flowc_mm",
+                                 (vw - MM_W - 46, vh - MM_H - 76))
+        except Exception:                       # noqa: BLE001
+            pass
         _mm_redraw()
 
 
 def toggle_minimap():
     cfg = STYLE.get("CFG")
-    pref = not bool((cfg or {}).get("flow_minimap", True))
+    pref = not bool((cfg or {}).get("flow_minimap2", True))
     if cfg is not None:
-        cfg["flow_minimap"] = pref
+        cfg["flow_minimap2"] = pref
         if STYLE.get("SAVE"):
             STYLE["SAVE"]()
     set_minimap_visible(FS.get("on_flow_tab", True))
@@ -1651,7 +1660,7 @@ def build_flow_tab(style):
                     no_collapse=True, width=MM_W + 14, height=MM_H + 14,
                     pos=(int(cfg0.get("vp_w", 1460)) - MM_W - 60,
                          int(cfg0.get("vp_h", 980)) - MM_H - 90),
-                    show=bool(cfg0.get("flow_minimap", True))):
+                    show=bool(cfg0.get("flow_minimap2", True))):
         with dpg.drawlist(width=MM_W, height=MM_H, tag="flowc_mmdraw"):
             pass
     try:

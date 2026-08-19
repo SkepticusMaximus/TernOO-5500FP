@@ -75,3 +75,10 @@ affected.
   standalone all share one core and one saved-chat store. The workshop
   (macros/forge/editor) remains standalone-only, via the Full-client
   button. Minimap now leashed to the Flow tab only. → client docs.
+- 19-08 · Shell tab (DPG) · the REPL engine REUSED whole (flowcode_repl.Repl
+  — registry pipelines executing on the C emulator via the shared compile
+  path, fs commands, run file.t5asm) + registry browser + Capture→Connectors
+  (text and visual faces of one pipeline). Native t5asm console restored —
+  its tab branch had been silently swallowed by an earlier patch (regression
+  window ~12:00–13:10 19-08, caught by review). Tk's staged-pipeline (Lingo
+  three-pane) builder NOT yet ported. → Stage-9/DocPhase B2 notes.

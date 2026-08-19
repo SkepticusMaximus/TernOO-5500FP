@@ -130,6 +130,13 @@ try:
 except Exception as e:                          # noqa: BLE001
     MESH_ORGAN_ERR = str(e)
 
+SHELL_ORGAN = None
+SHELL_ORGAN_ERR = ""
+try:
+    SHELL_ORGAN = _load_organ("flowcode_dpg_shell")
+except Exception as e:                          # noqa: BLE001
+    SHELL_ORGAN_ERR = str(e)
+
 # ── the application manifest — the Tk TAB_CHROME, carried over whole ────────
 TAB_CHROME = [
     {"key": "flow",        "title": "Flow",          "live": True},
@@ -710,6 +717,37 @@ def build_ui():
                         else:
                             dpg.add_text("GUI organ failed to load: "
                                          + GUI_ORGAN_ERR, color=AMB)
+                    elif row["key"] == "shell":
+                        if SHELL_ORGAN:
+                            SHELL_ORGAN.build_shell_repl(
+                                {"BORDER": BORDER, "TEXT": TEXT,
+                                 "DIM": DIM, "GRN": GRN, "AMB": AMB,
+                                 "CONN": CONN_ORGAN})
+                        else:
+                            dpg.add_text("Shell REPL organ failed: "
+                                         + SHELL_ORGAN_ERR, color=AMB)
+                        dpg.add_separator()
+                        core = ("C core (crowned spine) via ternoo_bridge"
+                                if BRIDGE else
+                                f"NATIVE CORE UNAVAILABLE: {BRIDGE_ERR}")
+                        dpg.add_text("native console — t5asm in -> " + core,
+                                     color=GRN if BRIDGE else AMB)
+                        with dpg.group(horizontal=True):
+                            dpg.add_input_text(tag="shell_src",
+                                               multiline=True, width=520,
+                                               height=190,
+                                               default_value=SHELL_DEMO)
+                            with dpg.child_window(tag="shell_log",
+                                                  width=-1, height=190):
+                                dpg.add_text("output appears here — the "
+                                             "demo program is fib(30); "
+                                             "expect R11=832040",
+                                             color=DIM)
+                        with dpg.group(horizontal=True):
+                            dpg.add_button(label="  Run on native core  ",
+                                           callback=shell_run)
+                            dpg.add_button(label=" Clear ",
+                                           callback=shell_clear)
                     elif row["key"] == "text":
                         build_text_tab()
                     elif row["key"] == "mesh":
@@ -868,6 +906,10 @@ def main():
             assert doc2["academy_marker"] == {"keep": "me"}
             print("FLOW ROUND-TRIP OK — .flow/.fc schema + preservation "
                   "verified")
+        if os.environ.get("FLOW_DPG_TEST") and SHELL_ORGAN:
+            shres = SHELL_ORGAN._selftest()
+            print(f"SHELL REPL OK — engine reused, out={shres['out']!r}, "
+                  f"capture->connectors={shres['captured']}")
         if os.environ.get("FLOW_DPG_TEST") and MESH_ORGAN:
             mres = MESH_ORGAN._selftest()
             print(f"MESH PANE OK — core reused, store={mres['store']}")
@@ -920,6 +962,8 @@ def main():
     dpg.set_primary_window("main", True)
     dpg.set_global_font_scale(SCALE)
     dpg.set_exit_callback(_autosave_dirty)    # X-button can't be vetoed in
+    if FLOW_ORGAN:                            # minimap: kick once post-show
+        FLOW_ORGAN.set_minimap_visible(True)
     _offer_recovery()                         # DPG — rescue instead, and
                                               # offer it back on launch
     frames = int(os.environ.get("SMOKE_FRAMES", "0"))
