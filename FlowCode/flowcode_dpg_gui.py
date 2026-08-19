@@ -219,8 +219,8 @@ def add_widget(kind, x, y):
         "name": f"{kind[4:]}_{wid}",
         "x": int(x), "y": int(y), "w": dw, "h": dh,
         "parent_id": None,
-        "layout_mode": LAYOUT_DEFAULTS.get(kind, "absolute"),
-        "properties": [], "signal_ids": {},
+        "layout_mode": "absolute",  # VB doctrine (20-08): layout engines
+        "properties": [], "signal_ids": {},     # are OPT-IN via the combo
     }
     GS["sel"] = wid
     _assign_parent(wid)
@@ -260,9 +260,16 @@ def clear_all(*_):
     _status("canvas cleared")
 
 
+TOP_LEVEL_KINDS = {"gui_window", "gui_dialog"}      # never adopted (VB: forms)
+
+
 def _assign_parent(wid):
-    """Containment by geometry: centre inside a container -> child of it."""
+    """Containment by geometry: centre inside a container -> child of it.
+    Windows and dialogs are TOP-LEVEL — they adopt, never get adopted."""
     w = GS["widgets"][wid]
+    if w["kind"] in TOP_LEVEL_KINDS:
+        w["parent_id"] = None
+        return
     cx, cy = w["x"] + w["w"] / 2, w["y"] + w["h"] / 2
     best = None
     for oid, o in GS["widgets"].items():
@@ -273,6 +280,55 @@ def _assign_parent(wid):
                                 GS["widgets"][best]["w"] * GS["widgets"][best]["h"]):
                 best = oid
     w["parent_id"] = best
+
+
+# ── z-order — the STACKING SEQUENCE (captain's report, 20-08) ───────────────
+# GS["zorder"] is the persistent front-to-back list of widget ids (last =
+# front). Rendering walks ROOTS in sequence order, each followed by its
+# children (containment implies stacking: a child can NEVER be buried
+# under its own container, whatever a loaded file's order says).
+def _zorder():
+    seq = GS.setdefault("zorder", [])
+    seq[:] = [i for i in seq if i in GS["widgets"]]
+    seq.extend(i for i in GS["widgets"] if i not in seq)
+    return seq
+
+
+def render_order():
+    seq = _zorder()
+    kids = {}
+    for i in seq:
+        kids.setdefault(GS["widgets"][i].get("parent_id"), []).append(i)
+    out = []
+
+    def walk(i):
+        out.append(i)
+        for c in kids.get(i, []):
+            walk(c)
+    for i in kids.get(None, []):
+        walk(i)
+    for i in seq:                       # orphans of a vanished parent
+        if i not in out:
+            out.append(i)
+    return out
+
+
+def bring_to_front(*_):
+    if GS["sel"] in GS["widgets"]:
+        seq = _zorder()
+        seq.remove(GS["sel"])
+        seq.append(GS["sel"])
+        GS["dirty"] = True
+        redraw()
+
+
+def send_to_back(*_):
+    if GS["sel"] in GS["widgets"]:
+        seq = _zorder()
+        seq.remove(GS["sel"])
+        seq.insert(0, GS["sel"])
+        GS["dirty"] = True
+        redraw()
 
 
 # ── the layout engine — Tk guic_apply_layout, absolute-coord port ───────────
@@ -358,7 +414,8 @@ def redraw():
     for gy in range(0, CANVAS_H + 1, GRID_STEP):
         dpg.draw_line((0, gy * Z), (CANVAS_W * Z, gy * Z),
                       color=(40, 46, 62, 90), parent=D)
-    for wid, w in GS["widgets"].items():
+    for wid in render_order():
+        w = GS["widgets"][wid]
         x, y = w["x"] * Z, w["y"] * Z
         ww, hh = w["w"] * Z, w["h"] * Z
         label = w.get("label") or w["kind"][4:]
@@ -857,7 +914,7 @@ def _apply_prop(sender, value, field):
 
 # ── mouse interaction (drawlist space) ──────────────────────────────────────
 def _hit(mx, my):
-    for wid in reversed(list(GS["widgets"])):
+    for wid in reversed(render_order()):        # topmost first
         w = GS["widgets"][wid]
         if w["x"] <= mx <= w["x"] + w["w"] and w["y"] <= my <= w["y"] + w["h"]:
             return wid
@@ -1022,7 +1079,7 @@ def _payload(path):
         "flow_symbols": [], "flow_edges": [],
         "cmd_symbols": [], "cmd_edges": [],
         "cell_symbols": [], "sheet_regions": [], "free_cells": [],
-        "sequence": list(GS["widgets"].keys()),
+        "sequence": list(_zorder()),
         "tgui_meta": {"widget_count": len(syms),
                       "edge_count": len(GS["edges"]),
                       "flow_symbol_count": 0, "flow_edge_count": 0},
@@ -1072,15 +1129,20 @@ def load_from(path):
             "x": sym.get("x", 0), "y": sym.get("y", 0),
             "w": sym.get("w", dw), "h": sym.get("h", dh),
             "parent_id": sym.get("parent_id"),
-            "layout_mode": sym.get("layout_mode",
-                                   LAYOUT_DEFAULTS.get(kind, "absolute")),
+            "layout_mode": sym.get("layout_mode", "absolute"),
             "properties": list(sym.get("properties", [])),
             "signal_ids": dict(sym.get("signal_ids", {})),
         }
         GS["raw"][wid] = dict(sym)
         GS["next"] = max(GS["next"], wid + 1)
     _rel_to_abs(list(GS["widgets"]))
-    layout_all()
+    # THE FILE IS TRUTH (20-08): no layout re-flow on open — saved
+    # coordinates render exactly as saved. The engine runs only on live
+    # actions (drop / resize / layout_mode change).
+    seq = [int(i) for i in doc.get("sequence", [])
+           if int(i) in GS["widgets"]]
+    GS["zorder"] = seq + [i for i in GS["widgets"] if i not in seq]
+    _rescue_offcanvas()
     GS["edges"] = [dict(e) for e in doc.get("edges", [])]
     GS["file"] = path
     GS["dirty"] = False
@@ -1100,6 +1162,25 @@ def _rel_to_abs(ids):
         if p is not None:
             w["x"] = int(p["x"] + p["w"] / 2 + w["x"] - w["w"] / 2)
             w["y"] = int(p["y"] + p["h"] / 2 + w["y"] - w["h"] / 2)
+
+
+def _rescue_offcanvas():
+    """Heal scattered files (the 19-08 offset-migration wound): any widget
+    lying entirely OUTSIDE the canvas is pulled back into view, cascaded,
+    and counted in the status line — work is never invisibly lost."""
+    lost = [w for w in GS["widgets"].values()
+            if w["x"] + w["w"] < 0 or w["x"] > CANVAS_W
+            or w["y"] + w["h"] < 0 or w["y"] > CANVAS_H]
+    for i, w in enumerate(lost):
+        w["x"] = 30 + (i % 8) * 40
+        w["y"] = 30 + (i // 8) * 40
+        if w.get("parent_id") is not None:
+            w["parent_id"] = None       # placement no longer inside it
+    if lost:
+        GS["dirty"] = True
+        _status(f"⚠ rescued {len(lost)} off-canvas widget(s) back into "
+                "view — re-place and save", ok=False)
+    return len(lost)
 
 
 def import_merge(path):
@@ -1143,7 +1224,7 @@ def import_merge(path):
         if w["parent_id"] is None:
             w["x"], w["y"] = int(w["x"]) + 30, int(w["y"]) + 30
     _rel_to_abs(list(idmap.values()))
-    layout_all()
+    _zorder()                           # arrivals stack on top, file truth
     GS["dirty"] = True
     redraw()
     _sync_props()
@@ -1201,6 +1282,9 @@ def build_gui_tab(style):
                                                            "tool: Select")))
             dpg.add_button(label=" Delete ", width=-1,
                            callback=delete_selected)
+            with dpg.group(horizontal=True):
+                dpg.add_button(label=" ▲ Front ", callback=bring_to_front)
+                dpg.add_button(label=" ▼ Back ", callback=send_to_back)
             dpg.add_spacer(height=6)
             dpg.add_text("WIDGETS", color=C["DIM"])
             for sec, kinds in PALETTE:
@@ -1306,8 +1390,8 @@ def _selftest():
     import tempfile
     clear_all()
     GS["undo"].clear()
-    box = add_widget("gui_box", 100, 100)           # vbox by default
-    GS["widgets"][box]["w"], GS["widgets"][box]["h"] = 200, 150
+    box = add_widget("gui_box", 100, 100)
+    GS["widgets"][box].update(w=200, h=150, layout_mode="vbox")  # opt-in
     b1 = add_widget("gui_button", 140, 120)
     b2 = add_widget("gui_button", 140, 170)
     assert GS["widgets"][b1]["parent_id"] == box
@@ -1348,9 +1432,54 @@ def _selftest():
     assert h and " " not in h
     state, _col = _wired_state(GS["widgets"][b1], sigs[0], h)
     assert state in ("unwired", "manual", "✓ wired", "named (not entry)")
+
+    # ── 20-08 z-order + file-truth + rescue invariants ──────────────────
+    clear_all()
+    win = add_widget("gui_window", 60, 60)
+    GS["widgets"][win]["w"], GS["widgets"][win]["h"] = 400, 300
+    btn = add_widget("gui_button", 120, 120)
+    assert GS["widgets"][btn]["parent_id"] == win
+    GS["zorder"] = [btn, win]           # a hostile file order buries it...
+    ro = render_order()
+    assert ro.index(win) < ro.index(btn), \
+        "child buried under its own container"        # ...containment wins
+    assert _hit(130, 130) == btn, "topmost hit must be the child"
+    inner = add_widget("gui_window", 100, 100)
+    assert GS["widgets"][inner]["parent_id"] is None, \
+        "windows are top-level — never adopted"
+    assert GS["widgets"][inner]["layout_mode"] == "absolute", \
+        "layouts are opt-in (VB doctrine)"
+    GS["sel"] = win
+    bring_to_front()
+    assert _zorder()[-1] == win
+    send_to_back()
+    assert _zorder()[0] == win
+
+    box = add_widget("gui_box", 600, 60)
+    GS["widgets"][box].update(w=200, h=150, layout_mode="vbox")
+    stray = add_widget("gui_button", 640, 90)   # hand-placed inside box
+    layout_all()                                # explicit vbox flows it...
+    sx, sy = GS["widgets"][stray]["x"], GS["widgets"][stray]["y"]
+    import tempfile as _tf
+    with _tf.NamedTemporaryFile("w", suffix=".gui", delete=False) as f:
+        json.dump(_payload(f.name), f)
+        tmp2 = f.name
+    load_from(tmp2)
+    assert (GS["widgets"][stray]["x"],
+            GS["widgets"][stray]["y"]) == (sx, sy), \
+        "open must NOT re-flow — the file is truth"
+    seq_saved = json.load(open(tmp2))["sequence"]
+    assert [int(i) for i in seq_saved] == _zorder(), "sequence round-trip"
+    os.unlink(tmp2)
+    GS["widgets"][stray]["x"] = -5000           # scatter victim
+    n_resc = _rescue_offcanvas()
+    assert n_resc == 1 and GS["widgets"][stray]["x"] >= 0, "rescue"
+
     clear_all()
     GS["undo"].clear()
     GS["redo"].clear()
+    GS["zorder"] = []
     GS["next"] = 0      # downstream gates index from a fresh canvas
     return {"layout": "vbox+hbox", "roundtrip": "centre-offsets",
-            "imported": added, "signals": len(sigs), "handler": h}
+            "imported": added, "signals": len(sigs), "handler": h,
+            "zorder": "containment-safe", "rescue": n_resc}

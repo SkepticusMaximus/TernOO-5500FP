@@ -189,3 +189,29 @@ affected.
   child_order map yet) — Tk preserves insertion order. Parity note.
 - REMAINING GUI parity item (unchanged): RNODE widget geometry
   rendering; the parametric WYSIWYG faces carry the standard meanwhile.
+
+## 2026-08-20 — GUI tab: z-order model + file-truth + rescue (captain's bug report)
+- Captain's morning report: widget positions not holding across restarts,
+  widgets missing, one full scatter, main window not returning, new
+  widgets refusing to sit on top of a fresh window — all via the
+  close-event autosave path.
+- ROOT CLASS: no z-order model existed (draw order = dict insertion, so
+  a loaded file could draw a container AFTER its children and bury them);
+  kind-default layout stamping (gui_box→vbox etc.) let the new layout
+  engine re-flow HAND-PLACED designs on open; pre-19-08 autosaves with
+  absolute child coords were double-converted by the centre-offset fix.
+- FIXES: (1) persistent STACKING SEQUENCE — render order walks roots in
+  sequence order with children always after their parent (containment
+  implies stacking; a child can never be buried under its own
+  container); ▲ Front / ▼ Back tools; sequence saved/loaded in the .gui
+  "sequence" field. (2) VB DOCTRINE: layout engines are OPT-IN — new
+  widgets default absolute; kind-default stamping removed; the engine
+  runs only on live actions. (3) THE FILE IS TRUTH: open/import never
+  re-flow; saved coordinates render as saved. (4) OFF-CANVAS RESCUE on
+  open: scattered widgets pulled back into view, counted in the status
+  line, marked dirty. (5) Windows/dialogs are TOP-LEVEL — never adopted
+  as children. (6) Quit dialog gains Save & Quit (saves dirty tabs that
+  have a file; homeless tabs keep the autosave net + recovery offer).
+- Docs: describe layouts as opt-in via the properties combo; describe
+  the stacking tools; the quit flow is Save & Quit / Quit without
+  saving / Cancel.
