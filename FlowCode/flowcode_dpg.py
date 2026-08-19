@@ -47,6 +47,8 @@ AUTOSAVE_FLOW = os.path.expanduser(
     "~/.config/ternoo-flowcode-dpg-autosave.flow")
 AUTOSAVE_GUI = os.path.expanduser(
     "~/.config/ternoo-flowcode-dpg-autosave.gui")
+AUTOSAVE_SHEET = os.path.expanduser(
+    "~/.config/ternoo-flowcode-dpg-autosave.sheet")
 try:
     CFGD = json.load(open(CFG, encoding="utf-8"))
 except Exception:                               # noqa: BLE001
@@ -105,13 +107,18 @@ try:
 except Exception as e:                          # noqa: BLE001
     FLOW_ORGAN_ERR = str(e)
 
+SHEET_ORGAN = None
+SHEET_ORGAN_ERR = ""
+try:
+    SHEET_ORGAN = _load_organ("flowcode_dpg_sheet")
+except Exception as e:                          # noqa: BLE001
+    SHEET_ORGAN_ERR = str(e)
+
 # ── the application manifest — the Tk TAB_CHROME, carried over whole ────────
 TAB_CHROME = [
     {"key": "flow",        "title": "Flow",          "live": True},
     {"key": "gui",         "title": "GUI",           "live": True},
-    {"key": "sheet",       "title": "Sheet",         "live": False,
-     "charter": "The Sheet leg — cells, formulas and flows on the\n"
-                "grid, per the Stage 8 design memo."},
+    {"key": "sheet",       "title": "Sheet",         "live": True},
     {"key": "connectors",  "title": "Connectors",    "live": False,
      "charter": "The canvas-based connector view — sockets, wires\n"
                 "and mesh plumbing between organs."},
@@ -193,6 +200,8 @@ def _menu_save(*_):
     t = ACTIVE_TAB[0]
     if t == "flow" and FLOW_ORGAN:
         FLOW_ORGAN._save_clicked()
+    elif t == "sheet" and SHEET_ORGAN:
+        SHEET_ORGAN._save_clicked()
     elif t == "gui" and GUI_ORGAN:
         GUI_ORGAN._save_clicked()
     elif t == "text":
@@ -205,6 +214,8 @@ def _menu_save_as(*_):
     t = ACTIVE_TAB[0]
     if t == "flow" and FLOW_ORGAN:
         dpg.show_item("flowc_save_dlg")
+    elif t == "sheet" and SHEET_ORGAN:
+        dpg.show_item("shc_save_dlg")
     elif t == "gui" and GUI_ORGAN:
         dpg.show_item("guic_save_dlg")
     elif t == "text":
@@ -217,6 +228,8 @@ def _menu_open(*_):
     t = ACTIVE_TAB[0]
     if t == "flow" and FLOW_ORGAN:
         dpg.show_item("flowc_open_dlg")
+    elif t == "sheet" and SHEET_ORGAN:
+        dpg.show_item("shc_open_dlg")
     elif t == "gui" and GUI_ORGAN:
         dpg.show_item("guic_open_dlg")
     elif t == "text":
@@ -231,6 +244,8 @@ def _any_dirty():
         d.append("Flow")
     if GUI_ORGAN and GUI_ORGAN.is_dirty():
         d.append("GUI")
+    if SHEET_ORGAN and SHEET_ORGAN.is_dirty():
+        d.append("Sheet")
     if TEXT_DIRTY[0] and dpg.does_item_exist("txt_edit") \
             and dpg.get_value("txt_edit").strip():
         d.append("Text")
@@ -242,6 +257,8 @@ def _autosave_dirty():
         FLOW_ORGAN.autosave(AUTOSAVE_FLOW)
     if GUI_ORGAN and GUI_ORGAN.is_dirty():
         GUI_ORGAN.autosave(AUTOSAVE_GUI)
+    if SHEET_ORGAN and SHEET_ORGAN.is_dirty():
+        SHEET_ORGAN.autosave(AUTOSAVE_SHEET)
 
 
 def do_quit(*_):
@@ -266,7 +283,8 @@ def do_quit(*_):
 
 
 def _offer_recovery():
-    have = [p for p in (AUTOSAVE_FLOW, AUTOSAVE_GUI) if os.path.exists(p)]
+    have = [p for p in (AUTOSAVE_FLOW, AUTOSAVE_GUI, AUTOSAVE_SHEET)
+            if os.path.exists(p)]
     if not have:
         return
     tag = "recoverwin"
@@ -285,10 +303,14 @@ def _offer_recovery():
                 GUI_ORGAN.load_from(AUTOSAVE_GUI)
                 GUI_ORGAN.GS["file"] = None
                 GUI_ORGAN.GS["dirty"] = True
+            if os.path.exists(AUTOSAVE_SHEET) and SHEET_ORGAN:
+                SHEET_ORGAN.load_from(AUTOSAVE_SHEET)
+                SHEET_ORGAN.SS["file"] = None
+                SHEET_ORGAN.SS["dirty"] = True
             discard(keep_state=True)
 
         def discard(keep_state=False):
-            for p in (AUTOSAVE_FLOW, AUTOSAVE_GUI):
+            for p in (AUTOSAVE_FLOW, AUTOSAVE_GUI, AUTOSAVE_SHEET):
                 try:
                     os.remove(p)
                 except OSError:
@@ -337,6 +359,134 @@ def _on_tab(sender, app_data):
     alias = dpg.get_item_alias(app_data) or ""
     if alias.startswith("tab_"):
         ACTIVE_TAB[0] = alias[4:]
+
+
+# ── the TernOO Word Explorer — the captain's reference tool (19-08) ─────────
+# Primary table per 5500fp_ternoo_v03.py (code truth; value = msb*3 + lsb).
+# DOCFLAG: v0.3 names the +− slot OPEN_A; the Manus thread's list says
+# OPCODE — naming under audit review.
+WORD_PRIMARIES = [
+    (-4, "EXEC",   "−−"), (-3, "MAP",    "−0"), (-2, "DATA",   "−+"),
+    (-1, "NEURAL", "0−"), (0,  "I/O",    "00"), (1,  "CRYPTO", "0+ (res)"),
+    (2,  "OPEN_A", "+− (audit: OPCODE?)"), (3, "OPEN_B", "+0"),
+    (4,  "POOL",   "++"),
+]
+_P3 = [3 ** i for i in range(25)]
+WORD_MAX = (_P3[24] - 1) // 2
+
+
+def _word_trits(value):
+    out, v = [], int(value)
+    for _ in range(24):
+        r = v % 3
+        if r == 2:
+            out.append(-1)
+            v = (v + 1) // 3
+        else:
+            out.append(r)
+            v = (v - r) // 3
+    return out                      # t0..t23, LSB first
+
+
+def _word_fields(value):
+    t = _word_trits(value)
+    prim = t[23] * 3 + t[22]
+    qual = sum(t[18 + i] * _P3[i] for i in range(4))
+    payl = sum(t[i] * _P3[i] for i in range(18))
+    return t, prim, qual, payl
+
+
+def _we_strip(value):
+    D = "we_strip"
+    dpg.delete_item(D, children_only=True)
+    t = _word_trits(value)
+    for i in range(24):             # draw T23 (left) … T0 (right)
+        trit = t[23 - i]
+        band = ((36, 56, 100) if i < 2 else
+                (120, 90, 30) if i < 6 else (40, 46, 62))
+        x0 = i * 26
+        dpg.draw_rectangle((x0, 8), (x0 + 24, 44), fill=band,
+                           color=BORDER, parent=D)
+        g = {1: "+", 0: "0", -1: "−"}[trit]
+        gc = {1: GRN, 0: DIM, -1: (255, 136, 136)}[trit]
+        dpg.draw_text((x0 + 8, 16), g, color=gc, size=20, parent=D)
+        dpg.draw_text((x0 + 3, 46), f"{23 - i}", color=DIM, size=10,
+                      parent=D)
+
+
+def _we_decode(*_):
+    try:
+        v = int(dpg.get_value("we_val").strip() or "0")
+    except ValueError:
+        dpg.set_value("we_out", "not an integer")
+        return
+    if abs(v) > WORD_MAX:
+        dpg.set_value("we_out", f"out of 24-trit range (±{WORD_MAX})")
+        return
+    _t, prim, qual, payl = _word_fields(v)
+    pname = next((n for pv, n, _ in WORD_PRIMARIES if pv == prim),
+                 f"({prim}?)")
+    dpg.set_value("we_out",
+                  f"primary {pname} ({prim:+d})   qualifier {qual:+d}   "
+                  f"payload {payl:+d}")
+    _we_strip(v)
+
+
+def _we_build(*_):
+    pname = dpg.get_value("we_prim")
+    prim = next((pv for pv, n, _ in WORD_PRIMARIES if n == pname), 0)
+    try:
+        qual = int(dpg.get_value("we_qual"))
+        payl = int(dpg.get_value("we_payl").strip() or "0")
+    except ValueError:
+        dpg.set_value("we_out", "qualifier/payload must be integers")
+        return
+    qual = max(-40, min(40, qual))
+    pmax = (_P3[18] - 1) // 2
+    payl = max(-pmax, min(pmax, payl))
+    v = payl + qual * _P3[18] + prim * _P3[22]
+    dpg.set_value("we_val", str(v))
+    _we_decode()
+
+
+def show_word_explorer(*_):
+    tag = "wordexp"
+    if dpg.does_item_exist(tag):
+        dpg.delete_item(tag)
+    with dpg.window(label="TernOO Word Explorer", tag=tag, width=680,
+                    height=560, pos=(280, 90)):
+        dpg.add_text("The 24-trit word:  2 (type) + 4 (qualifier) + 18 "
+                     "(payload)   ·   T23–T22 · T21–T18 · T17–T0",
+                     color=GRN)
+        with dpg.drawlist(width=630, height=60, tag="we_strip"):
+            pass
+        with dpg.group(horizontal=True):
+            dpg.add_text("word value:", color=DIM)
+            dpg.add_input_text(tag="we_val", width=220, default_value="0",
+                               on_enter=True, callback=_we_decode)
+            dpg.add_button(label=" Decode ", callback=_we_decode)
+        dpg.add_text("", tag="we_out", color=TEXT)
+        dpg.add_separator()
+        dpg.add_text("Build a word:", color=DIM)
+        with dpg.group(horizontal=True):
+            dpg.add_combo([n for _v, n, _t in WORD_PRIMARIES],
+                          tag="we_prim", width=120, default_value="DATA")
+            dpg.add_text("qualifier", color=DIM)
+            dpg.add_input_int(tag="we_qual", width=100, default_value=0,
+                              min_value=-40, max_value=40, min_clamped=True,
+                              max_clamped=True)
+            dpg.add_text("payload", color=DIM)
+            dpg.add_input_text(tag="we_payl", width=160, default_value="0")
+            dpg.add_button(label=" Build ", callback=_we_build)
+        dpg.add_separator()
+        dpg.add_text("The nine primaries (per 5500fp_ternoo_v03.py):",
+                     color=DIM)
+        for pv, n, tp in WORD_PRIMARIES:
+            dpg.add_text(f"  {tp:<22s} {n:<8s} value {pv:+d}", color=TEXT)
+        dpg.add_text("Naming note: the +− slot is OPEN_A in v0.3 code; the "
+                     "Manus record lists OPCODE — under audit review "
+                     "(see docs/REBUILD-DOCFLAGS.md).", color=DIM)
+    _we_decode()
 
 
 def show_about(*_):
@@ -475,6 +625,8 @@ def build_ui():
                 dpg.add_menu_item(label="UI text smaller",
                                   callback=lambda: zoom(-0.1))
             with dpg.menu(label=" Help "):
+                dpg.add_menu_item(label="TernOO Word Explorer",
+                                  callback=show_word_explorer)
                 dpg.add_menu_item(label="About / port charter",
                                   callback=show_about)
 
@@ -492,6 +644,16 @@ def build_ui():
                         else:
                             dpg.add_text("Flow organ failed to load: "
                                          + FLOW_ORGAN_ERR, color=AMB)
+                    elif row["key"] == "sheet":
+                        if SHEET_ORGAN:
+                            SHEET_ORGAN.build_sheet_tab(
+                                {"BORDER": BORDER, "TEXT": TEXT,
+                                 "DIM": DIM, "GRN": GRN, "AMB": AMB,
+                                 "CFG": CFGD, "SAVE": save_cfg,
+                                 "GUI": GUI_ORGAN})
+                        else:
+                            dpg.add_text("Sheet organ failed to load: "
+                                         + SHEET_ORGAN_ERR, color=AMB)
                     elif row["key"] == "gui":
                         if GUI_ORGAN:
                             GUI_ORGAN.build_gui_tab(
@@ -631,6 +793,15 @@ def main():
             assert doc2["academy_marker"] == {"keep": "me"}
             print("FLOW ROUND-TRIP OK — .flow/.fc schema + preservation "
                   "verified")
+        if os.environ.get("FLOW_DPG_TEST") and SHEET_ORGAN:
+            sres = SHEET_ORGAN._selftest()
+            print(f"SHEET OK — {sres['cells']} cells, {sres['chain']}")
+        if os.environ.get("FLOW_DPG_TEST"):
+            # word explorer math: round-trip fields
+            v = 7 + 5 * _P3[18] + (-2) * _P3[22]
+            _t, pr, q, pl = _word_fields(v)
+            assert (pr, q, pl) == (-2, 5, 7), (pr, q, pl)
+            print("WORD EXPLORER OK — field round-trip exact")
         if os.environ.get("FLOW_DPG_TEST") and GUI_ORGAN:
             # every widget kind must render a face without error
             allk = [k for _s, ks in GUI_ORGAN.PALETTE for k in ks]
