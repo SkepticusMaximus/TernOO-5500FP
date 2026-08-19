@@ -190,6 +190,23 @@ def build_shell_repl(style):
                                    "shrepl_log", children_only=True))
     with dpg.handler_registry():
         dpg.add_key_press_handler(callback=_hist_key)
+    CLIP = STYLE.get("CLIP")
+    if CLIP:
+        CLIP.input_menu("shrepl_in", "command line")
+
+        def _copy_log():
+            txts = []
+            for c in dpg.get_item_children("shrepl_log", 1) or []:
+                if dpg.get_item_type(c) == "mvAppItemType::mvText":
+                    txts.append(dpg.get_value(c))
+            CLIP.clip_set("\n".join(txts))
+        CLIP.menu("shrepl_log", [
+            ("Copy all output", _copy_log),
+            ("Paste into command line", lambda: dpg.set_value(
+                "shrepl_in", (dpg.get_value("shrepl_in") or "")
+                + CLIP.clip_get())), None,
+            ("Clear output", lambda: dpg.delete_item(
+                "shrepl_log", children_only=True))])
 
 
 def _selftest():

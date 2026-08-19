@@ -82,3 +82,12 @@ affected.
   its tab branch had been silently swallowed by an earlier patch (regression
   window ~12:00–13:10 19-08, caught by review). Tk's staged-pipeline (Lingo
   three-pane) builder NOT yet ported. → Stage-9/DocPhase B2 notes.
+- 19-08 · TEXT SERVICE (captain's standing order) · flowcode_dpg_clip.py:
+  one clipboard layer app-wide (xclip/xsel → Tk read → DPG mirror + rescue
+  file), Ctrl-sync making in-field Ctrl+C/X/V system-true, and a context-
+  menu framework registered on every text surface (editor, shell REPL in/
+  out, native console, sheet formula/name/GRID cells, mesh prompt/log).
+  Sheet gains spreadsheet manners: click-and-TYPE (key-mapped; DPG has no
+  char handler), F2 edits, Del clears. Text tab gains Ctrl+Z/Y ring undo.
+  RULE GOING FORWARD: no new text surface ships without CLIP menus.
+  → user-facing docs / help.
