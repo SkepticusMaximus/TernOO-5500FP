@@ -1056,6 +1056,11 @@ def main():
             print(f"ACADEMY OK — {ares['classes']} classes, "
                   f"route={ares['route']!r}, {ares['glyphs']} glyphs "
                   f"planned+stroked, prof={ares['prof']}")
+        if os.environ.get("FLOW_DPG_TEST") and FLOW_ORGAN:
+            dres = FLOW_ORGAN._selftest_decision()
+            print(f"DECISION DOORS OK — {dres['doors']} doors, 4th "
+                  f"refused={dres['refused_4th']}, {dres['tongue']!r}, "
+                  f"branch round-trip={dres['roundtrip']}")
         if os.environ.get("FLOW_DPG_TEST") and GUI_ORGAN:
             gres = GUI_ORGAN._selftest()
             print(f"GUI LAYOUT+WIRING OK — {gres['layout']}, "
