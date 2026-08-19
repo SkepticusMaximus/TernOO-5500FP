@@ -166,3 +166,26 @@ affected.
 - Docs implication: Mesh-Chat tab docs should show the full in-pane
   client; the standalone remains for solo use (Prof's box) — same
   codebase, same chats, same macros, two mounts.
+
+## 2026-08-19 — GUI tab leftovers: layout engine, signals panel, Import
+- LAYOUT ENGINE live: hbox/vbox/grid/stacked place children in real time
+  (drop into a container, resize it, or switch layout_mode — children
+  flow). Same arithmetic as Tk guic_apply_layout, absolute-coord port.
+  Stacked places ALL pages on the content area (Tk draws only the first)
+  — visually equivalent, ledger-noted.
+- CROSS-FACE FIDELITY FIX: parented widgets now save/load as CENTRE-
+  OFFSETS from the parent centre (the Tk schema convention). Before
+  this, nested designs saved by the DPG face opened scattered in Tk and
+  vice versa. .gui files saved by the DPG face BEFORE 19-08 with nested
+  children carry absolute child coords and will shift once on re-open.
+- Phase 7c-2 Signals → handlers panel ported (read-only, naming IS the
+  wiring): per-signal canonical handler name + state (manual / ✓ wired /
+  named-not-entry / unwired). Wired-state honours the dump-time entry
+  synthesis rule (first terminator when none explicit) — kinder than
+  Tk's strict is_entry check and truthful to what compile does.
+- Import into GUI... (File menu): merge another .gui/.fc — fresh ids,
+  parent links remapped, roots nudged +30, layouts re-flowed.
+- Children order inside containers is id-order (the organ keeps no
+  child_order map yet) — Tk preserves insertion order. Parity note.
+- REMAINING GUI parity item (unchanged): RNODE widget geometry
+  rendering; the parametric WYSIWYG faces carry the standard meanwhile.

@@ -720,6 +720,9 @@ def build_ui():
                 dpg.add_menu_item(label="Import into Flow...",
                                   callback=lambda: FLOW_ORGAN and
                                   dpg.show_item("flowc_import_dlg"))
+                dpg.add_menu_item(label="Import into GUI...",
+                                  callback=lambda: GUI_ORGAN and
+                                  dpg.show_item("guic_import_dlg"))
                 dpg.add_separator()
                 dpg.add_menu_item(label="Quit            Ctrl+Q",
                                   callback=do_quit)
@@ -787,6 +790,7 @@ def build_ui():
                                  "DIM": DIM, "GRN": GRN, "AMB": AMB,
                                  "CFG": CFGD, "SAVE": save_cfg, "CLIP": CLIP,
                                  "ACTIVE": lambda: ACTIVE_TAB[0],
+                                 "FLOW": FLOW_ORGAN,
                                  "BRIDGE": BRIDGE})
                         else:
                             dpg.add_text("GUI organ failed to load: "
@@ -1039,6 +1043,11 @@ def main():
             print(f"ACADEMY OK — {ares['classes']} classes, "
                   f"route={ares['route']!r}, {ares['glyphs']} glyphs "
                   f"planned+stroked, prof={ares['prof']}")
+        if os.environ.get("FLOW_DPG_TEST") and GUI_ORGAN:
+            gres = GUI_ORGAN._selftest()
+            print(f"GUI LAYOUT+WIRING OK — {gres['layout']}, "
+                  f"{gres['roundtrip']}, import={gres['imported']}, "
+                  f"{gres['signals']} signals → e.g. {gres['handler']}")
         if os.environ.get("FLOW_DPG_TEST") and MESH_ORGAN:
             mres = MESH_ORGAN._selftest()
             print(f"MESH CLIENT OK — full client in-pane, "

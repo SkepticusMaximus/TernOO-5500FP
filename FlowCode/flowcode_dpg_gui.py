@@ -10,13 +10,24 @@ editor does not yet edit (signals, custom properties, edges) are
 PRESERVED through load->save round-trips — the two faces exchange
 files without data loss.
 
-Not yet ported from Tk (stated, not hidden): non-absolute layout
-preview (vbox/grid/stacked modes are STORED faithfully but children
-are not auto-laid-out), the signal/handler editor, RNODE widget
-geometry rendering, and Import. They ride the next legs.
+This leg (19-08): the LAYOUT ENGINE (hbox/vbox/grid/stacked place
+children live — the Tk guic_apply_layout algorithm in this organ's
+absolute coords), the Phase 7c-2 Signals → handlers panel (read-only,
+naming IS the wiring — flowcode_signals reused, wired-state checked
+against the live Flow organ), Import (merge another .gui/.fc into the
+canvas), and Tk-schema child coordinates: parented widgets save/load
+as CENTRE-OFFSETS from the parent centre, the Tk face's convention —
+nested designs now cross the faces without scattering.
+
+Still not ported (stated, not hidden): RNODE widget geometry
+rendering — the parametric faces below carry the WYSIWYG standard
+meanwhile.
 """
+import importlib.util as _ilu
 import json
+import math
 import os
+import sys
 
 import dearpygui.dearpygui as dpg
 
@@ -212,6 +223,8 @@ def add_widget(kind, x, y):
         "properties": [], "signal_ids": {},
     }
     GS["sel"] = wid
+    _assign_parent(wid)
+    layout_all()
     redraw()
     _sync_props()
     _status(f"placed {kind[4:]} #{wid}")
@@ -260,6 +273,74 @@ def _assign_parent(wid):
                                 GS["widgets"][best]["w"] * GS["widgets"][best]["h"]):
                 best = oid
     w["parent_id"] = best
+
+
+# ── the layout engine — Tk guic_apply_layout, absolute-coord port ───────────
+PAD = 4
+
+
+def children_of(pid):
+    """Direct children, id-ordered (the organ keeps no child_order yet)."""
+    return [GS["widgets"][i] for i in sorted(GS["widgets"])
+            if GS["widgets"][i].get("parent_id") == pid]
+
+
+def apply_layout(cid):
+    """Place cid's direct children per its layout_mode (absolute = no-op).
+    Same arithmetic as the Tk face, expressed in absolute top-left."""
+    ct = GS["widgets"].get(cid)
+    if ct is None:
+        return
+    mode = ct.get("layout_mode",
+                  LAYOUT_DEFAULTS.get(ct["kind"], "absolute"))
+    kids = children_of(cid)
+    N = len(kids)
+    if mode == "absolute" or N == 0:
+        return
+    X, Y, W, H = ct["x"], ct["y"], ct["w"], ct["h"]
+    if mode == "hbox":
+        cw = max(MIN_SIZE, (W - 2 * PAD - PAD * (N - 1)) // N)
+        chh = max(MIN_SIZE, H - 2 * PAD)
+        for i, ch in enumerate(kids):
+            ch["x"] = int(X + PAD + i * (cw + PAD))
+            ch["y"] = int(Y + PAD)
+            ch["w"], ch["h"] = cw, chh
+    elif mode == "vbox":
+        cw = max(MIN_SIZE, W - 2 * PAD)
+        chh = max(MIN_SIZE, (H - 2 * PAD - PAD * (N - 1)) // N)
+        for i, ch in enumerate(kids):
+            ch["x"] = int(X + PAD)
+            ch["y"] = int(Y + PAD + i * (chh + PAD))
+            ch["w"], ch["h"] = cw, chh
+    elif mode == "grid":
+        cols = max(1, math.ceil(math.sqrt(N)))
+        rows = max(1, math.ceil(N / cols))
+        cw = max(MIN_SIZE, (W - PAD * (cols + 1)) // cols)
+        chh = max(MIN_SIZE, (H - PAD * (rows + 1)) // rows)
+        for idx, ch in enumerate(kids):
+            r, c = divmod(idx, cols)
+            ch["x"] = int(X + PAD * (c + 1) + c * cw)
+            ch["y"] = int(Y + PAD * (r + 1) + r * chh)
+            ch["w"], ch["h"] = cw, chh
+    elif mode == "stacked":
+        for ch in kids:                 # all pages cover the content area
+            ch["x"], ch["y"] = int(X + PAD), int(Y + PAD)
+            ch["w"] = max(MIN_SIZE, W - 2 * PAD)
+            ch["h"] = max(MIN_SIZE, H - 2 * PAD)
+
+
+def _depth_of(wid, seen=()):
+    p = GS["widgets"].get(wid, {}).get("parent_id")
+    if p is None or p not in GS["widgets"] or wid in seen:
+        return 0
+    return 1 + _depth_of(p, seen + (wid,))
+
+
+def layout_all():
+    """Apply every container's layout, parents before their children."""
+    for wid in sorted(GS["widgets"], key=_depth_of):
+        if GS["widgets"][wid]["kind"] in CONTAINER_KINDS:
+            apply_layout(wid)
 
 
 # ── drawing ─────────────────────────────────────────────────────────────────
@@ -647,6 +728,85 @@ def _render_widget(D, kind, x, y, w, h, label="", px=1.0):
 
 
 # ── selection + properties panel sync ───────────────────────────────────────
+_FSIG = [None]
+_FSIG_ERR = [""]
+
+
+def _fsig():
+    """The Phase 7c signals module (flowcode_signals) — reused whole."""
+    if _FSIG[0] is None and not _FSIG_ERR[0]:
+        try:
+            five = os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "5500fp")
+            if five not in sys.path:
+                sys.path.insert(0, five)
+            spec = _ilu.spec_from_file_location(
+                "flowcode_signals", os.path.join(five,
+                                                 "flowcode_signals.py"))
+            mod = _ilu.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            _FSIG[0] = mod
+        except Exception as e:                  # noqa: BLE001
+            _FSIG_ERR[0] = str(e)
+    return _FSIG[0]
+
+
+def _wired_state(w, sig, handler):
+    """Phase 7c-2 truth for one signal row: manual binding beats auto;
+    auto is '✓ wired' when the ENTRY flow_terminator carries the handler
+    name — explicit is_entry, or the dump-time synthesis rule (first
+    terminator when none is explicit), same as the compiler will do."""
+    binfo = (w.get("signal_ids") or {}).get(sig["id"]) or \
+        (w.get("signal_ids") or {}).get(str(sig["id"]))
+    if binfo and isinstance(binfo, dict) and not binfo.get("auto_wired"):
+        return "manual", (255, 204, 102)
+    F = STYLE.get("FLOW")
+    if not handler or F is None:
+        return "unwired", STYLE.get("DIM", (110, 110, 110))
+    terms = [s for _i, s in sorted(F.FS["syms"].items())
+             if s.get("kind") == "flow_terminator"]
+    explicit = [s for s in terms
+                if any(isinstance(p, dict) and p.get("name") == "is_entry"
+                       and p.get("value")
+                       for p in s.get("properties", []))]
+    entries = explicit if explicit else terms[:1]
+    if any(s.get("name", "") == handler for s in entries):
+        return "✓ wired", (122, 255, 122)
+    if any(s.get("name", "") == handler for s in terms):
+        return "named (not entry)", (240, 180, 80)
+    return "unwired", STYLE.get("DIM", (110, 110, 110))
+
+
+def _sync_signals(w):
+    """Rebuild the Signals → handlers rows for the selected widget."""
+    G = "gp_signals"
+    if not dpg.does_item_exist(G):
+        return
+    dpg.delete_item(G, children_only=True)
+    FS = _fsig()
+    if FS is None:
+        dpg.add_text(f"signals: {_FSIG_ERR[0]}", parent=G,
+                     color=STYLE.get("AMB"))
+        return
+    sigs = FS.signals_for(w["kind"])
+    if not sigs:
+        dpg.add_text("(this kind emits no signals)", parent=G,
+                     color=STYLE.get("DIM"))
+        return
+    wname = w.get("name", "")
+    for sig in sigs:
+        handler = FS.canonical_handler_name(wname, sig["name"]) \
+            if wname else ""
+        state, col = _wired_state(w, sig, handler)
+        with dpg.group(horizontal=True, parent=G):
+            dpg.add_text(f"{sig['name']:<9}", color=STYLE.get("DIM"))
+            dpg.add_text(handler or "(name the widget)",
+                         color=STYLE.get("TEXT"))
+            dpg.add_text(state, color=col)
+    dpg.add_text("name a flow_terminator to a handler\nabove to wire it",
+                 parent=G, color=STYLE.get("DIM"))
+
+
 def _sync_props():
     wid = GS["sel"]
     have = wid is not None and wid in GS["widgets"]
@@ -655,6 +815,8 @@ def _sync_props():
         dpg.configure_item(t, enabled=have)
     if not have:
         dpg.set_value("gp_kind", "nothing selected")
+        if dpg.does_item_exist("gp_signals"):
+            dpg.delete_item("gp_signals", children_only=True)
         return
     w = GS["widgets"][wid]
     dpg.set_value("gp_kind", f"{w['kind']}   #{wid}")
@@ -668,6 +830,7 @@ def _sync_props():
     dpg.set_value("gp_modal", bool(_prop_get(w, "modal", False)))
     dpg.set_value("gp_layout", w.get("layout_mode", "absolute"))
     dpg.set_value("gp_bind", str(_prop_get(w, "bind_value_to", "")))
+    _sync_signals(w)
 
 
 def _apply_prop(sender, value, field):
@@ -685,7 +848,11 @@ def _apply_prop(sender, value, field):
         _prop_set(w, field, value)
     elif field == "modal":
         _prop_set(w, field, bool(value))
+    if field in ("layout_mode", "w", "h"):
+        layout_all()                    # containers re-flow their children
     redraw()
+    if field in ("name", "layout_mode"):
+        _sync_props()                   # handler names / states follow
 
 
 # ── mouse interaction (drawlist space) ──────────────────────────────────────
@@ -808,6 +975,7 @@ def _on_release(*_):
     GS["drag"] = None
     if GS["sel"] is not None and GS["sel"] in GS["widgets"]:
         _assign_parent(GS["sel"])
+        layout_all()                    # dropping into an hbox flows it
         redraw()
     _sync_props()
 
@@ -822,10 +990,15 @@ def _payload(path):
     syms = []
     for wid, w in GS["widgets"].items():
         raw = dict(GS["raw"].get(wid, {}))
+        sx, sy = w["x"], w["y"]
+        p = GS["widgets"].get(w.get("parent_id"))
+        if p is not None:   # Tk schema: children carry centre-offsets
+            sx = int(w["x"] + w["w"] / 2 - (p["x"] + p["w"] / 2))
+            sy = int(w["y"] + w["h"] / 2 - (p["y"] + p["h"] / 2))
         sym = {"id": wid, "kind": w["kind"], "label": w.get("label", ""),
                "name": w.get("name", ""),
                "gtk_class": raw.get("gtk_class", ""),
-               "x": w["x"], "y": w["y"],
+               "x": sx, "y": sy,
                "depth": raw.get("depth", 0),
                "w": w["w"], "h": w["h"],
                "parent_id": w.get("parent_id"),
@@ -906,6 +1079,8 @@ def load_from(path):
         }
         GS["raw"][wid] = dict(sym)
         GS["next"] = max(GS["next"], wid + 1)
+    _rel_to_abs(list(GS["widgets"]))
+    layout_all()
     GS["edges"] = [dict(e) for e in doc.get("edges", [])]
     GS["file"] = path
     GS["dirty"] = False
@@ -913,6 +1088,67 @@ def load_from(path):
     _sync_props()
     _status(f"opened {os.path.basename(path)} — "
             f"{len(GS['widgets'])} widgets, {len(GS['edges'])} edges")
+
+
+def _rel_to_abs(ids):
+    """Tk schema: PARENTED widgets carry centre-offsets from the parent's
+    centre. Convert those ids to this organ's absolute top-left, parents
+    first, so nested designs land where the Tk face put them."""
+    for wid in sorted(ids, key=_depth_of):
+        w = GS["widgets"][wid]
+        p = GS["widgets"].get(w.get("parent_id"))
+        if p is not None:
+            w["x"] = int(p["x"] + p["w"] / 2 + w["x"] - w["w"] / 2)
+            w["y"] = int(p["y"] + p["h"] / 2 + w["y"] - w["h"] / 2)
+
+
+def import_merge(path):
+    """Merge another design's widgets into the canvas: fresh ids, parent
+    links remapped within the import, roots nudged +30 so the arrival is
+    visible, then the layout engine flows any laid-out containers."""
+    try:
+        doc = json.load(open(path, encoding="utf-8"))
+    except Exception as e:                      # noqa: BLE001
+        _status(f"import failed: {e}", ok=False)
+        return 0
+    syms = doc.get("symbols", [])
+    if not syms:
+        _status("nothing to import — no widgets in that file", ok=False)
+        return 0
+    _snapshot()
+    idmap = {}
+    for sym in syms:
+        wid = GS["next"]
+        GS["next"] += 1
+        idmap[int(sym["id"])] = wid
+        kind = sym.get("kind", "gui_button")
+        dw, dh = DEFAULT_SIZE.get(kind, (GW, GH))
+        GS["widgets"][wid] = {
+            "id": wid, "kind": kind,
+            "label": sym.get("label", ""),
+            "name": sym.get("name", f"{kind[4:]}_{wid}"),
+            "x": sym.get("x", 0), "y": sym.get("y", 0),
+            "w": sym.get("w", dw), "h": sym.get("h", dh),
+            "parent_id": sym.get("parent_id"),
+            "layout_mode": sym.get("layout_mode",
+                                   LAYOUT_DEFAULTS.get(kind, "absolute")),
+            "properties": list(sym.get("properties", [])),
+            "signal_ids": dict(sym.get("signal_ids", {})),
+        }
+        GS["raw"][wid] = dict(sym)
+    for old, new in idmap.items():
+        w = GS["widgets"][new]
+        op = w.get("parent_id")
+        w["parent_id"] = idmap.get(int(op)) if op is not None else None
+        if w["parent_id"] is None:
+            w["x"], w["y"] = int(w["x"]) + 30, int(w["y"]) + 30
+    _rel_to_abs(list(idmap.values()))
+    layout_all()
+    GS["dirty"] = True
+    redraw()
+    _sync_props()
+    _status(f"imported {len(idmap)} widgets from {os.path.basename(path)}")
+    return len(idmap)
 
 
 def _save_clicked(*_):
@@ -942,6 +1178,13 @@ def build_gui_tab(style):
                          tag="guic_open_dlg", width=780, height=480,
                          default_path=_designs, default_filename="",
                          callback=lambda s, a: load_from(_picked(a))):
+        dpg.add_file_extension(".gui", color=(74, 158, 255))
+        dpg.add_file_extension(".fc", color=(63, 208, 143))
+        dpg.add_file_extension(".*")
+    with dpg.file_dialog(directory_selector=False, show=False, modal=True,
+                         tag="guic_import_dlg", width=780, height=480,
+                         default_path=_designs, default_filename="",
+                         callback=lambda s, a: import_merge(_picked(a))):
         dpg.add_file_extension(".gui", color=(74, 158, 255))
         dpg.add_file_extension(".fc", color=(63, 208, 143))
         dpg.add_file_extension(".*")
@@ -1034,8 +1277,9 @@ def build_gui_tab(style):
             dpg.add_combo(LAYOUT_MODES, tag="gp_layout", width=-1,
                           callback=lambda s, a:
                           _apply_prop(s, a, "layout_mode"))
-            dpg.add_text("(non-absolute layout preview\n rides the next leg)",
-                         color=C["DIM"])
+            dpg.add_text("Signals → handlers", color=C["DIM"])
+            with dpg.group(tag="gp_signals"):
+                pass
             dpg.add_text("Cell binding", color=C["DIM"])
             dpg.add_input_text(tag="gp_bind", width=-1, hint="bind_value_to",
                                callback=lambda s, a:
@@ -1054,3 +1298,59 @@ def build_gui_tab(style):
         dpg.add_key_press_handler(dpg.mvKey_Delete, callback=_on_del)
     redraw()
     _sync_props()
+
+
+def _selftest():
+    """The 19-08 leg's gate: layout engine (vbox/hbox/grid), Tk-schema
+    child centre-offsets through save+load, import merge, signals rows."""
+    import tempfile
+    clear_all()
+    GS["undo"].clear()
+    box = add_widget("gui_box", 100, 100)           # vbox by default
+    GS["widgets"][box]["w"], GS["widgets"][box]["h"] = 200, 150
+    b1 = add_widget("gui_button", 140, 120)
+    b2 = add_widget("gui_button", 140, 170)
+    assert GS["widgets"][b1]["parent_id"] == box
+    layout_all()
+    w1, w2 = GS["widgets"][b1], GS["widgets"][b2]
+    assert w1["x"] == w2["x"] == 104 and w1["w"] == w2["w"] == 192
+    assert w1["y"] < w2["y"], "vbox must stack downward"
+    GS["widgets"][box]["layout_mode"] = "hbox"
+    layout_all()
+    assert w1["y"] == w2["y"] and w1["x"] < w2["x"], "hbox side-by-side"
+
+    pay = _payload("gate.gui")
+    child = next(s for s in pay["symbols"] if s["id"] == b1)
+    assert child["x"] == int(w1["x"] + w1["w"] / 2
+                             - (100 + 200 / 2)), "centre-offset save"
+    with tempfile.NamedTemporaryFile("w", suffix=".gui",
+                                     delete=False) as f:
+        json.dump(pay, f)
+        tmp = f.name
+    ax, ay = w1["x"], w1["y"]
+    load_from(tmp)
+    r1 = GS["widgets"][b1]
+    assert (r1["x"], r1["y"]) == (ax, ay), "rel→abs load round-trip"
+    n0 = len(GS["widgets"])
+    added = import_merge(tmp)
+    assert added == n0 and len(GS["widgets"]) == 2 * n0
+    kid = next(w for w in GS["widgets"].values()
+               if w["id"] >= n0 and w["kind"] == "gui_button")
+    assert kid["parent_id"] is not None and kid["parent_id"] >= n0, \
+        "import parent remap"
+    os.unlink(tmp)
+
+    FS = _fsig()
+    assert FS is not None, f"signals module: {_FSIG_ERR[0]}"
+    sigs = FS.signals_for("gui_button")
+    assert sigs, "gui_button emits no signals?"
+    h = FS.canonical_handler_name("save_btn", sigs[0]["name"])
+    assert h and " " not in h
+    state, _col = _wired_state(GS["widgets"][b1], sigs[0], h)
+    assert state in ("unwired", "manual", "✓ wired", "named (not entry)")
+    clear_all()
+    GS["undo"].clear()
+    GS["redo"].clear()
+    GS["next"] = 0      # downstream gates index from a fresh canvas
+    return {"layout": "vbox+hbox", "roundtrip": "centre-offsets",
+            "imported": added, "signals": len(sigs), "handler": h}
