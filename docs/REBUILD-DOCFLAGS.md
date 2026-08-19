@@ -99,3 +99,14 @@ affected.
   X-high/Z-low, space=caseless 27, digits 30–39, punct 40+, Z=0. Rulings
   Q1–Q6 requested from CF5 (POBOX). v0.3's STRING_TERNARY (+1 @T19) is the
   ruled hook this plugs into. → glyph-plane canon doc (CF5 charter).
+- 19-08 · glyph plane · CF5 recovery (POBOX 1956): the XYZ FRAME IS
+  RATIFIED CANON (Ted builds on real canon); foundational law recovered:
+  LEFT-TO-RIGHT NON-COMMUTATIVE CONTEXT SENSITIVITY (a defining trit may
+  condition trits to its right, never vice versa); chalk voice (Professor)
+  / ink voice (GHOST) canon; house font 51+ glyphs (⸮ and ~ founding
+  residents). The SIX formative points remain the CAPTAIN'S to rule (or
+  the recovered park transcript's). DeepAI brief now COMMITTED (it was
+  on disk but untracked — invisible to crew seats). Y-field wording
+  variance between the recovery ("identity tag + font index") and the
+  brief ("case trit + ordinal"; font in Z) — transcript to settle.
+  → glyph canon doc.
