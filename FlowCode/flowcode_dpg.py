@@ -146,6 +146,13 @@ try:
 except Exception as e:                          # noqa: BLE001
     TED_ORGAN_ERR = str(e)
 
+BABBLE_ORGAN = None
+BABBLE_ORGAN_ERR = ""
+try:
+    BABBLE_ORGAN = _load_organ("flowcode_dpg_babble")
+except Exception as e:                          # noqa: BLE001
+    BABBLE_ORGAN_ERR = str(e)
+
 # ── the application manifest — the Tk TAB_CHROME, carried over whole ────────
 TAB_CHROME = [
     {"key": "flow",        "title": "Flow",          "live": True},
@@ -154,9 +161,7 @@ TAB_CHROME = [
     {"key": "connectors",  "title": "Connectors",    "live": True},
     {"key": "shell",       "title": "Shell",         "live": True},
     {"key": "text",        "title": "Text",          "live": True},
-    {"key": "babble-fish", "title": "Babble-Fish",   "live": False,
-     "charter": "GristMill translation — TernOO words in and out of\n"
-                "human tongues."},
+    {"key": "babble-fish", "title": "Babble-Fish",   "live": True},
     {"key": "academy",     "title": "Academy",       "live": False,
      "charter": "The classroom: board and book GlyphSurfaces, the\n"
                 "GHOST router and humility gate, consent-gated Bonsai,\n"
@@ -411,6 +416,11 @@ def _on_tab(sender, app_data):
         ACTIVE_TAB[0] = alias[4:]
         if FLOW_ORGAN:
             FLOW_ORGAN.set_minimap_visible(ACTIVE_TAB[0] == "flow")
+        if BABBLE_ORGAN and ACTIVE_TAB[0] == "babble-fish":
+            try:
+                BABBLE_ORGAN.on_show()      # re-babel from live design
+            except Exception:               # noqa: BLE001
+                pass
 
 
 # ── the TernOO Word Explorer — the captain's reference tool (19-08) ─────────
@@ -805,6 +815,17 @@ def build_ui():
                                            callback=shell_clear)
                     elif row["key"] == "text":
                         build_text_tab()
+                    elif row["key"] == "babble-fish":
+                        if BABBLE_ORGAN:
+                            BABBLE_ORGAN.build_babble_tab(
+                                {"BORDER": BORDER, "TEXT": TEXT,
+                                 "DIM": DIM, "GRN": GRN, "AMB": AMB,
+                                 "FLOW": FLOW_ORGAN, "GUI": GUI_ORGAN,
+                                 "SHEET": SHEET_ORGAN, "CONN": CONN_ORGAN,
+                                 "CLIP": CLIP})
+                        else:
+                            dpg.add_text("Babble-Fish organ failed: "
+                                         + BABBLE_ORGAN_ERR, color=AMB)
                     elif row["key"] == "mesh":
                         if MESH_ORGAN:
                             MESH_ORGAN.build_mesh_tab(
@@ -987,6 +1008,11 @@ def main():
             shres = SHELL_ORGAN._selftest()
             print(f"SHELL REPL OK — engine reused, out={shres['out']!r}, "
                   f"capture->connectors={shres['captured']}")
+        if os.environ.get("FLOW_DPG_TEST") and BABBLE_ORGAN:
+            bres = BABBLE_ORGAN._selftest()
+            print(f"BABBLE-FISH OK — {bres['dialects']} tongues, "
+                  f"{bres['vocab_sections']} vocab sections, "
+                  f"python def={bres['python_has_def']}")
         if os.environ.get("FLOW_DPG_TEST") and MESH_ORGAN:
             mres = MESH_ORGAN._selftest()
             print(f"MESH PANE OK — core reused, store={mres['store']}")

@@ -110,3 +110,20 @@ affected.
   variance between the recovery ("identity tag + font index") and the
   brief ("case trit + ordinal"; font in Z) — transcript to settle.
   → glyph canon doc.
+
+## 2026-08-19 — Babble-Fish tab live on the DPG face
+- `FlowCode/flowcode_dpg_babble.py`: the Babble-Fish organ. Both Tk views
+  ported: VOCABULARY (reuses `gristmill_tab_view.build_vocabulary_data` +
+  `build_program_data` — the pure no-tkinter builders — for the static
+  registry [Opcodes/Shapes/Styles/Layouts/Signals] and the live Program
+  tree) and TRANSLATOR (reuses `flowcode_lingo_translate.render` +
+  `flowcode_dialect.project`; live model assembled exactly like Tk's
+  `_dialect_model` from the Flow/GUI/Sheet/Connectors organs).
+- Translator layout differs from Tk deliberately: left pane is ALWAYS the
+  canonical FlowCode dialect, right pane the picked tongue (Python/Java/
+  VB/C) — the split view is the default, not a toggle. Doc screenshots of
+  the Lingo tab should use the DPG layout when the handoff is written.
+- Word spans in the vocabulary Program tree read as "(dump the stream on
+  Flow to map)" when no stream has been built — the DPG face has no
+  always-live WordStream subscription yet (Tk subscribes on_stream_change).
+  Flag for the parity ledger, not user-facing docs.
