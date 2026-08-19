@@ -69,3 +69,9 @@ affected.
   Esc up, cross-scope edges refused unless bound to a named port, Ports…
   editor (entry/exit lists on containers), scopes+ports round-trip .fc/.flow.
   Flow tab now has NO unported items. → 7c-4 docs as-built.
+- 19-08 · Mesh-Chat tab (DPG) · IN-PANE conversation mount: the organ
+  imports the standalone client AS A LIBRARY (its buyer, candidates,
+  ChatStore, context builder — UI stays behind __main__), so tab + pane +
+  standalone all share one core and one saved-chat store. The workshop
+  (macros/forge/editor) remains standalone-only, via the Full-client
+  button. Minimap now leashed to the Flow tab only. → client docs.

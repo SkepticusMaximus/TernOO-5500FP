@@ -50,7 +50,7 @@ FS = {
     "next": 0, "sel": None, "sel_edge": None, "file": None,
     "tool": "select", "edge_src": None, "edge_wps": [], "drag": None,
     "wpdrag": None, "grip": None, "zoom": 1.0, "dirty": False,
-    "multi": set(), "lasso": None, "scope": None,
+    "multi": set(), "lasso": None, "scope": None, "on_flow_tab": True,
     "undo": [], "redo": [],
 }
 
@@ -564,18 +564,26 @@ MM_W, MM_H = 220, 146
 MM_F = min(MM_W / CANVAS_W, MM_H / CANVAS_H)
 
 
-def toggle_minimap():
+def set_minimap_visible(on_flow_tab):
+    """The minimap is a floating window — leash it to the Flow tab."""
+    FS["on_flow_tab"] = bool(on_flow_tab)
     if not dpg.does_item_exist("flowc_mm"):
         return
-    show = not dpg.is_item_shown("flowc_mm")
+    pref = bool(STYLE.get("CFG", {}).get("flow_minimap", True))
+    show = FS["on_flow_tab"] and pref
     dpg.configure_item("flowc_mm", show=show)
-    cfg = STYLE.get("CFG")
-    if cfg is not None:
-        cfg["flow_minimap"] = show
-        if STYLE.get("SAVE"):
-            STYLE["SAVE"]()
     if show:
         _mm_redraw()
+
+
+def toggle_minimap():
+    cfg = STYLE.get("CFG")
+    pref = not bool((cfg or {}).get("flow_minimap", True))
+    if cfg is not None:
+        cfg["flow_minimap"] = pref
+        if STYLE.get("SAVE"):
+            STYLE["SAVE"]()
+    set_minimap_visible(FS.get("on_flow_tab", True))
 
 
 def _mm_redraw():
