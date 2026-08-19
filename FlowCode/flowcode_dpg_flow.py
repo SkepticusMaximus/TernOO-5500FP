@@ -750,10 +750,24 @@ def add_edge(src_id, dst_id, waypoints=None, bound_port_name=""):
             "condition": ""}
     if bound_port_name:
         edge["bound_port_name"] = bound_port_name
+    if src.get("kind") == "flow_decision":
+        # THE THREE DOORS (ruled 20-08): edges out of a decision carry a
+        # branch trit. Auto-assign the first free door (+, 0, −) — the
+        # panel edits it afterward. A fourth edge refuses: three doors.
+        taken = {e.get("branch") for e in FS["edges"]
+                 if e["src"] == src_id}
+        free = [b for b in ("+", "0", "-") if b not in taken]
+        if not free:
+            _status("a decision has THREE doors (+ 0 −) — all taken",
+                    ok=False)
+            FS["undo"].pop()
+            return None
+        edge["branch"] = free[0]
     FS["edges"].append(edge)
     redraw()
     _status(f"Edge {FS['syms'][src_id]['label']} → "
-            f"{FS['syms'][dst_id]['label']}")
+            f"{FS['syms'][dst_id]['label']}"
+            + (f"  door {edge['branch']}" if "branch" in edge else ""))
     return edge
 
 
@@ -902,6 +916,21 @@ def _draw_symbol(s, selected):
         cx, cy = x + w / 2, y + h / 2
         dpg.draw_quad((cx, y), (x + w, cy), (cx, y + h), (x, cy),
                       fill=fill, color=border, thickness=th, parent=D)
+        # the three doors: + east · 0 southeast · − south (ruled 20-08)
+        for gx, gy, glyph, gcol in (
+                (x + w, cy, "+", (122, 255, 122)),
+                ((cx + x + w) / 2 + 3 * Z, (cy + y + h) / 2 + 3 * Z, "0",
+                 (240, 180, 80)),
+                (cx, y + h, "−", (255, 136, 136))):
+            dpg.draw_circle((gx, gy), 3.5 * Z, fill=gcol, parent=D)
+            dpg.draw_text((gx + 5 * Z, gy - 7 * Z), glyph, size=13 * Z,
+                          color=gcol, parent=D)
+        cond = next((p.get("value") for p in s.get("properties", [])
+                     if isinstance(p, dict)
+                     and p.get("name") == "condition"), "")
+        if cond:
+            dpg.draw_text((x, y + h + 16 * Z), str(cond)[:28],
+                          size=11 * Z, color=(122, 200, 255), parent=D)
     elif k == "flow_io":
         sk = 16
         dpg.draw_quad((x + sk, y), (x + w, y), (x + w - sk, y + h),
@@ -960,6 +989,14 @@ def redraw():
             my = (pts[0][1] + pts[-1][1]) / 2
             dpg.draw_text((mx + 4, my - 14 * Z), e["condition"],
                           size=12 * Z, color=STYLE.get("DIM"), parent=D)
+        if e.get("branch"):
+            bcol = {"+": (122, 255, 122), "0": (240, 180, 80),
+                    "-": (255, 136, 136)}.get(e["branch"], COL["border"])
+            gl = {"-": "−"}.get(e["branch"], e["branch"])
+            dpg.draw_circle((pts[0][0] + 10 * Z, pts[0][1] - 10 * Z),
+                            8 * Z, fill=(24, 28, 38), parent=D)
+            dpg.draw_text((pts[0][0] + 6 * Z, pts[0][1] - 18 * Z), gl,
+                          size=14 * Z, color=bcol, parent=D)
     for sid, s in FS["syms"].items():
         if not _in_scope(s):
             continue                        # other scopes render when entered
@@ -1583,6 +1620,11 @@ def build_flow_tab(style):
         with dpg.child_window(width=int(C.get("CFG", {})
                               .get("flow_panel_w", 320)),
                               tag="flowc_panel"):
+            with dpg.collapsing_header(label="PROPERTIES",
+                                       default_open=True):
+                with dpg.group(tag="flowp_rows"):
+                    dpg.add_text("select a symbol or an edge",
+                                 color=C["DIM"])
             with dpg.collapsing_header(label="TOOLS", default_open=True):
                 _icon_btn(_tool_icon("select"), " Select ", "move · edit",
                           "select")
@@ -1721,3 +1763,242 @@ def _register_handlers():
                                            callback=_on_dblclick)
         dpg.add_key_press_handler(dpg.mvKey_Delete, callback=_on_del_key)
         dpg.add_key_press_handler(dpg.mvKey_Escape, callback=_on_esc)
+
+
+# ═══ the declaration-driven PROPERTIES panel (ruled 20-08) ══════════════════
+# The canon record (name·type·default·domain·filter) lives in
+# 5500fp/flowcode_property_model.py; this panel just renders whatever a
+# family declares. Sync rides redraw() behind an identity guard, so
+# drags and typing never rebuild the rows out from under the cursor.
+_PM = [None, ""]
+_PROPS_SHOWN = [None]           # ("sym", sid) | ("edge", idx) | None
+
+
+def _pm():
+    if _PM[0] is None and not _PM[1]:
+        try:
+            import importlib.util as ilu
+            five = os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "5500fp")
+            spec = ilu.spec_from_file_location(
+                "flowcode_property_model",
+                os.path.join(five, "flowcode_property_model.py"))
+            mod = ilu.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            _PM[0] = mod
+        except Exception as e:                  # noqa: BLE001
+            _PM[1] = str(e)
+    return _PM[0]
+
+
+def sym_prop_get(s, name, default=""):
+    for p in s.get("properties", []):
+        if isinstance(p, dict) and p.get("name") == name:
+            return p.get("value", default)
+    return default
+
+
+def sym_prop_set(s, name, value):
+    for p in s.setdefault("properties", []):
+        if isinstance(p, dict) and p.get("name") == name:
+            p["value"] = value
+            return
+    s["properties"].append({"name": name, "value": value})
+
+
+def _prop_write(sid, rec, value):
+    s = FS["syms"].get(sid)
+    if s is None:
+        return
+    pm = _pm()
+    sym_prop_set(s, rec["name"], value)
+    FS["dirty"] = True
+    if pm and rec["type"] == "expression":
+        ok, msg = pm.validate(rec, value)
+        tag = f"flowp_v_{rec['name']}"
+        if dpg.does_item_exist(tag):
+            dpg.set_value(tag, msg)
+            dpg.configure_item(tag, color=(122, 255, 122) if ok
+                               else (255, 136, 136))
+    redraw()
+
+
+def _ident_write(sid, field, value):
+    s = FS["syms"].get(sid)
+    if s is not None:
+        s[field] = value
+        FS["dirty"] = True
+        redraw()
+
+
+def _edge_write(idx, key, value):
+    if 0 <= idx < len(FS["edges"]):
+        FS["edges"][idx][key] = value
+        FS["dirty"] = True
+        redraw()
+
+
+def _sync_flow_props():
+    R = "flowp_rows"
+    if not dpg.does_item_exist(R):
+        return
+    ident = (("edge", FS["sel_edge"]) if FS["sel_edge"] is not None
+             else ("sym", FS["sel"]) if FS["sel"] is not None else None)
+    if ident == _PROPS_SHOWN[0]:
+        return                              # same thing — rows stay put
+    _PROPS_SHOWN[0] = ident
+    dpg.delete_item(R, children_only=True)
+    C = STYLE
+    pm = _pm()
+    if ident is None:
+        dpg.add_text("select a symbol or an edge", parent=R,
+                     color=C.get("DIM"))
+        return
+    kind_tag, key = ident
+    if kind_tag == "edge":
+        if key >= len(FS["edges"]):
+            return
+        e = FS["edges"][key]
+        s1 = FS["syms"].get(e["src"], {})
+        s2 = FS["syms"].get(e["dst"], {})
+        dpg.add_text(f"edge  {s1.get('label', '?')} → "
+                     f"{s2.get('label', '?')}", parent=R,
+                     color=C.get("TEXT"))
+        if s1.get("kind") == "flow_decision":
+            with dpg.group(horizontal=True, parent=R):
+                dpg.add_text("door", color=C.get("DIM"))
+                dpg.add_combo(("+", "0", "-"),
+                              default_value=e.get("branch", "+"),
+                              width=70, user_data=key,
+                              callback=lambda s, a, u:
+                              _edge_write(u, "branch", a))
+        with dpg.group(horizontal=True, parent=R):
+            dpg.add_text("note", color=C.get("DIM"))
+            dpg.add_input_text(default_value=e.get("condition", ""),
+                               width=-1, user_data=key,
+                               callback=lambda s, a, u:
+                               _edge_write(u, "condition", a))
+        return
+    s = FS["syms"].get(key)
+    if s is None:
+        return
+    dpg.add_text(f"{s['kind']}   #{key}", parent=R, color=C.get("TEXT"))
+    for field in ("name", "label"):
+        with dpg.group(horizontal=True, parent=R):
+            dpg.add_text(f"{field:<6}", color=C.get("DIM"))
+            dpg.add_input_text(default_value=str(s.get(field, "")),
+                               width=-1, user_data=(key, field),
+                               callback=lambda sn, a, u:
+                               _ident_write(u[0], u[1], a))
+    if pm is None:
+        dpg.add_text(f"property model: {_PM[1]}", parent=R,
+                     color=C.get("AMB"))
+        return
+    for rec in pm.declarations_for(s["kind"]):
+        cur = sym_prop_get(s, rec["name"], rec["default"])
+        with dpg.group(horizontal=True, parent=R):
+            dpg.add_text(rec["label"][:18], color=C.get("DIM"))
+        if rec["type"] == "expression":
+            dpg.add_input_text(default_value=str(cur), width=-1,
+                               parent=R, user_data=(key, dict(rec)),
+                               hint="the one tongue — e.g. a <=> b",
+                               callback=lambda sn, a, u:
+                               _prop_write(u[0], u[1], a))
+            ok, msg = pm.validate(rec, cur)
+            dpg.add_text(msg, tag=f"flowp_v_{rec['name']}", parent=R,
+                         color=(122, 255, 122) if ok
+                         else (255, 136, 136))
+        elif rec["type"] == "choice":
+            dom = pm.resolve_domain(rec["domain"]) or []
+            dpg.add_combo(tuple(dom), default_value=str(cur) if cur
+                          else rec["default"], width=-1, parent=R,
+                          user_data=(key, dict(rec)),
+                          callback=lambda sn, a, u:
+                          _prop_write(u[0], u[1], a))
+        elif rec["type"] == "trit":
+            dpg.add_combo(("-1", "0", "+1"),
+                          default_value=str(cur or 0), width=-1,
+                          parent=R, user_data=(key, dict(rec)),
+                          callback=lambda sn, a, u:
+                          _prop_write(u[0], u[1], int(a)))
+        else:
+            dpg.add_input_text(default_value=str(cur), width=-1,
+                               parent=R, user_data=(key, dict(rec)),
+                               callback=lambda sn, a, u:
+                               _prop_write(u[0], u[1], a))
+    if s["kind"] == "flow_decision":
+        dpg.add_text("doors: + greater/yes · 0 dunno\n"
+                     "· − less/no  (edges pick doors)", parent=R,
+                     color=C.get("DIM"))
+
+
+_flow_redraw_core = redraw
+
+
+def redraw():
+    _flow_redraw_core()
+    _sync_flow_props()
+
+
+def _selftest_decision():
+    """The 20-08 bundle gate: three doors, branch persistence, the one
+    tongue speaking trits, properties through the canon records."""
+    pm = _pm()
+    assert pm is not None, f"property model failed: {_PM[1]}"
+    keep_syms = dict(FS["syms"])
+    keep_edges = list(FS["edges"])
+    keep_raw = dict(FS["raw"])
+    FS["syms"].clear()
+    FS["raw"].clear()
+    FS["edges"][:] = []
+    try:
+        d = add_symbol("flow_decision", 300, 100)
+        p1 = add_symbol("flow_process", 520, 40)
+        p2 = add_symbol("flow_process", 520, 160)
+        p3 = add_symbol("flow_process", 300, 260)
+        e1 = add_edge(d, p1)
+        e2 = add_edge(d, p2)
+        e3 = add_edge(d, p3)
+        assert (e1["branch"], e2["branch"], e3["branch"]) == \
+            ("+", "0", "-"), "doors assign in order"
+        p4 = add_symbol("flow_process", 60, 100)
+        assert add_edge(d, p4) is None, "a decision has THREE doors"
+        sym_prop_set(FS["syms"][d], "condition", "score <=> 27")
+        sym_prop_set(FS["syms"][d], "mode", "compare")
+        recs = pm.declarations_for("flow_decision")
+        ok, msg = pm.validate(recs[0],
+                              sym_prop_get(FS["syms"][d], "condition"))
+        assert ok, msg
+        door, _detail = pm.decision_route(
+            sym_prop_get(FS["syms"][d], "condition"), "compare",
+            "fold-to-−", {"score": 30}.__getitem__)
+        assert door == "+"
+        door, _detail = pm.decision_route(
+            "score <=> 27", "compare", "fold-to-−",
+            {"score": None}.__getitem__)
+        assert door == "0", "null operand walks the dunno door"
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".fc",
+                                         delete=False) as f:
+            tmp = f.name
+        save_to(tmp)
+        load_from(tmp)
+        os.unlink(tmp)
+        br = sorted(e.get("branch", "?") for e in FS["edges"])
+        assert br == ["+", "-", "0"], f"branch round-trip: {br}"
+        d2 = next(i for i, s in FS["syms"].items()
+                  if s["kind"] == "flow_decision")
+        assert sym_prop_get(FS["syms"][d2], "condition") == \
+            "score <=> 27", "condition rides the .fc"
+        return {"doors": 3, "refused_4th": True,
+                "tongue": "score <=> 27 → +", "roundtrip": True}
+    finally:
+        FS["syms"].clear()
+        FS["syms"].update(keep_syms)
+        FS["raw"].clear()
+        FS["raw"].update(keep_raw)
+        FS["edges"][:] = keep_edges
+        FS["file"] = None
+        FS["dirty"] = False
+        FS["undo"].clear()
+        FS["redo"].clear()

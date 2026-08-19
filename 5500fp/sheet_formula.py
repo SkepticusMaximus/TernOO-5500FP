@@ -72,7 +72,7 @@ _TOKEN_RE = re.compile(r"""
     \s*(?:
       (?P<number>\d+\.\d+|\d+)
     | (?P<string>"[^"]*")
-    | (?P<op><=|>=|==|!=|[-+*/(),:<>=.])
+    | (?P<op><=>|<=|>=|==|!=|[-+*/(),:<>=.])
     | (?P<name>[A-Za-z_][A-Za-z0-9_]*)
     )
 """, re.VERBOSE)
@@ -129,7 +129,8 @@ class _Parser:
 
     def parse_compare(self):
         node = self.parse_add()
-        while self.peek()[1] in ('=', '==', '!=', '<', '>', '<=', '>='):
+        while self.peek()[1] in ('=', '==', '!=', '<', '>', '<=', '>=',
+                                 '<=>'):
             op = self.next()[1]
             node = ('bin', op, node, self.parse_add())
         return node
@@ -280,6 +281,17 @@ def _eval(node, lookup, ctx=None):
                     raise FormulaError(f"#NAME? {wname}")
                 return v
             raise FormulaError(f"#NAME? {wname}")
+        # One-tongue (20-08): bare `name.prop` — the blessed namespace
+        # (save_btn.value · doubler.output · splitter.count). The face
+        # provides ctx['name_prop'](name, prop); absent hook = #NAME?,
+        # so pure-sheet behaviour is unchanged.
+        if base[0] == 'ref':
+            if ctx and ctx.get('name_prop'):
+                v = ctx['name_prop'](base[1], node[2])
+                if v is None:
+                    raise FormulaError(f"#NAME? {base[1]}.{node[2]}")
+                return v
+            raise FormulaError(f"#NAME? {base[1]}.{node[2]}")
         raise FormulaError("#ERROR!")
     if t == 'unary':
         v = _num(_eval(node[2], lookup, ctx))
@@ -287,6 +299,16 @@ def _eval(node, lookup, ctx=None):
     if t == 'bin':
         op = node[1]
         a = _eval(node[2], lookup, ctx); b = _eval(node[3], lookup, ctx)
+        if op == '<=>':
+            # The ternary spaceship (ruled 20-08): +1 / 0 / −1. A null
+            # or empty operand is UNDECIDED — the dunno door, not an
+            # error. Numbers order numerically, strings lexically.
+            if a in (None, '') or b in (None, ''):
+                return 0
+            if isinstance(a, str) and isinstance(b, str):
+                return (a > b) - (a < b)
+            x, y = _num(a), _num(b)
+            return (x > y) - (x < y)
         if op in ('=', '=='): return a == b
         if op == '!=': return a != b
         if op == '<':  return _num(a) < _num(b)
@@ -456,6 +478,19 @@ def _eval_call(fname, args, lookup, ctx=None):
                 return i + 1
         raise FormulaError("#N/A")
     raise FormulaError(f"#NAME? {fname}")
+
+
+def decision_trit(v):
+    """Any expression result → a door trit (ruled 20-08): booleans go
+    +1/−1; None/empty is the dunno door; numbers travel by SIGN (so 0
+    is honestly undecided); non-empty strings are present (+1)."""
+    if isinstance(v, bool):
+        return 1 if v else -1
+    if v is None or v == '':
+        return 0
+    if isinstance(v, (int, float)):
+        return (v > 0) - (v < 0)
+    return 1
 
 
 def _truthy(v):

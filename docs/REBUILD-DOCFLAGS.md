@@ -233,3 +233,39 @@ affected.
   Double Null mechanism (Companion Q4). FlowCode's typed I/O filters
   and property domains read this registry. → Language Audit companion,
   whitepaper ISA section, FlowCode docs once built.
+
+## 2026-08-20 — Design Session 1 BUILT: property canon + registry + the Decision family
+- Captain's rulings Q1–Q4 all approved and implemented same morning:
+  (Q1) THE PROPERTY RECORD IS CANON — name · type · default · domain ·
+  filter; families declare, panels render themselves
+  (5500fp/flowcode_property_model.py). (Q2) DECISIONS HAVE THREE DOORS
+  ALWAYS — + / 0 / −; boolean mode folds the 0 door by property; a
+  fourth out-edge is refused. (Q3) ONE TONGUE — sheet_formula is THE
+  expression language: `<=>` ternary spaceship added (+1/0/−1, null
+  operand → 0 the dunno door), `name.prop` namespace members via the
+  faces' ctx hook, decision_trit() door mapping. Additive — all 114
+  existing tests green. (Q4) THE NAMESPACE IS BLESSED — cells ·
+  widget.prop · symbol.output · connector.output, type-filtered.
+- CAPTAIN'S INSIGHT (whitepaper-grade, his words paraphrased): the
+  ternary middle door makes recursive conditionals structurally
+  natural — the 0/undecided branch can defer to another decision
+  WITHOUT sacrificing a definite exit; binary must give up its yes or
+  its no to recurse. "Boolean binary isn't inherently fit for
+  recursive conditionals."
+- WORD-TYPE REGISTRY BUILT (5500fp/word_type_registry.py): the full
+  9×81 grid, explicitly OPEN where undefined; seeded 54 slots from
+  v0.3 code truth (EXEC 27 priv·call·ret, DATA 15 incl. the
+  PTR_NULL/Double-Null reserved slot, I/O 9 dir·buf, NEURAL 3); MAP
+  left honestly open pending audit enumeration; register() refuses to
+  trample; 'registry:PRIM.NAME*' query syntax feeds property domains.
+- Flow tab grew the PROPERTIES panel (declaration-driven, identity-
+  guarded sync — the pattern all tabs adopt); decision diamonds draw
+  their three door stubs + live condition text; edges wear door badges;
+  door reassignment via edge properties; everything rides .fc verbatim.
+- BOUNDARY (flagged, not hidden): decision RUNTIME in the interpreter
+  walk rides the LOOPS sitting (loops need the runtime machinery
+  anyway); today's decision_route() is the design-time preview + the
+  semantics the interpreter will adopt.
+- New gate: DECISION DOORS (suite now 23). Docs: conditions/doors/one-
+  tongue are user-facing language features — CAI's docs should teach
+  the 0 door as ternary's native "dunno/defer" and the recursion story.
