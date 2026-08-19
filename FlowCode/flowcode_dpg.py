@@ -139,6 +139,13 @@ except Exception as e:                          # noqa: BLE001
 
 CLIP = _load_organ("flowcode_dpg_clip")   # the text service — mandatory
 
+TED_ORGAN = None
+TED_ORGAN_ERR = ""
+try:
+    TED_ORGAN = _load_organ("flowcode_dpg_ted")
+except Exception as e:                          # noqa: BLE001
+    TED_ORGAN_ERR = str(e)
+
 # ── the application manifest — the Tk TAB_CHROME, carried over whole ────────
 TAB_CHROME = [
     {"key": "flow",        "title": "Flow",          "live": True},
@@ -617,6 +624,11 @@ def _text_undo_keys(sender, key):
 
 
 def build_text_tab():
+    if TED_ORGAN:
+        TED_ORGAN.build_ted_header({"BORDER": BORDER, "TEXT": TEXT,
+                                    "DIM": DIM, "GRN": GRN, "AMB": AMB,
+                                    "CLIP": CLIP,
+                                    "ON_EDIT": _text_snap})
     for tag, cb in (("txt_open_dlg", lambda s, a: text_open(_text_picked(a))),
                     ("txt_save_dlg", lambda s, a: text_save(_text_picked(a)))):
         with dpg.file_dialog(directory_selector=False, show=False, tag=tag,
@@ -632,8 +644,14 @@ def build_text_tab():
                        callback=lambda: dpg.show_item("txt_save_dlg"))
         dpg.add_text("plain editor — no word wrap in stock DPG (roadmap)",
                      tag="txt_status", color=DIM)
-    dpg.add_input_text(tag="txt_edit", multiline=True, width=-1, height=-1,
-                       callback=_text_snap)
+    dpg.add_input_text(tag="txt_edit", multiline=True, width=-1,
+                       height=-250, callback=_text_snap)
+    if TED_ORGAN:
+        TED_ORGAN.build_ted_footer({"BORDER": BORDER, "TEXT": TEXT,
+                                    "DIM": DIM, "GRN": GRN, "AMB": AMB,
+                                    "CLIP": CLIP})
+    else:
+        dpg.add_text("Ted organ failed: " + TED_ORGAN_ERR, color=AMB)
     with dpg.handler_registry():
         dpg.add_key_press_handler(callback=_text_undo_keys)
 
@@ -961,6 +979,10 @@ def main():
             assert len(CLIP._CTX) >= 8, f"only {len(CLIP._CTX)} menus"
             print(f"CLIP SERVICE OK — system round-trip + "
                   f"{len(CLIP._CTX)} context menus registered")
+        if os.environ.get("FLOW_DPG_TEST") and TED_ORGAN:
+            tres = TED_ORGAN._selftest()
+            print(f"TED GLYPH OK — {tres['chars']} chars, XYZ round-trip "
+                  f"{tres['roundtrip']}")
         if os.environ.get("FLOW_DPG_TEST") and SHELL_ORGAN:
             shres = SHELL_ORGAN._selftest()
             print(f"SHELL REPL OK — engine reused, out={shres['out']!r}, "
