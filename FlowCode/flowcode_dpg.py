@@ -49,6 +49,8 @@ AUTOSAVE_GUI = os.path.expanduser(
     "~/.config/ternoo-flowcode-dpg-autosave.gui")
 AUTOSAVE_SHEET = os.path.expanduser(
     "~/.config/ternoo-flowcode-dpg-autosave.sheet")
+AUTOSAVE_CONN = os.path.expanduser(
+    "~/.config/ternoo-flowcode-dpg-autosave-conn.fc")
 try:
     CFGD = json.load(open(CFG, encoding="utf-8"))
 except Exception:                               # noqa: BLE001
@@ -114,14 +116,19 @@ try:
 except Exception as e:                          # noqa: BLE001
     SHEET_ORGAN_ERR = str(e)
 
+CONN_ORGAN = None
+CONN_ORGAN_ERR = ""
+try:
+    CONN_ORGAN = _load_organ("flowcode_dpg_conn")
+except Exception as e:                          # noqa: BLE001
+    CONN_ORGAN_ERR = str(e)
+
 # ── the application manifest — the Tk TAB_CHROME, carried over whole ────────
 TAB_CHROME = [
     {"key": "flow",        "title": "Flow",          "live": True},
     {"key": "gui",         "title": "GUI",           "live": True},
     {"key": "sheet",       "title": "Sheet",         "live": True},
-    {"key": "connectors",  "title": "Connectors",    "live": False,
-     "charter": "The canvas-based connector view — sockets, wires\n"
-                "and mesh plumbing between organs."},
+    {"key": "connectors",  "title": "Connectors",    "live": True},
     {"key": "shell",       "title": "Shell",         "live": True},
     {"key": "text",        "title": "Text",          "live": True},
     {"key": "babble-fish", "title": "Babble-Fish",   "live": False,
@@ -202,6 +209,8 @@ def _menu_save(*_):
         FLOW_ORGAN._save_clicked()
     elif t == "sheet" and SHEET_ORGAN:
         SHEET_ORGAN._save_clicked()
+    elif t == "connectors" and CONN_ORGAN:
+        CONN_ORGAN._save_clicked()
     elif t == "gui" and GUI_ORGAN:
         GUI_ORGAN._save_clicked()
     elif t == "text":
@@ -216,6 +225,8 @@ def _menu_save_as(*_):
         dpg.show_item("flowc_save_dlg")
     elif t == "sheet" and SHEET_ORGAN:
         dpg.show_item("shc_save_dlg")
+    elif t == "connectors" and CONN_ORGAN:
+        dpg.show_item("connc_save_dlg")
     elif t == "gui" and GUI_ORGAN:
         dpg.show_item("guic_save_dlg")
     elif t == "text":
@@ -230,6 +241,8 @@ def _menu_open(*_):
         dpg.show_item("flowc_open_dlg")
     elif t == "sheet" and SHEET_ORGAN:
         dpg.show_item("shc_open_dlg")
+    elif t == "connectors" and CONN_ORGAN:
+        dpg.show_item("connc_open_dlg")
     elif t == "gui" and GUI_ORGAN:
         dpg.show_item("guic_open_dlg")
     elif t == "text":
@@ -246,6 +259,8 @@ def _any_dirty():
         d.append("GUI")
     if SHEET_ORGAN and SHEET_ORGAN.is_dirty():
         d.append("Sheet")
+    if CONN_ORGAN and CONN_ORGAN.is_dirty():
+        d.append("Connectors")
     if TEXT_DIRTY[0] and dpg.does_item_exist("txt_edit") \
             and dpg.get_value("txt_edit").strip():
         d.append("Text")
@@ -259,6 +274,8 @@ def _autosave_dirty():
         GUI_ORGAN.autosave(AUTOSAVE_GUI)
     if SHEET_ORGAN and SHEET_ORGAN.is_dirty():
         SHEET_ORGAN.autosave(AUTOSAVE_SHEET)
+    if CONN_ORGAN and CONN_ORGAN.is_dirty():
+        CONN_ORGAN.autosave(AUTOSAVE_CONN)
 
 
 def do_quit(*_):
@@ -283,8 +300,8 @@ def do_quit(*_):
 
 
 def _offer_recovery():
-    have = [p for p in (AUTOSAVE_FLOW, AUTOSAVE_GUI, AUTOSAVE_SHEET)
-            if os.path.exists(p)]
+    have = [p for p in (AUTOSAVE_FLOW, AUTOSAVE_GUI, AUTOSAVE_SHEET,
+                        AUTOSAVE_CONN) if os.path.exists(p)]
     if not have:
         return
     tag = "recoverwin"
@@ -307,10 +324,15 @@ def _offer_recovery():
                 SHEET_ORGAN.load_from(AUTOSAVE_SHEET)
                 SHEET_ORGAN.SS["file"] = None
                 SHEET_ORGAN.SS["dirty"] = True
+            if os.path.exists(AUTOSAVE_CONN) and CONN_ORGAN:
+                CONN_ORGAN.load_from(AUTOSAVE_CONN)
+                CONN_ORGAN.CS["file"] = None
+                CONN_ORGAN.CS["dirty"] = True
             discard(keep_state=True)
 
         def discard(keep_state=False):
-            for p in (AUTOSAVE_FLOW, AUTOSAVE_GUI, AUTOSAVE_SHEET):
+            for p in (AUTOSAVE_FLOW, AUTOSAVE_GUI, AUTOSAVE_SHEET,
+                  AUTOSAVE_CONN):
                 try:
                     os.remove(p)
                 except OSError:
@@ -328,6 +350,8 @@ def _canvas_zoom(direction):
         FLOW_ORGAN.zoom_step(direction)
     elif ACTIVE_TAB[0] == "gui" and GUI_ORGAN:
         GUI_ORGAN.zoom_step(direction)
+    elif ACTIVE_TAB[0] == "connectors" and CONN_ORGAN:
+        CONN_ORGAN.zoom_step(direction)
     else:
         zoom(0.1 * direction)
 
@@ -353,6 +377,9 @@ def _wheel(sender, app_data):
         FLOW_ORGAN.zoom_step(d)
     elif GUI_ORGAN and dpg.is_item_hovered("guic_draw"):
         GUI_ORGAN.zoom_step(d)
+    elif CONN_ORGAN and dpg.does_item_exist("connc_draw") \
+            and dpg.is_item_hovered("connc_draw"):
+        CONN_ORGAN.zoom_step(d)
 
 
 def _on_tab(sender, app_data):
@@ -654,6 +681,16 @@ def build_ui():
                         else:
                             dpg.add_text("Sheet organ failed to load: "
                                          + SHEET_ORGAN_ERR, color=AMB)
+                    elif row["key"] == "connectors":
+                        if CONN_ORGAN:
+                            CONN_ORGAN.build_conn_tab(
+                                {"BORDER": BORDER, "TEXT": TEXT,
+                                 "DIM": DIM, "GRN": GRN, "AMB": AMB,
+                                 "CFG": CFGD, "SAVE": save_cfg})
+                        else:
+                            dpg.add_text("Connectors organ failed to "
+                                         "load: " + CONN_ORGAN_ERR,
+                                         color=AMB)
                     elif row["key"] == "gui":
                         if GUI_ORGAN:
                             GUI_ORGAN.build_gui_tab(
@@ -793,6 +830,10 @@ def main():
             assert doc2["academy_marker"] == {"keep": "me"}
             print("FLOW ROUND-TRIP OK — .flow/.fc schema + preservation "
                   "verified")
+        if os.environ.get("FLOW_DPG_TEST") and CONN_ORGAN:
+            cres = CONN_ORGAN._selftest()
+            print(f"CONNECTORS OK — {cres['widgets']} commands, "
+                  f"{cres['edges']} pipes, replace+mismatch semantics")
         if os.environ.get("FLOW_DPG_TEST") and SHEET_ORGAN:
             sres = SHEET_ORGAN._selftest()
             print(f"SHEET OK — {sres['cells']} cells, {sres['chain']}")

@@ -59,3 +59,8 @@ affected.
   shared sheet_formula module, number formats, names; regions/free cells
   are RENDERED + PRESERVED but not yet creatable/editable in DPG; no
   canvas zoom yet. → Stage-8 memo as-built notes.
+- 19-08 · Connectors tab (DPG v1) · command tiles + typed pipes via the
+  shared flowcode_commands registry; one-pipe-per-input replace semantics,
+  red mismatch pipes (compile = hard gate) — Tk parity. NOT yet: REPL
+  capture-to-pipeline, pocket interiors; no partial extension (.shell
+  reserved, unemitted) so saves are .fc only. → Stage-9 docs as-built.
