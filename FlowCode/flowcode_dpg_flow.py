@@ -39,10 +39,10 @@ COL = {
     "selected":        (255, 107, 53),
 }
 KINDS = [
-    ("flow_terminator", "Terminator", "oval · start/end"),
-    ("flow_process",    "Process",    "rectangle"),
-    ("flow_decision",   "Decision",   "diamond"),
-    ("flow_io",         "I/O",        "parallelogram"),
+    ("flow_terminator", "Terminator", ""),
+    ("flow_process",    "Process",    ""),
+    ("flow_decision",   "Decision",   ""),
+    ("flow_io",         "I/O",        ""),
 ]
 
 FS = {
@@ -605,6 +605,24 @@ def _mm_redraw():
         pass
 
 
+_MM_LAST = [None]
+
+
+def _mm_tick():
+    """Obedient tracking: refresh the minimap whenever the canvas scroll
+    or zoom changes (scrollbars, wheel, Home — anything)."""
+    try:
+        cur = (round(dpg.get_x_scroll("flowc_wrap"), 1),
+               round(dpg.get_y_scroll("flowc_wrap"), 1),
+               FS["zoom"])
+        if cur != _MM_LAST[0]:
+            _MM_LAST[0] = cur
+            _mm_redraw()
+        dpg.set_frame_callback(dpg.get_frame_count() + 12, _mm_tick)
+    except Exception:                           # noqa: BLE001
+        pass
+
+
 def _mm_jump():
     """Click on the minimap -> centre the canvas there."""
     mx, my = dpg.get_drawing_mouse_pos()
@@ -929,15 +947,19 @@ def redraw():
         if not _in_scope(s):
             continue                        # other scopes render when entered
         _draw_symbol(s, sid == FS["sel"] or sid in FS["multi"])
-        if _has_pocket(s):                  # 📦 affordance, top-right
-            bx = (s["x"] + s["w"]) * Z
+        if s.get("kind") in CONTAINER_KINDS:   # 📦 on EVERY container:
+            solid = _has_pocket(s)             # solid = inhabited,
+            bx = (s["x"] + s["w"]) * Z         # hollow = empty pocket
             by = s["y"] * Z
             dpg.draw_rectangle((bx - 14 * Z, by + 2 * Z),
                                (bx - 2 * Z, by + 12 * Z),
-                               fill=(240, 180, 80), color=(180, 130, 50),
+                               fill=(240, 180, 80) if solid else None,
+                               color=(240, 180, 80),
                                parent="flowc_draw")
-            dpg.draw_line((bx - 14 * Z, by + 5 * Z), (bx - 2 * Z, by + 5 * Z),
-                          color=(120, 90, 40), parent="flowc_draw")
+            dpg.draw_line((bx - 14 * Z, by + 5 * Z),
+                          (bx - 2 * Z, by + 5 * Z),
+                          color=(120, 90, 40) if solid
+                          else (240, 180, 80), parent="flowc_draw")
         pp = _port_positions(s)
         for port, px, py in pp["entry"]:
             dpg.draw_circle((px * Z, py * Z), 4.5 * Z,
@@ -1115,7 +1137,8 @@ def _on_click(*_):
     tool = FS["tool"]
     if tool == "select":
         for sy in FS["syms"].values():      # 📦 drill-in, top-right ±14
-            if not _in_scope(sy) or not _has_pocket(sy):
+            if not _in_scope(sy) \
+                    or sy.get("kind") not in CONTAINER_KINDS:
                 continue
             bx, by = sy["x"] + sy["w"], sy["y"]
             if abs(mx - bx) <= 14 and abs(my - by) <= 14:
@@ -1557,8 +1580,9 @@ def build_flow_tab(style):
                 _icon_btn(_tool_icon("edge"), " Edge ", "src→[wp]→dst",
                           "edge")
                 _abtn(" Ports... ", show_ports, (80, 200, 255))
-                dpg.add_text("  📦 top-right corner opens a\n  pocket · "
-                             "Esc goes back up", color=C["DIM"])
+                dpg.add_text("  the 📦 on any Process /\n  Subroutine "
+                             "opens its pocket\n  (hollow = empty) · Esc "
+                             "goes up", color=C["DIM"])
             with dpg.collapsing_header(label="ACTIONS", default_open=True):
                 _abtn(" ⬇ Word Dump ", do_word_dump)
                 _abtn(" ▶ Load→EMU (native) ", do_load_emu,
@@ -1622,6 +1646,10 @@ def build_flow_tab(style):
                     show=bool(cfg0.get("flow_minimap", True))):
         with dpg.drawlist(width=MM_W, height=MM_H, tag="flowc_mmdraw"):
             pass
+    try:
+        dpg.set_frame_callback(dpg.get_frame_count() + 12, _mm_tick)
+    except Exception:                           # noqa: BLE001
+        pass
     redraw()
 
 
