@@ -1115,6 +1115,23 @@ def main():
     dpg.show_viewport()
     dpg.set_primary_window("main", True)
     dpg.set_global_font_scale(SCALE)
+    # Periodic timed autosave (captain's ruling 20-08): every ~2 minutes,
+    # dirty tabs snapshot to the SAME side files the close-event net uses —
+    # a crash loses minutes, not a session. Frame-chained, wall-clock gated.
+    _as_last = [__import__("time").time()]
+
+    def _autosave_tick():
+        now = __import__("time").time()
+        if now - _as_last[0] >= int(CFGD.get("autosave_secs", 120)):
+            _as_last[0] = now
+            _autosave_dirty()
+        try:
+            dpg.set_frame_callback(dpg.get_frame_count() + 300,
+                                   _autosave_tick)
+        except Exception:                       # noqa: BLE001
+            pass
+    dpg.set_frame_callback(300, _autosave_tick)
+
     dpg.set_exit_callback(_autosave_dirty)    # X-button can't be vetoed in
     if FLOW_ORGAN:                            # minimap: kick once post-show
         FLOW_ORGAN.set_minimap_visible(True)
