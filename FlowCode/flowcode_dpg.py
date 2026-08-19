@@ -1041,7 +1041,9 @@ def main():
                   f"planned+stroked, prof={ares['prof']}")
         if os.environ.get("FLOW_DPG_TEST") and MESH_ORGAN:
             mres = MESH_ORGAN._selftest()
-            print(f"MESH PANE OK — core reused, store={mres['store']}")
+            print(f"MESH CLIENT OK — full client in-pane, "
+                  f"store={mres['store']}, {mres['macros']} macro buttons, "
+                  f"seams live")
         if os.environ.get("FLOW_DPG_TEST") and CONN_ORGAN:
             cres = CONN_ORGAN._selftest()
             print(f"CONNECTORS OK — {cres['widgets']} commands, "
