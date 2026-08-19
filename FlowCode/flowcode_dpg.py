@@ -123,6 +123,13 @@ try:
 except Exception as e:                          # noqa: BLE001
     CONN_ORGAN_ERR = str(e)
 
+MESH_ORGAN = None
+MESH_ORGAN_ERR = ""
+try:
+    MESH_ORGAN = _load_organ("flowcode_dpg_mesh")
+except Exception as e:                          # noqa: BLE001
+    MESH_ORGAN_ERR = str(e)
+
 # ── the application manifest — the Tk TAB_CHROME, carried over whole ────────
 TAB_CHROME = [
     {"key": "flow",        "title": "Flow",          "live": True},
@@ -386,6 +393,8 @@ def _on_tab(sender, app_data):
     alias = dpg.get_item_alias(app_data) or ""
     if alias.startswith("tab_"):
         ACTIVE_TAB[0] = alias[4:]
+        if FLOW_ORGAN:
+            FLOW_ORGAN.set_minimap_visible(ACTIVE_TAB[0] == "flow")
 
 
 # ── the TernOO Word Explorer — the captain's reference tool (19-08) ─────────
@@ -704,16 +713,13 @@ def build_ui():
                     elif row["key"] == "text":
                         build_text_tab()
                     elif row["key"] == "mesh":
-                        dpg.add_text("Mesh-Chat lives as the standalone DPG "
-                                     "client — one codebase,\ntwo doors. "
-                                     "In-pane mounting is the next leg.",
-                                     color=TEXT)
-                        dpg.add_button(
-                            label="  Launch Mesh-Chat (DPG)  ",
-                            callback=lambda: subprocess.Popen(
-                                [sys.executable,
-                                 os.path.join(os.path.dirname(_HERE),
-                                              "5500fp", "mesh_chat_dpg.py")]))
+                        if MESH_ORGAN:
+                            MESH_ORGAN.build_mesh_tab(
+                                {"BORDER": BORDER, "TEXT": TEXT,
+                                 "DIM": DIM, "GRN": GRN, "AMB": AMB})
+                        else:
+                            dpg.add_text("Mesh organ failed to load: "
+                                         + MESH_ORGAN_ERR, color=AMB)
                     else:
                         dpg.add_text(f"{row['title']} — port pending",
                                      color=AMB)
@@ -862,6 +868,9 @@ def main():
             assert doc2["academy_marker"] == {"keep": "me"}
             print("FLOW ROUND-TRIP OK — .flow/.fc schema + preservation "
                   "verified")
+        if os.environ.get("FLOW_DPG_TEST") and MESH_ORGAN:
+            mres = MESH_ORGAN._selftest()
+            print(f"MESH PANE OK — core reused, store={mres['store']}")
         if os.environ.get("FLOW_DPG_TEST") and CONN_ORGAN:
             cres = CONN_ORGAN._selftest()
             print(f"CONNECTORS OK — {cres['widgets']} commands, "
