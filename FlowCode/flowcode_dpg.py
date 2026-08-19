@@ -321,10 +321,23 @@ def do_quit(*_):
     with dpg.window(label="Unsaved changes", tag=tag, modal=True,
                     width=520, height=180, pos=(360, 260)):
         dpg.add_text(f"Unsaved work on: {', '.join(dirty)}", color=AMB)
-        dpg.add_text("Quit anyway? An autosave will be kept and offered\n"
-                     "back on the next launch.", color=TEXT)
+        dpg.add_text("Save first? (Tabs without a file yet keep an\n"
+                     "autosave and are offered back on next launch.)",
+                     color=TEXT)
+
+        def _save_and_quit():
+            for organ, st in ((FLOW_ORGAN, "FS"), (GUI_ORGAN, "GS"),
+                              (SHEET_ORGAN, "SS"), (CONN_ORGAN, "CS")):
+                if organ and organ.is_dirty():
+                    f = getattr(organ, st)["file"]
+                    if f:
+                        organ.save_to(f)
+            _autosave_dirty()               # homeless tabs: the net holds
+            dpg.stop_dearpygui()
         with dpg.group(horizontal=True):
-            dpg.add_button(label="  Quit (autosave kept)  ",
+            dpg.add_button(label="  Save & Quit  ",
+                           callback=_save_and_quit)
+            dpg.add_button(label="  Quit without saving  ",
                            callback=lambda: (_autosave_dirty(),
                                              dpg.stop_dearpygui()))
             dpg.add_button(label="  Cancel  ",
@@ -1047,7 +1060,8 @@ def main():
             gres = GUI_ORGAN._selftest()
             print(f"GUI LAYOUT+WIRING OK — {gres['layout']}, "
                   f"{gres['roundtrip']}, import={gres['imported']}, "
-                  f"{gres['signals']} signals → e.g. {gres['handler']}")
+                  f"{gres['signals']} signals → e.g. {gres['handler']}, "
+                  f"zorder {gres['zorder']}, rescue={gres['rescue']}")
         if os.environ.get("FLOW_DPG_TEST") and MESH_ORGAN:
             mres = MESH_ORGAN._selftest()
             print(f"MESH CLIENT OK — full client in-pane, "
