@@ -548,7 +548,8 @@ def main():
                             "mvAppItemType::mvMenuItem"):
                         continue
                     lbl = dpg.get_item_label(it) or ""
-                    if "Launch" in lbl or "Quit" in lbl or "▶▶" in lbl:
+                    if "Launch" in lbl or "Quit" in lbl or "▶▶" in lbl \
+                            or "Learn" in lbl:
                         continue
                     cb = dpg.get_item_callback(it)
                     if cb is not None:
@@ -595,6 +596,11 @@ def main():
             FLOW_ORGAN.delete_selected()
             assert not FLOW_ORGAN.FS["syms"], "group delete failed"
             print("LASSO OK — group select + delete")
+            FLOW_ORGAN.do_suggest()          # empty canvas: early return
+            FLOW_ORGAN.add_symbol("flow_process", 200, 200)
+            FLOW_ORGAN.do_suggest()          # with a symbol: predict path
+            FLOW_ORGAN.clear_all()
+            print("BRAIN SUGGEST OK — no-crash on empty and populated")
             ex = FLOW_ORGAN._selftest_exec()
             print(f"EXEC PIPELINE OK — {ex['words']} words, "
                   f"{ex['t5_chars']} t5asm chars, {ex['steps']} interp "

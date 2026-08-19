@@ -338,6 +338,70 @@ def do_run_sdl(*_):
     threading.Thread(target=watch, daemon=True).start()
 
 
+def do_learn(*_):
+    """🧠 Train the FlowCodeBrain on the current canvas (Tk parity)."""
+    E = _exec_mods()
+    if E.get("err"):
+        _out(f"✗ execution layer unavailable: {E['err']}", (255, 120, 90))
+        return
+    FC = E["FC"]
+    brain = getattr(FC, "_brain_instance", None)
+    if not brain:
+        _out("✗ Brain not available — check ternoo_neural.py in 5500fp/",
+             (255, 120, 90))
+        return
+    if not FS["syms"]:
+        _out("✗ Canvas is empty — nothing to learn from", (255, 120, 90))
+        return
+    c = _sync_canvas(E)
+    data = {"symbols": [sy.to_dict() for sy in c.symbols.values()],
+            "edges": [e.to_dict() for e in c.edges]}
+    try:
+        transitions = brain.train_on_canvas(data)
+        bf = FC._find_brain_file() or os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "5500fp", "flowcode_brain.json")
+        json.dump(brain.to_json(), open(bf, "w", encoding="utf-8"),
+                  indent=2)
+        _out(f"Brain learned {len(transitions)} transitions — saved to "
+             f"{os.path.basename(bf)}", (122, 255, 204))
+        _status(f"brain learned {len(transitions)} transitions")
+    except Exception as ex:                     # noqa: BLE001
+        _out(f"✗ learn failed: {ex}", (255, 120, 90))
+
+
+def do_suggest(*_):
+    """💡 Ask the brain what symbol should come next (Tk parity)."""
+    E = _exec_mods()
+    if E.get("err"):
+        _out(f"✗ execution layer unavailable: {E['err']}", (255, 120, 90))
+        return
+    brain = getattr(E["FC"], "_brain_instance", None)
+    if not brain:
+        _out("✗ Brain not available", (255, 120, 90))
+        return
+    if not FS["syms"]:
+        _out("Place a symbol first — the brain suggests what follows",
+             (255, 204, 68))
+        return
+    c = _sync_canvas(E)
+    sym = c.symbols.get(FS["sel"])
+    if sym is None:
+        sym = list(c.symbols.values())[-1]
+    try:
+        import ternoo_neural as TN
+        try:
+            tok = TN.flowcode_symbol_type(sym.to_dict())
+        except Exception:                       # noqa: BLE001
+            tok = sym.kind
+        nxt, conf = brain.predict_next(tok)
+        _out(f"Brain suggests: after {tok} → "
+             f"{(nxt or '(none)').upper()}  ({conf})", (255, 204, 68))
+        _status(f"suggestion: {tok} → {nxt or '(none)'}")
+    except Exception as ex:                     # noqa: BLE001
+        _out(f"✗ suggest failed: {ex}", (255, 120, 90))
+
+
 def do_stop(*_):
     proc = _RUN_PROC[0]
     if proc and proc.poll() is None:
@@ -852,6 +916,27 @@ def _act_icon(name):
         elif name == "stop":                    # red square
             dpg.draw_rectangle((9, 6), (29, 24), fill=(220, 80, 80),
                                color=(255, 136, 136), parent=D)
+        elif name == "learn":                   # mini neural graph
+            pts = [(10, 8), (10, 22), (24, 15), (34, 8), (34, 22)]
+            for a2 in (0, 1):
+                for b2 in (2,):
+                    dpg.draw_line(pts[a2], pts[b2], color=(122, 255, 204),
+                                  parent=D)
+            for b2 in (3, 4):
+                dpg.draw_line(pts[2], pts[b2], color=(122, 255, 204),
+                              parent=D)
+            for p2 in pts:
+                dpg.draw_circle(p2, 3.4, fill=(122, 255, 204), parent=D)
+        elif name == "suggest":                 # light bulb
+            dpg.draw_circle((20, 12), 8, fill=(255, 204, 68),
+                            color=(200, 160, 50), parent=D)
+            dpg.draw_rectangle((16, 20), (24, 26), fill=(160, 130, 60),
+                               parent=D)
+            for ang in ((6, 2), (34, 2), (4, 14), (36, 14)):
+                dpg.draw_line((20, 12), ang, color=(255, 204, 68),
+                              parent=D)
+            dpg.draw_circle((20, 12), 8, fill=(255, 204, 68),
+                            color=(200, 160, 50), parent=D)
     return draw
 
 
@@ -1255,6 +1340,10 @@ def build_flow_tab(style):
                 _abtn(" ▶▶ Run (SDL) ", do_run_sdl, (122, 255, 122))
                 _icon_act(_act_icon("stop"), " Stop ", do_stop,
                           (255, 136, 136))
+                _icon_act(_act_icon("learn"), " Learn ", do_learn,
+                          (122, 255, 204))
+                _icon_act(_act_icon("suggest"), " Suggest ", do_suggest,
+                          (255, 204, 68))
                 dpg.add_spacer(height=4)
                 _icon_act(_act_icon("save"), " Save ", _save_clicked)
                 _icon_act(_act_icon("save"), " Save as... ",
@@ -1267,8 +1356,8 @@ def build_flow_tab(style):
                 _abtn(" ↩ Undo ", undo)
                 _abtn(" ↪ Redo ", redo)
             dpg.add_spacer(height=8)
-            dpg.add_text("not yet ported:\n Learn · Suggest\n "
-                         "pocket scopes", color=C["DIM"])
+            dpg.add_text("not yet ported:\n pocket scopes (7c-4)",
+                         color=C["DIM"])
         with dpg.child_window(width=10, height=-1, no_scrollbar=True,
                               border=False):
             dpg.add_button(tag="flowc_grip", label="", width=-1,
