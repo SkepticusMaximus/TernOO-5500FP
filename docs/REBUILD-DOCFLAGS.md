@@ -427,3 +427,25 @@ affected.
   consolidated Tk-carry pass rides the parity ledger.
 - Gate: VB-kit asserts in GUI LAYOUT+WIRING (align/distribute
   arithmetic, group round-trip, member-click expansion). Suite at 26.
+
+## 2026-08-20 — Session restore + autosave HISTORY (captain's scare)
+- Captain saved Fun-Flow.flow, restarted to an EMPTY canvas, reasonably
+  read it as a failed save (the file was intact — 11 symbols). Two
+  design holes closed:
+  (1) SESSION RESTORE: every organ save/open records its path
+  (config last_flow/gui/sheet/conn); launch reopens the last file per
+  tab. Gates never record or reopen (SMOKE-guarded).
+  (2) AUTOSAVE HISTORY: the single consumed slot becomes a ROTATING
+  history (~/.config/ternoo-flowcode-dpg-autosaves/, 8 per tab,
+  timestamped) written on every autosave; File ▸ Recover autosave…
+  browses newest-first and loads into the right tab as rescued
+  (homeless, dirty) content. The recovery-on-launch dialog is
+  unchanged; history survives it.
+- CAPTAIN'S CARD (ledgered, unbuilt — design lane): the UNIVERSAL TRIT
+  DIFF — delta of any two trit objects as a first-class DATA function;
+  uses: security auditing, save-state/restore, versioning, file saves,
+  autosave histories. Ternary-native math: trit-wise GF(3) subtraction
+  IS the diff (a delta of two trit-strings is itself a trit-string,
+  same alphabet — binary XOR's richer cousin); apply = GF(3) addition;
+  −delta inverts; unchanged trits are 0 → deltas run-length compress.
+  Registry family candidate (DATA · DELTA). Gate: AUTOSAVE HISTORY.

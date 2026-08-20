@@ -299,15 +299,89 @@ def _any_dirty():
     return d
 
 
+AUTOSAVE_HIST = os.path.expanduser(
+    "~/.config/ternoo-flowcode-dpg-autosaves")
+AUTOSAVE_KEEP = 8                   # rotating history per tab (20-08 —
+#                                     the captain lost a play flow to
+#                                     the single consumed slot)
+
+
+def _autosave_history(tab, ext, src):
+    """Copy this autosave into the rotating history, prune to KEEP."""
+    try:
+        import shutil
+        import time as _t
+        os.makedirs(AUTOSAVE_HIST, exist_ok=True)
+        stamp = _t.strftime("%Y%m%d-%H%M%S")
+        shutil.copyfile(src, os.path.join(
+            AUTOSAVE_HIST, f"{tab}-{stamp}{ext}"))
+        mine = sorted(f for f in os.listdir(AUTOSAVE_HIST)
+                      if f.startswith(tab + "-"))
+        for old in mine[:-AUTOSAVE_KEEP]:
+            os.remove(os.path.join(AUTOSAVE_HIST, old))
+    except Exception:                           # noqa: BLE001
+        pass
+
+
 def _autosave_dirty():
-    if FLOW_ORGAN and FLOW_ORGAN.is_dirty():
-        FLOW_ORGAN.autosave(AUTOSAVE_FLOW)
-    if GUI_ORGAN and GUI_ORGAN.is_dirty():
-        GUI_ORGAN.autosave(AUTOSAVE_GUI)
-    if SHEET_ORGAN and SHEET_ORGAN.is_dirty():
-        SHEET_ORGAN.autosave(AUTOSAVE_SHEET)
-    if CONN_ORGAN and CONN_ORGAN.is_dirty():
-        CONN_ORGAN.autosave(AUTOSAVE_CONN)
+    for organ, slot, tab, ext in (
+            (FLOW_ORGAN, AUTOSAVE_FLOW, "flow", ".flow"),
+            (GUI_ORGAN, AUTOSAVE_GUI, "gui", ".gui"),
+            (SHEET_ORGAN, AUTOSAVE_SHEET, "sheet", ".sheet"),
+            (CONN_ORGAN, AUTOSAVE_CONN, "conn", ".fc")):
+        if organ and organ.is_dirty():
+            if organ.autosave(slot):
+                _autosave_history(tab, ext, slot)
+
+
+_RECOVER_ORGAN = {"flow": lambda: FLOW_ORGAN, "gui": lambda: GUI_ORGAN,
+                  "sheet": lambda: SHEET_ORGAN,
+                  "conn": lambda: CONN_ORGAN}
+
+
+def show_recover_window(*_):
+    """File ▸ Recover autosave… — the rotating history, newest first;
+    click one to load it into its tab (as rescued, homeless content)."""
+    tag = "recoverhist"
+    if dpg.does_item_exist(tag):
+        dpg.delete_item(tag)
+    files = []
+    try:
+        files = sorted(os.listdir(AUTOSAVE_HIST), reverse=True)
+    except OSError:
+        pass
+    with dpg.window(label="Recover autosave — rotating history",
+                    tag=tag, width=560, height=420, pos=(340, 140)):
+        if not files:
+            dpg.add_text("no autosave history yet — snapshots appear "
+                         "here every ~2 minutes while work is unsaved",
+                         color=DIM, wrap=520)
+        dpg.add_text(f"newest first · up to {AUTOSAVE_KEEP} kept per "
+                     "tab · loading marks the tab DIRTY (save to keep)",
+                     color=DIM, wrap=520)
+
+        def _load(sender, a, fname):
+            tab = fname.split("-", 1)[0]
+            organ = _RECOVER_ORGAN.get(tab, lambda: None)()
+            if organ is None:
+                return
+            organ.load_from(os.path.join(AUTOSAVE_HIST, fname))
+            st = getattr(organ, {"flow": "FS", "gui": "GS",
+                                 "sheet": "SS", "conn": "CS"}[tab])
+            st["file"] = None           # rescued content is homeless:
+            st["dirty"] = True          # ALWAYS dirty until saved
+            dpg.delete_item(tag)
+            dpg.set_value("statusbar",
+                          f"recovered {fname} → {tab.upper()} tab "
+                          "(unsaved — save to keep it)")
+        for f in files:
+            tab = f.split("-", 1)[0]
+            stamp = f.split("-", 1)[1].rsplit(".", 1)[0] \
+                if "-" in f else f
+            dpg.add_button(label=f"  {tab.upper():<6} {stamp}  ",
+                           width=-1, user_data=f, callback=_load)
+        dpg.add_button(label="  Close  ",
+                       callback=lambda: dpg.delete_item(tag))
 
 
 def do_quit(*_):
@@ -736,6 +810,8 @@ def build_ui():
                 dpg.add_menu_item(label="Import into GUI...",
                                   callback=lambda: GUI_ORGAN and
                                   dpg.show_item("guic_import_dlg"))
+                dpg.add_menu_item(label="Recover autosave...",
+                                  callback=show_recover_window)
                 dpg.add_separator()
                 dpg.add_menu_item(label="Quit            Ctrl+Q",
                                   callback=do_quit)
@@ -1041,6 +1117,24 @@ def main():
             assert len(CLIP._CTX) >= 8, f"only {len(CLIP._CTX)} menus"
             print(f"CLIP SERVICE OK — system round-trip + "
                   f"{len(CLIP._CTX)} context menus registered")
+        if os.environ.get("FLOW_DPG_TEST") and FLOW_ORGAN:
+            FLOW_ORGAN.clear_all()
+            FLOW_ORGAN.add_symbol("flow_process", 100, 100, "AS")
+            FLOW_ORGAN.FS["file"] = None
+            n0 = len([f for f in (os.listdir(AUTOSAVE_HIST)
+                                  if os.path.isdir(AUTOSAVE_HIST) else [])
+                      if f.startswith("flow-")])
+            _autosave_dirty()
+            hist = [f for f in os.listdir(AUTOSAVE_HIST)
+                    if f.startswith("flow-")]
+            assert len(hist) >= max(1, n0) and \
+                len(hist) <= AUTOSAVE_KEEP, hist
+            assert _RECOVER_ORGAN["flow"]() is FLOW_ORGAN
+            FLOW_ORGAN.clear_all()
+            FLOW_ORGAN.FS["undo"].clear()
+            print(f"AUTOSAVE HISTORY OK — rotating snapshots "
+                  f"({len(hist)} kept, cap {AUTOSAVE_KEEP}), recover "
+                  "routing sound")
         if os.environ.get("FLOW_DPG_TEST") and TED_ORGAN:
             tres = TED_ORGAN._selftest()
             print(f"TED GLYPH OK — {tres['chars']} chars, XYZ round-trip "
@@ -1165,6 +1259,40 @@ def main():
     dpg.set_exit_callback(_autosave_dirty)    # X-button can't be vetoed in
     if FLOW_ORGAN:                            # minimap: kick once post-show
         FLOW_ORGAN.set_minimap_visible(True)
+    # SESSION RESTORE (20-08 — the captain saved Fun-Flow.flow, restarted
+    # to an empty canvas and reasonably read it as a lost save): every
+    # organ save/open records its path; launch reopens the last file per
+    # tab. Skipped under SMOKE so gates never load real work.
+    def _remember(organ, st_name, key):
+        for fn_name in ("save_to", "load_from"):
+            orig = getattr(organ, fn_name)
+
+            def wrapped(path, _orig=orig, _key=key, _organ=organ,
+                        _st=st_name):
+                out = _orig(path)
+                if getattr(_organ, _st)["file"] \
+                        and not os.environ.get("SMOKE"):
+                    CFGD[_key] = os.path.abspath(path)  # success sets
+                    save_cfg()                          # file; gates
+                return out                              # never recorded
+            setattr(organ, fn_name, wrapped)
+    for organ, st, key in ((FLOW_ORGAN, "FS", "last_flow"),
+                           (GUI_ORGAN, "GS", "last_gui"),
+                           (SHEET_ORGAN, "SS", "last_sheet"),
+                           (CONN_ORGAN, "CS", "last_conn")):
+        if organ:
+            _remember(organ, st, key)
+    if not os.environ.get("SMOKE"):
+        for organ, key in ((FLOW_ORGAN, "last_flow"),
+                           (GUI_ORGAN, "last_gui"),
+                           (SHEET_ORGAN, "last_sheet"),
+                           (CONN_ORGAN, "last_conn")):
+            p = CFGD.get(key)
+            if organ and p and os.path.exists(p):
+                try:
+                    organ.load_from(p)
+                except Exception:               # noqa: BLE001
+                    pass
     _offer_recovery()                         # DPG — rescue instead, and
                                               # offer it back on launch
     frames = int(os.environ.get("SMOKE_FRAMES", "0"))
