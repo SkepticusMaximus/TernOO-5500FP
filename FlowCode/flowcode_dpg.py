@@ -1095,6 +1095,11 @@ def main():
             cres = CONN_ORGAN._selftest()
             print(f"CONNECTORS OK — {cres['widgets']} commands, "
                   f"{cres['edges']} pipes, replace+mismatch semantics")
+        if os.environ.get("FLOW_DPG_TEST") and CONN_ORGAN:
+            cpres = CONN_ORGAN._selftest_props()
+            print(f"CONN PROPS OK — {cpres['kind']}.{cpres['socket']} "
+                  f"bound {cpres['binding']}, "
+                  f"persists={cpres['persist']}")
         if os.environ.get("FLOW_DPG_TEST") and SHEET_ORGAN:
             sres = SHEET_ORGAN._selftest()
             print(f"SHEET OK — {sres['cells']} cells, {sres['chain']}")
