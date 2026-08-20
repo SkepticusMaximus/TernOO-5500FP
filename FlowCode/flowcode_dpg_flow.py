@@ -35,6 +35,7 @@ COL = {
     "flow_decision":   (83, 52, 131),
     "flow_io":         (26, 107, 94),
     "flow_terminator": (26, 74, 107),
+    "flow_loop":       (96, 74, 26),
     "border":          (74, 158, 255),
     "selected":        (255, 107, 53),
 }
@@ -42,6 +43,7 @@ KINDS = [
     ("flow_terminator", "Terminator", ""),
     ("flow_process",    "Process",    ""),
     ("flow_decision",   "Decision",   ""),
+    ("flow_loop",       "Loop",       "⬡ while·do·for·each"),
     ("flow_io",         "I/O",        ""),
 ]
 
@@ -54,7 +56,7 @@ FS = {
     "undo": [], "redo": [],
 }
 
-CONTAINER_KINDS = {"flow_process", "flow_subroutine"}
+CONTAINER_KINDS = {"flow_process", "flow_subroutine", "flow_loop"}
 
 
 def _in_scope(sym):
@@ -750,16 +752,20 @@ def add_edge(src_id, dst_id, waypoints=None, bound_port_name=""):
             "condition": ""}
     if bound_port_name:
         edge["bound_port_name"] = bound_port_name
-    if src.get("kind") == "flow_decision":
-        # THE THREE DOORS (ruled 20-08): edges out of a decision carry a
-        # branch trit. Auto-assign the first free door (+, 0, −) — the
-        # panel edits it afterward. A fourth edge refuses: three doors.
+    doors = {"flow_decision": ("+", "0", "-"),
+             "flow_loop": ("-", "0")}.get(src.get("kind"))
+    if doors:
+        # DOORS (ruled 20-08): decisions have three (+ 0 −); loops have
+        # TWO external exits (− done · 0 bail — the + cycles the pocket
+        # internally). Auto-assign the first free; the panel reassigns.
         taken = {e.get("branch") for e in FS["edges"]
                  if e["src"] == src_id}
-        free = [b for b in ("+", "0", "-") if b not in taken]
+        free = [b for b in doors if b not in taken]
         if not free:
-            _status("a decision has THREE doors (+ 0 −) — all taken",
-                    ok=False)
+            what = ("a decision has THREE doors (+ 0 −)"
+                    if len(doors) == 3 else
+                    "a loop has TWO exit doors (− done · 0 bail)")
+            _status(what + " — all taken", ok=False)
             FS["undo"].pop()
             return None
         edge["branch"] = free[0]
@@ -963,6 +969,36 @@ def _draw_symbol(s, selected):
         if cond:
             dpg.draw_text((x, y + h + 16 * Z), str(cond)[:28],
                           size=11 * Z, color=(122, 200, 255), parent=D)
+    elif k == "flow_loop":
+        ins = min(18 * Z, w * 0.2)
+        dpg.draw_polygon([(x + ins, y), (x + w - ins, y),
+                          (x + w, y + h / 2), (x + w - ins, y + h),
+                          (x + ins, y + h), (x, y + h / 2),
+                          (x + ins, y)],
+                         fill=fill, color=border, thickness=th, parent=D)
+        lk = sym_prop_get(s, "kind", "while")
+        DIMC = STYLE.get("DIM", (168, 175, 190))
+        if lk == "while":
+            dpg.draw_text((x + w / 2 - 17 * Z, y + 2 * Z), "WHILE",
+                          size=11 * Z, color=(240, 200, 120), parent=D)
+        elif lk == "do":
+            dpg.draw_text((x + w / 2 - 8 * Z, y + 2 * Z), "DO",
+                          size=11 * Z, color=(240, 200, 120), parent=D)
+            dpg.draw_text((x + w / 2 - 15 * Z, y + h - 13 * Z), "while",
+                          size=10 * Z, color=DIMC, parent=D)
+        else:                       # for / foreach wear the list glyph
+            for li in range(3):
+                dpg.draw_line((x + ins + 4 * Z, y + 6 * Z + li * 5 * Z),
+                              (x + ins + 16 * Z, y + 6 * Z + li * 5 * Z),
+                              color=(240, 200, 120), thickness=1.5 * Z,
+                              parent=D)
+            dpg.draw_text((x + ins + 20 * Z, y + 2 * Z),
+                          "FOR" if lk == "for" else "EACH",
+                          size=11 * Z, color=(240, 200, 120), parent=D)
+        _ltxt = _loop_subtext(s)
+        if _ltxt:
+            dpg.draw_text((x, y + h + 16 * Z), _ltxt[:30], size=11 * Z,
+                          color=(122, 200, 255), parent=D)
     elif k == "flow_io":
         sk = 16
         dpg.draw_quad((x + sk, y), (x + w, y), (x + w - sk, y + h),
@@ -1084,6 +1120,10 @@ def _sym_icon(kind):
         elif kind == "flow_decision":
             dpg.draw_quad((24, 3), (45, 15), (24, 27), (3, 15), fill=col,
                           color=COL["border"], parent=D)
+        elif kind == "flow_loop":
+            dpg.draw_polygon([(12, 4), (36, 4), (45, 15), (36, 26),
+                              (12, 26), (3, 15), (12, 4)], fill=col,
+                             color=COL["border"], parent=D)
         elif kind == "flow_io":
             dpg.draw_quad((10, 5), (46, 5), (38, 25), (2, 25), fill=col,
                           color=COL["border"], parent=D)
@@ -1678,6 +1718,8 @@ def build_flow_tab(style):
                 _abtn(" ▶ Load→EMU (native) ", do_load_emu,
                       (122, 255, 122))
                 _abtn(" ▶ Step ", do_step, (255, 221, 87))
+                _abtn(" ▶ Walk (doors+loops) ", do_walk,
+                      (122, 200, 255))
                 _abtn(" ▶▶ Run (SDL) ", do_run_sdl, (122, 255, 122))
                 _icon_act(_act_icon("stop"), " Stop ", do_stop,
                           (255, 136, 136))
@@ -1831,6 +1873,21 @@ def _pm():
     return _PM[0]
 
 
+def _loop_subtext(s):
+    """The line under a loop hexagon: its living detail, per kind."""
+    lk = sym_prop_get(s, "kind", "while")
+    if lk in ("while", "do"):
+        return str(sym_prop_get(s, "condition", ""))
+    if lk == "for":
+        return (f"{sym_prop_get(s, 'var', 'i')} = "
+                f"{sym_prop_get(s, 'from', '1')} .. "
+                f"{sym_prop_get(s, 'to', '1')}"
+                + (f" step {sym_prop_get(s, 'step', '1')}"
+                   if str(sym_prop_get(s, "step", "1")) != "1" else ""))
+    return (f"{sym_prop_get(s, 'var', 'item')} ∈ "
+            f"{sym_prop_get(s, 'list', '')}")
+
+
 DOOR_FLAVORS = {
     "+ 0 −": {"+": "+", "0": "0", "-": "−"},
     "yes maybe no": {"+": "yes", "0": "maybe", "-": "no"},
@@ -1869,6 +1926,8 @@ def _prop_write(sid, rec, value):
     pm = _pm()
     sym_prop_set(s, rec["name"], value)
     FS["dirty"] = True
+    if rec["name"] == "kind":           # loop kind flips which records
+        _PROPS_SHOWN[0] = None          # apply — rebuild the rows
     if pm and rec["type"] == "expression":
         ok, msg = pm.validate(rec, value)
         tag = f"flowp_v_{rec['name']}"
@@ -1951,6 +2010,9 @@ def _sync_flow_props():
                      color=C.get("AMB"))
         return
     for rec in pm.declarations_for(s["kind"]):
+        if hasattr(pm, "record_applies") and not pm.record_applies(
+                rec, lambda k2, d2="": sym_prop_get(s, k2, d2)):
+            continue                    # the filter field at work
         cur = sym_prop_get(s, rec["name"], rec["default"])
         with dpg.group(horizontal=True, parent=R):
             dpg.add_text(rec["label"][:18], color=C.get("DIM"))
@@ -2071,6 +2133,141 @@ def _selftest_decision():
         FS["raw"].clear()
         FS["raw"].update(keep_raw)
         FS["edges"][:] = keep_edges
+        FS["file"] = None
+        FS["dirty"] = False
+        FS["undo"].clear()
+        FS["redo"].clear()
+
+
+# ═══ the WALK — doors + loops ticking in the Output pane (ruled 20-08) ══════
+_WK = [None, ""]
+
+
+def _wk():
+    if _WK[0] is None and not _WK[1]:
+        try:
+            import importlib.util as ilu
+            five = os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "5500fp")
+            spec = ilu.spec_from_file_location(
+                "flowcode_walker", os.path.join(five,
+                                                "flowcode_walker.py"))
+            mod = ilu.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            _WK[0] = mod
+        except Exception as e:                  # noqa: BLE001
+            _WK[1] = str(e)
+    return _WK[0]
+
+
+def _walk_resolver():
+    """The blessed namespace, live: A1 cells (Sheet organ, evaluated),
+    widget.prop (GUI organ), loop vars ride the walker's own overlay.
+    Unknown → None → the one tongue says #NAME? → the dunno door."""
+    WK = _wk()
+    sf = WK._sf()
+    SHEET = STYLE.get("SHEET")
+    GUI = STYLE.get("GUI")
+    vals = {}
+    if SHEET is not None:
+        try:
+            vals, _errs = sf.evaluate_sheet(SHEET.SS["cells"])
+        except Exception:                       # noqa: BLE001
+            vals = {}
+
+    def widget_prop(wname, pname):
+        if GUI is None:
+            return None
+        for w in GUI.GS["widgets"].values():
+            if w.get("name") == wname:
+                if pname in ("x", "y", "w", "h", "label", "name"):
+                    return w.get(pname)
+                return GUI._prop_get(w, pname, None)
+        return None
+
+    def resolver(name):
+        name = str(name)
+        if "." in name:
+            wname, _, pname = name.partition(".")
+            return widget_prop(wname, pname)
+        try:
+            rc = sf.a1_to_rc(name)
+            if rc in vals:
+                return vals[rc]
+        except Exception:                       # noqa: BLE001
+            pass
+        return widget_prop(name, "label")
+    return resolver
+
+
+def do_walk(*_):
+    WK = _wk()
+    if WK is None:
+        _out(f"✗ walker unavailable: {_WK[1]}", (255, 136, 136))
+        return
+    _out("── WALK — doors + loops (design-graph runtime) ──",
+         (122, 200, 255))
+    try:
+        rep = WK.walk(FS["syms"], FS["edges"], _walk_resolver(),
+                      trace=lambda ln: _out(ln))
+        _status(f"walk complete — {rep['steps']} step(s); the story is "
+                "in the Output pane")
+    except Exception as e:                      # noqa: BLE001
+        _out(f"✗ walk failed: {e}", (255, 136, 136))
+
+
+def _selftest_loop():
+    """Design Session 2 gate: the hexagon's doors, kinds, filters,
+    persistence, and the walker's three stories."""
+    WK = _wk()
+    assert WK is not None, f"walker failed: {_WK[1]}"
+    wres = WK._selftest()                   # for=3 ticks · guard · do
+    pm = _pm()
+    keep = (dict(FS["syms"]), list(FS["edges"]), dict(FS["raw"]))
+    FS["syms"].clear()
+    FS["raw"].clear()
+    FS["edges"][:] = []
+    try:
+        lp = add_symbol("flow_loop", 200, 100)
+        t1 = add_symbol("flow_terminator", 460, 60)
+        t2 = add_symbol("flow_terminator", 460, 180)
+        e1 = add_edge(lp, t1)
+        e2 = add_edge(lp, t2)
+        assert (e1["branch"], e2["branch"]) == ("-", "0"), \
+            "loops exit by − then 0"
+        t3 = add_symbol("flow_terminator", 60, 180)
+        assert add_edge(lp, t3) is None, "a loop has TWO exit doors"
+        s = FS["syms"][lp]
+        sym_prop_set(s, "kind", "for")
+        sym_prop_set(s, "var", "k")
+        sym_prop_set(s, "from", "1")
+        sym_prop_set(s, "to", "4")
+        recs = pm.declarations_for("flow_loop")
+        shown = [r["name"] for r in recs if pm.record_applies(
+            r, lambda k2, d2="": sym_prop_get(s, k2, d2))]
+        assert "from" in shown and "condition" not in shown, shown
+        assert "k = 1 .. 4" in _loop_subtext(s)
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".fc",
+                                         delete=False) as f:
+            tmp = f.name
+        save_to(tmp)
+        load_from(tmp)
+        os.unlink(tmp)
+        lp2 = next(i for i, sy in FS["syms"].items()
+                   if sy["kind"] == "flow_loop")
+        assert sym_prop_get(FS["syms"][lp2], "to") == "4", \
+            "loop props ride the .fc"
+        brs = sorted(e.get("branch", "?") for e in FS["edges"])
+        assert brs == ["-", "0"], brs
+        return {"walker": wres, "doors": "− 0", "third_refused": True,
+                "filtered_panel": True, "roundtrip": True}
+    finally:
+        FS["syms"].clear()
+        FS["syms"].update(keep[0])
+        FS["raw"].clear()
+        FS["raw"].update(keep[2])
+        FS["edges"][:] = keep[1]
         FS["file"] = None
         FS["dirty"] = False
         FS["undo"].clear()

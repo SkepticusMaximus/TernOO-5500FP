@@ -303,3 +303,34 @@ affected.
   lane: the 2-trit octal kernel). Ties the Prof's multi-radix work to
   the registry instead of hard-coded types. Both parked, ledgered,
   unbuilt.
+
+## 2026-08-20 — Design Session 2 BUILT: the loop family + the walker
+- Rulings: door semantics APPROVED (+ internal cycle · − done · 0 bail
+  — the structured ternary Else, an edge to a named symbol, never a
+  GOTO); ONE hexagon symbol with kind badges (WHILE top = test-first;
+  DO top with its small "while" at the BOTTOM = the priming pass; the
+  For twins wear a list glyph + FOR/EACH); iteration trace in the
+  Output pane included ("watching a loop tick is half of learning a
+  language").
+- flow_loop: container kind (pocket = the body), canon records with
+  the FILTER field live (kind:while|do etc. — the panel shows only the
+  records that apply, rebuilt on kind flip); loops take TWO exit doors
+  (− then 0, third refused); subtext under the hexagon shows the
+  living detail (condition / var=from..to / item ∈ list); all props
+  and doors ride .fc round-trips.
+- 5500fp/flowcode_walker.py: the design-graph RUNTIME (face-neutral,
+  headless): follows decision doors via the one tongue + blessed
+  namespace; loops cycle their pockets (for/foreach bind their
+  variable per tick — body expressions SEE it via the resolver
+  overlay); do primes once; iteration_guard (default 10000) trips a
+  runaway loop out the bail door with a message. Flow tab: ▶ Walk
+  (doors+loops) streams the tick-by-tick story to the Output pane;
+  A1 cells (evaluated live) + widget.prop resolve; unknown names walk
+  the dunno door by construction.
+- HONEST BOUNDARY (ledgered): walker bodies don't yet MUTATE state
+  (assignment/process effects ride the I/O family sitting) — a while
+  over static data visibly runs to its guard; for/foreach are fully
+  alive. t5asm CODEGEN for doors/loops (compile path) is a separate
+  later leg — the walker is the Python-side runtime both faces share.
+- Gates: LOOP FAMILY (suite 24) — for=3 ticks, guard-to-bail, do
+  priming pass, door pool, panel filters, persistence.
