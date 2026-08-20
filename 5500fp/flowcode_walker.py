@@ -81,14 +81,21 @@ class Walker:
         self.max_steps = max_steps
         self.steps = 0
         self.binds = {}                 # loop-variable overlay
+        self.events = []                # ('visit',sid) ('line',txt)
+        #                                 ('watch',name,value) — the faces
+        #                                 replay these: live highlight +
+        #                                 the watch panel (captain, 20-08)
 
     # ── the one tongue, spoken here ─────────────────────────────────────
     def _lookup(self, name):
         if name in self.binds:
+            self.events.append(("watch", name, self.binds[name]))
             return self.binds[name]
         v = self.resolver(name)
         if v is None:
+            self.events.append(("watch", name, "#NAME?"))
             raise _sf().FormulaError(f"#NAME? {name}")
+        self.events.append(("watch", name, v))
         return v
 
     def _eval(self, expr):
@@ -202,6 +209,7 @@ class Walker:
                 ticks += 1
                 if var is not None:
                     self.binds[var] = val
+                    self.events.append(("watch", var, val))
                     self.trace(f"  ⬡ {label} [{kind}] tick {ticks}: "
                                f"{var} = {val}")
                 else:
@@ -229,6 +237,7 @@ class Walker:
             s = self.syms.get(sid)
             if s is None:
                 return
+            self.events.append(("visit", sid))
             kind = s.get("kind", "")
             pad = "  " * depth
             if kind == "flow_decision":
@@ -293,19 +302,22 @@ def entry_symbol(syms):
 def walk(syms, edges, resolver=None, trace=None):
     """Run the design from its entry. Returns a report dict."""
     lines = []
+    w = [None]
 
     def _t(x):
         lines.append(x)
+        if w[0] is not None:
+            w[0].events.append(("line", x))
         if trace:
             trace(x)
-    w = Walker(syms, edges, resolver, _t)
+    w[0] = Walker(syms, edges, resolver, _t)
     start = entry_symbol(syms)
     if start is None:
         _t("(nothing to walk)")
-        return {"steps": 0, "lines": lines}
-    w._run(start, 0)
-    _t(f"— walk complete: {w.steps} step(s)")
-    return {"steps": w.steps, "lines": lines}
+        return {"steps": 0, "lines": lines, "events": w[0].events}
+    w[0]._run(start, 0)
+    _t(f"— walk complete: {w[0].steps} step(s)")
+    return {"steps": w[0].steps, "lines": lines, "events": w[0].events}
 
 
 def _selftest():
@@ -375,8 +387,13 @@ def _selftest():
                         {"src": 1, "dst": 3, "branch": "-"}], {}.get)
     assert sum(1 for ln in rep3["lines"] if "] tick" in ln) == 1
     assert any("once" in ln for ln in rep3["lines"])
+    visits = [e for e in rep["events"] if e[0] == "visit"]
+    watches = [e for e in rep["events"] if e[0] == "watch"]
+    assert visits and ("watch", "i", 3) in watches, watches[:6]
+    assert any(e == ("watch", "score", 30) for e in watches)
     return {"for_ticks": body_ticks, "guard": "trips to bail",
-            "do": "priming pass runs once"}
+            "do": "priming pass runs once",
+            "events": len(rep["events"])}
 
 
 if __name__ == "__main__":
