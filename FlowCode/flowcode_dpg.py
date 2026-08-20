@@ -301,24 +301,29 @@ def _any_dirty():
 
 AUTOSAVE_HIST = os.path.expanduser(
     "~/.config/ternoo-flowcode-dpg-autosaves")
-AUTOSAVE_KEEP = 8                   # rotating history per tab (20-08 —
-#                                     the captain lost a play flow to
-#                                     the single consumed slot)
+AUTOSAVE_KEEP = 8                   # cascade depth (slots per tab)
+
+
+def _cascade_slots(n):
+    """THE CAPTAIN'S CASCADE (20-08): slot k refreshes every 3^k ticks —
+    the JK flip-flop retention ladder with CUBIC periods (his ruling:
+    powers of 2 'stink like binary'). Eight slots at a ~2-min tick
+    reach: 2m · 6m · 18m · 54m · 2.7h · 8.1h · 24.3h · ~3 days.
+    Same 8 files, exponential lookback."""
+    return [k for k in range(AUTOSAVE_KEEP) if n % (3 ** k) == 0]
 
 
 def _autosave_history(tab, ext, src):
-    """Copy this autosave into the rotating history, prune to KEEP."""
+    """Tick the tab's cascade counter and refresh the slots due."""
     try:
         import shutil
-        import time as _t
         os.makedirs(AUTOSAVE_HIST, exist_ok=True)
-        stamp = _t.strftime("%Y%m%d-%H%M%S")
-        shutil.copyfile(src, os.path.join(
-            AUTOSAVE_HIST, f"{tab}-{stamp}{ext}"))
-        mine = sorted(f for f in os.listdir(AUTOSAVE_HIST)
-                      if f.startswith(tab + "-"))
-        for old in mine[:-AUTOSAVE_KEEP]:
-            os.remove(os.path.join(AUTOSAVE_HIST, old))
+        tick = int(CFGD.get(f"as_tick_{tab}", 0)) + 1
+        CFGD[f"as_tick_{tab}"] = tick
+        save_cfg()
+        for k in _cascade_slots(tick):
+            shutil.copyfile(src, os.path.join(
+                AUTOSAVE_HIST, f"{tab}-slot{k}{ext}"))
     except Exception:                           # noqa: BLE001
         pass
 
@@ -350,14 +355,15 @@ def show_recover_window(*_):
         files = sorted(os.listdir(AUTOSAVE_HIST), reverse=True)
     except OSError:
         pass
-    with dpg.window(label="Recover autosave — rotating history",
+    with dpg.window(label="Recover autosave — the cascade",
                     tag=tag, width=560, height=420, pos=(340, 140)):
         if not files:
             dpg.add_text("no autosave history yet — snapshots appear "
                          "here every ~2 minutes while work is unsaved",
                          color=DIM, wrap=520)
-        dpg.add_text(f"newest first · up to {AUTOSAVE_KEEP} kept per "
-                     "tab · loading marks the tab DIRTY (save to keep)",
+        dpg.add_text("slot k refreshes every 3^k ticks — shallow slots "
+                     "are recent, deep slots reach back hours. Loading "
+                     "marks the tab DIRTY (save to keep).",
                      color=DIM, wrap=520)
 
         def _load(sender, a, fname):
@@ -374,11 +380,20 @@ def show_recover_window(*_):
             dpg.set_value("statusbar",
                           f"recovered {fname} → {tab.upper()} tab "
                           "(unsaved — save to keep it)")
-        for f in files:
+        import time as _t
+        for f in sorted(files):
             tab = f.split("-", 1)[0]
-            stamp = f.split("-", 1)[1].rsplit(".", 1)[0] \
+            slot = f.split("-", 1)[1].rsplit(".", 1)[0] \
                 if "-" in f else f
-            dpg.add_button(label=f"  {tab.upper():<6} {stamp}  ",
+            try:
+                age = _t.time() - os.path.getmtime(
+                    os.path.join(AUTOSAVE_HIST, f))
+                when = (f"{int(age // 60)} min ago" if age < 3600
+                        else f"{age / 3600:.1f} h ago")
+            except OSError:
+                when = "?"
+            dpg.add_button(label=f"  {tab.upper():<6} {slot:<10} "
+                           f"saved {when}  ",
                            width=-1, user_data=f, callback=_load)
         dpg.add_button(label="  Close  ",
                        callback=lambda: dpg.delete_item(tag))
@@ -1118,23 +1133,23 @@ def main():
             print(f"CLIP SERVICE OK — system round-trip + "
                   f"{len(CLIP._CTX)} context menus registered")
         if os.environ.get("FLOW_DPG_TEST") and FLOW_ORGAN:
+            counts = {k: 0 for k in range(AUTOSAVE_KEEP)}
+            for n in range(1, 28):
+                for k in _cascade_slots(n):
+                    counts[k] += 1
+            assert (counts[0], counts[1], counts[2], counts[3]) == \
+                (27, 9, 3, 1), counts       # the cubic ladder
             FLOW_ORGAN.clear_all()
             FLOW_ORGAN.add_symbol("flow_process", 100, 100, "AS")
             FLOW_ORGAN.FS["file"] = None
-            n0 = len([f for f in (os.listdir(AUTOSAVE_HIST)
-                                  if os.path.isdir(AUTOSAVE_HIST) else [])
-                      if f.startswith("flow-")])
             _autosave_dirty()
-            hist = [f for f in os.listdir(AUTOSAVE_HIST)
-                    if f.startswith("flow-")]
-            assert len(hist) >= max(1, n0) and \
-                len(hist) <= AUTOSAVE_KEEP, hist
+            assert any(f.startswith("flow-slot0")
+                       for f in os.listdir(AUTOSAVE_HIST))
             assert _RECOVER_ORGAN["flow"]() is FLOW_ORGAN
             FLOW_ORGAN.clear_all()
             FLOW_ORGAN.FS["undo"].clear()
-            print(f"AUTOSAVE HISTORY OK — rotating snapshots "
-                  f"({len(hist)} kept, cap {AUTOSAVE_KEEP}), recover "
-                  "routing sound")
+            print("AUTOSAVE CASCADE OK — 3^k ladder (27·9·3·1 over 27 "
+                  "ticks), slot0 written, recover routing sound")
         if os.environ.get("FLOW_DPG_TEST") and TED_ORGAN:
             tres = TED_ORGAN._selftest()
             print(f"TED GLYPH OK — {tres['chars']} chars, XYZ round-trip "

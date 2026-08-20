@@ -449,3 +449,29 @@ affected.
   same alphabet — binary XOR's richer cousin); apply = GF(3) addition;
   −delta inverts; unchanged trits are 0 → deltas run-length compress.
   Registry family candidate (DATA · DELTA). Gate: AUTOSAVE HISTORY.
+
+## 2026-08-20 — Extension-filter trap + THE CAPTAIN'S CASCADE
+- MYSTERY SOLVED (by the captain): the Open dialog's DEFAULT extension
+  filter (.fc first) hid his saved .flow — the file was never lost,
+  just filtered out of view. FIX: every organ dialog now leads with a
+  COMBINED filter ("FlowCode (*.flow *.fc)", sheets/gui likewise) so
+  the default view shows all of a tab's formats.
+- AUTOSAVE CASCADE (captain's design, built same hour): flat 8-slot
+  rotation replaced by the JK-flip-flop retention ladder with CUBIC
+  periods — slot k refreshes every 3^k ticks (his ruling: powers of 2
+  "stink like binary"). Eight slots at the ~2-min tick reach 2m · 6m ·
+  18m · 54m · 2.7h · 8.1h · 24.3h · ~3 days. Recover browser shows
+  slot + age. Gate proves the ladder (27·9·3·1 writes over 27 ticks).
+- CAPTAIN'S CARDS (ledgered, design lane):
+  · DIFF-CHAIN CASCADE: store cascade states as GF(3) DIFF chains
+    rather than full snapshots; express as disk files today (TMesh as
+    reference) but design as CONTENT-ADDRESSABLE OTree states of a
+    DIFF object — pure TernOO computes cascading DIFF states. Ternary
+    git, native. Session-worthy design, not helm improvisation.
+  · PIGART-DELTA VIDEO: GF(3) frame deltas over PIGART's vector
+    control points = P-frame compression where the deltas are tiny
+    (points, not pixels) and COMPOSE BY ADDITION — a candidate ternary
+    video-codec superpower. Parked to the PIGART lane.
+- Naming note: "DELTA" is CC's proposed name for the diff word's
+  registry slot family (DATA · DELTA) — not an existing TernOO term;
+  captain may rename.
