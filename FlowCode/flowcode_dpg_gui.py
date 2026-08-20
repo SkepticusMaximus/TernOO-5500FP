@@ -1470,6 +1470,8 @@ def build_gui_tab(style):
                          tag="guic_open_dlg", width=780, height=480,
                          default_path=_designs, default_filename="",
                          callback=lambda s, a: load_from(_picked(a))):
+        dpg.add_file_extension("GUI (*.gui *.fc){.gui,.fc}",
+                               color=(122, 255, 122))
         dpg.add_file_extension(".gui", color=(74, 158, 255))
         dpg.add_file_extension(".fc", color=(63, 208, 143))
         dpg.add_file_extension(".*")
@@ -1477,6 +1479,8 @@ def build_gui_tab(style):
                          tag="guic_import_dlg", width=780, height=480,
                          default_path=_designs, default_filename="",
                          callback=lambda s, a: import_merge(_picked(a))):
+        dpg.add_file_extension("GUI (*.gui *.fc){.gui,.fc}",
+                               color=(122, 255, 122))
         dpg.add_file_extension(".gui", color=(74, 158, 255))
         dpg.add_file_extension(".fc", color=(63, 208, 143))
         dpg.add_file_extension(".*")
