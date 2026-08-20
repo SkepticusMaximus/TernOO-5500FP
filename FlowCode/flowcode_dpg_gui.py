@@ -108,6 +108,9 @@ GS = {
     "drag": None,     # {"mode": move|nw|ne|sw|se, "orig": (x,y,w,h)}
     "grip": None, "grip2": None, "zoom": 1.0, "dirty": False,
     "undo": [], "redo": [],
+    "multi": set(), "lasso": None,      # the VB kit (20-08)
+    "groups": {},                       # name -> [ids] — FIRST-CLASS,
+    #                                     NAMED, SAVED (captain's ruling)
 }
 
 
@@ -173,7 +176,7 @@ def _prop_set(w, name, value):
 def _snapshot():
     GS["dirty"] = True
     GS["undo"].append(json.dumps({"w": GS["widgets"], "e": GS["edges"],
-                                  "n": GS["next"]}))
+                                  "n": GS["next"], "g": GS["groups"]}))
     GS["undo"] = GS["undo"][-50:]
     GS["redo"].clear()
 
@@ -183,6 +186,9 @@ def _restore(blob):
     GS["widgets"] = {int(k): v for k, v in d["w"].items()}
     GS["edges"] = d["e"]
     GS["next"] = d["n"]
+    GS["groups"] = {k: [int(i) for i in v]
+                    for k, v in d.get("g", {}).items()}
+    GS["multi"] = {i for i in GS["multi"] if i in GS["widgets"]}
     GS["sel"] = GS["sel"] if GS["sel"] in GS["widgets"] else None
     redraw()
     _sync_props()
@@ -231,20 +237,148 @@ def add_widget(kind, x, y):
     return wid
 
 
-def delete_selected(*_):
-    wid = GS["sel"]
-    if wid is None:
+def _multi_ids():
+    return [i for i in (GS["multi"] or ({GS["sel"]}
+                                        if GS["sel"] is not None
+                                        else set()))
+            if i in GS["widgets"]]
+
+
+def align_selected(how):
+    """VB kit: align lefts/tops/h-centres/v-centres of the selection."""
+    ids = _multi_ids()
+    if len(ids) < 2:
+        _status("select 2+ widgets to align (rubber-band drag)",
+                ok=False)
         return
     _snapshot()
-    GS["widgets"].pop(wid, None)
-    GS["raw"].pop(wid, None)
-    for w in GS["widgets"].values():
-        if w.get("parent_id") == wid:
-            w["parent_id"] = None
-    GS["sel"] = None
+    ws = [GS["widgets"][i] for i in ids]
+    if how == "left":
+        v = min(w["x"] for w in ws)
+        for w in ws:
+            w["x"] = v
+    elif how == "top":
+        v = min(w["y"] for w in ws)
+        for w in ws:
+            w["y"] = v
+    elif how == "hcenter":
+        v = sum(w["x"] + w["w"] / 2 for w in ws) / len(ws)
+        for w in ws:
+            w["x"] = int(v - w["w"] / 2)
+    elif how == "vcenter":
+        v = sum(w["y"] + w["h"] / 2 for w in ws) / len(ws)
+        for w in ws:
+            w["y"] = int(v - w["h"] / 2)
+    layout_all()
+    redraw()
+    _status(f"aligned {len(ids)} · {how}")
+
+
+def distribute_selected(axis):
+    """VB kit: equal gaps along an axis."""
+    ids = _multi_ids()
+    if len(ids) < 3:
+        _status("select 3+ widgets to distribute", ok=False)
+        return
+    _snapshot()
+    key, size = ("x", "w") if axis == "h" else ("y", "h")
+    ws = sorted((GS["widgets"][i] for i in ids), key=lambda w: w[key])
+    lo = ws[0][key]
+    hi = ws[-1][key] + ws[-1][size]
+    total = sum(w[size] for w in ws)
+    gap = max(0, (hi - lo - total)) / (len(ws) - 1)
+    pos = float(lo)
+    for w in ws:
+        w[key] = int(pos)
+        pos += w[size] + gap
+    layout_all()
+    redraw()
+    _status(f"distributed {len(ids)} · {axis}")
+
+
+def group_selection(name):
+    """FIRST-CLASS NAMED GROUPS (captain's ruling): the selection
+    becomes a saved, named thing — clicking any member selects it
+    whole; it moves, aligns and deletes as one; it rides the .gui."""
+    name = str(name or "").strip()
+    ids = _multi_ids()
+    if not name:
+        _status("give the group a name first", ok=False)
+        return
+    if len(ids) < 2:
+        _status("rubber-band 2+ widgets, then group them", ok=False)
+        return
+    if name in GS["groups"]:
+        _status(f"group '{name}' already exists", ok=False)
+        return
+    _snapshot()
+    GS["groups"][name] = sorted(ids)
+    if dpg.does_item_exist("guic_grpname"):
+        dpg.set_value("guic_grpname", "")
+    _grplist_refresh()
+    redraw()
+    _status(f"⌘ group '{name}' saved ({len(ids)} widgets)")
+
+
+def ungroup(name):
+    if name in GS["groups"]:
+        _snapshot()
+        GS["groups"].pop(name)
+        _grplist_refresh()
+        redraw()
+        _status(f"ungrouped '{name}' (widgets stay)")
+
+
+def select_group(name):
+    ids = {i for i in GS["groups"].get(name, []) if i in GS["widgets"]}
+    if not ids:
+        return
+    GS["multi"] = ids
+    GS["sel"] = sorted(ids)[0]
     redraw()
     _sync_props()
-    _status(f"deleted #{wid}")
+    _status(f"group '{name}' selected ({len(ids)})")
+
+
+def _grplist_refresh():
+    L = "guic_grplist"
+    if not dpg.does_item_exist(L):
+        return
+    dpg.delete_item(L, children_only=True)
+    if not GS["groups"]:
+        dpg.add_text("(rubber-band widgets,\n name them, press ⌘)",
+                     parent=L, color=STYLE.get("DIM"))
+        return
+    for name in sorted(GS["groups"]):
+        with dpg.group(horizontal=True, parent=L):
+            dpg.add_button(label=f" ⌘ {name} "
+                           f"({len(GS['groups'][name])}) ", width=-40,
+                           user_data=name,
+                           callback=lambda s, a, u: select_group(u))
+            dpg.add_button(label="×", small=True, user_data=name,
+                           callback=lambda s, a, u: ungroup(u))
+
+
+def delete_selected(*_):
+    ids = _multi_ids()
+    if not ids:
+        return
+    _snapshot()
+    for wid in ids:
+        GS["widgets"].pop(wid, None)
+        GS["raw"].pop(wid, None)
+    for w in GS["widgets"].values():
+        if w.get("parent_id") not in GS["widgets"] \
+                and w.get("parent_id") is not None:
+            w["parent_id"] = None
+    for g in GS["groups"].values():
+        g[:] = [i for i in g if i in GS["widgets"]]
+    GS["groups"] = {k: v for k, v in GS["groups"].items() if v}
+    GS["sel"] = None
+    GS["multi"] = set()
+    redraw()
+    _sync_props()
+    _status(f"deleted {len(ids)} widget(s)")
 
 
 def clear_all(*_):
@@ -254,7 +388,10 @@ def clear_all(*_):
     GS["widgets"].clear()
     GS["raw"].clear()
     GS["edges"].clear()
+    GS["groups"].clear()
+    GS["multi"] = set()
     GS["sel"] = None
+    _grplist_refresh()
     redraw()
     _sync_props()
     _status("canvas cleared")
@@ -420,6 +557,10 @@ def redraw():
         ww, hh = w["w"] * Z, w["h"] * Z
         label = w.get("label") or w["kind"][4:]
         _render_widget(D, w["kind"], x, y, ww, hh, label=label, px=Z)
+        if wid in GS["multi"] and wid != GS["sel"]:
+            dpg.draw_rectangle((x - 2, y - 2), (x + ww + 2, y + hh + 2),
+                               color=(255, 170, 90), thickness=1.5,
+                               parent=D)
         if wid == GS["sel"]:
             dpg.draw_rectangle((x - 2, y - 2), (x + ww + 2, y + hh + 2),
                                color=(255, 120, 50), thickness=2, parent=D)
@@ -430,8 +571,15 @@ def redraw():
                 dpg.draw_rectangle((hx - 3, hy - 3), (hx + 3, hy + 3),
                                    fill=(255, 120, 50), parent=D)
             cap = f"{w.get('name', '')}  #{wid} ({w['x']},{w['y']})"
+            g = _group_of(wid)
+            if g:
+                cap += f"  ⌘{g}"
             dpg.draw_text((x, y + hh + 8 * Z), cap, size=13 * Z,
                           color=(255, 140, 70), parent=D)
+    if GS.get("lasso") is not None:
+        x0, y0, x1, y1 = [v * Z for v in GS["lasso"]]
+        dpg.draw_rectangle((x0, y0), (x1, y1), color=(255, 170, 90),
+                           thickness=1, parent=D)
 
 
 # ── the widget-face renderer — ONE vocabulary for palette icons and the
@@ -942,6 +1090,13 @@ def _handle_hit(mx, my):
     return None
 
 
+def _group_of(wid):
+    for name, ids in GS.get("groups", {}).items():
+        if wid in ids:
+            return name
+    return None
+
+
 def _on_click(*_):
     if not dpg.is_item_hovered("guic_draw"):
         return
@@ -959,11 +1114,29 @@ def _on_click(*_):
                       "orig": (w["x"], w["y"], w["w"], w["h"])}
         return
     wid = _hit(mx, my)
+    if wid is None:
+        # RUBBER-BAND (VB kit, 20-08): drag on empty canvas lassos
+        GS["sel"] = None
+        GS["multi"] = set()
+        GS["lasso"] = (mx, my, mx, my)
+        redraw()
+        _sync_props()
+        return
+    # a grouped widget selects its WHOLE group (VB doctrine)
+    gname = _group_of(wid)
+    if gname and wid not in GS["multi"]:
+        GS["multi"] = {i for i in GS["groups"][gname]
+                       if i in GS["widgets"]}
+        _status(f"group '{gname}' — {len(GS['multi'])} widgets")
+    elif wid not in GS["multi"]:
+        GS["multi"] = set()
     GS["sel"] = wid
-    if wid is not None:
-        w = GS["widgets"][wid]
-        _snapshot()
-        GS["drag"] = {"mode": "move", "orig": (w["x"], w["y"], w["w"], w["h"])}
+    w = GS["widgets"][wid]
+    _snapshot()
+    GS["drag"] = {"mode": "move", "orig": (w["x"], w["y"], w["w"], w["h"]),
+                  "multi0": {i: (GS["widgets"][i]["x"],
+                                 GS["widgets"][i]["y"])
+                             for i in GS["multi"] if i in GS["widgets"]}}
     redraw()
     _sync_props()
 
@@ -982,6 +1155,12 @@ def _on_drag(sender, app_data):
             if panel == "guic_props":
                 dpg.configure_item("guic_wrap", width=-(w + 16))
             return
+    if GS.get("lasso") is not None:
+        mx, my = _mpos()
+        x0, y0, _x1, _y1 = GS["lasso"]
+        GS["lasso"] = (x0, y0, mx, my)
+        redraw()
+        return
     if GS["drag"] is None or GS["sel"] is None:
         return
     _btn, dx, dy = app_data
@@ -994,6 +1173,10 @@ def _on_drag(sender, app_data):
     m = GS["drag"]["mode"]
     if m == "move":
         w["x"], w["y"] = max(0, int(ox + dx)), max(0, int(oy + dy))
+        for i, (ix, iy) in GS["drag"].get("multi0", {}).items():
+            if i != GS["sel"] and i in GS["widgets"]:
+                GS["widgets"][i]["x"] = max(0, int(ix + dx))
+                GS["widgets"][i]["y"] = max(0, int(iy + dy))
     elif m == "se":
         w["w"], w["h"] = max(MIN_SIZE, int(ow + dx)), max(MIN_SIZE, int(oh + dy))
     elif m == "nw":
@@ -1027,11 +1210,32 @@ def _on_release(*_):
             if STYLE.get("SAVE"):
                 STYLE["SAVE"]()
         GS["grip"] = GS["grip2"] = None
+    if GS.get("lasso") is not None:
+        x0, y0, x1, y1 = GS["lasso"]
+        GS["lasso"] = None
+        lo_x, hi_x = min(x0, x1), max(x0, x1)
+        lo_y, hi_y = min(y0, y1), max(y0, y1)
+        hits = {i for i, w2 in GS["widgets"].items()
+                if w2["x"] < hi_x and w2["x"] + w2["w"] > lo_x
+                and w2["y"] < hi_y and w2["y"] + w2["h"] > lo_y}
+        GS["multi"] = hits
+        GS["sel"] = next(iter(hits)) if len(hits) == 1 else GS["sel"]
+        redraw()
+        _sync_props()
+        if hits:
+            _status(f"{len(hits)} selected — drag any to move the set, "
+                    "align/group in TOOLS")
+        return
     if GS["drag"] is None:
         return
+    was_multi = bool(GS["drag"].get("multi0"))
     GS["drag"] = None
     if GS["sel"] is not None and GS["sel"] in GS["widgets"]:
         _assign_parent(GS["sel"])
+        if was_multi:
+            for i in GS["multi"]:
+                if i in GS["widgets"]:
+                    _assign_parent(i)
         layout_all()                    # dropping into an hbox flows it
         redraw()
     _sync_props()
@@ -1080,6 +1284,7 @@ def _payload(path):
         "cmd_symbols": [], "cmd_edges": [],
         "cell_symbols": [], "sheet_regions": [], "free_cells": [],
         "sequence": list(_zorder()),
+        "groups": {k: list(v) for k, v in GS["groups"].items()},
         "tgui_meta": {"widget_count": len(syms),
                       "edge_count": len(GS["edges"]),
                       "flow_symbol_count": 0, "flow_edge_count": 0},
@@ -1142,14 +1347,20 @@ def load_from(path):
     seq = [int(i) for i in doc.get("sequence", [])
            if int(i) in GS["widgets"]]
     GS["zorder"] = seq + [i for i in GS["widgets"] if i not in seq]
+    GS["groups"] = {str(k): [int(i) for i in v if int(i) in GS["widgets"]]
+                    for k, v in (doc.get("groups") or {}).items()}
+    GS["groups"] = {k: v for k, v in GS["groups"].items() if v}
+    GS["multi"] = set()
     _rescue_offcanvas()
     GS["edges"] = [dict(e) for e in doc.get("edges", [])]
     GS["file"] = path
     GS["dirty"] = False
     redraw()
     _sync_props()
+    _grplist_refresh()
     _status(f"opened {os.path.basename(path)} — "
-            f"{len(GS['widgets'])} widgets, {len(GS['edges'])} edges")
+            f"{len(GS['widgets'])} widgets, {len(GS['edges'])} edges"
+            + (f", {len(GS['groups'])} groups" if GS["groups"] else ""))
 
 
 def _rel_to_abs(ids):
@@ -1285,6 +1496,29 @@ def build_gui_tab(style):
             with dpg.group(horizontal=True):
                 dpg.add_button(label=" ▲ Front ", callback=bring_to_front)
                 dpg.add_button(label=" ▼ Back ", callback=send_to_back)
+            dpg.add_text("ALIGN (rubber-band 2+)", color=C["DIM"])
+            with dpg.group(horizontal=True):
+                dpg.add_button(label="⇤", callback=lambda:
+                               align_selected("left"))
+                dpg.add_button(label="⇞", callback=lambda:
+                               align_selected("top"))
+                dpg.add_button(label="↔", callback=lambda:
+                               align_selected("hcenter"))
+                dpg.add_button(label="↕", callback=lambda:
+                               align_selected("vcenter"))
+                dpg.add_button(label="⇹", callback=lambda:
+                               distribute_selected("h"))
+                dpg.add_button(label="⇳", callback=lambda:
+                               distribute_selected("v"))
+            dpg.add_text("GROUPS (named · saved)", color=C["DIM"])
+            with dpg.group(horizontal=True):
+                dpg.add_input_text(tag="guic_grpname", width=-64,
+                                   hint="group name")
+                dpg.add_button(label=" ⌘ ", callback=lambda:
+                               group_selection(
+                                   dpg.get_value("guic_grpname")))
+            with dpg.group(tag="guic_grplist"):
+                pass
             dpg.add_spacer(height=6)
             dpg.add_text("WIDGETS", color=C["DIM"])
             for sec, kinds in PALETTE:
@@ -1382,6 +1616,7 @@ def build_gui_tab(style):
         dpg.add_key_press_handler(dpg.mvKey_Delete, callback=_on_del)
     redraw()
     _sync_props()
+    _grplist_refresh()
 
 
 def _selftest():
@@ -1475,6 +1710,34 @@ def _selftest():
     n_resc = _rescue_offcanvas()
     assert n_resc == 1 and GS["widgets"][stray]["x"] >= 0, "rescue"
 
+    # ── the VB kit (20-08): align · distribute · named groups ───────────
+    clear_all()
+    a1 = add_widget("gui_button", 100, 100)
+    a2 = add_widget("gui_button", 300, 160)
+    a3 = add_widget("gui_button", 500, 240)
+    GS["multi"] = {a1, a2, a3}
+    align_selected("top")
+    ys = {GS["widgets"][i]["y"] for i in (a1, a2, a3)}
+    assert ys == {100}, ys
+    distribute_selected("h")
+    xs = sorted(GS["widgets"][i]["x"] for i in (a1, a2, a3))
+    gaps = [xs[1] - xs[0], xs[2] - xs[1]]
+    assert gaps[0] == gaps[1], gaps
+    group_selection("trio")
+    assert GS["groups"]["trio"] == sorted([a1, a2, a3])
+    assert _group_of(a2) == "trio"
+    with tempfile.NamedTemporaryFile("w", suffix=".gui",
+                                     delete=False) as f:
+        json.dump(_payload(f.name), f)
+        tmpg = f.name
+    load_from(tmpg)
+    os.unlink(tmpg)
+    assert GS["groups"].get("trio") == sorted([a1, a2, a3]), \
+        "named groups ride the .gui"
+    select_group("trio")
+    assert GS["multi"] == {a1, a2, a3}
+    n_grp = len(GS["groups"])
+
     clear_all()
     GS["undo"].clear()
     GS["redo"].clear()
@@ -1482,4 +1745,5 @@ def _selftest():
     GS["next"] = 0      # downstream gates index from a fresh canvas
     return {"layout": "vbox+hbox", "roundtrip": "centre-offsets",
             "imported": added, "signals": len(sigs), "handler": h,
-            "zorder": "containment-safe", "rescue": n_resc}
+            "zorder": "containment-safe", "rescue": n_resc,
+            "vbkit": f"align+distribute+{n_grp} named group(s)"}
