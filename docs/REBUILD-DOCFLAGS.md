@@ -398,3 +398,16 @@ affected.
   rides the codegen leg.
 - Gate: IO FAMILY (suite 25); POCKET SCOPES gate updated for
   furnishing (2 defaults + placed kid).
+
+## 2026-08-20 — Helm leg 2: Connectors PROPERTIES panel (Session D's first stone)
+- Connectors gains the right-column PROPERTIES panel (layout doctrine):
+  tile identity (name/label), output type, and PER-INPUT SOCKET source
+  binding — pipe (drawn) · constant · cell · widget · variable — with
+  the drawn pipe shown when one feeds the socket. The captain's "WHERE
+  do inputs come from?" answered per socket.
+- Bindings live on the tile as `input_bindings` {param: {kind, value}}
+  and ride .fc save/load (loader taught to carry them). DPG-side key;
+  Tk cross-face carry noted. EXECUTION of bindings (feeding the REPL/
+  registry run) rides Session D proper — designed WITH the captain,
+  alongside the object constructor centrepiece.
+- Gate: CONN PROPS (bind text socket → cell:A1, persistence).

@@ -515,6 +515,8 @@ def load_from(path):
             "label": cmd.get("label", ""),
             "name": cmd.get("name", f"cmd_{cid}"),
             "properties": list(cmd.get("properties", [])),
+            "input_bindings": {k: dict(v) for k, v in
+                               (cmd.get("input_bindings") or {}).items()},
         }
         CS["raw"][cid] = dict(cmd)
         CS["next"] = max(CS["next"], cid + 1)
@@ -601,11 +603,22 @@ def build_conn_tab(style):
                          "type\nmismatch\n\nnot yet ported:\n REPL "
                          "capture-to-pipeline\n pocket interiors",
                          color=C["DIM"])
-        with dpg.child_window(tag="connc_wrap", width=-1,
+        with dpg.child_window(tag="connc_wrap", width=-280,
                               horizontal_scrollbar=True):
             with dpg.drawlist(width=CANVAS_W, height=CANVAS_H,
                               tag="connc_draw"):
                 pass
+        # PROPERTIES on the RIGHT (layout doctrine, 20-08): the tile's
+        # identity + every input socket's SOURCE — pipe · constant ·
+        # cell · widget · variable. The captain's "WHERE do inputs come
+        # from" answered per socket; the object constructor proper is
+        # Session D's centrepiece, designed WITH the captain.
+        with dpg.child_window(tag="connp_panel", width=-1):
+            with dpg.collapsing_header(label="PROPERTIES",
+                                       default_open=True):
+                with dpg.group(tag="connp_rows"):
+                    dpg.add_text("select a command tile",
+                                 color=C["DIM"])
     with dpg.group(horizontal=True):
         dpg.add_text("tool: Select", tag="connc_tool", color=C["DIM"])
         dpg.add_text("   Zoom: 100%", tag="connc_zoomlbl", color=C["DIM"])
@@ -662,3 +675,164 @@ def _selftest():
     n_edges = len(doc2["cmd_edges"])
     clear_all()
     return {"widgets": 3, "edges": n_edges}
+
+
+# ═══ the Connectors PROPERTIES panel (helm leg 2, 20-08) ════════════════════
+# Every input socket answers the captain's question — WHERE does this
+# input come from? A pipe (drawn), a constant, a cell, a widget prop,
+# or a variable. Bindings live on the tile as {"input_bindings":
+# {param: {"kind", "value"}}} and ride the .fc verbatim.
+_CONNP_SHOWN = [None]
+SOURCE_KINDS = ("pipe", "constant", "cell", "widget", "variable")
+
+
+def _binding(w, param):
+    return (w.setdefault("input_bindings", {})
+            .setdefault(param, {"kind": "constant", "value": ""}))
+
+
+def _bind_write(cid, param, key, value):
+    w = CS["widgets"].get(cid)
+    if w is None:
+        return
+    _binding(w, param)[key] = value
+    CS["dirty"] = True
+    if key == "kind":
+        _CONNP_SHOWN[0] = None          # hint text changes per kind
+    redraw()
+
+
+def _piped_params(cid):
+    """param -> src tile label, for every drawn pipe into cid."""
+    out = {}
+    for e in CS["edges"]:
+        if e.get("dst") == cid:
+            src = CS["widgets"].get(e.get("src"), {})
+            out[e.get("dst_param", "")] = src.get("label",
+                                                  str(e.get("src")))
+    return out
+
+
+def _sync_conn_props():
+    R = "connp_rows"
+    if not dpg.does_item_exist(R):
+        return
+    ident = CS["sel"]
+    if ident == _CONNP_SHOWN[0]:
+        return
+    _CONNP_SHOWN[0] = ident
+    dpg.delete_item(R, children_only=True)
+    C = STYLE
+    w = CS["widgets"].get(ident) if ident is not None else None
+    if w is None:
+        dpg.add_text("select a command tile", parent=R,
+                     color=C.get("DIM"))
+        return
+    F = _fcmd()
+    kind = w.get("kind", "")
+    dpg.add_text(f"{kind[4:] if kind.startswith('cmd_') else kind}"
+                 f"   #{ident}", parent=R, color=C.get("TEXT"))
+    for field in ("name", "label"):
+        with dpg.group(horizontal=True, parent=R):
+            dpg.add_text(f"{field:<6}", color=C.get("DIM"))
+            dpg.add_input_text(default_value=str(w.get(field, "")),
+                               width=-1, user_data=(ident, field),
+                               callback=lambda s, a, u: (
+                                   CS["widgets"][u[0]].__setitem__(
+                                       u[1], a),
+                                   CS.__setitem__("dirty", True),
+                                   redraw()))
+    if F is None:
+        dpg.add_text("registry unavailable", parent=R, color=C.get("AMB"))
+        return
+    out_t = F.output_type(kind)
+    dpg.add_text(f"output → {out_t or '(none)'}", parent=R,
+                 color=(122, 255, 122))
+    params = F.input_params(kind)
+    if not params:
+        dpg.add_text("(no input sockets)", parent=R, color=C.get("DIM"))
+        return
+    piped = _piped_params(ident)
+    dpg.add_text("INPUT SOCKETS — where from?", parent=R,
+                 color=C.get("DIM"))
+    for pname, ptype in params:
+        b = _binding(w, pname)
+        with dpg.group(parent=R):
+            with dpg.group(horizontal=True):
+                dpg.add_text(f"{pname} ", color=C.get("TEXT"))
+                dpg.add_text(f"[{ptype}]", color=C.get("DIM"))
+            if pname in piped:
+                dpg.add_text(f"  ⇐ pipe from {piped[pname]} (drawn)",
+                             color=(74, 158, 255))
+            with dpg.group(horizontal=True):
+                dpg.add_combo(SOURCE_KINDS, width=92,
+                              default_value=b.get("kind", "constant"),
+                              user_data=(ident, pname),
+                              callback=lambda s, a, u:
+                              _bind_write(u[0], u[1], "kind", a))
+                hint = {"constant": "literal value",
+                        "cell": "A1", "widget": "name.prop",
+                        "variable": "x",
+                        "pipe": "(drawn on canvas)"}[
+                    b.get("kind", "constant")]
+                dpg.add_input_text(width=-1,
+                                   default_value=str(b.get("value", "")),
+                                   hint=hint, user_data=(ident, pname),
+                                   enabled=b.get("kind") != "pipe",
+                                   callback=lambda s, a, u:
+                                   _bind_write(u[0], u[1], "value", a))
+
+
+_conn_redraw_core = redraw
+
+
+def redraw():
+    _conn_redraw_core()
+    _sync_conn_props()
+
+
+def _selftest_props():
+    """Helm leg 2 gate: identity + sockets + bindings persistence."""
+    F = _fcmd()
+    assert F is not None
+    keep = (dict(CS["widgets"]), list(CS["edges"]))
+    CS["widgets"].clear()
+    CS["edges"][:] = []
+    try:
+        kind = next(k for k in F.command_names()
+                    if F.input_params(k))
+        cid = CS["next"]
+        CS["next"] += 1
+        CS["widgets"][cid] = {"id": cid, "kind": kind, "x": 100,
+                              "y": 100, "w": CMD_W, "h": CMD_H,
+                              "label": kind[4:], "name": f"t{cid}",
+                              "properties": []}
+        pname, _pt = F.input_params(kind)[0]
+        _bind_write(cid, pname, "kind", "cell")
+        _bind_write(cid, pname, "value", "A1")
+        assert CS["widgets"][cid]["input_bindings"][pname] == \
+            {"kind": "cell", "value": "A1"}
+        import json as _j
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".fc",
+                                         delete=False) as f:
+            tmp = f.name
+        save_to(tmp)
+        doc = _j.load(open(tmp))
+        saved = next(s for s in doc["cmd_symbols"] if s["id"] == cid)
+        assert saved.get("input_bindings", {}).get(pname, {}) == \
+            {"kind": "cell", "value": "A1"}, "bindings ride the .fc"
+        load_from(tmp)
+        os.unlink(tmp)
+        w2 = CS["widgets"][cid]
+        assert w2.get("input_bindings", {}).get(pname, {}).get(
+            "value") == "A1"
+        return {"kind": kind, "socket": pname,
+                "binding": "cell:A1", "persist": True}
+    finally:
+        CS["widgets"].clear()
+        CS["widgets"].update(keep[0])
+        CS["edges"][:] = keep[1]
+        CS["file"] = None
+        CS["dirty"] = False
+        CS["undo"].clear()
