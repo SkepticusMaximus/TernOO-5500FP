@@ -368,3 +368,33 @@ affected.
   ASSIGNMENT (brings whiles alive, defines variables, wires
   build_io_word), (2) Connectors properties + object constructor
   (Session D), (3) GUI designer (groups/align/rubber-band).
+
+## 2026-08-20 — Helm leg 1: the I/O FAMILY — assignment lands, whiles ALIVE
+- flow_io grows its canon records: direction (in/out) · channel
+  (variable/cell/widget/console) · address · read-into-var ·
+  value-expression (one tongue) · buffering. Panel dresses per
+  direction/channel (filter field); canvas subtext shows
+  "out ⇒ variable:x".
+- ASSIGNMENT: the walker gains a variable STORE. I/O out writes it
+  (variables directly; cells/widget props as SHADOW writes — the walk
+  sees them, the real Sheet/GUI are not mutated; committed write-back
+  rides a later ruling); I/O in reads channels into variables; console
+  out prints to the trace. Loop bodies now CHANGE what conditions
+  test: x = 0 · while x < 3 · body x ⇐ x + 1 → 3 ticks → done door,
+  x = 3. THE WHILE IS ALIVE (story gated end-to-end through the organ).
+- VARIABLES panel (right column): declare name + init (one tongue,
+  validated); persisted as `flow_variables` in the .fc (DPG-side key —
+  Tk's saver won't carry it yet, cross-face note); walks start from
+  the declared state; watch pre-seeds with it.
+- POCKET FURNISHING (captain's earlier expectation, built): first
+  entry into an EMPTY process/subroutine pocket auto-places param
+  (I/O in) → return (I/O out) wired, minimal defaults. Loops keep
+  bare pockets.
+- REAL I-O WORDS: Word Dump now appends genuine v0.3 build_io_word
+  words for every property-carrying I/O symbol — the literal
+  FlowCode→TernOO translation, previewed. PAYLOAD CONVENTION
+  (ledgered): channel family id in the payload low trits — console=0 ·
+  cell=1 · widget=2 · variable=3; address binding beyond the family id
+  rides the codegen leg.
+- Gate: IO FAMILY (suite 25); POCKET SCOPES gate updated for
+  furnishing (2 defaults + placed kid).

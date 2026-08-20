@@ -73,7 +73,7 @@ DEFAULT_GUARD = 10000
 
 class Walker:
     def __init__(self, syms, edges, resolver=None, trace=None,
-                 max_steps=2000):
+                 max_steps=2000, variables=None):
         self.syms = syms
         self.edges = edges
         self.resolver = resolver or (lambda name: None)
@@ -81,6 +81,11 @@ class Walker:
         self.max_steps = max_steps
         self.steps = 0
         self.binds = {}                 # loop-variable overlay
+        self.vars = dict(variables or {})   # THE WALK STORE (assignment
+        #                                     lives here — I/O writes to
+        #                                     variables, shadow cells and
+        #                                     shadow widget props; whiles
+        #                                     are ALIVE as of 20-08)
         self.events = []                # ('visit',sid) ('line',txt)
         #                                 ('watch',name,value) — the faces
         #                                 replay these: live highlight +
@@ -91,12 +96,60 @@ class Walker:
         if name in self.binds:
             self.events.append(("watch", name, self.binds[name]))
             return self.binds[name]
+        if name in self.vars:
+            self.events.append(("watch", name, self.vars[name]))
+            return self.vars[name]
         v = self.resolver(name)
         if v is None:
             self.events.append(("watch", name, "#NAME?"))
             raise _sf().FormulaError(f"#NAME? {name}")
         self.events.append(("watch", name, v))
         return v
+
+    def _write(self, address, value, shadow=False):
+        self.vars[address] = value
+        self.events.append(("watch", address, value))
+        return f"{address} = {value!r}" + (" (shadow)" if shadow else "")
+
+    # ── the I/O symbol: WHERE data is read and written ─────────────────
+    def _do_io(self, sid, s):
+        d = prop(s, "direction", "in")
+        ch = prop(s, "channel", "variable")
+        addr = str(prop(s, "address", "")).strip()
+        label = s.get("label", "?")
+        if d == "out":
+            expr = prop(s, "expression", "")
+            try:
+                v = self._eval(expr) if str(expr).strip() else ""
+            except Exception as ex:             # noqa: BLE001
+                self.trace(f"  ▱ {label} [out·{ch}] ✗ {ex}")
+                return
+            if ch == "console":
+                self.trace(f"  ▱ {label} ⇒ console: {v!r}")
+            elif ch == "variable":
+                self.trace(f"  ▱ {label} ⇒ "
+                           + self._write(addr or "it", v))
+            else:                       # cell / widget: SHADOW write —
+                #                         committed write-back rides a
+                #                         later ruling; the walk sees it
+                self.trace(f"  ▱ {label} ⇒ "
+                           + self._write(addr, v, shadow=True))
+        else:
+            if ch == "console":
+                self.trace(f"  ▱ {label} [in·console] (no interactive "
+                           "source in a walk — skipped)")
+                return
+            try:
+                v = self._lookup(addr) if addr else None
+            except Exception:                   # noqa: BLE001
+                v = None
+            tgt = str(prop(s, "var", "")).strip() or (addr or "it")
+            if v is None:
+                self.trace(f"  ▱ {label} [in·{ch}] {addr}: nothing to "
+                           "read — the dunno stays")
+                return
+            self.trace(f"  ▱ {label} [in·{ch}] "
+                       + self._write(tgt, v))
 
     def _eval(self, expr):
         sf = _sf()
@@ -258,6 +311,15 @@ class Walker:
                     return
                 sid = e["dst"]
                 continue
+            if kind == "flow_io":
+                self._do_io(sid, s)
+                e = self._next_edge(sid)
+                if e is None:
+                    return
+                if within is not None and e["dst"] not in within:
+                    return
+                sid = e["dst"]
+                continue
             if kind == "flow_terminator":
                 is_entry = bool(prop(s, "is_entry", False))
                 self.trace(f"{pad}▸ {s.get('label', '?')} "
@@ -299,7 +361,7 @@ def entry_symbol(syms):
     return terms[0][0] if terms else (sorted(syms)[0] if syms else None)
 
 
-def walk(syms, edges, resolver=None, trace=None):
+def walk(syms, edges, resolver=None, trace=None, variables=None):
     """Run the design from its entry. Returns a report dict."""
     lines = []
     w = [None]
@@ -310,14 +372,16 @@ def walk(syms, edges, resolver=None, trace=None):
             w[0].events.append(("line", x))
         if trace:
             trace(x)
-    w[0] = Walker(syms, edges, resolver, _t)
+    w[0] = Walker(syms, edges, resolver, _t, variables=variables)
     start = entry_symbol(syms)
     if start is None:
         _t("(nothing to walk)")
-        return {"steps": 0, "lines": lines, "events": w[0].events}
+        return {"steps": 0, "lines": lines, "events": w[0].events,
+                "vars": dict(w[0].vars)}
     w[0]._run(start, 0)
     _t(f"— walk complete: {w[0].steps} step(s)")
-    return {"steps": w[0].steps, "lines": lines, "events": w[0].events}
+    return {"steps": w[0].steps, "lines": lines, "events": w[0].events,
+            "vars": dict(w[0].vars)}
 
 
 def _selftest():
@@ -391,9 +455,40 @@ def _selftest():
     watches = [e for e in rep["events"] if e[0] == "watch"]
     assert visits and ("watch", "i", 3) in watches, watches[:6]
     assert any(e == ("watch", "score", 30) for e in watches)
+
+    # THE STORY GATE — assignment brings the while ALIVE (20-08):
+    # x = 0 · while x < 3 · body: x ⇐ x + 1 → 3 ticks, done door, x=3
+    syms3 = {
+        0: {"kind": "flow_terminator", "label": "START", "name": "s",
+            "parent_scope": None,
+            "properties": [{"name": "is_entry", "value": True}]},
+        1: {"kind": "flow_loop", "label": "W", "name": "w2",
+            "parent_scope": None, "properties": [
+                {"name": "kind", "value": "while"},
+                {"name": "condition", "value": "x < 3"}]},
+        2: {"kind": "flow_io", "label": "inc", "name": "inc",
+            "parent_scope": "w2", "properties": [
+                {"name": "direction", "value": "out"},
+                {"name": "channel", "value": "variable"},
+                {"name": "address", "value": "x"},
+                {"name": "expression", "value": "x + 1"}]},
+        3: {"kind": "flow_terminator", "label": "DONE", "name": "dn",
+            "parent_scope": None, "properties": []},
+    }
+    rep4 = walk(syms3, [{"src": 0, "dst": 1},
+                        {"src": 1, "dst": 3, "branch": "-"}],
+                {}.get, variables={"x": 0})
+    ticks = sum(1 for ln in rep4["lines"] if "] tick" in ln)
+    assert ticks == 3, rep4["lines"]
+    assert rep4["vars"].get("x") == 3, rep4["vars"]
+    assert any("DONE" in ln for ln in rep4["lines"])
+    assert any("(shadow)" not in ln and "x = 3" in ln
+               for ln in rep4["lines"])
     return {"for_ticks": body_ticks, "guard": "trips to bail",
             "do": "priming pass runs once",
-            "events": len(rep["events"])}
+            "events": len(rep["events"]),
+            "while_alive": f"x=0 → {ticks} ticks → "
+                           f"x={rep4['vars'].get('x')} · done door"}
 
 
 if __name__ == "__main__":

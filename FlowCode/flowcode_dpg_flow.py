@@ -48,7 +48,7 @@ KINDS = [
 ]
 
 FS = {
-    "syms": {}, "raw": {}, "edges": [], "rawdoc": None,
+    "syms": {}, "raw": {}, "edges": [], "rawdoc": None, "variables": [],
     "next": 0, "sel": None, "sel_edge": None, "file": None,
     "tool": "select", "edge_src": None, "edge_wps": [], "drag": None,
     "wpdrag": None, "grip": None, "zoom": 1.0, "dirty": False,
@@ -92,10 +92,37 @@ def set_scope(scope_name):
     FS["sel"] = None
     FS["sel_edge"] = None
     FS["multi"] = set()
+    _furnish_pocket(scope_name)
     _build_breadcrumb()
     redraw()
     _status(f"opened pocket: {scope_name}" if scope_name
             else "back to MainFlow")
+
+
+def _furnish_pocket(scope_name):
+    """First entry into an EMPTY process/subroutine pocket furnishes the
+    default parameter (I/O in) and return (I/O out) — the captain's
+    expectation, with minimal defaults. Loops keep bare pockets."""
+    if not scope_name:
+        return
+    owner = _sym_by_name(scope_name)
+    if owner is None or owner.get("kind") not in ("flow_process",
+                                                  "flow_subroutine"):
+        return
+    if any(sy.get("parent_scope") == scope_name
+           for sy in FS["syms"].values()):
+        return
+    p = add_symbol("flow_io", 120, 80, label="param")
+    r = add_symbol("flow_io", 120, 300, label="return")
+    for sid, direction, addr in ((p, "in", "param"),
+                                 (r, "out", "result")):
+        s = FS["syms"][sid]
+        sym_prop_set(s, "direction", direction)
+        sym_prop_set(s, "channel", "variable")
+        sym_prop_set(s, "address", addr)
+    add_edge(p, r)
+    _status(f"pocket furnished: param → return (edit their channels "
+            f"in PROPERTIES)")
 
 
 def leave_scope(*_):
@@ -260,7 +287,53 @@ def do_word_dump(*_):
     _out(f"⬇ Word Dump — {len(words)} TernOO words", (74, 158, 255))
     for line in buf.getvalue().splitlines():
         _out("  " + line, STYLE.get("DIM"))
-    _status(f"word dump → Output ({len(words)} words)")
+    io_words = _io_word_dump()
+    _status(f"word dump → Output ({len(words)} words"
+            + (f" + {io_words} I-O words" if io_words else "") + ")")
+
+
+# I/O CHANNEL payload convention (20-08, ledgered): the I-O word's
+# 18-trit payload carries the channel FAMILY in its low trits —
+# console=0 · cell=1 · widget=2 · variable=3. Address binding beyond
+# the family id rides the codegen leg (symbol table / pointer word).
+_IO_CHANNEL_ID = {"console": 0, "cell": 1, "widget": 2, "variable": 3}
+_IO_TRIT = {"in": -1, "bidi": 0, "out": 1,
+            "unbuffered": -1, "buffered": 0, "interrupt": 1}
+
+
+def _io_word_dump():
+    """Append REAL I-O primary words (v0.3 build_io_word) to the dump
+    for every I/O symbol carrying direction properties — the literal
+    FlowCode→TernOO translation, previewed. Execution on the core
+    rides the codegen leg."""
+    ios = [(sid, s) for sid, s in sorted(FS["syms"].items())
+           if s.get("kind") == "flow_io"
+           and sym_prop_get(s, "direction", "")]
+    if not ios:
+        return 0
+    try:
+        import importlib.util as ilu
+        five = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "5500fp")
+        spec = ilu.spec_from_file_location(
+            "v03", os.path.join(five, "5500fp_ternoo_v03.py"))
+        v = ilu.module_from_spec(spec)
+        spec.loader.exec_module(v)
+    except Exception as e:                      # noqa: BLE001
+        _out(f"  (I-O words unavailable: {e})", STYLE.get("AMB"))
+        return 0
+    _out(f"⬇ I-O WORDS — {len(ios)} channel words (build_io_word, "
+         "literal translation)", (63, 208, 143))
+    for sid, s in ios:
+        d = _IO_TRIT.get(sym_prop_get(s, "direction", "in"), -1)
+        b = _IO_TRIT.get(sym_prop_get(s, "buffering", "buffered"), 0)
+        ch = _IO_CHANNEL_ID.get(sym_prop_get(s, "channel", "variable"), 3)
+        wd = v.build_io_word(d, b, 0, channel=ch)
+        _out(f"  I-O  #{sid} {s.get('label', '')}  "
+             f"{sym_prop_get(s, 'channel', '')}"
+             f":{sym_prop_get(s, 'address', '')}  raw={wd}  ·  "
+             + v.describe_word(wd), STYLE.get("TEXT"))
+    return len(ios)
 
 
 def do_load_emu(*_):
@@ -839,13 +912,15 @@ def _lasso_apply(rect):
 
 
 def clear_all(*_):
-    if not FS["syms"] and not FS["edges"]:
+    if not FS["syms"] and not FS["edges"] and not FS["variables"]:
         return
     _snapshot()
     FS["syms"].clear()
     FS["raw"].clear()
     FS["edges"].clear()
+    FS["variables"].clear()
     FS["sel"] = FS["sel_edge"] = None
+    _vars_refresh()
     redraw()
     _status("canvas cleared")
 
@@ -1004,6 +1079,15 @@ def _draw_symbol(s, selected):
         dpg.draw_quad((x + sk, y), (x + w, y), (x + w - sk, y + h),
                       (x, y + h), fill=fill, color=border, thickness=th,
                       parent=D)
+        _iod = sym_prop_get(s, "direction", "")
+        if _iod:
+            _ioc = sym_prop_get(s, "channel", "variable")
+            _ioa = sym_prop_get(s, "address", "")
+            arrow = "←" if _iod == "in" else "⇒"
+            dpg.draw_text((x, y + h + 16 * Z),
+                          f"{_iod} {arrow} {_ioc}"
+                          + (f":{_ioa}" if _ioa else ""),
+                          size=11 * Z, color=(122, 200, 255), parent=D)
     else:                                   # process (and subroutine kin)
         dpg.draw_rectangle((x, y), (x + w, y + h), fill=fill, color=border,
                            thickness=th, parent=D)
@@ -1576,6 +1660,7 @@ def _payload(path):
     doc["source_file"] = os.path.basename(path)
     doc["flow_symbols"] = syms
     doc["flow_edges"] = [dict(e) for e in FS["edges"]]
+    doc["flow_variables"] = [dict(v) for v in FS["variables"]]
     if ext == ".flow":                      # flow-only partial, per policy
         doc["symbols"] = []
         doc["edges"] = []
@@ -1645,6 +1730,8 @@ def load_from(path):
         FS["raw"][sid] = dict(sym)
         FS["next"] = max(FS["next"], sid + 1)
     FS["edges"] = [dict(e) for e in doc.get("flow_edges", [])]
+    FS["variables"] = [dict(v) for v in doc.get("flow_variables", [])]
+    _vars_refresh()
     FS["file"] = path
     FS["dirty"] = False
     FS["scope"] = None
@@ -1760,6 +1847,19 @@ def build_flow_tab(style):
                 with dpg.group(tag="flowp_rows"):
                     dpg.add_text("select a symbol\nor an edge",
                                  color=C["DIM"])
+            with dpg.collapsing_header(label="VARIABLES",
+                                       default_open=True):
+                with dpg.group(tag="flowp_vars"):
+                    pass
+                with dpg.group(horizontal=True):
+                    dpg.add_input_text(tag="flowp_var_name", width=80,
+                                       hint="name")
+                    dpg.add_input_text(tag="flowp_var_init", width=-46,
+                                       hint="init (one tongue)")
+                    dpg.add_button(label="+", callback=lambda:
+                                   add_variable(
+                                       dpg.get_value("flowp_var_name"),
+                                       dpg.get_value("flowp_var_init")))
             with dpg.collapsing_header(label="WATCH",
                                        default_open=True):
                 with dpg.group(tag="flowp_watch"):
@@ -1931,8 +2031,9 @@ def _prop_write(sid, rec, value):
     pm = _pm()
     sym_prop_set(s, rec["name"], value)
     FS["dirty"] = True
-    if rec["name"] == "kind":           # loop kind flips which records
-        _PROPS_SHOWN[0] = None          # apply — rebuild the rows
+    if rec["name"] in ("kind", "direction", "channel"):
+        _PROPS_SHOWN[0] = None          # these flip which records apply
+        #                                 — rebuild the rows
     if pm and rec["type"] == "expression":
         ok, msg = pm.validate(rec, value)
         tag = f"flowp_v_{rec['name']}"
@@ -2016,7 +2117,8 @@ def _sync_flow_props():
         return
     for rec in pm.declarations_for(s["kind"]):
         if hasattr(pm, "record_applies") and not pm.record_applies(
-                rec, lambda k2, d2="": sym_prop_get(s, k2, d2)):
+                rec, lambda k2, d2="": sym_prop_get(s, k2, d2),
+                family=s["kind"]):
             continue                    # the filter field at work
         cur = sym_prop_get(s, rec["name"], rec["default"])
         with dpg.group(horizontal=True, parent=R):
@@ -2209,6 +2311,70 @@ _WATCHVALS = {}
 _WALKING = [False]
 
 
+# ── declared VARIABLES (the design's own state — walks start from it) ──────
+def _vars_refresh():
+    V = "flowp_vars"
+    if not dpg.does_item_exist(V):
+        return
+    dpg.delete_item(V, children_only=True)
+    if not FS["variables"]:
+        dpg.add_text("declare state here —\nwalks start from it",
+                     parent=V, color=STYLE.get("DIM"))
+        return
+    for i, v in enumerate(FS["variables"]):
+        with dpg.group(horizontal=True, parent=V):
+            dpg.add_text(f"{v['name'][:10]:<10}", color=STYLE.get("TEXT"))
+            dpg.add_text(f"= {v.get('init', '')}", color=STYLE.get("DIM"))
+            dpg.add_button(label="×", small=True, user_data=i,
+                           callback=lambda s, a, u: del_variable(u))
+
+
+def add_variable(name, init):
+    name = str(name or "").strip()
+    if not name or any(v["name"] == name for v in FS["variables"]):
+        _status("variable needs a fresh name", ok=False)
+        return
+    pm = _pm()
+    if pm and str(init).strip():
+        ok, msg = pm.validate({"type": "expression"}, init)
+        if not ok:
+            _status(f"init doesn't parse: {msg}", ok=False)
+            return
+    FS["variables"].append({"name": name, "init": str(init or "0")})
+    FS["dirty"] = True
+    for t in ("flowp_var_name", "flowp_var_init"):
+        if dpg.does_item_exist(t):
+            dpg.set_value(t, "")
+    _vars_refresh()
+    _status(f"declared {name}")
+
+
+def del_variable(i):
+    if 0 <= i < len(FS["variables"]):
+        v = FS["variables"].pop(i)
+        FS["dirty"] = True
+        _vars_refresh()
+        _status(f"removed {v['name']}")
+
+
+def _initial_vars():
+    """Evaluate declared inits in the one tongue → the walk's store."""
+    WK = _wk()
+    sf = WK._sf()
+    resolver = _walk_resolver()
+    out = {}
+    for v in FS["variables"]:
+        try:
+            node = sf.parse(str(v.get("init", "0")).strip().lstrip("=")
+                            or "0")
+            out[v["name"]] = sf._eval(
+                node, lambda n: resolver(n),
+                ctx={"name_prop": lambda n, p: resolver(f"{n}.{p}")})
+        except Exception:                       # noqa: BLE001
+            out[v["name"]] = 0
+    return out
+
+
 def _watch_refresh():
     W = "flowp_watch"
     if not dpg.does_item_exist(W):
@@ -2257,11 +2423,16 @@ def do_walk(*_):
     if _WALKING[0]:
         _status("a walk is already playing", ok=False)
         return
-    _out("── WALK — doors + loops (design-graph runtime) ──",
+    _out("── WALK — doors + loops + I/O (design-graph runtime) ──",
          (122, 200, 255))
     _prewatch()
+    variables = _initial_vars()
+    for n, v in variables.items():
+        _WATCHVALS[n] = v
+    _watch_refresh()
     try:
-        rep = WK.walk(FS["syms"], FS["edges"], _walk_resolver())
+        rep = WK.walk(FS["syms"], FS["edges"], _walk_resolver(),
+                      variables=variables)
     except Exception as e:                      # noqa: BLE001
         _out(f"✗ walk failed: {e}", (255, 136, 136))
         return
@@ -2350,3 +2521,84 @@ def _selftest_loop():
         FS["dirty"] = False
         FS["undo"].clear()
         FS["redo"].clear()
+
+
+def _selftest_io():
+    """The I/O family gate: the while-alive story end-to-end THROUGH the
+    organ (declared variable → while → I/O increment → done door),
+    pocket furnishing, io props round-trip, real I-O words."""
+    WK = _wk()
+    pm = _pm()
+    assert WK is not None and pm is not None
+    keep = (dict(FS["syms"]), list(FS["edges"]), dict(FS["raw"]),
+            list(FS["variables"]), FS["scope"])
+    FS["syms"].clear()
+    FS["raw"].clear()
+    FS["edges"][:] = []
+    FS["variables"][:] = []
+    FS["scope"] = None
+    try:
+        add_variable("x", "0")
+        assert FS["variables"] == [{"name": "x", "init": "0"}]
+        t0 = add_symbol("flow_terminator", 60, 60, label="START")
+        sym_prop_set(FS["syms"][t0], "is_entry", True)
+        lp = add_symbol("flow_loop", 240, 60, label="W")
+        s = FS["syms"][lp]
+        sym_prop_set(s, "kind", "while")
+        sym_prop_set(s, "condition", "x < 3")
+        inc = add_symbol("flow_io", 300, 200, label="inc")
+        FS["syms"][inc]["parent_scope"] = s["name"]
+        for k2, v2 in (("direction", "out"), ("channel", "variable"),
+                       ("address", "x"), ("expression", "x + 1")):
+            sym_prop_set(FS["syms"][inc], k2, v2)
+        done = add_symbol("flow_terminator", 460, 60, label="DONE")
+        add_edge(t0, lp)
+        e = add_edge(lp, done)
+        assert e["branch"] == "-"
+        rep = WK.walk(FS["syms"], FS["edges"], _walk_resolver(),
+                      variables=_initial_vars())
+        ticks = sum(1 for ln in rep["lines"] if "] tick" in ln)
+        assert ticks == 3 and rep["vars"].get("x") == 3, \
+            (ticks, rep["vars"], rep["lines"])
+        assert any("DONE" in ln for ln in rep["lines"])
+        # pocket furnishing: enter an empty process pocket
+        pr = add_symbol("flow_process", 60, 300, label="P")
+        set_scope(FS["syms"][pr]["name"])
+        kids = [sy for sy in FS["syms"].values()
+                if sy.get("parent_scope") == FS["syms"][pr]["name"]]
+        assert len(kids) == 2, "pocket furnishes param + return"
+        dirs = sorted(sym_prop_get(sy, "direction", "") for sy in kids)
+        assert dirs == ["in", "out"], dirs
+        set_scope(None)
+        # io props ride the .fc
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".fc",
+                                         delete=False) as f:
+            tmp = f.name
+        save_to(tmp)
+        load_from(tmp)
+        os.unlink(tmp)
+        assert FS["variables"] == [{"name": "x", "init": "0"}], \
+            "variables ride the .fc"
+        inc2 = next(sy for sy in FS["syms"].values()
+                    if sy.get("label") == "inc")
+        assert sym_prop_get(inc2, "expression") == "x + 1"
+        n_io = _io_word_dump() if dpg.does_item_exist("flowc_out") else 3
+        assert n_io == 3, n_io          # inc + param + return
+        assert dpg.does_item_exist("flowp_vars")
+        return {"while_alive": f"x=0 → {ticks} ticks → x=3 → done",
+                "pocket": "param+return", "io_words": n_io,
+                "vars_persist": True}
+    finally:
+        FS["syms"].clear()
+        FS["syms"].update(keep[0])
+        FS["raw"].clear()
+        FS["raw"].update(keep[2])
+        FS["edges"][:] = keep[1]
+        FS["variables"][:] = keep[3]
+        FS["scope"] = keep[4]
+        FS["file"] = None
+        FS["dirty"] = False
+        FS["undo"].clear()
+        FS["redo"].clear()
+        _vars_refresh()

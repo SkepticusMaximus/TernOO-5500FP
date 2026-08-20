@@ -102,10 +102,25 @@ DECLARATIONS = {
         record("is_entry", "trit", 0,
                label="is entry (+1 yes · 0 auto · −1 no)"),
     ],
-    # flow_io: channel/address family rides the I/O design sitting —
-    # declared here the moment it's ruled, panel picks it up for free.
+    # The I/O family (built on the helm, 20-08): WHERE data is read and
+    # written. Channels are the blessed namespace's doors; the walker
+    # executes them; build_io_word makes them TernOO I-O primaries.
     "flow_io": [
-        record("note", "text", "", label="note"),
+        record("direction", "choice", "in", domain=["in", "out"],
+               label="direction"),
+        record("channel", "choice", "variable",
+               domain=["variable", "cell", "widget", "console"],
+               label="channel"),
+        record("address", "text", "",
+               filter_="channel:variable|cell|widget",
+               label="address (x · A1 · name.prop)"),
+        record("var", "text", "", filter_="direction:in",
+               label="read into variable"),
+        record("expression", "expression", "",
+               filter_="direction:out", label="value (one tongue)"),
+        record("buffering", "choice", "buffered",
+               domain=["unbuffered", "buffered", "interrupt"],
+               label="buffering (I-O word)"),
     ],
 }
 
@@ -116,18 +131,25 @@ def declarations_for(kind):
     return [dict(r) for r in DECLARATIONS.get(kind, [])]
 
 
-def record_applies(rec, prop_get):
+def record_applies(rec, prop_get, family=None):
     """The canon record's FILTER field at work: 'kind:while|do' shows
     the record only when the symbol's `kind` property (via prop_get)
-    is one of the listed values. No filter → always applies."""
+    is one of the listed values. Unset property → the FAMILY's declared
+    default for that key. No filter → always applies."""
     f = rec.get("filter")
     if not f or ":" not in str(f):
         return True
     key, _, vals = str(f).partition(":")
     cur = str(prop_get(key, "") or "")
     if not cur:
-        fam = DECLARATIONS.get("flow_loop", [])
-        cur = next((r["default"] for r in fam if r["name"] == key), "")
+        fams = ([DECLARATIONS[family]] if family in DECLARATIONS
+                else DECLARATIONS.values())
+        for fam in fams:
+            d = next((r["default"] for r in fam if r["name"] == key),
+                     None)
+            if d is not None:
+                cur = str(d)
+                break
     return cur in vals.split("|")
 
 
