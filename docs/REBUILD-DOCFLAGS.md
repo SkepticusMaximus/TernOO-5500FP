@@ -334,3 +334,37 @@ affected.
   later leg — the walker is the Python-side runtime both faces share.
 - Gates: LOOP FAMILY (suite 24) — for=3 ticks, guard-to-bail, do
   priming pass, door pool, panel filters, persistence.
+
+## 2026-08-20 — Walk goes live: highlight replay + the WATCH panel
+- Captain's review of Session 2: Walk now ANIMATES — the walker emits
+  an event stream (visit/line/watch) and the Flow tab replays it: the
+  selected-symbol highlight FOLLOWS the walk tick by tick (parity with
+  Step's live highlight), trace lines land in the Output pane in step,
+  and the new WATCH panel (right column, under PROPERTIES) fills with
+  every name the walk touches — loop variables per tick, resolved
+  cells/widget props, and #NAME? in red for the unresolvable. Watch is
+  pre-seeded from every expression in the design (extract_refs), so
+  the variable list exists before the first tick.
+- WALK vs STEP (docs must teach this): STEP = the MACHINE's lens (the
+  compiled word program driven through the interpreter — what the CPU
+  sees). WALK = the LANGUAGE's lens (doors, ticks, conditions in the
+  one tongue — what the flowchart MEANS). Learn on Walk/Flow; debug
+  data on Watch+Sheet; verify the metal on Step.
+- I/O TRUTH ESTABLISHED (captain's question): today FlowCode's I/O
+  symbol compiles to SHAPE_IO — an RNODE geometry word (a PICTURE of a
+  parallelogram); v0.3's build_io_word(direction,buffering,blocking,
+  channel) — the REAL I-O primary — exists and is UNWIRED. The I/O
+  family sitting's charter is exactly to make the translation literal:
+  symbol properties (registry-driven dir/buf/channel/address) →
+  build_io_word at compile. Not literal yet; documented as the gap.
+- CAPTAIN'S CARD (Session D centerpiece, ledgered): the GENERAL OBJECT
+  / DATA CONSTRUCTOR panel — declare/construct variables, arrays,
+  multi-dim arrays, objects (not necessarily graphical) — likely HOMED
+  on the Connectors tab with its missing properties panel: "the
+  domain-agnostic components, where the 'talking about' and 'talking
+  to' meet to connect all three other faces." Watch panel is its
+  read-only seed.
+- ORDER RULED (captain delegated; CC's call): (1) I/O family +
+  ASSIGNMENT (brings whiles alive, defines variables, wires
+  build_io_word), (2) Connectors properties + object constructor
+  (Session D), (3) GUI designer (groups/align/rubber-band).

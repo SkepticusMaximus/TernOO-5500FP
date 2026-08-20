@@ -1760,6 +1760,11 @@ def build_flow_tab(style):
                 with dpg.group(tag="flowp_rows"):
                     dpg.add_text("select a symbol\nor an edge",
                                  color=C["DIM"])
+            with dpg.collapsing_header(label="WATCH",
+                                       default_open=True):
+                with dpg.group(tag="flowp_watch"):
+                    dpg.add_text("names appear here when\nthe Walk "
+                                 "touches them", color=C["DIM"])
     dpg.add_text("", tag="flowc_selinfo", color=(74, 158, 255))
     with dpg.group(horizontal=True):
         dpg.add_text("tool: Select — click to select · drag to move · "
@@ -2200,20 +2205,93 @@ def _walk_resolver():
     return resolver
 
 
+_WATCHVALS = {}
+_WALKING = [False]
+
+
+def _watch_refresh():
+    W = "flowp_watch"
+    if not dpg.does_item_exist(W):
+        return
+    dpg.delete_item(W, children_only=True)
+    if not _WATCHVALS:
+        dpg.add_text("names appear here when\nthe Walk touches them",
+                     parent=W, color=STYLE.get("DIM"))
+        return
+    for name, val in list(_WATCHVALS.items())[:24]:
+        with dpg.group(horizontal=True, parent=W):
+            dpg.add_text(f"{str(name)[:14]:<14}", color=STYLE.get("DIM"))
+            dpg.add_text(str(val)[:16],
+                         color=(255, 136, 136) if val == "#NAME?"
+                         else (122, 255, 122))
+
+
+def _prewatch():
+    """Seed the watch with every NAME the design's expressions mention
+    (the captain's variable list) — values fill in as the walk runs."""
+    WK = _wk()
+    sf = WK._sf()
+    _WATCHVALS.clear()
+    for s in FS["syms"].values():
+        for p in s.get("properties", []):
+            if not (isinstance(p, dict) and isinstance(p.get("value"),
+                                                       str)):
+                continue
+            v = p["value"].strip().lstrip("=")
+            if not v or p.get("name") in ("note",):
+                continue
+            try:
+                for ref in sf.extract_refs(sf.parse(v)):
+                    if isinstance(ref, str) and not ref.isdigit():
+                        _WATCHVALS.setdefault(ref, "?")
+            except Exception:                   # noqa: BLE001
+                pass
+    _watch_refresh()
+
+
 def do_walk(*_):
     WK = _wk()
     if WK is None:
         _out(f"✗ walker unavailable: {_WK[1]}", (255, 136, 136))
         return
+    if _WALKING[0]:
+        _status("a walk is already playing", ok=False)
+        return
     _out("── WALK — doors + loops (design-graph runtime) ──",
          (122, 200, 255))
+    _prewatch()
     try:
-        rep = WK.walk(FS["syms"], FS["edges"], _walk_resolver(),
-                      trace=lambda ln: _out(ln))
-        _status(f"walk complete — {rep['steps']} step(s); the story is "
-                "in the Output pane")
+        rep = WK.walk(FS["syms"], FS["edges"], _walk_resolver())
     except Exception as e:                      # noqa: BLE001
         _out(f"✗ walk failed: {e}", (255, 136, 136))
+        return
+    events = rep["events"]
+    _WALKING[0] = True
+
+    def _replay(i=0):
+        if not dpg.does_item_exist("flowc_draw") or i >= len(events):
+            _WALKING[0] = False
+            _status(f"walk complete — {rep['steps']} step(s); the "
+                    "story is in the Output pane")
+            return
+        ev = events[i]
+        delay = 2
+        try:
+            if ev[0] == "visit" and ev[1] in FS["syms"]:
+                FS["sel"] = ev[1]           # the highlight follows the
+                redraw()                    # walk (captain, 20-08)
+                delay = 14
+            elif ev[0] == "line":
+                _out(ev[1])
+                delay = 5
+            elif ev[0] == "watch":
+                _WATCHVALS[ev[1]] = ev[2]
+                _watch_refresh()
+        except Exception:                       # noqa: BLE001
+            pass
+        dpg.set_frame_callback(dpg.get_frame_count() + delay,
+                               lambda: _replay(i + 1))
+    _replay()
 
 
 def _selftest_loop():
