@@ -1063,6 +1063,14 @@ def main():
                   f"branch round-trip={dres['roundtrip']}, "
                   f"{dres['route']} routing, anchors={dres['anchors']}, "
                   f"0-door speaks {dres['flavor']!r}")
+        if os.environ.get("FLOW_DPG_TEST") and FLOW_ORGAN:
+            lres = FLOW_ORGAN._selftest_loop()
+            print(f"LOOP FAMILY OK — for={lres['walker']['for_ticks']} "
+                  f"ticks, {lres['walker']['guard']}, "
+                  f"do={lres['walker']['do']}, doors {lres['doors']}, "
+                  f"3rd refused={lres['third_refused']}, "
+                  f"panel filters={lres['filtered_panel']}, "
+                  f".fc round-trip={lres['roundtrip']}")
         if os.environ.get("FLOW_DPG_TEST") and GUI_ORGAN:
             gres = GUI_ORGAN._selftest()
             print(f"GUI LAYOUT+WIRING OK — {gres['layout']}, "

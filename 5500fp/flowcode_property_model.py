@@ -74,6 +74,24 @@ DECLARATIONS = {
                domain=["+ 0 −", "yes maybe no", "> = <"],
                label="door labels (badges)"),
     ],
+    "flow_loop": [
+        record("kind", "choice", "while",
+               domain=["while", "do", "for", "foreach"],
+               label="loop kind"),
+        record("condition", "expression", "",
+               filter_="kind:while|do", label="condition (one tongue)"),
+        record("var", "text", "i",
+               filter_="kind:for|foreach", label="variable"),
+        record("from", "expression", "1", filter_="kind:for",
+               label="from"),
+        record("to", "expression", "1", filter_="kind:for", label="to"),
+        record("step", "expression", "1", filter_="kind:for",
+               label="step"),
+        record("list", "expression", "", filter_="kind:foreach",
+               label="list (one tongue)"),
+        record("iteration_guard", "number", 10000,
+               label="iteration guard"),
+    ],
     "flow_process": [
         record("note", "text", "", label="note"),
     ],
@@ -96,6 +114,21 @@ BRANCHES = ("+", "0", "-")          # the three doors, always
 
 def declarations_for(kind):
     return [dict(r) for r in DECLARATIONS.get(kind, [])]
+
+
+def record_applies(rec, prop_get):
+    """The canon record's FILTER field at work: 'kind:while|do' shows
+    the record only when the symbol's `kind` property (via prop_get)
+    is one of the listed values. No filter → always applies."""
+    f = rec.get("filter")
+    if not f or ":" not in str(f):
+        return True
+    key, _, vals = str(f).partition(":")
+    cur = str(prop_get(key, "") or "")
+    if not cur:
+        fam = DECLARATIONS.get("flow_loop", [])
+        cur = next((r["default"] for r in fam if r["name"] == key), "")
+    return cur in vals.split("|")
 
 
 # ── domain resolution ───────────────────────────────────────────────────────
@@ -198,8 +231,15 @@ def _selftest():
     assert door == "-"
     door, _d = decision_route("", "compare", "fold-to-−", env.__getitem__)
     assert door == "0"
+    lrecs = declarations_for("flow_loop")
+    getter = {"kind": "for"}.get
+    shown = [r["name"] for r in lrecs if record_applies(r, getter)]
+    assert "from" in shown and "condition" not in shown, shown
+    getter = {"kind": "while"}.get
+    shown = [r["name"] for r in lrecs if record_applies(r, getter)]
+    assert "condition" in shown and "list" not in shown, shown
     return {"families": len(DECLARATIONS), "doors": BRANCHES,
-            "registry_domain": len(dom)}
+            "registry_domain": len(dom), "loop_records": len(lrecs)}
 
 
 if __name__ == "__main__":
