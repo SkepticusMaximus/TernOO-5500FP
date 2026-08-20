@@ -977,7 +977,10 @@ def main():
             F.set_scope(None)
             box = F.add_symbol("flow_process", 200, 200, "BOX")
             box_name = F.FS["syms"][box]["name"]
-            F.set_scope(box_name)
+            F.set_scope(box_name)      # furnishes param+return (20-08)
+            furnished = [s2 for s2 in F.FS["syms"].values()
+                         if s2.get("parent_scope") == box_name]
+            assert len(furnished) == 2, "pocket furnishing"
             kid = F.add_symbol("flow_terminator", 240, 240, "KID")
             assert F.FS["syms"][kid]["parent_scope"] == box_name
             F.set_scope(None)
@@ -995,7 +998,7 @@ def main():
             assert names[box_name]["entry_points"] == [{"name": "in0"}]
             kids = [s2 for s2 in F.FS["syms"].values()
                     if s2.get("parent_scope") == box_name]
-            assert len(kids) == 1
+            assert len(kids) == 3      # param + return + KID
             assert any(e2.get("bound_port_name") == "in0"
                        for e2 in F.FS["edges"])
             F.clear_all()
@@ -1071,6 +1074,12 @@ def main():
                   f"3rd refused={lres['third_refused']}, "
                   f"panel filters={lres['filtered_panel']}, "
                   f".fc round-trip={lres['roundtrip']}")
+        if os.environ.get("FLOW_DPG_TEST") and FLOW_ORGAN:
+            iores = FLOW_ORGAN._selftest_io()
+            print(f"IO FAMILY OK — {iores['while_alive']}, pocket "
+                  f"furnishes {iores['pocket']}, "
+                  f"{iores['io_words']} real I-O words, vars "
+                  f"persist={iores['vars_persist']}")
         if os.environ.get("FLOW_DPG_TEST") and GUI_ORGAN:
             gres = GUI_ORGAN._selftest()
             print(f"GUI LAYOUT+WIRING OK — {gres['layout']}, "
