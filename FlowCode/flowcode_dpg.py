@@ -1085,7 +1085,8 @@ def main():
             print(f"GUI LAYOUT+WIRING OK — {gres['layout']}, "
                   f"{gres['roundtrip']}, import={gres['imported']}, "
                   f"{gres['signals']} signals → e.g. {gres['handler']}, "
-                  f"zorder {gres['zorder']}, rescue={gres['rescue']}")
+                  f"zorder {gres['zorder']}, rescue={gres['rescue']}, "
+                  f"VB kit: {gres['vbkit']}")
         if os.environ.get("FLOW_DPG_TEST") and MESH_ORGAN:
             mres = MESH_ORGAN._selftest()
             print(f"MESH CLIENT OK — full client in-pane, "

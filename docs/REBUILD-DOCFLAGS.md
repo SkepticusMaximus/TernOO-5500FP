@@ -411,3 +411,19 @@ affected.
   registry run) rides Session D proper — designed WITH the captain,
   alongside the object constructor centrepiece.
 - Gate: CONN PROPS (bind text socket → cell:A1, persistence).
+
+## 2026-08-20 — Helm leg 3: the GUI designer's VB kit
+- RUBBER-BAND multi-select (drag on empty canvas), group move (drag any
+  selected moves the set, re-parenting on release), multi-delete.
+- ALIGN tools: lefts · tops · h-centres · v-centres; DISTRIBUTE: equal
+  gaps horizontally/vertically (3+).
+- NAMED GROUPS, FIRST-CLASS (captain's ruling honoured): name the
+  selection, press ⌘ — the group is a saved object riding the .gui
+  (`groups` key); clicking any member selects the whole group
+  (VB doctrine); the groups list selects/ungroups; caption shows
+  ⌘groupname; undo/redo carry groups; deletes prune them.
+- Cross-face note: `groups` is a DPG-side .gui key (Tk saver won't
+  carry it yet) — same class as flow_variables/input_bindings; one
+  consolidated Tk-carry pass rides the parity ledger.
+- Gate: VB-kit asserts in GUI LAYOUT+WIRING (align/distribute
+  arithmetic, group round-trip, member-click expansion). Suite at 26.
