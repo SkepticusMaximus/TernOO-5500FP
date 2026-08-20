@@ -291,3 +291,15 @@ affected.
   the TERNARY GATES DAY — reinventing And/Or/Nand/Nor/Xor/Not over
   ternary signals (Kleene min/max territory; Setun precedent noted) —
   parked as its own fun sitting on the books.
+
+## 2026-08-20 — Registry slot candidates (captain, breakfast session)
+- GATE WORDS: ternary logic gates (and electronic symbols generally) as
+  a DATA-word secondary type — a gate definition as a word (2-input
+  ternary gate = 9 trits of truth table — fits a payload with room to
+  spare; 19,683 possible gates). Candidate registry family for the
+  gates-day sitting.
+- RADIX-ENCODING WORDS: radix translation formats as DATA secondary
+  types — BCD through TERNARY-ENCODED OCTAL (the parked multi-radix
+  lane: the 2-trit octal kernel). Ties the Prof's multi-radix work to
+  the registry instead of hard-coded types. Both parked, ledgered,
+  unbuilt.
