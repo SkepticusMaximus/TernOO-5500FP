@@ -70,6 +70,9 @@ DECLARATIONS = {
         record("unused_0", "choice", "fold-to-−",
                domain=["fold-to-−", "fold-to-+", "refuse"],
                label="unused 0 (boolean mode)"),
+        record("door_labels", "choice", "+ 0 −",
+               domain=["+ 0 −", "yes maybe no", "> = <"],
+               label="door labels (badges)"),
     ],
     "flow_process": [
         record("note", "text", "", label="note"),
@@ -168,7 +171,8 @@ def decision_route(condition, mode, unused_0, resolver):
 
 def _selftest():
     recs = declarations_for("flow_decision")
-    assert [r["name"] for r in recs] == ["condition", "mode", "unused_0"]
+    assert [r["name"] for r in recs] == ["condition", "mode", "unused_0",
+                                         "door_labels"]
     ok, msg = validate(recs[0], "a <=> b")
     assert ok, msg
     ok, msg = validate(recs[0], "1 +* 2")
