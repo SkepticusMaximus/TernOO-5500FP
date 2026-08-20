@@ -861,15 +861,50 @@ def _border_point(s, toward):
     return (cx + dx * t, cy + dy * t)
 
 
+def _diamond_vertex(s, toward):
+    """Decisions attach at the POINTS of the diamond (captain's ruling
+    20-08): nearest vertex to the approach, in or out by usage — the
+    layout stays free, the role rides the edge, not the geometry."""
+    cx, cy = _center(s)
+    verts = ((cx, s["y"]), (s["x"] + s["w"], cy),
+             (cx, s["y"] + s["h"]), (s["x"], cy))
+    return min(verts, key=lambda v: (v[0] - toward[0]) ** 2
+               + (v[1] - toward[1]) ** 2)
+
+
+def _anchor(s, toward):
+    if s.get("kind") == "flow_decision":
+        return _diamond_vertex(s, toward)
+    return _border_point(s, toward)
+
+
 def _edge_points(e):
     src, dst = FS["syms"].get(e["src"]), FS["syms"].get(e["dst"])
     if not src or not dst:
         return []
     pts = [_center(src)] + [tuple(p) for p in e.get("waypoints", [])] \
         + [_center(dst)]
-    first = _border_point(src, pts[1])
-    last = _border_point(dst, pts[-2])
+    first = _anchor(src, pts[1])
+    last = _anchor(dst, pts[-2])
     return [first] + pts[1:-1] + [last]
+
+
+def edge_route(e):
+    """Orthogonal (right-angle) routing — the Tk face's _ortho_points,
+    restored to this face: horizontal-then-vertical L at every hop,
+    recomputed from live geometry each redraw so moved symbols never
+    leave their edges hanging."""
+    raw = _edge_points(e)
+    if len(raw) < 2:
+        return raw
+    out = [raw[0]]
+    for i in range(1, len(raw)):
+        px, py = out[-1]
+        nx, ny = raw[i]
+        if px != nx and py != ny:
+            out.append((nx, py))                # the elbow
+        out.append((nx, ny))
+    return out
 
 
 def _seg_dist(p, a, b):
@@ -893,7 +928,7 @@ def _hit_symbol(mx, my):
 
 def _hit_edge(mx, my):
     for i, e in enumerate(FS["edges"]):
-        pts = _edge_points(e)
+        pts = edge_route(e)                 # hit what's actually drawn
         for a, b in zip(pts, pts[1:]):
             if _seg_dist((mx, my), a, b) <= 8:
                 return i
@@ -916,15 +951,12 @@ def _draw_symbol(s, selected):
         cx, cy = x + w / 2, y + h / 2
         dpg.draw_quad((cx, y), (x + w, cy), (cx, y + h), (x, cy),
                       fill=fill, color=border, thickness=th, parent=D)
-        # the three doors: + east · 0 southeast · − south (ruled 20-08)
-        for gx, gy, glyph, gcol in (
-                (x + w, cy, "+", (122, 255, 122)),
-                ((cx + x + w) / 2 + 3 * Z, (cy + y + h) / 2 + 3 * Z, "0",
-                 (240, 180, 80)),
-                (cx, y + h, "−", (255, 136, 136))):
-            dpg.draw_circle((gx, gy), 3.5 * Z, fill=gcol, parent=D)
-            dpg.draw_text((gx + 5 * Z, gy - 7 * Z), glyph, size=13 * Z,
-                          color=gcol, parent=D)
+        # attachment lives on the POINTS (ruled 20-08); show them as
+        # quiet affordance dots when selected — roles ride the edges
+        if selected:
+            for vx, vy in ((cx, y), (x + w, cy), (cx, y + h), (x, cy)):
+                dpg.draw_circle((vx, vy), 3 * Z, fill=COL["selected"],
+                                parent=D)
         cond = next((p.get("value") for p in s.get("properties", [])
                      if isinstance(p, dict)
                      and p.get("name") == "condition"), "")
@@ -971,7 +1003,7 @@ def redraw():
         s2 = FS["syms"].get(e["dst"])
         if not s1 or not s2 or not _in_scope(s1) or not _in_scope(s2):
             continue
-        pts = [(px * Z, py * Z) for px, py in _edge_points(e)]
+        pts = [(px * Z, py * Z) for px, py in edge_route(e)]
         if len(pts) < 2:
             continue
         col = COL["selected"] if i == FS["sel_edge"] else COL["border"]
@@ -992,11 +1024,15 @@ def redraw():
         if e.get("branch"):
             bcol = {"+": (122, 255, 122), "0": (240, 180, 80),
                     "-": (255, 136, 136)}.get(e["branch"], COL["border"])
-            gl = {"-": "−"}.get(e["branch"], e["branch"])
-            dpg.draw_circle((pts[0][0] + 10 * Z, pts[0][1] - 10 * Z),
-                            8 * Z, fill=(24, 28, 38), parent=D)
-            dpg.draw_text((pts[0][0] + 6 * Z, pts[0][1] - 18 * Z), gl,
-                          size=14 * Z, color=bcol, parent=D)
+            src_sym = FS["syms"].get(e["src"], {})
+            gl = door_glyph(src_sym, e["branch"])
+            bw = max(16, 8 * len(gl)) * Z
+            dpg.draw_rectangle((pts[0][0] + 4 * Z, pts[0][1] - 20 * Z),
+                               (pts[0][0] + 4 * Z + bw,
+                                pts[0][1] - 4 * Z), fill=(24, 28, 38),
+                               rounding=4, parent=D)
+            dpg.draw_text((pts[0][0] + 7 * Z, pts[0][1] - 19 * Z), gl,
+                          size=13 * Z, color=bcol, parent=D)
     for sid, s in FS["syms"].items():
         if not _in_scope(s):
             continue                        # other scopes render when entered
@@ -1620,11 +1656,6 @@ def build_flow_tab(style):
         with dpg.child_window(width=int(C.get("CFG", {})
                               .get("flow_panel_w", 320)),
                               tag="flowc_panel"):
-            with dpg.collapsing_header(label="PROPERTIES",
-                                       default_open=True):
-                with dpg.group(tag="flowp_rows"):
-                    dpg.add_text("select a symbol or an edge",
-                                 color=C["DIM"])
             with dpg.collapsing_header(label="TOOLS", default_open=True):
                 _icon_btn(_tool_icon("select"), " Select ", "move · edit",
                           "select")
@@ -1671,13 +1702,22 @@ def build_flow_tab(style):
                               border=False):
             dpg.add_button(tag="flowc_grip", label="", width=-1,
                            height=2600)
-        with dpg.child_window(tag="flowc_wrap", width=-1,
+        pw = int(C.get("CFG", {}).get("flow_props_w", 260))
+        with dpg.child_window(tag="flowc_wrap", width=-(pw + 12),
                               horizontal_scrollbar=True):
             with dpg.group(horizontal=True, tag="flowc_crumbs"):
                 pass
             with dpg.drawlist(width=CANVAS_W, height=CANVAS_H,
                               tag="flowc_draw"):
                 pass
+        # PROPERTIES ride the RIGHT (captain's ruling 20-08): the canvas
+        # in the middle, tools left, the selected thing's story right.
+        with dpg.child_window(tag="flowp_panel", width=-1):
+            with dpg.collapsing_header(label="PROPERTIES",
+                                       default_open=True):
+                with dpg.group(tag="flowp_rows"):
+                    dpg.add_text("select a symbol\nor an edge",
+                                 color=C["DIM"])
     dpg.add_text("", tag="flowc_selinfo", color=(74, 158, 255))
     with dpg.group(horizontal=True):
         dpg.add_text("tool: Select — click to select · drag to move · "
@@ -1789,6 +1829,22 @@ def _pm():
         except Exception as e:                  # noqa: BLE001
             _PM[1] = str(e)
     return _PM[0]
+
+
+DOOR_FLAVORS = {
+    "+ 0 −": {"+": "+", "0": "0", "-": "−"},
+    "yes maybe no": {"+": "yes", "0": "maybe", "-": "no"},
+    "> = <": {"+": ">", "0": "=", "-": "<"},
+}
+
+
+def door_glyph(src_sym, branch):
+    """The door's VALUE ROLE is canon (+/0/−); the decision's
+    door_labels property picks how badges SPEAK it (captain, 20-08)."""
+    flavor = sym_prop_get(src_sym, "door_labels", "+ 0 −") \
+        if src_sym else "+ 0 −"
+    return DOOR_FLAVORS.get(flavor, DOOR_FLAVORS["+ 0 −"]).get(
+        branch, branch)
 
 
 def sym_prop_get(s, name, default=""):
@@ -1990,8 +2046,25 @@ def _selftest_decision():
                   if s["kind"] == "flow_decision")
         assert sym_prop_get(FS["syms"][d2], "condition") == \
             "score <=> 27", "condition rides the .fc"
+        # 20-08 curveball invariants: right angles + vertex anchoring
+        for e in FS["edges"]:
+            pts = edge_route(e)
+            for a, b in zip(pts, pts[1:]):
+                assert a[0] == b[0] or a[1] == b[1], \
+                    f"non-orthogonal segment {a}->{b}"
+            s1 = FS["syms"][e["src"]]
+            if s1["kind"] == "flow_decision":
+                cx, cy = _center(s1)
+                verts = {(cx, s1["y"]), (s1["x"] + s1["w"], cy),
+                         (cx, s1["y"] + s1["h"]), (s1["x"], cy)}
+                assert pts[0] in verts, "decision must anchor on a point"
+        sym_prop_set(FS["syms"][d2], "door_labels", "yes maybe no")
+        assert door_glyph(FS["syms"][d2], "0") == "maybe"
+        assert door_glyph(FS["syms"][d2], "+") == "yes"
         return {"doors": 3, "refused_4th": True,
-                "tongue": "score <=> 27 → +", "roundtrip": True}
+                "tongue": "score <=> 27 → +", "roundtrip": True,
+                "route": "orthogonal", "anchors": "diamond points",
+                "flavor": "maybe"}
     finally:
         FS["syms"].clear()
         FS["syms"].update(keep_syms)

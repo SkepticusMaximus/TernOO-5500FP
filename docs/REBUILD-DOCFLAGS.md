@@ -269,3 +269,25 @@ affected.
 - New gate: DECISION DOORS (suite now 23). Docs: conditions/doors/one-
   tongue are user-facing language features — CAI's docs should teach
   the 0 door as ternary's native "dunno/defer" and the recursion story.
+
+## 2026-08-20 — Curveball: properties RIGHT, doors on the points, right angles back
+- Captain's screenshot review of Session 1: (1) PROPERTIES panel moved
+  to a RIGHT column (tools left · canvas centre · properties right —
+  the layout doctrine for all tabs). (2) Decision attachment redesigned:
+  edges anchor on the DIAMOND'S POINTS (nearest vertex, in/out by
+  usage) — geometry is free; the VALUE ROLE rides the edge and is
+  reassigned by dropdown. Fixed door stubs removed; selected decisions
+  show quiet vertex dots. (3) door_labels property: badges speak
+  "+ 0 −" | "yes maybe no" | "> = <" — role is canon trit, label is
+  flavor. (4) RIGHT-ANGLE ROUTING restored (the Tk _ortho_points
+  H-then-V elbow, recomputed from live geometry every redraw — moved
+  symbols never leave edges hanging); edge hit-testing follows the
+  drawn route.
+- Captain's language riffs CAPTURED for future sittings (not built):
+  If/Then/ElseIf cascades and While/Do with Else-Goto (his own
+  spaghetti caution noted — doors stay structured, no goto); MULTI-
+  INPUT comparators (logic-gate style, ≥2 inputs) as a possible symbol;
+  case/switch (select mode); DIFFERENT SHAPES per conditional kind; and
+  the TERNARY GATES DAY — reinventing And/Or/Nand/Nor/Xor/Not over
+  ternary signals (Kleene min/max territory; Setun precedent noted) —
+  parked as its own fun sitting on the books.
