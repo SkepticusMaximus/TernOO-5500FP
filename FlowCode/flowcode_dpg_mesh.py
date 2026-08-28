@@ -236,7 +236,7 @@ def _selftest():
     MC.append_block("You", "gate probe (render check)", tuple(MC.DIM))
     MC.HISTORY[:] = []
     macros = len(dpg.get_item_children("maclist", 1) or [])
-    # 20-08 forge regression: long options ATTACH their value (--o=v);
+    # Forge regression (Aug-29): long options ATTACH their value (--o=v);
     # separated form made grep read the pattern as a filename.
     argv = MC.assemble(
         {"kind": "command", "command": "grep", "fields": [

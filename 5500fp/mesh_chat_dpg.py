@@ -457,7 +457,7 @@ def assemble(spec, values):
             # a separated optional argument ("--color auto") makes the
             # value a positional — grep then read the real pattern as a
             # FILENAME ("No such file or directory" whatever you typed;
-            # the captain's 20-08 forge bug).
+            # the captain's forge bug, Aug-29).
             if str(f["flag"]).startswith("--"):
                 argv.append(f"{f['flag']}={v}")
             else:
