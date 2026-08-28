@@ -236,5 +236,15 @@ def _selftest():
     MC.append_block("You", "gate probe (render check)", tuple(MC.DIM))
     MC.HISTORY[:] = []
     macros = len(dpg.get_item_children("maclist", 1) or [])
+    # 20-08 forge regression: long options ATTACH their value (--o=v);
+    # separated form made grep read the pattern as a filename.
+    argv = MC.assemble(
+        {"kind": "command", "command": "grep", "fields": [
+            {"flag": "--color", "type": "choice", "default": "auto"},
+            {"arg": "patterns", "type": "text", "default": ""},
+            {"arg": "files", "type": "path", "default": "."}]},
+        ["auto", "PAT", "."])
+    assert "--color=auto" in argv and \
+        argv.index("PAT") < argv.index("."), argv
     return {"core": True, "store": MC.STORE is not None, "macros": macros,
-            "seams": True}
+            "seams": True, "forge_argv": "attached-form"}

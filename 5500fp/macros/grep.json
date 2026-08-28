@@ -1,0 +1,85 @@
+{
+  "name": "Search text",
+  "kind": "command",
+  "command": "grep",
+  "desc": "Search for patterns in files and output matching lines",
+  "fields": [
+    {
+      "flag": "-E",
+      "label": "Extended regex",
+      "type": "check",
+      "default": false,
+      "group": "Pattern",
+      "suggest": false
+    },
+    {
+      "flag": "-i",
+      "label": "Ignore case",
+      "type": "check",
+      "default": true,
+      "group": "Pattern",
+      "suggest": true
+    },
+    {
+      "flag": "-v",
+      "label": "Invert match",
+      "type": "check",
+      "default": false,
+      "group": "Misc",
+      "suggest": true
+    },
+    {
+      "flag": "-n",
+      "label": "Line numbers",
+      "type": "check",
+      "default": false,
+      "group": "Output",
+      "suggest": true
+    },
+    {
+      "flag": "-r",
+      "label": "Recursive",
+      "type": "check",
+      "default": false,
+      "group": "Output",
+      "suggest": false
+    },
+    {
+      "flag": "-c",
+      "label": "Count lines",
+      "type": "check",
+      "default": false,
+      "group": "Output",
+      "suggest": true
+    },
+    {
+      "flag": "--color",
+      "label": "Color matches",
+      "type": "choice",
+      "options": [
+        "always",
+        "never",
+        "auto"
+      ],
+      "default": "auto",
+      "group": "Output",
+      "suggest": true
+    },
+    {
+      "arg": "patterns",
+      "label": "Patterns",
+      "type": "text",
+      "default": "",
+      "group": "Arguments",
+      "suggest": true
+    },
+    {
+      "arg": "files",
+      "label": "Files",
+      "type": "path",
+      "default": ".",
+      "group": "Arguments",
+      "suggest": true
+    }
+  ]
+}

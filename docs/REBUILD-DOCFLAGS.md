@@ -475,3 +475,50 @@ affected.
 - Naming note: "DELTA" is CC's proposed name for the diff word's
   registry slot family (DATA · DELTA) — not an existing TernOO term;
   captain may rename.
+
+## 2026-08-20 (evening) — CAPTAIN'S TERMINOLOGY RULING: HexMesh + the mesh canon
+- From the captain's DeepBlue/DeepAI reconciliation (transcript shared
+  20-08): the mesh terminology EVOLVES AND SETTLES —
+  · TTree (tetrahedral nesting): SUPERSEDED, conceptual ancestor only.
+  · TMesh: interim name, RETIRED for clarity.
+  · **HexMesh** (or HMesh): THE NAME — the triangles form a hexagonal
+    pyramid (six triangular faces per honeycomb cell); the navigation/
+    identity layer (MMID → traversal).
+  · OTree (octal tree; 2 trits = 9 states = 8 cube corners + centre):
+    RETAINED — the storage/rendering layer (MMOE → canonical content).
+  · Complementary, not competing: HexMesh = "how to find", OTree =
+    "where it lives". MMID/MMOE = identity-by-uniqueness (the object
+    described by its whole serial pattern, IDENTIFIED by its
+    difference from all others — the dichotomising-machine principle).
+- ALGEBRA AUDIT (DeepAI, reconciled): A⊕B = −(A+B) mod 729 is THE
+  Steiner quasigroup on Z/3^6 (topology-independent, closes
+  triangles); accumulator is ADDITIVE mod 729 (order-sensitive,
+  invertible); a fold is a MULTISET hash (order-insensitive); digest
+  construction → ternary sponge; Meccano vocabulary = closed 3^k
+  subsets (minimal useful: the 27 multiples of 27).
+- MULTI-RADIX SIGNAL CARD (extends the parked 18/08 lane): a tribble
+  carries 3 ternary-encoded octets + 3 spare trit-states; the spare
+  channel rides the hex-edge as an INDEPENDENT serial trit signal
+  (e.g. forward pass octal + backprop ternary on the same edge —
+  physical separation in topology). Unbuilt; audit-lane.
+- CAPTAIN'S STANDING RULING (from the same thread): "No development
+  can happen until the docs catch up" — the docs course (MEAT) now
+  carries the mesh-rename burden: all TMesh/TTree references in
+  docs/help/whitepaper migrate to HexMesh/OTree per this entry.
+  → Language Audit cross-refs, GristMill help (the DeepBlue outline is
+  a good skeleton), ASPLOS terminology, CAI handoff addendum.
+- CORRECTION (CC): earlier tonight CC read Ian Clarke's "HexMesh" as
+  Ian coining a name — the captain had in fact settled "HexMesh"
+  himself in the DeepBlue thread; Ian likely read the captain's own
+  current term. The forensic flourish is withdrawn; the engagement
+  compliment stands.
+- Professor style note (captain's observation, HIS call when ready):
+  the "not just X, it's Y" habit — recognized as dichotomising-machine
+  cognition, clumsy register; a PROFESSOR.md-style preference block
+  (positive descriptions, no gratuitous superlatives) is drafted in
+  his thread and can be added to the classroom bootstrap on his word.
+- MACRO FORGE BUG FIXED (the captain's grep macro): assemble() emitted
+  separated long-option values ("--color auto") — grep read the value
+  as the PATTERN and the real pattern as a FILENAME ("No such file or
+  directory" regardless of input). Long options now attach (--opt=val).
+  Regression in the MESH gate; his grep.json committed to the library.
