@@ -476,7 +476,7 @@ affected.
   registry slot family (DATA · DELTA) — not an existing TernOO term;
   captain may rename.
 
-## 2026-08-20 (evening) — CAPTAIN'S TERMINOLOGY RULING: HexMesh + the mesh canon
+## 2026-08-29 — CAPTAIN'S TERMINOLOGY RULING: HexMesh + the mesh canon
 - From the captain's DeepBlue/DeepAI reconciliation (transcript shared
   20-08): the mesh terminology EVOLVES AND SETTLES —
   · TTree (tetrahedral nesting): SUPERSEDED, conceptual ancestor only.
