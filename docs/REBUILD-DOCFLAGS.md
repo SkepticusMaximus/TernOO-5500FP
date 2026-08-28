@@ -522,3 +522,43 @@ affected.
   as the PATTERN and the real pattern as a FILENAME ("No such file or
   directory" regardless of input). Long options now attach (--opt=val).
   Regression in the MESH gate; his grep.json committed to the library.
+
+## 2026-08-29 — PRIMARY SOURCE COMMITTED: private/HexMesh-Born.txt
+- The captain's maths-department thread (the SQG's birthplace) is now
+  IN THE REPO — the citation behind the mesh canon. What it settles,
+  beyond tonight's earlier entry:
+  · WHY −(A+B): XOR is add-mod-2 (self-inverse elements); char-3 needs
+    the negation; the operation is the Steiner quasigroup — commutative,
+    IDEMPOTENT (x⊕x=x), self-inverse, Latin square, NON-associative
+    (never chain-fold as if associative).
+  · COCYCLE THEORY: face labels = a G-valued 1-cocycle / flat
+    connection on the complex; edge rule (three faces sum to zero) +
+    vertex rule (six faces sum to zero); construction = linear algebra
+    over F3 from a spanning tree — existence + uniqueness guaranteed.
+  · TERMINATION: the walk has NO intrinsic halting state (the
+    accumulator is a permutation) — a sentinel tribble or length
+    header is REQUIRED by mathematics, not by taste.
+  · CONTENT-ADDRESS DOCTRINE (the corrected round, CF5's Part-1
+    corrections CONFIRMED in-thread): MMID = digest (sort key +
+    verify tag), can NEVER reconstruct content (pigeonhole); MMOE =
+    the stored pattern itself; plain ⊕-fold = order-insensitive
+    multiset hash; tamper-evidence needs the ternary SPONGE.
+  · DIGEST PARAMETERS: ~39 trits clears the 10^9 birthday bound;
+    50–60 trits comfortable adversarially; sponge state 243–324
+    trits, capacity ≥81.
+  · TOPOLOGY VERDICT: the SQG is local and topology-free; HexMesh is
+    at least as capable as the tetrahedral mesh; TTree retention not
+    mathematically necessary.
+- AUDIT FLAGS (CC, honest-engineering lane — so docs don't enshrine
+  slips): (1) "OCTET" vs "OCTAL DIGIT" — the sound kernel is 2 trits ↔
+  ONE OCTAL DIGIT with one spare state (so a tribble = 3 octal digits
+  + 3 spare states); the thread's tail echoes "3 octets" (24 bits)
+  per tribble, which 729 states cannot hold — the consultant's
+  "map 24 bits into 6 trits" example is arithmetically impossible.
+  Docs must say octal digits. (2) The "50–70% bubble-sort gain"
+  figure is the consultant's unvalidated estimate (their own caveat)
+  — treat as hypothesis, not result. (3) The fractal-basin mapping is
+  brainstorm-grade — park, don't cite.
+- The source pack for the GristMill/HexMesh docs chapter (the MEAT
+  course) is now: this file + the DeepBlue reconciliation + the
+  Companion Q4. Exactly the chapters Ian found hardest to wrap.
