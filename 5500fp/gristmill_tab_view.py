@@ -517,10 +517,16 @@ class GristMillTabView:
         paned.add(tree_frame, minsize=220)
 
         style = ttk.Style()
+        # Rowheight follows the FONT (29-08, same clipping class as the
+        # POBOX Mail fix): ttk's fixed default ignores font metrics, so
+        # HiDPI/large-font desktops clip every row to a fraction.
+        import tkinter.font as _tkf
+        _gm_font = _tkf.Font(family='Monospace', size=9)
         style.configure('GM.Treeview',
                         background=C.get('canvas', '#16213e'),
                         foreground=C.get('text',   '#e0e0e0'),
                         fieldbackground=C.get('canvas', '#16213e'),
+                        rowheight=_gm_font.metrics('linespace') + 4,
                         font=('Monospace', 9))
         style.configure('GM.Treeview.Heading',
                         background=C.get('palette', '#0d1117'),

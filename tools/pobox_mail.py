@@ -409,6 +409,18 @@ class MailApp(tk.Tk):
                                     "click column headings to sort")
         self.status.pack(side="bottom", fill="x", padx=8, pady=(2, 6))
 
+        # Row height must FOLLOW the font (captain's screenshot 29-08:
+        # every row clipped to ~⅔ height). ttk.Treeview's default
+        # rowheight is a fixed pixel count that ignores font metrics —
+        # when the system font/DPI grew, the rows didn't. Measure the
+        # actual linespace and size rows (and headings) from it.
+        import tkinter.font as _tkfont
+        _style = ttk.Style(self)
+        _lh = _tkfont.nametofont("TkDefaultFont").metrics("linespace")
+        _style.configure("Treeview", rowheight=_lh + 6)
+        _style.configure("Treeview.Heading",
+                         padding=(2, max(2, _lh // 4)))
+
         panes = tk.PanedWindow(self, sashrelief="raised")
         panes.pack(side="top", fill="both", expand=True, padx=8)
 
