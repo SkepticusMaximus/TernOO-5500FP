@@ -453,7 +453,15 @@ def assemble(spec, values):
             if v:
                 argv.append(f["flag"])
         elif "flag" in f and str(v):
-            argv += [f["flag"], str(v)]
+            # GNU long options with a value must be ATTACHED (--opt=val):
+            # a separated optional argument ("--color auto") makes the
+            # value a positional — grep then read the real pattern as a
+            # FILENAME ("No such file or directory" whatever you typed;
+            # the captain's 20-08 forge bug).
+            if str(f["flag"]).startswith("--"):
+                argv.append(f"{f['flag']}={v}")
+            else:
+                argv += [f["flag"], str(v)]
     for f, v in zip(fields, values):
         if "arg" in f and f.get("type") != "check" and str(v):
             argv.append(os.path.expanduser(str(v))
