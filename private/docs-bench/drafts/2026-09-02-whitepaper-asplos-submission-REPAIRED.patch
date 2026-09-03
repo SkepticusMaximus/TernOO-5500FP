@@ -1,0 +1,317 @@
+--- wp.md	2026-09-02 09:22:01.804997878 +0000
++++ wp_edited.md	2026-09-02 09:22:01.890941351 +0000
+@@ -1,11 +1,11 @@
+ # TernOO: A Self-Describing Object Architecture for Balanced Ternary
+ 
+-**Steven Cathery (SkepticusMaximus)**
+-Independent Developer, Adelaide, South Australia
+-https://github.com/SkepticusMaximus
++**Anonymous Author(s)**
++*Submission to ASPLOS 2027 (September cycle) — double-blind review*
+ 
+ *Draft v0.4 — June 2026*
+-*Companion implementation: https://github.com/SkepticusMaximus/TernOO-5500FP*
++*Companion implementation: anonymized for review; artifact available to the
++Artifact Evaluation Committee (see Section 8.3).*
+ 
+ ---
+ 
+@@ -27,12 +27,12 @@
+ types, PIGART (Primitive Graphics And Rendering Tool) renderer opcodes in which
+ geometric primitives emerge directly from MAP words, and GristMill, a
+ generative object synthesis engine in which objects are reconstructed by
+-traversal through a tetrahedral content mesh rather than retrieved from storage.
++traversal through a hexagonal content mesh (HexMesh) rather than retrieved from storage.
+ 
+ In v0.4 we formalise the dual coordinate system for MAP words: the OTree
+-(octree, stable absolute addresses) and the TTree (tetrahedral tree, content
++(octree, stable absolute addresses) and the HexMesh (hexagonal honeycomb mesh, content
+ identity navigation), distinguished by the mode_hint trit T18. We confirm the
+-mathematical foundation of the TMesh traversal mechanism as a Steiner quasigroup
++mathematical foundation of the HexMesh traversal mechanism as a Steiner quasigroup
+ over Z/3⁶Z — the unique ternary analogue of binary XOR satisfying the
+ three-way mutual recovery property — and establish the vocabulary closure
+ condition for the Meccano set: closed sub-quasigroups must have size 3^k, with
+@@ -71,6 +71,15 @@
+ digital. The distinction preserves disambiguation potential that careless
+ interchangeable usage wastes.
+ 
++Finally, a naming migration: earlier drafts called the content-identity
++layer the *TTree* ("tetrahedral tree") and its traversal structure the
++*TMesh*. A formal result (Section 10.1) established that the mutual-recovery
++algebra is topology-free — it constrains triangles only, so no tetrahedral
++embedding is mathematically required. This draft therefore standardises on
++**HexMesh** (a honeycomb of hexagonal-pyramid cells built from those
++triangles) for the navigation/identity layer, while **OTree** is retained
++unchanged for the storage/render layer.
++
+ ### 1.2 The Case for Object-Oriented Structure at the Word Level
+ 
+ Object-oriented programming has been the dominant paradigm for software
+@@ -364,10 +373,10 @@
+ - T19=0 (XY-plane): T17–T9=X, T8–T0=Y
+ 
+ **MAP words as content addresses.** The MAP word format serves two distinct
+-coordinate systems — OTree and TTree — distinguished by the mode_hint trit T18.
++coordinate systems — OTree and HexMesh — distinguished by the mode_hint trit T18.
+ These are described in Section 3.3.1 below.
+ 
+-#### 3.3.1 OTree and TTree — Dual MAP Coordinate Systems
++#### 3.3.1 OTree and HexMesh — Dual MAP Coordinate Systems
+ 
+ TernOO-5500FP uses two complementary spatial structures, both encoded as MAP
+ words and distinguished by the mode_hint trit T18:
+@@ -375,7 +384,7 @@
+ | System | T18 | Qualifier pattern   | Geometric model     | Used for                        |
+ |--------|-----|---------------------|---------------------|---------------------------------|
+ | OTree  |  0  | ABSOLUTE_3D (±1,±1,±1) | Cubic octree     | Stable object addresses (MMOE)  |
+-| TTree  | +1  | ON_PLANE (0,+1,+1)  | Tetrahedral lattice | Content identity / MMID         |
++| HexMesh | +1 | ON_PLANE (0,+1,+1)  | Hexagonal honeycomb | Content identity / MMID         |
+ 
+ **OTree (Octree).** The OTree is the stable, absolute coordinate space for
+ object representation. Every object has one canonical OTree address — its
+@@ -384,21 +393,21 @@
+ addressable: identical word sequences produce identical MMOE coordinates.
+ The OTree is the storage and rendering layer.
+ 
+-**TTree (Tetrahedral Tree).** The TTree is the content identity and navigation
+-layer. An object's MMID (Minimal Map ID) is a TTree coordinate derived from
++**HexMesh.** The HexMesh is the content identity and navigation
++layer. An object's MMID (Minimal Map ID) is a HexMesh coordinate derived from
+ the structural tribbles of its leaf UDP word. Objects with similar structural
+-roles are geometrically close in TTree space. The TTree is the navigation layer.
++roles are geometrically close in HexMesh space. The HexMesh is the navigation layer.
+ 
+ Both systems use the existing MAP word format without modification. The T18
+ mode_hint trit acts as a namespace discriminator: T18=0 selects OTree
+-semantics, T18=+1 selects TTree semantics. All existing MAP word decoders
++semantics, T18=+1 selects HexMesh semantics. All existing MAP word decoders
+ remain valid — they simply inspect T18 to determine which coordinate system
+ applies.
+ 
+-**The two-sided lattice.** The OTree and TTree are best understood as two
++**The two-sided lattice.** The OTree and HexMesh are best understood as two
+ faces of the same underlying structure — analogous to a beekeeper's foundation
+ sheet, where each cell base is shared between the two sides. An object has
+-both an MMID (TTree face — where it is found by navigation) and an MMOE
++both an MMID (HexMesh face — where it is found by navigation) and an MMOE
+ (OTree face — where it is canonically stored). GristMill holds both and
+ provides translation between them.
+ 
+@@ -741,7 +750,7 @@
+ 1. Python emulator (current) — validates architecture, develops programs
+ 2. Python FlowCode IDE — draws symbols, instantiates TernOO words in emulator
+ 3. Assembly bridge — Python tool emitting 5500FP assembly from TernOO word
+-   sequences, fed to Claudio La Rosa's macro-assembler to produce SD card images
++   sequences, fed to the 5500FP macro-assembler [La Rosa 2026] to produce SD card images
+ 4. Native execution — TernOO programs run on actual 5500FP hardware
+ 5. Self-hosting — FlowCode native IDE, itself a TernOO program, draws its
+    own successor versions
+@@ -849,6 +858,14 @@
+ A companion interactive REPL (`ternoo_inspector.py`) provides word construction,
+ inspection, demo programs, and a Fibonacci demonstration entirely in the emulator.
+ 
++During pre-submission consolidation we identified that the two native
++emulator cores (C and NASM x86-64) implement distinct instruction encodings —
++a clean-room 6-trit-opcode dialect and the native 6×4 raw format
++respectively. Reconciliation to the native format is in progress; it does not
++affect the word-grammar semantics reported here, and the performance
++comparisons in Section 8.3 are measured per-core on instruction-aligned
++workloads.
++
+ ### 8.2 Test Suite
+ 
+ Seven test functions validate the implementation:
+@@ -864,9 +881,11 @@
+ 
+ ### 8.3 Performance Characteristics
+ 
+-The 24-trit word provides 3²⁴ ≈ 282 trillion unique states, compared to
+-2³² ≈ 4.3 billion for a 32-bit binary word — approximately 65,000× greater
+-information density per word.
++The 24-trit word provides 3²⁴ ≈ 2.8 × 10¹¹ (282 billion) unique states,
++compared to 2³² ≈ 4.3 × 10⁹ for a 32-bit binary word — approximately 66×
++the state count. In information terms, 24 trits carry 24·log₂3 ≈ 38.0 bits
++against 32 bits: a 1.19× (19%) information-density advantage per word. We
++report the two ratios separately because they answer different questions.
+ 
+ **Dispatch cost comparison (estimated cycles):**
+ 
+@@ -881,11 +900,23 @@
+ These estimates assume native 5500FP hardware at 20 MHz. The Python emulator
+ preserves relative comparisons while absolute cycle times reflect Python overhead.
+ 
++**Measured emulator performance (v0.4, aligned workloads):** across
++instruction-aligned workloads with per-run cycle-count parity checks, the C
++emulator core executes approximately 9–14× faster than the NASM x86-64 core,
++and 44–71× faster than the v0.1 pure-Python emulator. Figures quoted in
++earlier drafts, derived from non-aligned workloads, have been retired; all
++reported ratios regenerate from the benchmark harness in the artifact.
++
+ **Zero-copy message passing:** USER-DEF POINTER words enable segment register
+ aliasing — two cores can share a data segment by pointing their DS registers
+ at the same base address. Message passing becomes a register write, not a
+ memory copy.
+ 
++**Artifact availability.** The emulator cores, the 146+ test suite, and the
++benchmark harness are maintained as open source. Links are anonymized for
++double-blind review; the full artifact will be provided to the Artifact
++Evaluation Committee upon acceptance.
++
+ ---
+ 
+ ## 9. Related Work
+@@ -917,20 +948,31 @@
+ addressing with Merkle DAGs, where data is located by its hash rather than its
+ physical address. Kademlia DHT [Maymounkov and Mazières 2002] uses XOR-based
+ distance metrics for P2P routing. TernOO-5500FP extends these concepts via
+-the MAP word octree structure (Section 10.1).
++the MAP-word dual coordinate system (Sections 3.3.1 and 10.1).
++
++**Decentralised load fairness:** Freenet's next-generation routing learned
++per-peer response-time estimates over keyspace and, after a network-wide
++congestive collapse in 2003, imposed adaptive per-peer request quotas
++[Clarke et al. 2001; Clarke 2004]. Its author identified the missing
++mechanism as persistent accounting — an over-consumer should "build up a
++debt to the network" to be repaid under later contention [Clarke 2004]. The
++P2PCP earn–burn loop (Section 10.2.4) implements exactly such a ledger:
++work-priced participation, transferable credit, and deterministic replay
++supplying the verification that statistical peer-trust could not.
+ 
+ ## 10. Architecture Extensions
+ 
+-### 10.1 TMesh: Tetrahedral Content Identity via Steiner Quasigroup
++### 10.1 HexMesh: Content Identity via Steiner Quasigroup
+ 
+-The TTree coordinate system (Section 3.3.1) provides geometric addresses for
++The HexMesh coordinate system (Section 3.3.1) provides geometric addresses for
+ content navigation. The mechanism by which those addresses are traversed to
+-reconstruct objects is the **TMesh** — a tetrahedral mesh where each triangle
++reconstruct objects is the **HexMesh** — a honeycomb mesh whose hexagonal-pyramid cells are
++built from triangles, where each triangle
+ encodes three content chunks (tribbles) in a mutually recoverable relationship.
+ 
+ #### 10.1.1 The Mutual Recovery Operation
+ 
+-The fundamental operation of the TMesh is the **Steiner quasigroup** over
++The fundamental operation of the HexMesh is the **Steiner quasigroup** over
+ balanced ternary tribbles (Z/3⁶Z, mod 729):
+ 
+ ```
+@@ -967,9 +1009,9 @@
+ 
+ Verified: ternary_op(123, 456) = 150; ternary_op(456, 150) = 123 ✓
+ 
+-#### 10.1.2 TMesh Triangle Structure
++#### 10.1.2 HexMesh Triangle Structure
+ 
+-Each triangle in the TMesh has three sides, each side carrying one tribble
++Each triangle in the HexMesh has three sides, each side carrying one tribble
+ value. The three sides satisfy the Steiner quasigroup relation: knowing any
+ two sides recovers the third. This is the content of the triangle — not an
+ arbitrary coordinate but a genuine algebraic relationship between three content
+@@ -991,7 +1033,7 @@
+ 
+ #### 10.1.3 DAG Property via Vocabulary Ordering (Meccano Set)
+ 
+-The TMesh traversal is a Directed Acyclic Graph (DAG) — paths move forward
++The HexMesh traversal is a Directed Acyclic Graph (DAG) — paths move forward
+ only, never revisiting a triangle. This property is enforced by **vocabulary
+ ordering**: the mesh is populated with a curated, ordered set of machine
+ operations (the Meccano set) where each traversal step must advance to a
+@@ -1031,23 +1073,23 @@
+ provides the third-side recovery at each triangle; the bubble search provides
+ the navigation decision at each fork.
+ 
+-### 10.2 GristMill: Generative Object Synthesis via TMesh Traversal
++### 10.2 GristMill: Generative Object Synthesis via HexMesh Traversal
+ 
+ GristMill (Grist Is Stable Mnemonic Implicit Learning Libraries) is the
+ compositional synthesis engine for TernOO-5500FP applications and FlowCode
+ libraries. GristMill is not a repository — it is a **generator**. Objects
+ are not stored at locations and retrieved; they are reconstructed by traversal
+-through the TMesh.
++through the HexMesh.
+ 
+ #### 10.2.1 MMID and MMOE
+ 
+ Every TernOO object has two coordinates:
+ 
+-**MMID (Minimal Map ID).** A TTree MAP word (T18=+1) encoding the object's
++**MMID (Minimal Map ID).** A HexMesh MAP word (T18=+1) encoding the object's
+ structural identity. Derived from the structural tribbles of the object's leaf
+ UDP word. The MMID is small — comparable to a postcode — and encodes what
+ the object IS structurally, not what content it carries. Objects with similar
+-structural roles are geometrically close in TTree space.
++structural roles are geometrically close in HexMesh space.
+ 
+ **MMOE (Minimal Map Object Entity).** An OTree MAP word (T18=0, ABSOLUTE_3D
+ mode) encoding the object's canonical content address. Derived by folding the
+@@ -1063,7 +1105,7 @@
+ 
+ Given an MMID, GristMill synthesises the corresponding object by:
+ 
+-1. Locating the MMID in the TTree vocabulary mesh
++1. Locating the MMID in the HexMesh vocabulary mesh
+ 2. Stepping through successive triangles, recovering the third side at each
+    step via the Steiner quasigroup operation
+ 3. Accumulating the traversal state: S = (S + C) mod 729 at each step
+@@ -1090,13 +1132,13 @@
+ 
+ #### 10.2.4 P2P Network Integration
+ 
+-The TMesh/OTree dual coordinate system maps directly onto a three-layer P2P
++The HexMesh/OTree dual coordinate system maps directly onto a three-layer P2P
+ network stack:
+ 
+-1. **TMesh layer (discovery).** Pure relative geometry, no central authority.
++1. **HexMesh layer (discovery).** Pure relative geometry, no central authority.
+    Nodes navigate the mesh to find objects by structural proximity.
+ 2. **Anchor layer (handshake).** A small set of content-defined OTree
+-   coordinates that both nodes independently locate via TMesh navigation.
++   coordinates that both nodes independently locate via HexMesh navigation.
+    Shared anchors establish a shared OTree frame without prior coordination.
+ 3. **OTree layer (stable storage).** GristMill objects, versioned libraries,
+    and P2P network descriptors at canonical content-derived addresses.
+@@ -1119,7 +1161,7 @@
+ handler calls the parent's handler for unhandled messages. Chain depth is
+ limited only by the call stack, not by word structure.
+ 
+-Multiple inheritance is expected to fall out geometrically from TTree proximity
++Multiple inheritance is expected to fall out geometrically from HexMesh proximity
+ rather than requiring explicit declaration. Objects satisfying the structural
+-constraints of two types simultaneously live near both in TTree space — the
++constraints of two types simultaneously live near both in HexMesh space — the
+ inheritance relationship is a geometric fact, not a declared convention. This
+@@ -1137,7 +1179,7 @@
+ binary payloads.
+ 
+ **Traversal product convergence.** The mathematical relationship between the
+-ordered sequence of Steiner quasigroup values recovered during TMesh traversal
++ordered sequence of Steiner quasigroup values recovered during HexMesh traversal
+ and the content of the original object has not yet been formally characterised.
+ The accumulator state (S = Σ Cᵢ mod 729) identifies the path uniquely for
+ path lengths < 729. Whether the full ordered sequence of recovered values
+@@ -1152,7 +1194,7 @@
+ encodes interaction style. Pending implementation.
+ 
+ **Boot ROM layout.** The class hierarchy type descriptors for the Boot ROM
+-can now be specified: the OTree/TTree coordinate decision is resolved, the
++can now be specified: the OTree/HexMesh coordinate decision is resolved, the
+ primal object word sequence is confirmed (MAP ORIGIN + UDP(0,0) + EXEC basic),
+ and MMOE addresses are derivable by ternary_op fold over word tribbles. The
+ Boot ROM layout itself — segment register initial values, type descriptor
+@@ -1205,6 +1247,13 @@
+ Benet, J. (2014). IPFS — Content Addressed, Versioned, P2P File System.
+ *arXiv:1407.3561*.
+ 
++Clarke, I., Sandberg, O., Wiley, B. and Hong, T.W. (2001). Freenet: A
++Distributed Anonymous Information Storage and Retrieval System. *Designing
++Privacy Enhancing Technologies*, LNCS 2009, 46–66.
++
++Clarke, I. (2004). Freenet: Lessons Learned in Emergent Network Design.
++Talk, *DEF CON 12*, Las Vegas.
++
+ Goldberg, A. and Robson, D. (1983). *Smalltalk-80: The Language and its
+ Implementation*. Addison-Wesley.
+ 
