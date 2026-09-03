@@ -1,0 +1,22 @@
+
+  ████████╗███████╗██████╗ ███╗   ██╗ ██████╗  ██████╗ 
+     ██╔══╝██╔════╝██╔══██╗████╗  ██║██╔═══██╗██╔═══██╗
+     ██║   █████╗  ██████╔╝██╔██╗ ██║██║   ██║██║   ██║
+     ██║   ██╔══╝  ██╔══██╗██║╚██╗██║██║   ██║██║   ██║
+     ██║   ███████╗██║  ██║██║ ╚████║╚██████╔╝╚██████╔╝
+     ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝  ╚═════╝ 
+
+  TernOO-5500FP  |  Pure x86-64 NASM  |  Binary-Encoded Ternary
+  24-trit balanced ternary RISC + TernOO word architecture
+
+
+=== Benchmark ===
+  Fibonacci(30)     : 1347520 cycles (RDTSC)
+  [PASS] bench verify fib(30)
+  Factorial(12)     : 402688 cycles (RDTSC)
+  [PASS] bench verify fact(12)
+  Array sum (1000)  : 28751659 cycles (RDTSC)
+  [PASS] bench verify array_sum
+  Arith loop (3000) : 125205759 cycles (RDTSC)
+  [PASS] bench verify arith_loop
+  TernOO word build : 135719775 cycles (RDTSC)

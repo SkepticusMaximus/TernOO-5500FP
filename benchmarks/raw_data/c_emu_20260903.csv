@@ -1,0 +1,5 @@
+target,workload,iterations,total_sec,avg_us,result,emu_cycles,host_rdtsc_min
+c_emu_5500fp,fibonacci_30,10,0.000985987,98.599,832040,179,146058
+c_emu_5500fp,factorial_12,10,0.000320776,32.078,479001600,52,31524
+c_emu_5500fp,array_sum_1000,10,0.015185263,1518.526,500500,4005,3576702
+c_emu_5500fp,arith_loop_3000,10,0.055282752,5528.275,3,18006,14053071
