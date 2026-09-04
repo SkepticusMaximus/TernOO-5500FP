@@ -1249,7 +1249,9 @@ def main():
         dpg.destroy_context()
         return
     # Title carries the mission, not the widget kit (captain, 04-09).
-    # Window icon = the ternary-trio triangle mark.
+    # NOTE the title is ALSO the window's WM_CLASS (GLFW derives it) — the
+    # .desktop StartupWMClass must match it EXACTLY for the panel to paint
+    # the ternary-trio icon; small/large_icon below only act on Windows.
     _ico = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "..", "tools", "flowcode.ico")
     _ikw = ({"small_icon": _ico, "large_icon": _ico}
