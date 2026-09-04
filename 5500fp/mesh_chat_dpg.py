@@ -1710,7 +1710,10 @@ def main():
         dpg.destroy_context()
         return
     # Title carries the MISSION, not the widget kit (captain, 04-09): this is
-    # the standalone P2PCP client. Window icon = the trio-in-bubble mark.
+    # the standalone P2PCP client. NOTE the title is ALSO the window's
+    # WM_CLASS (GLFW derives it) — the .desktop StartupWMClass must match it
+    # EXACTLY for the panel to paint the trio-in-bubble icon; the viewport
+    # small/large_icon args below only act on Windows.
     _ico = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "..", "tools", "mesh-chat.ico")
     _ikw = ({"small_icon": _ico, "large_icon": _ico}

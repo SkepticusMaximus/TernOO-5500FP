@@ -671,3 +671,19 @@ affected.
   the Model... machinery dogfooded by the captain himself) while the
   gguf was still streaming; the seat honestly refuses a truncated
   file, canary fires when the download lands. Gates: 26/26 green.
+
+## 2026-09-04 — CORRECTION: window icons on Linux ride WM_CLASS, not DPG args
+- The earlier "taskbar gear is gone" claim was WRONG (captain's
+  screenshot proof, this ledger stands corrected): DPG's viewport
+  small/large_icon arguments act on WINDOWS only; Linux panels ignore
+  them. The real mechanism: the panel matches a window's WM_CLASS to
+  a .desktop entry's StartupWMClass and paints THAT entry's icon.
+  GLFW derives WM_CLASS from the window TITLE — measured live on the
+  captain's running FlowCode: WM_CLASS = "FlowCode — TernOO".
+- FIX: StartupWMClass added to flowcode-dpg.desktop ("FlowCode —
+  TernOO") and mesh-chat-dpg.desktop ("Mesh-Chat — P2PCP"); code
+  comments at both create_viewport sites now state the title↔WM_CLASS
+  coupling so a future title change knows to update the entries.
+- Icon files for menu-building, BOTH boxes (repo tools/): flowcode
+  .png/.ico/.svg + mesh-chat.png/.ico/.svg; already present on HP at
+  ~/dev/SkepticusMaximus/TernOO-5500FP/tools/ (rails had pulled).
