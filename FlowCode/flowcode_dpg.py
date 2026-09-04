@@ -492,7 +492,10 @@ def _canvas_zoom(direction):
 
 def _zoom_keys(sender, key):
     if dpg.is_key_down(dpg.mvKey_LControl) or dpg.is_key_down(dpg.mvKey_RControl):
-        if key in (dpg.mvKey_Plus, dpg.mvKey_Add):
+        # 602 = ImGuiKey_Equal (main-row '='/'+'), absent from DPG 2.3.1's
+        # namespace; legacy mvKey_Plus (61) never fires. Captain's 04-09 fix.
+        if key in (dpg.mvKey_Plus, dpg.mvKey_Add,
+                   getattr(dpg, "mvKey_Equal", 602)):
             _canvas_zoom(+1)
         elif key in (dpg.mvKey_Minus, dpg.mvKey_Subtract):
             _canvas_zoom(-1)
@@ -1245,11 +1248,18 @@ def main():
         print("SMOKE OK — FlowCode DPG builds clean")
         dpg.destroy_context()
         return
-    dpg.create_viewport(title="FlowCode — TernOO (Dear PyGui face)",
+    # Title carries the mission, not the widget kit (captain, 04-09).
+    # Window icon = the ternary-trio triangle mark.
+    _ico = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "..", "tools", "flowcode.ico")
+    _ikw = ({"small_icon": _ico, "large_icon": _ico}
+            if os.path.exists(_ico) else {})
+    dpg.create_viewport(title="FlowCode — TernOO",
                         width=int(CFGD.get("vp_w", 1460)),
                         height=int(CFGD.get("vp_h", 980)),
                         x_pos=int(CFGD.get("vp_x", 100)),
-                        y_pos=int(CFGD.get("vp_y", 40)))
+                        y_pos=int(CFGD.get("vp_y", 40)),
+                        **_ikw)
     dpg.setup_dearpygui()
     dpg.show_viewport()
     dpg.set_primary_window("main", True)
