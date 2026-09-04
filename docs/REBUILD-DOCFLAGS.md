@@ -638,3 +638,36 @@ affected.
 - GATES: 65 bonsai tests green; 27 FlowCode gates green incl. the new
   live macro probe. OLMo-2-1124-7B-SFT.i1-Q4_K_M (4.16GiB,
   mradermacher imatrix) downloading to ~/LOCAL_AI/Llama/.
+
+## 2026-09-04 — DESKTOP CITIZENSHIP: zoom keys, titles, window icons, launcher
+- ZOOM ROOT CAUSE (captain's report, both faces): DPG 2.3.1 never
+  exposes the main-row '='/'+' key (ImGuiKey_Equal=602, pinned by
+  walking the enum from DPG's own Minus=598/KeypadSub=625/KeypadAdd=
+  626), and legacy mvKey_Plus (61) can never fire. So Ctrl+'+' was
+  structurally dead everywhere. Fixed in mesh_chat_dpg and
+  flowcode_dpg with a guarded 602 fallback.
+- TITLES carry the MISSION, not the widget kit (captain's ruling):
+  "Mesh-Chat — P2PCP" (it is the standalone P2PCP client);
+  "FlowCode — TernOO". The "Dear PyGui" proclamations retired.
+- WINDOW ICONS wired (viewport small/large): tools/flowcode.ico +
+  tools/mesh-chat.ico, rasterized from the existing SVG marks
+  (ternary-trio triangle; trio-in-speech-bubble) — taskbar no longer
+  shows the generic gear. Menu entries: flowcode-dpg.desktop existed
+  (icon repointed svg→png for renderer reliability); NEW
+  mesh-chat-dpg.desktop launches the DPG standalone (the old
+  mesh-chat.desktop remains the Tk client's). Installable-package
+  card noted, deferred by the captain ("not today").
+- PARKED DESIGN CARDS (captain's OS notes, GHOST-OS queue, unbuilt):
+  (1) title-bar text configurable from a window context menu;
+  (2) window context menu exposing executable path, PID, memory use.
+  Rides with the earlier settings-module card.
+- FILE-DIALOG CARD: DPG is MIT-licensed FOSS; its imgui file dialog
+  is the kit's weakest furniture (captain's verdict). Workaround
+  available without forking: a zenity-backed native picker shim
+  (zenity present on Lenny) with DPG dialog fallback — small job,
+  awaiting the captain's word. His "make it better as a separate
+  project" temptation noted.
+- Captain re-seated bonsai.json to OLMo (format=tulu auto-sniffed —
+  the Model... machinery dogfooded by the captain himself) while the
+  gguf was still streaming; the seat honestly refuses a truncated
+  file, canary fires when the download lands. Gates: 26/26 green.

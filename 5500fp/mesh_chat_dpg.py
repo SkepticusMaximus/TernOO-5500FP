@@ -1604,8 +1604,13 @@ def build():
         dpg.add_mouse_move_handler(callback=_drag_grips)
 
 
-_PLUS = {getattr(dpg, n) for n in ("mvKey_Plus", "mvKey_Add", "mvKey_Equal")
-         if hasattr(dpg, n)}
+# DPG 2.3.1 doesn't expose the main-row '='/'+' key (ImGuiKey_Equal), and its
+# legacy mvKey_Plus (61) can never fire — so Ctrl+'+' was silently dead (the
+# captain's 04-09 report). 602 = ImGuiKey_Equal, pinned by walking the enum
+# from DPG's own numbers (Minus=598, KeypadSubtract=625, KeypadAdd=626).
+_KEY_EQUAL = getattr(dpg, "mvKey_Equal", 602)
+_PLUS = {getattr(dpg, n) for n in ("mvKey_Plus", "mvKey_Add")
+         if hasattr(dpg, n)} | {_KEY_EQUAL}
 _MINUS = {getattr(dpg, n) for n in ("mvKey_Minus", "mvKey_Subtract")
           if hasattr(dpg, n)}
 
@@ -1704,8 +1709,15 @@ def main():
         print("SMOKE OK — UI built clean")
         dpg.destroy_context()
         return
-    dpg.create_viewport(title="Mesh-Chat — TernOO (Dear PyGui)",
-                        width=VP_W, height=VP_H, x_pos=VP_X, y_pos=VP_Y)
+    # Title carries the MISSION, not the widget kit (captain, 04-09): this is
+    # the standalone P2PCP client. Window icon = the trio-in-bubble mark.
+    _ico = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "..", "tools", "mesh-chat.ico")
+    _ikw = ({"small_icon": _ico, "large_icon": _ico}
+            if os.path.exists(_ico) else {})
+    dpg.create_viewport(title="Mesh-Chat — P2PCP",
+                        width=VP_W, height=VP_H, x_pos=VP_X, y_pos=VP_Y,
+                        **_ikw)
     dpg.setup_dearpygui()
     dpg.show_viewport()
     dpg.set_primary_window("main", True)
