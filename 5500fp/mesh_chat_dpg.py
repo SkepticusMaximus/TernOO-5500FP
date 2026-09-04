@@ -155,7 +155,8 @@ def local_backend(fresh=False):
             ctx=int(cfg.get("ctx", 2048)),
             timeout=float(cfg.get("ask_timeout", 2400)),
             min_free_mb=cfg.get("min_free_mb"),
-            draft_model=cfg.get("draft_model"))
+            draft_model=cfg.get("draft_model"),
+            fmt=cfg.get("format", "qwen3"))
     return _LOCAL[0], (_LOCAL[1] or None)
 
 
@@ -195,6 +196,9 @@ def write_model_choice(gguf_path, config_path=None):
         cfg = {}
     cfg["model"] = gguf_path
     cfg.setdefault("enabled", True)
+    fmt = B.guess_format(gguf_path)     # sniff the model's tongue by name;
+    if fmt:                             # unknown = keep what's configured
+        cfg["format"] = fmt
     if not cfg.get("llama"):
         found = B.discover()
         if found:

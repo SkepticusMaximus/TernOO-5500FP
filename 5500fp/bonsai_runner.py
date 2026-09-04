@@ -163,12 +163,45 @@ def qwen3_prompt(system: str, user: str) -> str:
             + ASSISTANT_MARK)
 
 
-def extract_drafted_reply(stdout: str) -> str:
-    """llama-speculative can't suppress the prompt echo — take everything
+def tulu_prompt(system: str, user: str) -> str:
+    """The Tülu chat template (OLMo 2's tongue), hand-rolled per AI2's
+    public spec. No <think> convention exists in this family."""
+    return (f'<|system|>\n{system}\n'
+            f'<|user|>\n{user}\n'
+            '<|assistant|>\n')
+
+
+# The seat is model-agnostic (captain's ruling 04-09): each FORMAT names how
+# to wrap a prompt and how to cut the reply out of the echo. "raw" is the
+# base-model playground — the prompt goes in VERBATIM (completion style,
+# no roles, no system voice) and the continuation comes back whole.
+FORMATS = {
+    'qwen3': {'wrap': lambda s, u: qwen3_prompt(s, u) + NOTHINK_PREFIX,
+              'mark': ASSISTANT_MARK, 'end': '<|im_end|>'},
+    'tulu':  {'wrap': tulu_prompt,
+              'mark': '<|assistant|>\n', 'end': '<|endoftext|>'},
+    'raw':   {'wrap': lambda s, u: u, 'mark': None, 'end': None},
+}
+
+
+def guess_format(model_path: str) -> str | None:
+    """Best-effort format sniff from a model filename; None = don't know
+    (caller keeps whatever format is already configured)."""
+    name = os.path.basename(model_path or '').lower()
+    if 'olmo' in name or 'tulu' in name:
+        return 'tulu'
+    if 'qwen' in name or 'bonsai' in name:
+        return 'qwen3'
+    return None
+
+
+def extract_drafted_reply(stdout: str, fmt: str = 'qwen3') -> str:
+    """The binaries can't always suppress the prompt echo — take everything
     after the LAST assistant marker if echoed, and cut at the end-of-turn."""
-    if ASSISTANT_MARK in stdout:
-        stdout = stdout.rsplit(ASSISTANT_MARK, 1)[1]
-    return stdout.split('<|im_end|>')[0]
+    spec = FORMATS.get(fmt, FORMATS['qwen3'])
+    if spec['mark'] and spec['mark'] in stdout:
+        stdout = stdout.rsplit(spec['mark'], 1)[1]
+    return stdout.split(spec['end'])[0] if spec['end'] else stdout
 
 
 _THINK_RE = re.compile(r'<think>.*?</think>', re.DOTALL)
@@ -202,13 +235,15 @@ class LlamaBackend:
 
     def __init__(self, llama: str, model: str, n_predict: int = 128,
                  threads: int = 2, ctx: int = 1024, timeout: float = 2400.0,
-                 min_free_mb=None, draft_model=None, draft_max: int = 12):
+                 min_free_mb=None, draft_model=None, draft_max: int = 12,
+                 fmt: str = 'qwen3'):
         self.llama, self.model = llama, model
         self.n_predict, self.threads, self.ctx = n_predict, threads, ctx
         self.timeout = timeout
         self.min_free_mb = min_free_mb     # None = auto (model size + headroom)
         self.draft_model = draft_model     # the intern (None = classic path)
         self.draft_max = draft_max
+        self.fmt = fmt if fmt in FORMATS else 'qwen3'   # the model's tongue
 
     def argv(self, prompt: str) -> list:
         # Memory/desktop kindness (the hard-reboot lesson, 2026-07-09): the
@@ -220,25 +255,26 @@ class LlamaBackend:
         caps = ['-n', str(self.n_predict), '--temp', '0.2',
                 '-c', str(self.ctx), '-t', str(self.threads),
                 '--prio', '-1']
+        wrapped = FORMATS[self.fmt]['wrap'](SYSTEM_PROMPT, prompt)
         if self.draft_model:
-            # drafted path: the sibling llama-speculative (no -st chat mode,
-            # no prompt suppression) — hand-rolled Qwen3 template + echo strip
-            # keep the identity-crisis fix intact. Flags verified against the
+            # drafted path: the sibling llama-speculative (no chat mode, no
+            # prompt suppression) — hand-rolled template + echo strip keep
+            # the identity-crisis fix intact. Flags verified against the
             # binary's --help on this machine (2026-07-10).
             return ([speculative_binary(self.llama), '-m', self.model,
                      '-md', self.draft_model,
                      '--draft-max', str(self.draft_max), '--draft-min', '2',
-                     '-p', qwen3_prompt(SYSTEM_PROMPT, prompt)] + caps)
-        # Raw completion with the hand-rolled template and a pre-CLOSED think
-        # block (the tenure lesson, round two — re-verified 04-09-2026 on the
-        # TQ2_0 requant: -st chat mode reopened <think> and burned the whole
-        # budget mid-thought despite --reasoning off AND --reasoning-budget 0;
-        # flags act at the template layer and this model out-stubborns them).
-        # The system role still rides INSIDE the template (identity-crisis
-        # fix intact); echo is cut at the end-of-turn like the drafted path.
+                     '-p', wrapped] + caps)
+        # Raw completion with the hand-rolled template of the model's OWN
+        # tongue (FORMATS; bonsai.json "format" key). Qwen gets a pre-CLOSED
+        # think block (tenure lesson, round two — re-verified 04-09-2026 on
+        # the TQ2_0 requant: -st chat mode reopened <think> and burned the
+        # whole budget mid-thought despite --reasoning off AND
+        # --reasoning-budget 0; the model out-stubborns template-layer
+        # flags). System role rides INSIDE the template (identity-crisis fix
+        # intact); echo is cut at the format's end-of-turn.
         return ([self.llama, '-m', self.model, '-no-cnv',
-                 '-p', qwen3_prompt(SYSTEM_PROMPT, prompt) + NOTHINK_PREFIX,
-                 '--no-display-prompt'] + caps)
+                 '-p', wrapped, '--no-display-prompt'] + caps)
 
     def generate(self, prompt: str) -> str:
         """The model's text, or raises BackendError with the REAL reason —
@@ -249,7 +285,7 @@ class LlamaBackend:
             raise BackendError(refusal)    # refuse > thrash the whole desktop
         r = subprocess.run(self.argv(prompt), capture_output=True, text=True,
                            timeout=self.timeout)
-        out = extract_drafted_reply(r.stdout)   # both paths: echo-safe cut
+        out = extract_drafted_reply(r.stdout, self.fmt)   # echo-safe cut
         text = clean_reply(out)
         if r.returncode != 0:
             tail = (r.stderr or '').strip().splitlines()[-3:]

@@ -257,9 +257,13 @@ def _selftest():
         _json.dump({"threads": 7, "llama": "/bin/true"}, tf)
         tmp = tf.name
     try:
-        cfg = MC.write_model_choice("/nowhere/fake.gguf", config_path=tmp)
-        assert cfg["model"] == "/nowhere/fake.gguf" and cfg["threads"] == 7
-        assert _json.load(open(tmp))["model"] == "/nowhere/fake.gguf"
+        cfg = MC.write_model_choice("/nowhere/OLMo-2-7B-SFT.gguf",
+                                    config_path=tmp)
+        assert cfg["model"].endswith("SFT.gguf") and cfg["threads"] == 7
+        assert cfg["format"] == "tulu"            # the tongue got sniffed
+        cfg = MC.write_model_choice("/nowhere/mystery.gguf", config_path=tmp)
+        assert cfg["format"] == "tulu"            # unknown name keeps prior
+        assert _json.load(open(tmp))["model"] == "/nowhere/mystery.gguf"
     finally:
         os.unlink(tmp)
     prev_seat, prev_cfg = MC.SEAT[0], MC.CFGD.get("prof_seat")
@@ -274,6 +278,37 @@ def _selftest():
         MC.CFGD["prof_seat"] = prev_cfg
     MC._cfg_save(MC.CFGD)
     MC.local_backend(fresh=True)              # drop the test-poked cache
+    # The captain's 04-09 report — "macros mint but don't do anything":
+    # fire a real command macro END-TO-END inside the LIVE app (every
+    # frame-chain armed): button path → modal → Run → the subprocess's
+    # output must LAND in the modal's out box.
+    import time as _t
+    probe = {"name": "_probe", "kind": "command", "command": "echo",
+             "_file": "_probe.json",
+             "fields": [{"arg": "words", "type": "text",
+                         "default": "forge-probe-ok"}]}
+    MC.open_macro(probe)
+    ptag = "cm__probe.json"
+    assert dpg.does_item_exist(ptag), "macro modal never opened"
+    kids = []
+    def _walk(i):
+        for c in (dpg.get_item_children(i, 1) or []):
+            kids.append(c); _walk(c)
+    _walk(ptag)
+    runb = [i for i in kids if dpg.get_item_type(i).endswith("mvButton")
+            and dpg.get_item_label(i) == "  Run  "]
+    outb = [i for i in kids if dpg.get_item_type(i).endswith("mvInputText")
+            and dpg.get_item_configuration(i).get("readonly")]
+    assert runb and outb, "macro modal missing Run/out surfaces"
+    dpg.get_item_callback(runb[0])()
+    deadline = _t.time() + 10
+    while (_t.time() < deadline
+           and "forge-probe-ok" not in dpg.get_value(outb[0])):
+        dpg.render_dearpygui_frame()
+        _t.sleep(0.01)
+    got = dpg.get_value(outb[0])
+    assert "forge-probe-ok" in got, f"macro output never landed: {got!r}"
+    dpg.delete_item(ptag)
     MC.HISTORY[:] = []
     MC.HISTORY.append(("user", "gate probe"))
     ctx = MC.build_context()

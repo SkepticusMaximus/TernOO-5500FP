@@ -607,3 +607,34 @@ affected.
   as a FlowCode/GHOST-OS design question — OS-level vs APP-level
   config split with careful inheritance, NOT a GUI that welds the
   tabs together. Waits for development to resume in earnest.
+
+## 2026-09-04 — MODEL-AGNOSTIC SEAT (formats) + the macro gate + OLMo inbound
+- CAPTAIN'S DECISIONS (04-09, discussion round): OLMo-2 7B chosen
+  ("all stages" transparency won him over; SFT dose first); one 4.16GiB
+  download on his 5GB phone-data budget, LAN-ferried to HP free
+  (tailscale link verified DIRECT, not relayed); template job + forge
+  bug greenlit "if credit permits".
+- BUILT — the FORMATS registry (bonsai_runner): each format = wrap +
+  echo-cut in the model's own tongue. qwen3 (pre-closed think block),
+  tulu (OLMo 2 / Tülu spec, no think convention), raw (base-model
+  playground: prompt VERBATIM, no roles, no system voice — the
+  captain's "fun part" lane). bonsai.json gains optional "format" key;
+  guess_format() sniffs the tongue from the model filename on
+  Model... picks (unknown name = keep configured format, honest
+  dunno). Drafted (intern) path rides the same wrap. OLMo-3 ruled out
+  by the binary itself (strings: olmo/olmo2/olmoe only — no olmo3).
+- FORGE RUN-BUG (captain's report: "macros mint but don't do
+  anything"): could NOT be reproduced headless — button→modal→Run→
+  output PASSES in bare context, in the organ, and now as a PERMANENT
+  in-app gate (MESH CLIENT fires a real echo macro end-to-end with
+  every frame-chain armed and requires the output to land). Suspects
+  eliminated: spec files well-formed, _file injected, X-close/reopen
+  alias reuse clean on this DPG build. Awaiting the captain's
+  screen-truth (which macro, what "nothing" looks like) + a terminal
+  launch to surface any live callback exception. ui()'s
+  one-slot-per-frame set_frame_callback remains a THEORETICAL
+  sporadic-clobber lane (flow's _mm_tick re-arms every 12 frames) —
+  noted, not convicted.
+- GATES: 65 bonsai tests green; 27 FlowCode gates green incl. the new
+  live macro probe. OLMo-2-1124-7B-SFT.i1-Q4_K_M (4.16GiB,
+  mradermacher imatrix) downloading to ~/LOCAL_AI/Llama/.
