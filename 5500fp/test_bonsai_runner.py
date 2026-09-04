@@ -371,5 +371,47 @@ class TestNoNetwork(unittest.TestCase):
             self.assertNotIn(forbidden, src, f'network surface: {forbidden!r}')
 
 
+class TestFormats(unittest.TestCase):
+    """The seat is model-agnostic (04-09): each format wraps in the model's
+    own tongue and cuts the reply at that tongue's end-of-turn."""
+
+    def test_tulu_wrap_shape(self):
+        p = R.tulu_prompt('be brief', 'what is a trit?')
+        self.assertEqual(p, '<|system|>\nbe brief\n'
+                            '<|user|>\nwhat is a trit?\n<|assistant|>\n')
+        self.assertNotIn('<|im_start|>', p)      # no Qwen markup leaks in
+
+    def test_tulu_backend_argv_and_no_nothink(self):
+        b = R.LlamaBackend('/x/llama-cli', '/y/olmo.gguf', fmt='tulu')
+        prompt = b.argv('hello')[b.argv('hello').index('-p') + 1]
+        self.assertIn('<|user|>\nhello\n<|assistant|>\n', prompt)
+        self.assertNotIn(R.NOTHINK_PREFIX, prompt)   # Tülu has no <think>
+
+    def test_raw_is_verbatim(self):
+        b = R.LlamaBackend('/x/llama-cli', '/y/base.gguf', fmt='raw')
+        argv = b.argv('Q: 1+2\nA:')
+        self.assertEqual(argv[argv.index('-p') + 1], 'Q: 1+2\nA:')
+        self.assertNotIn(R.SYSTEM_PROMPT, argv)      # no system voice at all
+
+    def test_extract_by_format(self):
+        raw = ('<|system|>\ns\n<|user|>\nq\n<|assistant|>\n'
+               'A trit is a balanced-ternary digit.<|endoftext|>tail')
+        self.assertEqual(R.extract_drafted_reply(raw, 'tulu'),
+                         'A trit is a balanced-ternary digit.')
+        self.assertEqual(R.extract_drafted_reply('plain on', 'raw'),
+                         'plain on')
+
+    def test_unknown_format_falls_back_to_qwen3(self):
+        b = R.LlamaBackend('/x/llama-cli', '/y/m.gguf', fmt='martian')
+        self.assertEqual(b.fmt, 'qwen3')
+
+    def test_guess_format_sniff(self):
+        g = R.guess_format
+        self.assertEqual(g('/y/OLMo-2-1124-7B-SFT.i1-Q4_K_M.gguf'), 'tulu')
+        self.assertEqual(g('/y/Ternary-Bonsai-8B-TQ2_0.gguf'), 'qwen3')
+        self.assertEqual(g('/y/Qwen3-30B-A3B.gguf'), 'qwen3')
+        self.assertIsNone(g('/y/Mistral-7B-v0.3.gguf'))   # honest "dunno"
+
+
 if __name__ == '__main__':
     unittest.main()

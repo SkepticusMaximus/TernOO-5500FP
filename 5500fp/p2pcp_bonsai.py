@@ -56,6 +56,7 @@ def professor_backend(config_path=None):
         timeout=float(cfg.get("ask_timeout", 2400)),
         min_free_mb=cfg.get("min_free_mb"),
         draft_model=cfg.get("draft_model"),
+        fmt=cfg.get("format", "qwen3"),
     )
 
 
