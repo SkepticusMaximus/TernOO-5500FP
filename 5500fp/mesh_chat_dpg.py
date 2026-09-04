@@ -957,6 +957,32 @@ def clip_set(text):
         pass
 
 
+def _dpg_clip_read():
+    """The ONLY safe door to dpg.get_clipboard_text(). That call goes straight
+    to GLFW/X11 — and when the clipboard owner offers NO text target (an
+    image-only clipboard: take a screenshot, then launch — 04-09-2026), GLFW
+    returns NULL and DPG's C++ layer ABORTS THE PROCESS (std::logic_error;
+    no Python except can catch it). So ask X what's on offer first — xclip
+    TARGETS lists without converting — and only knock when text is home.
+    Without xclip there's no pre-flight (the HP): old behavior, old risk."""
+    if shutil.which("xclip"):
+        try:
+            r = subprocess.run(["xclip", "-selection", "clipboard",
+                                "-o", "-t", "TARGETS"],
+                               capture_output=True, text=True, timeout=1.0)
+            names = set(r.stdout.split())
+            if r.returncode != 0 or not (
+                    {"UTF8_STRING", "STRING", "TEXT", "COMPOUND_TEXT"} & names
+                    or any(n.startswith("text/plain") for n in names)):
+                return ""
+        except Exception:                       # noqa: BLE001
+            return ""
+    try:
+        return dpg.get_clipboard_text() or ""
+    except Exception:                           # noqa: BLE001
+        return ""
+
+
 def clip_get():
     """Paste from the real system clipboard first; DPG's buffer as fallback."""
     for tool in (["xclip", "-selection", "clipboard", "-o"],
@@ -980,10 +1006,7 @@ def clip_get():
             return t
     except Exception:                           # noqa: BLE001
         pass
-    try:
-        return dpg.get_clipboard_text() or ""
-    except Exception:                           # noqa: BLE001
-        return ""
+    return _dpg_clip_read()
 
 
 def _ctrl_pull(*_):
@@ -991,7 +1014,7 @@ def _ctrl_pull(*_):
     Ctrl+V one keystroke later pastes what the SYSTEM holds."""
     t = clip_get()
     try:
-        if t and t != dpg.get_clipboard_text():
+        if t and t != _dpg_clip_read():
             dpg.set_clipboard_text(t)
     except Exception:                           # noqa: BLE001
         pass
@@ -1005,10 +1028,7 @@ def _ctrl_push(*_):
         return
 
     def later():
-        try:
-            t = dpg.get_clipboard_text() or ""
-        except Exception:                       # noqa: BLE001
-            return
+        t = _dpg_clip_read()
         if t:
             for tool in (["xclip", "-selection", "clipboard"],
                          ["xsel", "-b", "-i"]):
@@ -1718,7 +1738,9 @@ def main():
                         "..", "tools", "mesh-chat.ico")
     _ikw = ({"small_icon": _ico, "large_icon": _ico}
             if os.path.exists(_ico) else {})
-    dpg.create_viewport(title="Mesh-Chat — P2PCP",
+    # ASCII title ONLY: the em-dash reached WM_CLASS/WM_NAME as Latin-1
+    # mojibake ("â€”") and broke both the panel's icon match and its label.
+    dpg.create_viewport(title="Mesh-Chat - P2PCP",
                         width=VP_W, height=VP_H, x_pos=VP_X, y_pos=VP_Y,
                         **_ikw)
     dpg.setup_dearpygui()
