@@ -714,3 +714,22 @@ affected.
   UTF-8-clean.
 - Gates green; suite runs headless so the CLIP gate never touched the
   captain's real clipboard (no DISPLAY in gate env — noted for sanity).
+
+## 2026-09-04 — THE MACRO BUG CONFESSES: the Tk face never got the 29-08 fix
+- Captain's "macros mint nicely but don't do anything" — ROOT CAUSE
+  FOUND, and it explains why every DPG-side hunt came back clean: the
+  Aug-29 forge fix (GNU long options ATTACH their value, --opt=val)
+  landed in mesh_chat_dpg.py ONLY. macro_panel.py — the TK
+  implementation behind chat_client.py (the menu's plain "Mesh-Chat"
+  entry) and the Tk Mesh tab — still emitted the separated form, so
+  grep read the value as its PATTERN and the pattern as a FILENAME:
+  commands ran, failed nonsense-ward, macros looked dead. Ported the
+  attach fix; assembly + live grep proven (rc=0).
+- LESSON ON THE FILE: one behavior, two implementations — the Tk/DPG
+  pair drifted for six days. CARD (unbuilt): macro_panel and
+  mesh_chat_dpg should share ONE assemble() (module-level, both faces
+  import it) so a fix can never half-land again.
+- Journal forensics closed the day's crash ledger: the 14:59/15:02
+  SIGABRTs were the captain's launcher attempts dying on the
+  clipboard bug (fixed earlier today); no crashes at macro-complaint
+  time — consistent with the misassembly diagnosis.

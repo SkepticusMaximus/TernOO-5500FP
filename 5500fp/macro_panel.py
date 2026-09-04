@@ -302,7 +302,17 @@ class MacroPanel:
                         argv.append(f["flag"])
                 elif "flag" in f:
                     if str(val):
-                        argv += [f["flag"], str(val)]
+                        # GNU long options with a value must be ATTACHED
+                        # (--opt=val): the separated form makes the value a
+                        # positional — grep read the real pattern as a
+                        # FILENAME ("No such file or directory"; the
+                        # captain's 29-08 forge bug, fixed in the DPG face
+                        # then and PORTED here 04-09 — this Tk copy was the
+                        # "macros don't do anything" culprit).
+                        if str(f["flag"]).startswith("--"):
+                            argv.append(f"{f['flag']}={val}")
+                        else:
+                            argv += [f["flag"], str(val)]
             for f, v in vars_:                     # positionals, in spec order
                 if "arg" in f and f.get("type") != "check":
                     val = str(v.get())
