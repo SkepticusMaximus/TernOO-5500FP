@@ -687,3 +687,30 @@ affected.
 - Icon files for menu-building, BOTH boxes (repo tools/): flowcode
   .png/.ico/.svg + mesh-chat.png/.ico/.svg; already present on HP at
   ~/dev/SkepticusMaximus/TernOO-5500FP/tools/ (rails had pulled).
+
+## 2026-09-04 — TWO SCREEN-TRUTH BUGS: the screenshot crash + the em-dash gears
+- CRASH (captain: "Mesh-Chat DPG won't start — flashes and dies"):
+  reproduced with his exact conditions. dpg.get_clipboard_text() goes
+  straight to GLFW/X11; when the clipboard owner offers NO text target
+  (image-only — i.e. TAKE A SCREENSHOT, THEN LAUNCH), GLFW returns
+  NULL and DPG's C++ aborts the whole process (std::logic_error —
+  uncatchable from Python; every existing try/except around those
+  calls was decorative). mesh_chat_dpg primed the clipboard AT BOOT
+  (_ctrl_pull()) → instant death. FlowCode had the same grenade on
+  EVERY Ctrl press. FIX: _dpg_clip_read() choke point in BOTH faces —
+  pre-flight X via `xclip -t TARGETS` (lists without converting) and
+  only call GLFW when a text target is home. PROVEN: launched via the
+  real .desktop launcher with the captain's screenshot still owning
+  the clipboard — alive at 8s, clean exit on kill. HP CAVEAT: no
+  xclip there → no pre-flight (old risk stands until xclip lands on
+  HP; sudo = captain's call).
+- GEARS (captain's beg-to-differ held): the em-dash in the window
+  title reached WM_CLASS/WM_NAME as Latin-1 mojibake ("â€”") — the
+  panel's label showed it AND StartupWMClass could never match, so
+  icons stayed generic. FIX: ASCII titles ("FlowCode - TernOO",
+  "Mesh-Chat - P2PCP"), StartupWMClass rewritten to match, measured
+  live: WM_CLASS now exactly "Mesh-Chat - P2PCP". Rule for the file:
+  DPG window titles stay ASCII until the panel stack proves
+  UTF-8-clean.
+- Gates green; suite runs headless so the CLIP gate never touched the
+  captain's real clipboard (no DISPLAY in gate env — noted for sanity).

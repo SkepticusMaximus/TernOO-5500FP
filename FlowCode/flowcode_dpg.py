@@ -1256,7 +1256,9 @@ def main():
                         "..", "tools", "flowcode.ico")
     _ikw = ({"small_icon": _ico, "large_icon": _ico}
             if os.path.exists(_ico) else {})
-    dpg.create_viewport(title="FlowCode — TernOO",
+    # ASCII title ONLY: the em-dash reached WM_CLASS/WM_NAME as Latin-1
+    # mojibake ("â€”") and broke both the panel's icon match and its label.
+    dpg.create_viewport(title="FlowCode - TernOO",
                         width=int(CFGD.get("vp_w", 1460)),
                         height=int(CFGD.get("vp_h", 980)),
                         x_pos=int(CFGD.get("vp_x", 100)),
