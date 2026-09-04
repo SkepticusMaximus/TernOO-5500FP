@@ -109,6 +109,123 @@ ATTACH = None
 BUYER = SVC.MeshService(worker_kind=None, seed="dpg-mesh")
 BUSY = False
 
+# ── the Professor's SEAT (captain's ruling 04-09: swappable, never bolted) ───
+# "mesh"  = buy inference from remote Professors (whatever nodes answer);
+# "local" = the model named in bonsai.json speaks from THIS box — no HP hop,
+# works with the mesh down. bonsai.json stays the ONE wiring file (the Academy,
+# the mesh worker, and this seat all read it), so swapping the model here
+# re-seats the Professor everywhere at once.
+SEAT = [CFGD.get("prof_seat", "mesh")]
+_LOCAL = [None, ""]                            # [backend, why-empty reason]
+_BR = [None]
+
+
+def _bonsai_mod():
+    if _BR[0] is None:
+        _BR[0] = _load("bonsai_runner")
+    return _BR[0]
+
+
+def local_backend(fresh=False):
+    """The local Professor from bonsai.json (+ auto-discovery), honestly:
+    (backend, None) or (None, reason). NO echo fallback here — a chat seat
+    must say why it's empty, not parrot the question back."""
+    if fresh:
+        _LOCAL[0], _LOCAL[1] = None, ""
+    if _LOCAL[0] is not None or _LOCAL[1]:
+        return _LOCAL[0], (_LOCAL[1] or None)
+    B = _bonsai_mod()
+    cfg = B.load_config() or {}
+    llama, model = cfg.get("llama"), cfg.get("model")
+    if not (llama and model):
+        found = B.discover()
+        if found:
+            llama, model = llama or found["llama"], model or found["model"]
+    if not (llama and model):
+        _LOCAL[1] = "no local model configured — Model... picks a .gguf"
+    elif not os.path.exists(model):
+        _LOCAL[1] = f"model file missing: {model}"
+    elif not B.runnable(llama):
+        _LOCAL[1] = f"llama binary not runnable: {llama}"
+    else:
+        _LOCAL[0] = B.LlamaBackend(
+            llama, model,
+            n_predict=int(cfg.get("n_predict", 384)),
+            threads=int(cfg.get("threads", 3)),
+            ctx=int(cfg.get("ctx", 2048)),
+            timeout=float(cfg.get("ask_timeout", 2400)),
+            min_free_mb=cfg.get("min_free_mb"),
+            draft_model=cfg.get("draft_model"))
+    return _LOCAL[0], (_LOCAL[1] or None)
+
+
+def seat_model_name():
+    B = _bonsai_mod()
+    cfg = B.load_config() or {}
+    model = cfg.get("model") or (B.discover() or {}).get("model")
+    return os.path.splitext(os.path.basename(model))[0] if model else None
+
+
+def seat_items():
+    name = seat_model_name()
+    return ["Mesh — remote Professors",
+            f"Local — {name}" if name else "Local — (no model yet)"]
+
+
+def seat_value():
+    return seat_items()[1 if SEAT[0] == "local" else 0]
+
+
+def on_seat_pick(_s=None, val=None):
+    SEAT[0] = "local" if str(val or "").startswith("Local") else "mesh"
+    CFGD["prof_seat"] = SEAT[0]
+    _cfg_save(CFGD)
+    set_status(f"Professor's seat: {seat_value()}")
+
+
+def write_model_choice(gguf_path, config_path=None):
+    """Re-seat the Professor: point bonsai.json's model at `gguf_path`,
+    preserving every other key (threads/ctx/timeouts untouched). Returns the
+    config written. This IS the swap — no code edit, no bolts."""
+    B = _bonsai_mod()
+    path = config_path or B.CONFIG_PATH
+    try:
+        cfg = json.load(open(path))
+    except Exception:
+        cfg = {}
+    cfg["model"] = gguf_path
+    cfg.setdefault("enabled", True)
+    if not cfg.get("llama"):
+        found = B.discover()
+        if found:
+            cfg["llama"] = found["llama"]
+    json.dump(cfg, open(path, "w"), indent=2)
+    return cfg
+
+
+def on_model_pick(_s, app):
+    sel = list((app or {}).get("selections", {}).values())
+    if not sel:
+        return
+    write_model_choice(sel[0])
+    local_backend(fresh=True)
+    if dpg.does_item_exist("seat_sel"):
+        dpg.configure_item("seat_sel", items=seat_items())
+        dpg.set_value("seat_sel", seat_value())
+    set_status(f"Professor re-seated: {seat_model_name()} — "
+               "the next ask loads it", GRN)
+
+
+def ask_professor(prompt):
+    """One Professor, one seat: every asker (chat, Forge, Editor review)
+    comes through this door. Returns (where, answer)."""
+    if SEAT[0] == "local":
+        be, why = local_backend()
+        if be is None:
+            raise RuntimeError(f"local seat is empty: {why}")
+        return f"local · {seat_model_name()}", be.generate(prompt)
+    return BUYER.ask_mesh(prompt, candidates=candidates())
+
 try:                                          # portable saved chats — the same
     from p2pcp import chatstore as _cs        # store the tk client writes, so
     STORE = _cs.ChatStore()                   # old conversations appear here
@@ -366,13 +483,14 @@ def on_ask(*_):
     dpg.add_text("Professor is thinking...", parent="chat", tag="pending",
                  color=DIM)
     dpg.set_y_scroll("chat", 999999.0)
-    set_status("asking the mesh...")
+    set_status("the local Professor is thinking..." if SEAT[0] == "local"
+               else "asking the mesh...")
 
     def work():
         global BUSY, ATTACH
         where = ans = err = None
         try:
-            where, ans = BUYER.ask_mesh(context, candidates=candidates())
+            where, ans = ask_professor(context)
         except Exception as e:                  # noqa: BLE001 — surfaced to user
             err = str(e)
 
@@ -741,7 +859,7 @@ def forge_start(cmd):
 
     def work():
         try:
-            _w, ans = BUYER.ask_mesh(prompt, candidates=candidates())
+            _w, ans = ask_professor(prompt)
             text = ans or "(no model answered)"
         except Exception as ex:                 # noqa: BLE001
             text = f"(forge failed: {ex})"
@@ -1144,8 +1262,7 @@ def ed_review(*_):
     def work():
         global REVIEW_BUSY
         try:
-            _w, ans = BUYER.ask_mesh(MP.REVIEW_PROMPT + draft[:6000],
-                                     candidates=candidates())
+            _w, ans = ask_professor(MP.REVIEW_PROMPT + draft[:6000])
             note = ans or "(no model answered)"
         except Exception as e:                  # noqa: BLE001
             note = f"(review failed: {e})"
@@ -1343,6 +1460,11 @@ def build():
                                   callback=on_chat_pick)
                     dpg.add_button(label="...", small=True, callback=chat_menu)
                     dpg.add_button(label="New chat", callback=new_chat)
+                    dpg.add_combo(seat_items(), tag="seat_sel", width=260,
+                                  default_value=seat_value(),
+                                  callback=on_seat_pick)
+                    dpg.add_button(label="Model...", small=True,
+                                   callback=lambda: dpg.show_item("modeldlg"))
                     ask = dpg.add_button(label="   Ask   ", tag="askbtn",
                                          callback=on_ask)
                     dpg.bind_item_theme(ask, "greenbtn")
@@ -1441,6 +1563,14 @@ def build():
                          default_filename="chat-export.md"):
         dpg.add_file_extension(".*")
         dpg.add_file_extension(".md", color=tuple(GRN))
+    _mdir = os.path.expanduser("~/LOCAL_AI/Llama")
+    with dpg.file_dialog(directory_selector=False, show=False, modal=True,
+                         callback=on_model_pick, tag="modeldlg",
+                         width=760, height=460,
+                         default_path=_mdir if os.path.isdir(_mdir)
+                         else os.path.expanduser("~")):
+        dpg.add_file_extension(".gguf", color=tuple(GRN))
+        dpg.add_file_extension(".*")
 
     with dpg.theme(tag="gripbtn"):
         with dpg.theme_component(dpg.mvButton):

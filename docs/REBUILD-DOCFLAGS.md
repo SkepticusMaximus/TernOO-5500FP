@@ -562,3 +562,48 @@ affected.
 - The source pack for the GristMill/HexMesh docs chapter (the MEAT
   course) is now: this file + the DeepBlue reconciliation + the
   Companion Q4. Exactly the chapters Ian found hardest to wrap.
+
+## 2026-09-04 — THE PROFESSOR'S SEAT: swappable, local-capable (captain's order)
+- CAPTAIN'S RULING (04-09): the Professor must never be pre-configured
+  and bolted in place — the seat is the USER's to swap. Driven by his
+  dissatisfaction with the served model's ideological gloss.
+- DISCOVERY (nameplate drift): HP's systemd unit is still NAMED
+  bonsai-server but has been serving Qwen3-30B-A3B-Instruct-2507
+  (Q4_K_M, port 8090) — the ternary Bonsai left that seat quietly.
+  The mesh Professor's voice since then = Alibaba's 30B instruct tune.
+- BUILT — Mesh-Chat seat switch (both faces, one codebase):
+  · seat_sel combo: "Mesh — remote Professors" | "Local — <model>";
+    persisted (prof_seat in the shared config).
+  · Model... button: .gguf file dialog → write_model_choice() rewrites
+    ONLY the model key in bonsai.json (threads/ctx/timeouts preserved).
+    bonsai.json remains the ONE wiring file — Academy classroom, mesh
+    worker, and the chat seat all follow it.
+  · ask_professor(): one door for chat, Forge, and Editor review —
+    seat-aware; local errors surface with the REAL reason (no echo
+    fallback in the chat seat; mem_guard room-check refusals ride
+    through verbatim).
+- REPAIRED — tenure lesson, round two: on the TQ2_0 requant, -st chat
+  mode reopened <think> and burned the whole token budget mid-thought
+  despite --reasoning off AND --reasoning-budget 0 (both act at the
+  template layer; the ternarized model out-stubborns them). Classic
+  path now = raw completion (-no-cnv) with the hand-rolled Qwen3
+  template ending in a pre-CLOSED think block (Qwen3's own
+  enable_thinking=false convention). Identity-crisis fix intact
+  (system role inside the template). clean_reply also strips
+  llama-cli's "[end of text]" decoration. Argv pins re-tested.
+- VERIFIED LIVE on Lenny (i5-4430S 4c/11GB — the new body):
+  · Local seat ask: coherent balanced-ternary answer in 43.4s cold,
+    ~14s warm (2.5GB TQ2_0 rides the page cache).
+  · P2PCP loop-back SALE: professor node up, buyer bought inference
+    over the wire, answered in 14.0s — Lenny is a REAL seller node
+    now, not just a buyer. (Answer quality: the ternary 8B is
+    noticeably dimmer than the 30B — the trade is stated, not hidden.)
+  · bonsai.json retuned for the new body: threads 3, ctx 2048,
+    n_predict 384 (X550LA survival settings retired with honors).
+- GATES: 59 bonsai suite tests green; full FlowCode 27-gate suite
+  green on Lenny (MESH CLIENT gate now asserts seat surfaces, honest
+  local_backend contract, surgical config write, seat flip persist).
+- PARKED (captain's own deferral): the configurations/settings module
+  as a FlowCode/GHOST-OS design question — OS-level vs APP-level
+  config split with careful inheritance, NOT a GUI that welds the
+  tabs together. Waits for development to resume in earnest.

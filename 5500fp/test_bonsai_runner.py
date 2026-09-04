@@ -67,16 +67,23 @@ def _stub_binary(path, rc=0):
 
 
 class TestZeroConfigWiring(unittest.TestCase):
-    def test_llama_backend_argv_single_turn_chat(self):
+    def test_llama_backend_argv_raw_nothink(self):
+        # Tenure lesson, round two (04-09-2026): -st chat mode reopened
+        # <think> on the TQ2_0 requant despite --reasoning off, so the
+        # classic path is now RAW completion with our own template and a
+        # pre-CLOSED think block. Identity-crisis fix intact: the persona
+        # rides the template's system role, the user turn stays bare.
         b = R.LlamaBackend('/x/llama-cli', '/y/m.gguf', n_predict=128)
         argv = b.argv('hello')
         self.assertEqual(argv[:3], ['/x/llama-cli', '-m', '/y/m.gguf'])
-        # identity-crisis fix: persona as a REAL system prompt, single turn
-        self.assertIn('-sys', argv)
-        self.assertIn(R.SYSTEM_PROMPT, argv)
-        self.assertIn('-st', argv)
-        self.assertNotIn('-no-cnv', argv)          # raw completion retired
-        self.assertEqual(argv[argv.index('-p') + 1], 'hello')
+        self.assertIn('-no-cnv', argv)
+        self.assertNotIn('-st', argv)
+        self.assertNotIn('-sys', argv)
+        prompt = argv[argv.index('-p') + 1]
+        self.assertIn('<|im_start|>system', prompt)
+        self.assertIn(R.SYSTEM_PROMPT, prompt)
+        self.assertIn('<|im_start|>user\nhello<|im_end|>', prompt)
+        self.assertTrue(prompt.endswith(R.NOTHINK_PREFIX))
         for flag in ('--temp', '--no-display-prompt',
                      '-c', '-t', '--prio'):        # memory/desktop kindness
             self.assertIn(flag, argv)
@@ -251,14 +258,14 @@ class TestIntern(unittest.TestCase):
         for flag in ('-c', '-t', '--prio', '-n', '--temp'):  # caps still on
             self.assertIn(flag, argv)
 
-    def test_undrafted_argv_unchanged(self):
+    def test_undrafted_argv_no_draft_flags(self):
         b = R.LlamaBackend('/x/bin/llama-completion', '/y/m.gguf')
         argv = b.argv('hello')
         self.assertEqual(argv[0], '/x/bin/llama-completion')
-        self.assertIn('-st', argv)
         self.assertNotIn('-md', argv)
-        # the tenure lesson: thinking is off at the engine level
-        self.assertEqual(argv[argv.index('--reasoning') + 1], 'off')
+        # the tenure lesson: thinking ends before it starts — the closed
+        # think block is IN the prompt (flags proved too weak on TQ2_0)
+        self.assertIn(R.NOTHINK_PREFIX, argv[argv.index('-p') + 1])
 
     def test_extract_drafted_reply_strips_echo_and_end(self):
         raw = (R.qwen3_prompt('sys', 'q') +

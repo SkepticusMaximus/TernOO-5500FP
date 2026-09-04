@@ -144,6 +144,10 @@ def mem_guard(model_path: str, min_free_mb=None, draft_path=None):
 # not regress) and strip the prompt echo ourselves.
 
 ASSISTANT_MARK = '<|im_start|>assistant\n'
+# Qwen3's OWN no-think convention (public spec, enable_thinking=false): the
+# assistant turn opens with an already-CLOSED think block, so the model wakes
+# up with its thinking done and spends the whole budget on the ANSWER.
+NOTHINK_PREFIX = '<think>\n\n</think>\n\n'
 
 
 def speculative_binary(llama_path: str) -> str:
@@ -180,7 +184,7 @@ def clean_reply(text: str) -> str:
     i = text.find('<think>')
     if i != -1:
         text = text[:i]
-    return text.strip()
+    return text.replace('[end of text]', '').strip()   # llama-cli's own EOS decoration
 
 
 class EchoBackend:
@@ -225,16 +229,16 @@ class LlamaBackend:
                      '-md', self.draft_model,
                      '--draft-max', str(self.draft_max), '--draft-min', '2',
                      '-p', qwen3_prompt(SYSTEM_PROMPT, prompt)] + caps)
-        # -st single-turn chat + -sys persona (the identity-crisis fix): the
-        # gguf's chat template assigns the roles, exactly as Stevo's own
-        # interview script ran it. One turn, then the process exits.
-        # --reasoning off (verified on this build): the tenure lesson — the
-        # ternarized Qwen3 ignored the /no_think soft switch and spent all
-        # 128 tokens thinking; this kills <think> at the template level so
-        # the whole budget goes to the ANSWER.
-        return ([self.llama, '-m', self.model,
-                 '-sys', SYSTEM_PROMPT, '-p', prompt, '-st',
-                 '--reasoning', 'off', '--no-display-prompt'] + caps)
+        # Raw completion with the hand-rolled template and a pre-CLOSED think
+        # block (the tenure lesson, round two — re-verified 04-09-2026 on the
+        # TQ2_0 requant: -st chat mode reopened <think> and burned the whole
+        # budget mid-thought despite --reasoning off AND --reasoning-budget 0;
+        # flags act at the template layer and this model out-stubborns them).
+        # The system role still rides INSIDE the template (identity-crisis
+        # fix intact); echo is cut at the end-of-turn like the drafted path.
+        return ([self.llama, '-m', self.model, '-no-cnv',
+                 '-p', qwen3_prompt(SYSTEM_PROMPT, prompt) + NOTHINK_PREFIX,
+                 '--no-display-prompt'] + caps)
 
     def generate(self, prompt: str) -> str:
         """The model's text, or raises BackendError with the REAL reason —
@@ -245,7 +249,7 @@ class LlamaBackend:
             raise BackendError(refusal)    # refuse > thrash the whole desktop
         r = subprocess.run(self.argv(prompt), capture_output=True, text=True,
                            timeout=self.timeout)
-        out = extract_drafted_reply(r.stdout) if self.draft_model else r.stdout
+        out = extract_drafted_reply(r.stdout)   # both paths: echo-safe cut
         text = clean_reply(out)
         if r.returncode != 0:
             tail = (r.stderr or '').strip().splitlines()[-3:]

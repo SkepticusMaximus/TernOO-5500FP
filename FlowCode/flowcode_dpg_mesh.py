@@ -162,6 +162,11 @@ def build_mesh_tab(style):
                 dpg.add_button(label="...", small=True,
                                callback=MC.chat_menu)
                 dpg.add_button(label="New chat", callback=MC.new_chat)
+                dpg.add_combo(MC.seat_items(), tag="seat_sel", width=260,
+                              default_value=MC.seat_value(),
+                              callback=MC.on_seat_pick)
+                dpg.add_button(label="Model...", small=True,
+                               callback=lambda: dpg.show_item("modeldlg"))
                 ask = dpg.add_button(label="   Ask   ", tag="askbtn",
                                      callback=MC.on_ask)
                 dpg.bind_item_theme(ask, "greenbtn")
@@ -195,6 +200,15 @@ def build_mesh_tab(style):
             dpg.add_file_extension(".*")
             dpg.add_file_extension(".md", color=GRN)
             dpg.add_file_extension(".txt", color=GRN)
+    if not dpg.does_item_exist("modeldlg"):
+        _mdir = os.path.expanduser("~/LOCAL_AI/Llama")
+        with dpg.file_dialog(directory_selector=False, show=False, modal=True,
+                             callback=MC.on_model_pick, tag="modeldlg",
+                             width=760, height=460,
+                             default_path=_mdir if os.path.isdir(_mdir)
+                             else os.path.expanduser("~")):
+            dpg.add_file_extension(".gguf", color=GRN)
+            dpg.add_file_extension(".*")
 
     with dpg.handler_registry():
         dpg.add_key_press_handler(callback=_keys)
@@ -227,8 +241,39 @@ def _selftest():
     MC = _mc()
     assert MC is not None, f"mesh core failed: {_MC_ERR[0]}"
     for tag in ("workshop", "maclist", "fg_rows", "editor", "ed_notes",
-                "prompt", "chat", "chatsel", "status", "askbtn"):
+                "prompt", "chat", "chatsel", "status", "askbtn", "seat_sel",
+                "modeldlg"):
         assert dpg.does_item_exist(tag), f"missing surface: {tag}"
+    # The Professor's SEAT (04-09): two seats offered; the local backend is
+    # HONEST (exactly one of backend/reason); the swap writes bonsai.json
+    # surgically (other keys preserved); the pick round-trips and restores.
+    items = MC.seat_items()
+    assert len(items) == 2 and items[0].startswith("Mesh"), items
+    be, why = MC.local_backend(fresh=True)
+    assert (be is None) != (why is None), (be, why)
+    import json as _json
+    import tempfile as _tf
+    with _tf.NamedTemporaryFile("w", suffix=".json", delete=False) as tf:
+        _json.dump({"threads": 7, "llama": "/bin/true"}, tf)
+        tmp = tf.name
+    try:
+        cfg = MC.write_model_choice("/nowhere/fake.gguf", config_path=tmp)
+        assert cfg["model"] == "/nowhere/fake.gguf" and cfg["threads"] == 7
+        assert _json.load(open(tmp))["model"] == "/nowhere/fake.gguf"
+    finally:
+        os.unlink(tmp)
+    prev_seat, prev_cfg = MC.SEAT[0], MC.CFGD.get("prof_seat")
+    MC.on_seat_pick(None, items[1])
+    assert MC.SEAT[0] == "local" and MC.CFGD["prof_seat"] == "local"
+    MC.on_seat_pick(None, items[0])
+    assert MC.SEAT[0] == "mesh"
+    MC.SEAT[0] = prev_seat
+    if prev_cfg is None:
+        MC.CFGD.pop("prof_seat", None)
+    else:
+        MC.CFGD["prof_seat"] = prev_cfg
+    MC._cfg_save(MC.CFGD)
+    MC.local_backend(fresh=True)              # drop the test-poked cache
     MC.HISTORY[:] = []
     MC.HISTORY.append(("user", "gate probe"))
     ctx = MC.build_context()
