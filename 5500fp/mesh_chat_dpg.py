@@ -18,7 +18,6 @@ import json
 import os
 import re
 import shutil
-import socket
 import subprocess
 import sys
 import threading
@@ -36,6 +35,9 @@ def _load(name):
 
 
 SVC = _load("p2pcp_service")
+PSOCK = _load("p2pcp_socket")        # THE one network organ (§1.5) — the
+                                     # reachability probe dials through it,
+                                     # keeping this module socket-free
 MP = _load("macro_panel")            # tk-free at module level: specs, validate,
 #                                      forge prompt, first-json, review prompt
 
@@ -1706,8 +1708,7 @@ def _probe():
     n = 0
     for h, p in candidates():
         try:
-            s = socket.create_connection((h, p), timeout=3)
-            s.close()
+            PSOCK.SocketOrgan().connect(h, p, timeout=3).close()
             n += 1
         except Exception:
             pass

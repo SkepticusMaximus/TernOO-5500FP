@@ -733,3 +733,33 @@ affected.
   SIGABRTs were the captain's launcher attempts dying on the
   clipboard bug (fixed earlier today); no crashes at macro-complaint
   time — consistent with the misassembly diagnosis.
+
+## 2026-09-05 — CAPTAIN'S RULING EXECUTED: ternary_op is now the TRUE Steiner quasigroup
+- THE RULING (captain, 05-09, after CAI's finding + CC's audit + sandbox
+  proof): swap ternary_op from the cyclic form -(a+b) mod 729 (totally
+  symmetric, mutual-recovery, but idempotent for only 3/729 values —
+  NOT Steiner despite its label) to the per-trit negate-and-sum over
+  BALANCED trits on (Z/3)^6 — idempotent 729/729, carry-free,
+  trit-parallel, the machine-native operation. Convention pinned:
+  BALANCED trits (worked example: op(123,456) = 60).
+- SCOPE SPLIT (as audited): the ternary_sponge keeps its cyclic mixer
+  (diffusion needs no quasigroup axioms; digest stability preserved) —
+  only its "Steiner" label corrected. earn_unit docstrings updated.
+- BLAST RADIUS, MEASURED: zero test edits required. 25/25 gristmill
+  accept (incl. c12), earn+content-store suites, widget_lib 117/117,
+  gristmill tab, v0.3 ALL PASS, FlowCode 26 gates green — the two
+  operations coincide on carry-free pairs and every canonical vector
+  is carry-free. Sandbox-proven first, then applied.
+- LEDGER EPOCH NOTE: all SETTLE records before this commit were audited
+  under the cyclic op at serve time; chains store receipts only (SHA3 +
+  ed25519) and remain valid unchanged. No migration. Fleet must switch
+  atomically — done this night (see below).
+- ERRATUM (owed): the founding maths consultation and CC's 29-08 crew
+  letter §4 asserted idempotence for the CYCLIC form — wrong; idempotence
+  belongs to the trit-wise form now installed. This entry is the
+  correction of record.
+- RIDE-ALONG FIX: the full P2P suite (now 160 tests) surfaced a
+  pre-existing red — mesh_chat_dpg imported `socket` directly since its
+  birth commit, violating the §1.5 one-network-organ boundary. The
+  reachability probe now dials through p2pcp_socket.SocketOrgan.connect;
+  the module is socket-free; 160/160 PASS.
