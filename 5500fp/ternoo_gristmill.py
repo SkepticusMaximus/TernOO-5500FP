@@ -72,17 +72,51 @@ MOD = 3**6  # 729 — one tribble
 
 def ternary_op(a: int, b: int) -> int:
     """
-    Steiner quasigroup mutual recovery operation for balanced ternary tribbles.
-    A ⊕ B = -(A+B) mod 729
+    THE Steiner quasigroup on (Z/3)^6 — per-trit negate-and-sum over BALANCED
+    trits, no carry. Trit-parallel and carry-free: the operation a balanced-
+    ternary machine performs natively, one gate delay per trit lane.
 
-    Property: for any triple (A, B, C) where C = ternary_op(A, B):
-        ternary_op(B, C) == A
-        ternary_op(A, C) == B
+    Per trit:  c_t = -(a_t + b_t)  reduced into {-1, 0, +1}  (mod 3, balanced)
+
+    Properties (all verified exhaustively, 05-09-2026 audit + ruling):
+        idempotent:       ternary_op(A, A) == A            for ALL 729 values
+        totally symmetric mutual recovery: C = op(A,B)  =>  op(B,C) == A
+                                                        and op(A,C) == B
+        unique sentinel:  exactly one B per A with op(A,B) == 0
     Each side recoverable from the other two — self-validating mesh.
+
+    HISTORY (captain's ruling, 05-09-2026): the original implementation was
+    the CYCLIC form -(a+b) mod 729 — totally symmetric with full mutual
+    recovery, but idempotent for only 3/729 values, so not a Steiner
+    quasigroup despite its documentation. The two operations coincide exactly
+    on carry-free trit pairs (which is why every canonical test vector
+    survived the swap unchanged); they diverge whenever a trit lane carries.
+    Audit trail: private/HANDBACK-CC-to-CAI-quasigroup-idempotence-audit-
+    findings.md. Ledger epoch note: all mesh SETTLE records before this
+    commit were audited under the cyclic op at serve time; settled chains
+    store receipts only and remain valid unchanged.
 
     Input range: any integer (result reduced to 0..728).
     """
-    return (-(a + b)) % MOD
+    a %= MOD
+    b %= MOD
+    out, w = 0, 1
+    for _ in range(6):
+        ra, rb = a % 3, b % 3
+        a //= 3
+        b //= 3
+        if ra == 2:                # balanced digit: 2 ≡ -1, carry the borrow
+            ra = -1
+            a += 1
+        if rb == 2:
+            rb = -1
+            b += 1
+        s = (-(ra + rb)) % 3       # per-trit negate-and-sum, mod 3
+        if s == 2:
+            s = -1                 # back to balanced {-1, 0, +1}
+        out += s * w
+        w *= 3
+    return out % MOD
 
 
 def traverse_step(state: int, side_a: int, side_b: int) -> tuple:
@@ -99,11 +133,13 @@ def traverse_step(state: int, side_a: int, side_b: int) -> tuple:
     return (new_state, side_c, arrived)
 
 
-MECCANO_VOCAB = [i * 27 for i in range(1, 28)]  # {27,54,...,702} — true closed 27-element sub-quasigroup of Z/729Z
-# Mathematical note: a subset of Z/729Z closed under ternary_op must have size 3^k.
-# [1..27] is NOT closed — ternary_op maps it to [702..727]. Multiples of 27 ARE closed:
-# ternary_op(a*27, b*27) = -(a+b)*27 mod 729 = ((-(a+b) mod 27)*27) — stays in the set.
-# Corrected: CAI confirmation, 05 Jun 2026.
+MECCANO_VOCAB = [i * 27 for i in range(1, 28)]  # {27,54,...,702} — true closed 27-element sub-quasigroup
+# Mathematical note: a subset closed under ternary_op must have size 3^k.
+# [1..27] is NOT closed. Multiples of 27 ARE: a number is divisible by 27 iff
+# its three low balanced trits are zero, and the per-trit op maps zero lanes
+# to zero lanes — closure holds. (Also held under the retired cyclic op;
+# both verified numerically in the 05-09-2026 audit. Original note: CAI
+# confirmation, 05 Jun 2026.)
 
 
 def vocab_step(current_chunk: int, side_a: int, side_b: int) -> tuple:

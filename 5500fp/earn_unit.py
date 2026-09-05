@@ -16,8 +16,9 @@ The minimal mint-worthy computation for the P2PCP compute mesh, per the manifold
 This module isolates that math into ONE small, portable, pure-INTEGER kernel so
 that ANY machine — a full TernOO node or a thin non-TernOO client carrying a
 simulated TMesh/OTree — can do the forward pass and earn. Because every operation
-is integer/modular (mod 729, balanced-trit weight, the Steiner quasigroup
--(a+b) mod 729), the output is bit-exactly reproducible: a validator re-runs
+is integer/modular (mod 729, balanced-trit weight, the Steiner quasigroup —
+per-trit negate-and-sum over balanced trits, carry-free, per the captain's
+05-09-2026 ruling), the output is bit-exactly reproducible: a validator re-runs
 ``earn_unit(job, index)`` and gets identical bytes. That is precisely what the
 daemon's replay-audit checks (``daemon._serve_peer``:
 ``if audit.run_chunk(job, i) != output: break``), and what makes the work
@@ -62,7 +63,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ternoo_gristmill import (            # noqa: E402
     MOD,                # 729 — one tribble (3**6)
     MECCANO_VOCAB,      # {27,54,...,702} — the closed 27-element sub-quasigroup
-    ternary_op,         # Steiner quasigroup  A⊕B = -(A+B) mod 729
+    ternary_op,         # Steiner quasigroup — per-trit negate-and-sum (05-09 ruling)
     traverse_step,      # advance one triangle, recover the third side
     trit_weight,        # Σ|balanced trit| over 6 trits, range 0..6
     build_otree_mmoe,   # tribble state → OTree MMOE MAP word (ABSOLUTE_3D)

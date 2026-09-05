@@ -3,8 +3,16 @@ consultation of 6 Jul 2026 (Deep-Mind loop, final parameters).
 
 Construction: a sponge over tribbles (Z_729 lanes), built ONLY from
 operations native to balanced-ternary hardware — addition mod 729,
-multiplication mod 729, lane rotation, and the Steiner quasigroup
-operation A⊕B = -(A+B) mod 729. No binary S-boxes, no lookup tables.
+multiplication mod 729, lane rotation, and the cyclic mixing operation
+A⊕B = -(A+B) mod 729. No binary S-boxes, no lookup tables.
+
+NAMING NOTE (05-09-2026 audit/ruling): the mixer below was originally
+labelled "the Steiner quasigroup operation"; the cyclic form is totally
+symmetric but NOT idempotent, hence not Steiner. As a DIFFUSION step no
+quasigroup axioms are required, so per the captain's scope ruling the
+sponge keeps the cyclic mixer unchanged (digest stability preserved) and
+only the label is corrected. The true Steiner operation now lives in
+ternoo_gristmill.ternary_op (per-trit, balanced).
 
 Blessed parameters (consultation, Part 2):
   * state  = 45 tribbles = 270 trits   (>= the 243-trit minimum)
@@ -44,7 +52,9 @@ TRIBBLES_PER_WORD = 4          # a 24-trit TernOO word = 4 tribbles
 
 
 def sqg(a: int, b: int) -> int:
-    """The Steiner quasigroup operation: A⊕B = -(A+B) mod 729."""
+    """Cyclic mixing operation A⊕B = -(A+B) mod 729 (see NAMING NOTE above:
+    kept for diffusion; not the Steiner quasigroup, name retained for API
+    stability)."""
     return (-(a + b)) % MOD
 
 
