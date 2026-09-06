@@ -1,0 +1,2208 @@
+{
+ "ternoo_version": "0.3",
+ "source_file": "Word-Format-Explorer.fc",
+ "source_type": "flow",
+ "word_stream": [],
+ "symbols": [],
+ "edges": [],
+ "flow_symbols": [
+  {
+   "id": 0,
+   "kind": "flow_terminator",
+   "x": 760,
+   "y": 40,
+   "w": 170,
+   "h": 54,
+   "label": "EXPLORE WORD",
+   "name": "explore_word",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "is_entry",
+     "value": true
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 1,
+   "kind": "flow_io",
+   "x": 740,
+   "y": 130,
+   "w": 210,
+   "h": 44,
+   "label": "word \u21d0 A1",
+   "name": "get_word",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "word"
+    },
+    {
+     "name": "expression",
+     "value": "A1"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 2,
+   "kind": "flow_io",
+   "x": 740,
+   "y": 205,
+   "w": 210,
+   "h": 44,
+   "label": "strip \u21d0 \"\"",
+   "name": "init_strip",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "strip"
+    },
+    {
+     "name": "expression",
+     "value": "\"\""
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 3,
+   "kind": "flow_io",
+   "x": 740,
+   "y": 280,
+   "w": 210,
+   "h": 44,
+   "label": "t22 \u21d0 0",
+   "name": "init_t22",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "t22"
+    },
+    {
+     "name": "expression",
+     "value": "0"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 4,
+   "kind": "flow_io",
+   "x": 740,
+   "y": 355,
+   "w": 210,
+   "h": 44,
+   "label": "t23 \u21d0 0",
+   "name": "init_t23",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "t23"
+    },
+    {
+     "name": "expression",
+     "value": "0"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 5,
+   "kind": "flow_loop",
+   "x": 560,
+   "y": 430,
+   "w": 620,
+   "h": 330,
+   "label": "each trit i: 0 \u2192 23",
+   "name": "decode_loop",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "kind",
+     "value": "for"
+    },
+    {
+     "name": "var",
+     "value": "i"
+    },
+    {
+     "name": "from",
+     "value": "0"
+    },
+    {
+     "name": "to",
+     "value": "23"
+    },
+    {
+     "name": "step",
+     "value": "1"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 6,
+   "kind": "flow_io",
+   "x": 600,
+   "y": 490,
+   "w": 250,
+   "h": 44,
+   "label": "t \u21d0 balanced digit",
+   "name": "x_digit",
+   "parent_scope": "decode_loop",
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "t"
+    },
+    {
+     "name": "expression",
+     "value": "IF(MOD(w,3)=2, MOD(w,3)-3, MOD(w,3))"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 7,
+   "kind": "flow_io",
+   "x": 600,
+   "y": 565,
+   "w": 250,
+   "h": 44,
+   "label": "strip \u21d0 glyph+strip",
+   "name": "x_strip",
+   "parent_scope": "decode_loop",
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "strip"
+    },
+    {
+     "name": "expression",
+     "value": "CONCAT(IF(t=1,\"+\",IF(t=0,\"0\",\"\u2212\")),IF(OR(i=18,i=22),\" \u00b7 \",\"\"), strip)"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 8,
+   "kind": "flow_io",
+   "x": 600,
+   "y": 640,
+   "w": 250,
+   "h": 44,
+   "label": "w \u21d0 (w\u2212t)/3",
+   "name": "x_shift",
+   "parent_scope": "decode_loop",
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "w"
+    },
+    {
+     "name": "expression",
+     "value": "ROUND((w-t)/3, 0)"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 9,
+   "kind": "flow_io",
+   "x": 920,
+   "y": 490,
+   "w": 220,
+   "h": 44,
+   "label": "t22 \u21d0 IF(i=22, t, t22)",
+   "name": "x_t22",
+   "parent_scope": "decode_loop",
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "t22"
+    },
+    {
+     "name": "expression",
+     "value": "IF(i=22, t, t22)"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 10,
+   "kind": "flow_io",
+   "x": 920,
+   "y": 565,
+   "w": 220,
+   "h": 44,
+   "label": "t23 \u21d0 IF(i=23, t, t23)",
+   "name": "x_t23",
+   "parent_scope": "decode_loop",
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "t23"
+    },
+    {
+     "name": "expression",
+     "value": "IF(i=23, t, t23)"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 11,
+   "kind": "flow_terminator",
+   "x": 1260,
+   "y": 420,
+   "w": 130,
+   "h": 50,
+   "label": "bail",
+   "name": "decode_bail",
+   "parent_scope": null,
+   "properties": [],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 12,
+   "kind": "flow_io",
+   "x": 740,
+   "y": 810,
+   "w": 210,
+   "h": 44,
+   "label": "w \u21d0 word",
+   "name": "seed_w",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "w"
+    },
+    {
+     "name": "expression",
+     "value": "word"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 13,
+   "kind": "flow_io",
+   "x": 740,
+   "y": 885,
+   "w": 210,
+   "h": 44,
+   "label": "row \u21d0 t23\u00d73+t22+6",
+   "name": "calc_row",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "row"
+    },
+    {
+     "name": "expression",
+     "value": "t23*3 + t22 + 6"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 14,
+   "kind": "flow_io",
+   "x": 1120,
+   "y": 130,
+   "w": 230,
+   "h": 42,
+   "label": "show word",
+   "name": "show_word_val",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "widget"
+    },
+    {
+     "name": "address",
+     "value": "word_val"
+    },
+    {
+     "name": "expression",
+     "value": "CONCAT(\"word: \", word)"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 15,
+   "kind": "flow_io",
+   "x": 1120,
+   "y": 198,
+   "w": 230,
+   "h": 42,
+   "label": "show trit strip",
+   "name": "show_trit_strip",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "widget"
+    },
+    {
+     "name": "address",
+     "value": "trit_strip"
+    },
+    {
+     "name": "expression",
+     "value": "strip"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 16,
+   "kind": "flow_io",
+   "x": 1120,
+   "y": 266,
+   "w": 230,
+   "h": 42,
+   "label": "show type name",
+   "name": "show_tname",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "widget"
+    },
+    {
+     "name": "address",
+     "value": "tname"
+    },
+    {
+     "name": "expression",
+     "value": "CELL(CONCAT(\"B\", row))"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 17,
+   "kind": "flow_io",
+   "x": 1120,
+   "y": 334,
+   "w": 230,
+   "h": 42,
+   "label": "show status",
+   "name": "show_tstatus",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "widget"
+    },
+    {
+     "name": "address",
+     "value": "tstatus"
+    },
+    {
+     "name": "expression",
+     "value": "CELL(CONCAT(\"C\", row))"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 18,
+   "kind": "flow_io",
+   "x": 1120,
+   "y": 402,
+   "w": 230,
+   "h": 42,
+   "label": "show T21 row",
+   "name": "show_q_row1",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "widget"
+    },
+    {
+     "name": "address",
+     "value": "q_row1"
+    },
+    {
+     "name": "expression",
+     "value": "CELL(CONCAT(\"D\", row))"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 19,
+   "kind": "flow_io",
+   "x": 1120,
+   "y": 470,
+   "w": 230,
+   "h": 42,
+   "label": "show T20 row",
+   "name": "show_q_row2",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "widget"
+    },
+    {
+     "name": "address",
+     "value": "q_row2"
+    },
+    {
+     "name": "expression",
+     "value": "CELL(CONCAT(\"E\", row))"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 20,
+   "kind": "flow_io",
+   "x": 1120,
+   "y": 538,
+   "w": 230,
+   "h": 42,
+   "label": "show T19 row",
+   "name": "show_q_row3",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "widget"
+    },
+    {
+     "name": "address",
+     "value": "q_row3"
+    },
+    {
+     "name": "expression",
+     "value": "CELL(CONCAT(\"F\", row))"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 21,
+   "kind": "flow_io",
+   "x": 1120,
+   "y": 606,
+   "w": 230,
+   "h": 42,
+   "label": "show T18 row",
+   "name": "show_q_row4",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "widget"
+    },
+    {
+     "name": "address",
+     "value": "q_row4"
+    },
+    {
+     "name": "expression",
+     "value": "CELL(CONCAT(\"G\", row))"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 22,
+   "kind": "flow_io",
+   "x": 1120,
+   "y": 674,
+   "w": 230,
+   "h": 42,
+   "label": "help line 1",
+   "name": "show_help_1",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "widget"
+    },
+    {
+     "name": "address",
+     "value": "help_1"
+    },
+    {
+     "name": "expression",
+     "value": "CELL(CONCAT(\"H\", row))"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 23,
+   "kind": "flow_io",
+   "x": 1120,
+   "y": 742,
+   "w": 230,
+   "h": 42,
+   "label": "help line 2",
+   "name": "show_help_2",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "widget"
+    },
+    {
+     "name": "address",
+     "value": "help_2"
+    },
+    {
+     "name": "expression",
+     "value": "CELL(CONCAT(\"I\", row))"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 24,
+   "kind": "flow_io",
+   "x": 1120,
+   "y": 810,
+   "w": 230,
+   "h": 42,
+   "label": "help line 3",
+   "name": "show_help_3",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "widget"
+    },
+    {
+     "name": "address",
+     "value": "help_3"
+    },
+    {
+     "name": "expression",
+     "value": "CELL(CONCAT(\"J\", row))"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 25,
+   "kind": "flow_terminator",
+   "x": 1120,
+   "y": 878,
+   "w": 150,
+   "h": 50,
+   "label": "shown",
+   "name": "explorer_done",
+   "parent_scope": null,
+   "properties": [],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 26,
+   "kind": "flow_connector",
+   "x": 470,
+   "y": 205,
+   "w": 44,
+   "h": 44,
+   "label": "\u25cf",
+   "name": "join_decode",
+   "parent_scope": null,
+   "properties": [],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 27,
+   "kind": "flow_terminator",
+   "x": 40,
+   "y": 40,
+   "w": 132,
+   "h": 40,
+   "label": "\u2212\u2212 EXEC",
+   "name": "radio_6_toggled",
+   "parent_scope": null,
+   "properties": [],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 28,
+   "kind": "flow_io",
+   "x": 40,
+   "y": 92,
+   "w": 132,
+   "h": 36,
+   "label": "word \u21d0 EXEC",
+   "name": "set_EXEC",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "word"
+    },
+    {
+     "name": "expression",
+     "value": "-125524238436"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 29,
+   "kind": "flow_terminator",
+   "x": 190,
+   "y": 40,
+   "w": 132,
+   "h": 40,
+   "label": "\u22120 MAP",
+   "name": "radio_7_toggled",
+   "parent_scope": null,
+   "properties": [],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 30,
+   "kind": "flow_io",
+   "x": 190,
+   "y": 92,
+   "w": 132,
+   "h": 36,
+   "label": "word \u21d0 MAP",
+   "name": "set_MAP",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "word"
+    },
+    {
+     "name": "expression",
+     "value": "-94143178827"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 31,
+   "kind": "flow_terminator",
+   "x": 340,
+   "y": 40,
+   "w": 132,
+   "h": 40,
+   "label": "\u2212+ DATA",
+   "name": "radio_8_toggled",
+   "parent_scope": null,
+   "properties": [],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 32,
+   "kind": "flow_io",
+   "x": 340,
+   "y": 92,
+   "w": 132,
+   "h": 36,
+   "label": "word \u21d0 DATA",
+   "name": "set_DATA",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "word"
+    },
+    {
+     "name": "expression",
+     "value": "-48685545956"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 33,
+   "kind": "flow_terminator",
+   "x": 40,
+   "y": 190,
+   "w": 132,
+   "h": 40,
+   "label": "0\u2212 NEURAL",
+   "name": "radio_9_toggled",
+   "parent_scope": null,
+   "properties": [],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 34,
+   "kind": "flow_io",
+   "x": 40,
+   "y": 242,
+   "w": 132,
+   "h": 36,
+   "label": "word \u21d0 NEURAL",
+   "name": "set_NEURAL",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "word"
+    },
+    {
+     "name": "expression",
+     "value": "-31381059609"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 35,
+   "kind": "flow_terminator",
+   "x": 190,
+   "y": 190,
+   "w": 132,
+   "h": 40,
+   "label": "00 I/O",
+   "name": "radio_10_toggled",
+   "parent_scope": null,
+   "properties": [],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 36,
+   "kind": "flow_io",
+   "x": 190,
+   "y": 242,
+   "w": 132,
+   "h": 36,
+   "label": "word \u21d0 I/O",
+   "name": "set_IO",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "word"
+    },
+    {
+     "name": "expression",
+     "value": "0"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 37,
+   "kind": "flow_terminator",
+   "x": 340,
+   "y": 190,
+   "w": 132,
+   "h": 40,
+   "label": "0+ CRYPTO",
+   "name": "radio_11_toggled",
+   "parent_scope": null,
+   "properties": [],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 38,
+   "kind": "flow_io",
+   "x": 340,
+   "y": 242,
+   "w": 132,
+   "h": 36,
+   "label": "word \u21d0 CRYPTO",
+   "name": "set_CRYPTO",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "word"
+    },
+    {
+     "name": "expression",
+     "value": "31381059609"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 39,
+   "kind": "flow_terminator",
+   "x": 40,
+   "y": 340,
+   "w": 132,
+   "h": 40,
+   "label": "+\u2212 OPCODE",
+   "name": "radio_12_toggled",
+   "parent_scope": null,
+   "properties": [],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 40,
+   "kind": "flow_io",
+   "x": 40,
+   "y": 392,
+   "w": 132,
+   "h": 36,
+   "label": "word \u21d0 OPCODE",
+   "name": "set_OPCODE",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "word"
+    },
+    {
+     "name": "expression",
+     "value": "62762119218"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 41,
+   "kind": "flow_terminator",
+   "x": 190,
+   "y": 340,
+   "w": 132,
+   "h": 40,
+   "label": "+0 OPEN_B",
+   "name": "radio_13_toggled",
+   "parent_scope": null,
+   "properties": [],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 42,
+   "kind": "flow_io",
+   "x": 190,
+   "y": 392,
+   "w": 132,
+   "h": 36,
+   "label": "word \u21d0 OPEN_B",
+   "name": "set_OPEN_B",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "word"
+    },
+    {
+     "name": "expression",
+     "value": "94143178827"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 43,
+   "kind": "flow_terminator",
+   "x": 340,
+   "y": 340,
+   "w": 132,
+   "h": 40,
+   "label": "++ POOL",
+   "name": "radio_14_toggled",
+   "parent_scope": null,
+   "properties": [],
+   "entry_points": [],
+   "exit_points": []
+  },
+  {
+   "id": 44,
+   "kind": "flow_io",
+   "x": 340,
+   "y": 392,
+   "w": 132,
+   "h": 36,
+   "label": "word \u21d0 POOL",
+   "name": "set_POOL",
+   "parent_scope": null,
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "word"
+    },
+    {
+     "name": "expression",
+     "value": "125524238436"
+    }
+   ],
+   "entry_points": [],
+   "exit_points": []
+  }
+ ],
+ "flow_edges": [
+  {
+   "src": 6,
+   "dst": 7,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 7,
+   "dst": 8,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 8,
+   "dst": 9,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 9,
+   "dst": 10,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 0,
+   "dst": 1,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 1,
+   "dst": 2,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 2,
+   "dst": 3,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 3,
+   "dst": 4,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 4,
+   "dst": 12,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 12,
+   "dst": 5,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 5,
+   "dst": 13,
+   "waypoints": [],
+   "condition": "",
+   "branch": "-"
+  },
+  {
+   "src": 5,
+   "dst": 11,
+   "waypoints": [],
+   "condition": "",
+   "branch": "0"
+  },
+  {
+   "src": 13,
+   "dst": 14,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 14,
+   "dst": 15,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 15,
+   "dst": 16,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 16,
+   "dst": 17,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 17,
+   "dst": 18,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 18,
+   "dst": 19,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 19,
+   "dst": 20,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 20,
+   "dst": 21,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 21,
+   "dst": 22,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 22,
+   "dst": 23,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 23,
+   "dst": 24,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 24,
+   "dst": 25,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 26,
+   "dst": 2,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 27,
+   "dst": 28,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 28,
+   "dst": 26,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 29,
+   "dst": 30,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 30,
+   "dst": 26,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 31,
+   "dst": 32,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 32,
+   "dst": 26,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 33,
+   "dst": 34,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 34,
+   "dst": 26,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 35,
+   "dst": 36,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 36,
+   "dst": 26,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 37,
+   "dst": 38,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 38,
+   "dst": 26,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 39,
+   "dst": 40,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 40,
+   "dst": 26,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 41,
+   "dst": 42,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 42,
+   "dst": 26,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 43,
+   "dst": 44,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 44,
+   "dst": 26,
+   "waypoints": [],
+   "condition": ""
+  }
+ ],
+ "cmd_symbols": [],
+ "cmd_edges": [],
+ "cell_symbols": [
+  {
+   "id": 0,
+   "row": 0,
+   "col": 0,
+   "label": "A1",
+   "properties": [],
+   "kind": "number",
+   "value": "-48685545956"
+  },
+  {
+   "id": 1,
+   "row": 1,
+   "col": 1,
+   "label": "B2",
+   "properties": [],
+   "kind": "text",
+   "value": "EXEC"
+  },
+  {
+   "id": 2,
+   "row": 1,
+   "col": 2,
+   "label": "C2",
+   "properties": [],
+   "kind": "text",
+   "value": "Defined"
+  },
+  {
+   "id": 3,
+   "row": 1,
+   "col": 3,
+   "label": "D2",
+   "properties": [],
+   "kind": "text",
+   "value": "T21 PRIVILEGE  \u2212 0 +"
+  },
+  {
+   "id": 4,
+   "row": 1,
+   "col": 4,
+   "label": "E2",
+   "properties": [],
+   "kind": "text",
+   "value": "T20 CALL stk/reg/msg"
+  },
+  {
+   "id": 5,
+   "row": 1,
+   "col": 5,
+   "label": "F2",
+   "properties": [],
+   "kind": "text",
+   "value": "T19 RETURN-TYPE"
+  },
+  {
+   "id": 6,
+   "row": 1,
+   "col": 6,
+   "label": "G2",
+   "properties": [],
+   "kind": "text",
+   "value": "T18 SEG-MST"
+  },
+  {
+   "id": 7,
+   "row": 1,
+   "col": 7,
+   "label": "H2",
+   "properties": [],
+   "kind": "text",
+   "value": "Executable behaviour words."
+  },
+  {
+   "id": 8,
+   "row": 1,
+   "col": 8,
+   "label": "I2",
+   "properties": [],
+   "kind": "text",
+   "value": "27 qualifier variants defined."
+  },
+  {
+   "id": 9,
+   "row": 1,
+   "col": 9,
+   "label": "J2",
+   "properties": [],
+   "kind": "text",
+   "value": "Call style rides T20."
+  },
+  {
+   "id": 10,
+   "row": 2,
+   "col": 1,
+   "label": "B3",
+   "properties": [],
+   "kind": "text",
+   "value": "MAP"
+  },
+  {
+   "id": 11,
+   "row": 2,
+   "col": 2,
+   "label": "C3",
+   "properties": [],
+   "kind": "text",
+   "value": "Defined"
+  },
+  {
+   "id": 12,
+   "row": 2,
+   "col": 3,
+   "label": "D3",
+   "properties": [],
+   "kind": "text",
+   "value": "T21 MODE hi"
+  },
+  {
+   "id": 13,
+   "row": 2,
+   "col": 4,
+   "label": "E3",
+   "properties": [],
+   "kind": "text",
+   "value": "T20 MODE lo"
+  },
+  {
+   "id": 14,
+   "row": 2,
+   "col": 5,
+   "label": "F3",
+   "properties": [],
+   "kind": "text",
+   "value": "T19 OCTANT sel"
+  },
+  {
+   "id": 15,
+   "row": 2,
+   "col": 6,
+   "label": "G3",
+   "properties": [],
+   "kind": "text",
+   "value": "T18 +1 = MMID plane"
+  },
+  {
+   "id": 16,
+   "row": 2,
+   "col": 7,
+   "label": "H3",
+   "properties": [],
+   "kind": "text",
+   "value": "Octree coordinates; HexMesh"
+  },
+  {
+   "id": 17,
+   "row": 2,
+   "col": 8,
+   "label": "I3",
+   "properties": [],
+   "kind": "text",
+   "value": "identity (MMID) + storage (MMOE)."
+  },
+  {
+   "id": 18,
+   "row": 2,
+   "col": 9,
+   "label": "J3",
+   "properties": [],
+   "kind": "text",
+   "value": "Modes: ORIGIN/ON_PLANE/ABS_3D."
+  },
+  {
+   "id": 19,
+   "row": 3,
+   "col": 1,
+   "label": "B4",
+   "properties": [],
+   "kind": "text",
+   "value": "DATA"
+  },
+  {
+   "id": 20,
+   "row": 3,
+   "col": 2,
+   "label": "C4",
+   "properties": [],
+   "kind": "text",
+   "value": "Defined"
+  },
+  {
+   "id": 21,
+   "row": 3,
+   "col": 3,
+   "label": "D4",
+   "properties": [],
+   "kind": "text",
+   "value": "T21 +1  SUBTYPE hi"
+  },
+  {
+   "id": 22,
+   "row": 3,
+   "col": 4,
+   "label": "E4",
+   "properties": [],
+   "kind": "text",
+   "value": "T20 +1  SUBTYPE lo  = PTR"
+  },
+  {
+   "id": 23,
+   "row": 3,
+   "col": 5,
+   "label": "F4",
+   "properties": [],
+   "kind": "text",
+   "value": "T19  0  detail hi"
+  },
+  {
+   "id": 24,
+   "row": 3,
+   "col": 6,
+   "label": "G4",
+   "properties": [],
+   "kind": "text",
+   "value": "T18  0  = USER-DEF PTR"
+  },
+  {
+   "id": 25,
+   "row": 3,
+   "col": 7,
+   "label": "H4",
+   "properties": [],
+   "kind": "text",
+   "value": "Values, pointers and strings."
+  },
+  {
+   "id": 26,
+   "row": 3,
+   "col": 8,
+   "label": "I4",
+   "properties": [],
+   "kind": "text",
+   "value": "UDP payload: subclass T17-16,"
+  },
+  {
+   "id": 27,
+   "row": 3,
+   "col": 9,
+   "label": "J4",
+   "properties": [],
+   "kind": "text",
+   "value": "offset, code-seg, data-seg."
+  },
+  {
+   "id": 28,
+   "row": 4,
+   "col": 1,
+   "label": "B5",
+   "properties": [],
+   "kind": "text",
+   "value": "NEURAL"
+  },
+  {
+   "id": 29,
+   "row": 4,
+   "col": 2,
+   "label": "C5",
+   "properties": [],
+   "kind": "text",
+   "value": "Defined"
+  },
+  {
+   "id": 30,
+   "row": 4,
+   "col": 3,
+   "label": "D5",
+   "properties": [],
+   "kind": "text",
+   "value": "T21 ROLE unit/conn"
+  },
+  {
+   "id": 31,
+   "row": 4,
+   "col": 4,
+   "label": "E5",
+   "properties": [],
+   "kind": "text",
+   "value": "T20 ROLE /structure"
+  },
+  {
+   "id": 32,
+   "row": 4,
+   "col": 5,
+   "label": "F5",
+   "properties": [],
+   "kind": "text",
+   "value": "T19 detail"
+  },
+  {
+   "id": 33,
+   "row": 4,
+   "col": 6,
+   "label": "G5",
+   "properties": [],
+   "kind": "text",
+   "value": "T18 detail"
+  },
+  {
+   "id": 34,
+   "row": 4,
+   "col": 7,
+   "label": "H5",
+   "properties": [],
+   "kind": "text",
+   "value": "Neural primitives as words:"
+  },
+  {
+   "id": 35,
+   "row": 4,
+   "col": 8,
+   "label": "I5",
+   "properties": [],
+   "kind": "text",
+   "value": "9-level ternary weights (\u00b14)"
+  },
+  {
+   "id": 36,
+   "row": 4,
+   "col": 9,
+   "label": "J5",
+   "properties": [],
+   "kind": "text",
+   "value": "exceed BitNet {\u22121,0,+1}."
+  },
+  {
+   "id": 37,
+   "row": 5,
+   "col": 1,
+   "label": "B6",
+   "properties": [],
+   "kind": "text",
+   "value": "I/O"
+  },
+  {
+   "id": 38,
+   "row": 5,
+   "col": 2,
+   "label": "C6",
+   "properties": [],
+   "kind": "text",
+   "value": "Defined"
+  },
+  {
+   "id": 39,
+   "row": 5,
+   "col": 3,
+   "label": "D6",
+   "properties": [],
+   "kind": "text",
+   "value": "T21 DIRECTION in/out"
+  },
+  {
+   "id": 40,
+   "row": 5,
+   "col": 4,
+   "label": "E6",
+   "properties": [],
+   "kind": "text",
+   "value": "T20 BUFFERING"
+  },
+  {
+   "id": 41,
+   "row": 5,
+   "col": 5,
+   "label": "F6",
+   "properties": [],
+   "kind": "text",
+   "value": "T19 BLOCKING"
+  },
+  {
+   "id": 42,
+   "row": 5,
+   "col": 6,
+   "label": "G6",
+   "properties": [],
+   "kind": "text",
+   "value": "T18 CHANNEL"
+  },
+  {
+   "id": 43,
+   "row": 5,
+   "col": 7,
+   "label": "H6",
+   "properties": [],
+   "kind": "text",
+   "value": "Stream words: direction,"
+  },
+  {
+   "id": 44,
+   "row": 5,
+   "col": 8,
+   "label": "I6",
+   "properties": [],
+   "kind": "text",
+   "value": "buffering and blocking live"
+  },
+  {
+   "id": 45,
+   "row": 5,
+   "col": 9,
+   "label": "J6",
+   "properties": [],
+   "kind": "text",
+   "value": "in one qualifier."
+  },
+  {
+   "id": 46,
+   "row": 6,
+   "col": 1,
+   "label": "B7",
+   "properties": [],
+   "kind": "text",
+   "value": "CRYPTO"
+  },
+  {
+   "id": 47,
+   "row": 6,
+   "col": 2,
+   "label": "C7",
+   "properties": [],
+   "kind": "text",
+   "value": "Reserved"
+  },
+  {
+   "id": 48,
+   "row": 6,
+   "col": 3,
+   "label": "D7",
+   "properties": [],
+   "kind": "text",
+   "value": "T21 \u2014 reserved \u2014"
+  },
+  {
+   "id": 49,
+   "row": 6,
+   "col": 4,
+   "label": "E7",
+   "properties": [],
+   "kind": "text",
+   "value": "T20 \u2014 reserved \u2014"
+  },
+  {
+   "id": 50,
+   "row": 6,
+   "col": 5,
+   "label": "F7",
+   "properties": [],
+   "kind": "text",
+   "value": "T19 \u2014 reserved \u2014"
+  },
+  {
+   "id": 51,
+   "row": 6,
+   "col": 6,
+   "label": "G7",
+   "properties": [],
+   "kind": "text",
+   "value": "T18 \u2014 reserved \u2014"
+  },
+  {
+   "id": 52,
+   "row": 6,
+   "col": 7,
+   "label": "H7",
+   "properties": [],
+   "kind": "text",
+   "value": "Reserved: signature and"
+  },
+  {
+   "id": 53,
+   "row": 6,
+   "col": 8,
+   "label": "I7",
+   "properties": [],
+   "kind": "text",
+   "value": "digest header words"
+  },
+  {
+   "id": 54,
+   "row": 6,
+   "col": 9,
+   "label": "J7",
+   "properties": [],
+   "kind": "text",
+   "value": "(ledger CRYPTO headers)."
+  },
+  {
+   "id": 55,
+   "row": 7,
+   "col": 1,
+   "label": "B8",
+   "properties": [],
+   "kind": "text",
+   "value": "OPCODE"
+  },
+  {
+   "id": 56,
+   "row": 7,
+   "col": 2,
+   "label": "C8",
+   "properties": [],
+   "kind": "text",
+   "value": "Defined"
+  },
+  {
+   "id": 57,
+   "row": 7,
+   "col": 3,
+   "label": "D8",
+   "properties": [],
+   "kind": "text",
+   "value": "T21 FAMILY (PIGART...)"
+  },
+  {
+   "id": 58,
+   "row": 7,
+   "col": 4,
+   "label": "E8",
+   "properties": [],
+   "kind": "text",
+   "value": "T20 ARITY hi"
+  },
+  {
+   "id": 59,
+   "row": 7,
+   "col": 5,
+   "label": "F8",
+   "properties": [],
+   "kind": "text",
+   "value": "T19 ARITY lo"
+  },
+  {
+   "id": 60,
+   "row": 7,
+   "col": 6,
+   "label": "G8",
+   "properties": [],
+   "kind": "text",
+   "value": "T18 FORM/immediate"
+  },
+  {
+   "id": 61,
+   "row": 7,
+   "col": 7,
+   "label": "H8",
+   "properties": [],
+   "kind": "text",
+   "value": "Renderer + word-op opcodes:"
+  },
+  {
+   "id": 62,
+   "row": 7,
+   "col": 8,
+   "label": "I8",
+   "properties": [],
+   "kind": "text",
+   "value": "RPOINT RLINE RNODE REDGE"
+  },
+  {
+   "id": 63,
+   "row": 7,
+   "col": 9,
+   "label": "J8",
+   "properties": [],
+   "kind": "text",
+   "value": "RENDER; stream-walked by arity."
+  },
+  {
+   "id": 64,
+   "row": 8,
+   "col": 1,
+   "label": "B9",
+   "properties": [],
+   "kind": "text",
+   "value": "OPEN_B"
+  },
+  {
+   "id": 65,
+   "row": 8,
+   "col": 2,
+   "label": "C9",
+   "properties": [],
+   "kind": "text",
+   "value": "Open"
+  },
+  {
+   "id": 66,
+   "row": 8,
+   "col": 3,
+   "label": "D9",
+   "properties": [],
+   "kind": "text",
+   "value": "T21 \u2014 open \u2014"
+  },
+  {
+   "id": 67,
+   "row": 8,
+   "col": 4,
+   "label": "E9",
+   "properties": [],
+   "kind": "text",
+   "value": "T20 \u2014 open \u2014"
+  },
+  {
+   "id": 68,
+   "row": 8,
+   "col": 5,
+   "label": "F9",
+   "properties": [],
+   "kind": "text",
+   "value": "T19 \u2014 open \u2014"
+  },
+  {
+   "id": 69,
+   "row": 8,
+   "col": 6,
+   "label": "G9",
+   "properties": [],
+   "kind": "text",
+   "value": "T18 \u2014 open \u2014"
+  },
+  {
+   "id": 70,
+   "row": 8,
+   "col": 7,
+   "label": "H9",
+   "properties": [],
+   "kind": "text",
+   "value": "Unassigned primary."
+  },
+  {
+   "id": 71,
+   "row": 8,
+   "col": 8,
+   "label": "I9",
+   "properties": [],
+   "kind": "text",
+   "value": "Yours to define."
+  },
+  {
+   "id": 72,
+   "row": 8,
+   "col": 9,
+   "label": "J9",
+   "properties": [],
+   "kind": "text",
+   "value": " "
+  },
+  {
+   "id": 73,
+   "row": 9,
+   "col": 1,
+   "label": "B10",
+   "properties": [],
+   "kind": "text",
+   "value": "POOL"
+  },
+  {
+   "id": 74,
+   "row": 9,
+   "col": 2,
+   "label": "C10",
+   "properties": [],
+   "kind": "text",
+   "value": "Reserved"
+  },
+  {
+   "id": 75,
+   "row": 9,
+   "col": 3,
+   "label": "D10",
+   "properties": [],
+   "kind": "text",
+   "value": "T21 \u2014 reserved \u2014"
+  },
+  {
+   "id": 76,
+   "row": 9,
+   "col": 4,
+   "label": "E10",
+   "properties": [],
+   "kind": "text",
+   "value": "T20 \u2014 reserved \u2014"
+  },
+  {
+   "id": 77,
+   "row": 9,
+   "col": 5,
+   "label": "F10",
+   "properties": [],
+   "kind": "text",
+   "value": "T19 \u2014 reserved \u2014"
+  },
+  {
+   "id": 78,
+   "row": 9,
+   "col": 6,
+   "label": "G10",
+   "properties": [],
+   "kind": "text",
+   "value": "T18 \u2014 reserved \u2014"
+  },
+  {
+   "id": 79,
+   "row": 9,
+   "col": 7,
+   "label": "H10",
+   "properties": [],
+   "kind": "text",
+   "value": "Reserved for pooled and"
+  },
+  {
+   "id": 80,
+   "row": 9,
+   "col": 8,
+   "label": "I10",
+   "properties": [],
+   "kind": "text",
+   "value": "shared resources."
+  },
+  {
+   "id": 81,
+   "row": 9,
+   "col": 9,
+   "label": "J10",
+   "properties": [],
+   "kind": "text",
+   "value": " "
+  }
+ ],
+ "sheet_regions": [],
+ "free_cells": [],
+ "sequence": [],
+ "groups": {},
+ "flow_variables": {},
+ "tgui_meta": {
+  "widget_count": 0,
+  "edge_count": 43,
+  "flow_symbol_count": 45,
+  "flow_edge_count": 43
+ }
+}

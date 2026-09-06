@@ -537,6 +537,21 @@ def layout_all():
 
 
 # ── drawing ─────────────────────────────────────────────────────────────────
+def apply_widget_write(name, value):
+    """Walk write-back (captain's showcase brief, 06-09): an I/O symbol's
+    widget-channel write whose ADDRESS names a widget lands on that widget's
+    label LIVE — the walk paints the GUI while you watch. Returns True when
+    a widget took the value; unknown names return False (variables and cell
+    shadows pass through untouched)."""
+    for w in GS["widgets"].values():
+        if w.get("name") == str(name):
+            w["label"] = str(value)
+            if dpg.does_item_exist("guic_draw"):
+                redraw()
+            return True
+    return False
+
+
 def redraw():
     D = "guic_draw"
     Z = GS["zoom"]
