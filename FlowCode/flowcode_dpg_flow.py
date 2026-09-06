@@ -504,17 +504,30 @@ def do_run_sdl(*_):
              "symbol(s) compiled (numeric engine). String and "
              "widget-channel symbols ride the Walk; every variable prints "
              "name=value at HALT.", STYLE.get("GRN"))
+    # STORM-8 (captain 07-09: "STILL doesn't run"): a flow-family program
+    # is CONSOLE output (name=value at HALT) — opening an SDL window shows
+    # a blank pane and hides the result. Only reach for --display sdl when
+    # the program actually draws (PIGART / gui widgets). Console programs
+    # run headless and stream straight into the Output pane.
+    _graphics = ("DRAW_RECT" in t5 or "PIG_" in t5
+                 or "_PIG" in t5 or "OPEN_WINDOW" in t5)
+    _argv = ([engine, "--display", "sdl", "--run", tmp] if _graphics
+             else [engine, "--run", tmp])
     try:
-        proc = subprocess.Popen([engine, "--display", "sdl", "--run", tmp],
-                                stdout=subprocess.PIPE,
+        proc = subprocess.Popen(_argv, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, text=True, bufsize=1)
     except OSError as oe:
         _out(f"✗ Launch failed: {oe}", (255, 120, 90))
         return
     _RUN_PROC[0] = proc
-    _out("▶ SDL window is open — close it when finished (or ⬛ Stop).",
-         (63, 208, 143))
-    _status("SDL engine running — close its window or press Stop")
+    if _graphics:
+        _out("▶ SDL window is open — close it when finished (or ⬛ Stop).",
+             (63, 208, 143))
+        _status("SDL engine running — close its window or press Stop")
+    else:
+        _out("▶ Running on the native C engine — output below:",
+             (63, 208, 143))
+        _status("native engine running…")
 
     def drain(pipe, tag):
         for line in pipe:
@@ -920,6 +933,10 @@ def delete_selected(*_):
         delete_edge(FS["sel_edge"])
 
 
+def _set_mod(which, on):
+    FS[f"kmod_{which}"] = bool(on)
+
+
 def toggle_snap(*_):
     FS["snap_grid"] = not FS.get("snap_grid", True)
     _status(f"snap to grid: {'ON' if FS['snap_grid'] else 'off'}")
@@ -945,6 +962,50 @@ def _lasso_apply(rect):
         _status(f"{len(hits)} symbols selected")
     else:
         _selinfo("")
+
+
+# STORM-8: the main app installs a document-wide closer here (closes every
+# organ + forgets bindings); the toolbar Close button calls it through the
+# save-before-close guard. Default just clears this organ.
+CLOSE_HOOK = [None]
+
+
+def close_file(*_):
+    """✕ Close (captain 07-09): guard on unsaved work, then close the whole
+    document across every surface."""
+    dirty = bool(FS.get("dirty")) and (FS["syms"] or FS["edges"])
+    if dirty and not dpg.does_item_exist("flowc_close_confirm"):
+        with dpg.window(label="Unsaved changes", modal=True,
+                        tag="flowc_close_confirm", width=380, height=140,
+                        pos=(360, 260)):
+            dpg.add_text("This document has unsaved changes.\n"
+                         "Save before closing?")
+            dpg.add_spacer(height=8)
+            with dpg.group(horizontal=True):
+                def _save_then():
+                    dpg.delete_item("flowc_close_confirm")
+                    _save_clicked()
+                    _do_close()
+
+                def _discard():
+                    dpg.delete_item("flowc_close_confirm")
+                    _do_close()
+                dpg.add_button(label="  Save & close  ", callback=_save_then)
+                dpg.add_button(label="  Discard  ", callback=_discard)
+                dpg.add_button(label="  Cancel  ", callback=lambda:
+                               dpg.delete_item("flowc_close_confirm"))
+        return
+    _do_close()
+
+
+def _do_close():
+    if CLOSE_HOOK[0] is not None:
+        CLOSE_HOOK[0]()                 # document-wide (all organs)
+    else:
+        clear_all()
+        FS["file"] = None
+        FS["dirty"] = False
+    _status("file closed — surface empty, no file bound")
 
 
 def clear_all(*_):
@@ -1453,10 +1514,11 @@ def _on_click(*_):
                 return
     sid = _hit_symbol(mx, my)
     FS["sel_edge"] = None
-    _shift = (dpg.is_key_down(dpg.mvKey_LShift)
-              or dpg.is_key_down(dpg.mvKey_RShift))
-    _ctrl = (dpg.is_key_down(dpg.mvKey_LControl)
-             or dpg.is_key_down(dpg.mvKey_RControl))
+    _shift = bool(FS.get("kmod_shift")) or \
+        dpg.is_key_down(dpg.mvKey_LShift) or dpg.is_key_down(dpg.mvKey_RShift)
+    _ctrl = bool(FS.get("kmod_ctrl")) or \
+        dpg.is_key_down(dpg.mvKey_LControl) or \
+        dpg.is_key_down(dpg.mvKey_RControl)
     if sid is not None and _ctrl:
         # STORM-6 (captain's kit): Ctrl+click TOGGLES membership — the
         # discriminating deselect for overlap-heavy lassos. Never drags.
@@ -1902,6 +1964,7 @@ def build_flow_tab(style):
                 _icon_act(_act_icon("import"), " Import ",
                           lambda: dpg.show_item("flowc_import_dlg"))
                 _icon_act(_act_icon("clear"), " Clear ", clear_all)
+                _abtn(" ✕ Close file ", close_file, (255, 180, 120))
                 _abtn(" ↩ Undo ", undo)
                 _abtn(" ↪ Redo ", redo)
             dpg.add_spacer(height=8)
@@ -2037,6 +2100,19 @@ def _register_handlers():
                                            callback=_on_dblclick)
         dpg.add_key_press_handler(dpg.mvKey_Delete, callback=_on_del_key)
         dpg.add_key_press_handler(dpg.mvKey_Escape, callback=_on_esc)
+        # STORM-8: track modifier state LIVE (captain 07-09 — Ctrl+click
+        # toggle failed reading is_key_down mid-click; key handlers are
+        # reliable). Press sets, release clears; the click reads the flag.
+        for _k in (dpg.mvKey_LControl, dpg.mvKey_RControl):
+            dpg.add_key_down_handler(_k,
+                                     callback=lambda *a: _set_mod("ctrl", 1))
+            dpg.add_key_release_handler(_k,
+                                        callback=lambda *a: _set_mod("ctrl", 0))
+        for _k in (dpg.mvKey_LShift, dpg.mvKey_RShift):
+            dpg.add_key_down_handler(_k,
+                                     callback=lambda *a: _set_mod("shift", 1))
+            dpg.add_key_release_handler(_k,
+                                        callback=lambda *a: _set_mod("shift", 0))
 
 
 # ═══ the declaration-driven PROPERTIES panel (ruled 20-08) ══════════════════

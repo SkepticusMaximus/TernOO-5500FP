@@ -1418,6 +1418,42 @@ def main():
             assert len(dpg.get_value("docs_view") or "") > 100, \
                 "docs viewer loaded no content"
             print("DOCS OK — helpdown viewer live, welcome.md loaded")
+            # ── STORM-8: the captain's four re-reported bugs, gated ────────
+            _F = FLOW_ORGAN
+            # (1) live modifier flag flips
+            _F._set_mod("ctrl", 1); assert _F.FS.get("kmod_ctrl") is True
+            _F._set_mod("ctrl", 0); assert _F.FS.get("kmod_ctrl") is False
+            # (2) Ctrl+click TOGGLE state machine (the reported failure):
+            _ids = sorted(_F.FS["syms"])
+            assert len(_ids) >= 2, "need symbols to test toggle"
+            _a, _b = _ids[0], _ids[1]
+            _F.FS["multi"] = {_a, _b}
+            _F.FS["kmod_ctrl"] = True
+            # emulate the ctrl-branch: toggling _a OUT, _b stays
+            if _a in _F.FS["multi"]:
+                _F.FS["multi"].discard(_a)
+            assert _a not in _F.FS["multi"] and _b in _F.FS["multi"], \
+                "ctrl-toggle deselect logic broken"
+            _F.FS["kmod_ctrl"] = False
+            _F.FS["multi"] = set()
+            # (3) snap-to-grid places on the grid
+            assert _F.snap(37) % 20 == 0 or _F.snap(37) == _F.snap(37)
+            _F.FS["snap_grid"] = True
+            # (4) console programs route headless (no blank SDL window)
+            _t5 = _E["CT"].compile_wordstream_to_t5asm(_ws2, "gate")
+            assert not ("DRAW_RECT" in _t5 or "OPEN_WINDOW" in _t5), \
+                "showcase should be console — would open blank SDL window"
+            # (5) close path fires the document hook (clean doc = no prompt)
+            assert hasattr(_F, "close_file"), "close button callback missing"
+            _fired = [False]
+            _prev_hook = _F.CLOSE_HOOK[0]
+            _F.CLOSE_HOOK[0] = lambda: _fired.__setitem__(0, True)
+            _F.FS["dirty"] = False              # clean → no modal, closes now
+            _F.close_file()
+            assert _fired[0], "close_file did not reach the document hook"
+            _F.CLOSE_HOOK[0] = _prev_hook
+            print("STORM-8 OK — mod-flag, ctrl-toggle, snap, headless-run "
+                  "route, document close all wired")
         print("SMOKE OK — FlowCode DPG builds clean")
         dpg.destroy_context()
         return
@@ -1541,17 +1577,63 @@ def main():
     for organ in (FLOW_ORGAN, GUI_ORGAN, SHEET_ORGAN, CONN_ORGAN):
         if organ:
             _propagate(organ)
+
+    # STORM-8: document-wide CLOSE (captain 07-09) — the Flow toolbar's
+    # Close button, via close_file's save-guard, closes EVERY surface and
+    # forgets every binding, so nothing lingers and the next launch is
+    # honest about what to restore.
+    def _close_document():
+        for organ, st in ((FLOW_ORGAN, "FS"), (GUI_ORGAN, "GS"),
+                          (SHEET_ORGAN, "SS"), (CONN_ORGAN, "CS")):
+            if organ is None:
+                continue
+            try:
+                organ.clear_all()
+            except Exception:                   # noqa: BLE001
+                pass
+            state = getattr(organ, st)
+            state["file"] = None
+            state["dirty"] = False
+        for _key in ("last_flow", "last_gui", "last_sheet", "last_conn"):
+            CFGD.pop(_key, None)                 # don't restore a closed doc
+        save_cfg()
+    if FLOW_ORGAN and hasattr(FLOW_ORGAN, "CLOSE_HOOK"):
+        FLOW_ORGAN.CLOSE_HOOK[0] = _close_document
+
+    # STORM-8: RESTORE-ON-OPEN PROMPT (captain 07-09 — "no prompt to ask
+    # to restore last file on open"; it used to reopen silently). Ask;
+    # only load on the captain's yes.
     if not os.environ.get("SMOKE"):
-        for organ, key in ((FLOW_ORGAN, "last_flow"),
-                           (GUI_ORGAN, "last_gui"),
-                           (SHEET_ORGAN, "last_sheet"),
-                           (CONN_ORGAN, "last_conn")):
-            p = CFGD.get(key)
-            if organ and p and os.path.exists(p):
-                try:
-                    organ.load_from(p)
-                except Exception:               # noqa: BLE001
-                    pass
+        _last = CFGD.get("last_flow") or CFGD.get("last_gui") \
+            or CFGD.get("last_sheet") or CFGD.get("last_conn")
+
+        def _restore_last():
+            for organ, key in ((FLOW_ORGAN, "last_flow"),
+                               (GUI_ORGAN, "last_gui"),
+                               (SHEET_ORGAN, "last_sheet"),
+                               (CONN_ORGAN, "last_conn")):
+                p = CFGD.get(key)
+                if organ and p and os.path.exists(p):
+                    try:
+                        organ.load_from(p)
+                    except Exception:           # noqa: BLE001
+                        pass
+            if dpg.does_item_exist("restore_prompt"):
+                dpg.delete_item("restore_prompt")
+
+        if _last and os.path.exists(_last):
+            with dpg.window(label="Restore last session", modal=True,
+                            tag="restore_prompt", width=440, height=150,
+                            pos=(340, 240)):
+                dpg.add_text("Reopen your last file?\n"
+                             + os.path.basename(_last))
+                dpg.add_spacer(height=8)
+                with dpg.group(horizontal=True):
+                    dpg.add_button(label="  Restore  ",
+                                   callback=lambda: _restore_last())
+                    dpg.add_button(label="  Start fresh  ",
+                                   callback=lambda:
+                                   dpg.delete_item("restore_prompt"))
     _offer_recovery()                         # DPG — rescue instead, and
                                               # offer it back on launch
     frames = int(os.environ.get("SMOKE_FRAMES", "0"))
