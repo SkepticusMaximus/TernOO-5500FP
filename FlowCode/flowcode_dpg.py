@@ -1291,6 +1291,40 @@ def main():
             FLOW_ORGAN.rebuild_stream()
             print(f"STREAM MIRROR OK — {len(_p1.words)} words live on the "
                   f"canvas, MMID {_p1.mmid.word:+d}, OTree tracks edits")
+            # ── NATIVE PARITY: the same program, on the C engine ──────────
+            _E = FLOW_ORGAN._exec_mods()
+            if not _E.get("err"):
+                _ws2 = _E["WS"].WordStream([])
+                _m2, _ = FLOW_ORGAN._entry_meta()
+                _ws2._flow_meta = _m2
+                _ws2._flow_edges = [dict(e) for e in FLOW_ORGAN.FS["edges"]]
+                _ws2._cell_meta = {rc: dict(c) for rc, c in
+                                   SHEET_ORGAN.SS["cells"].items()}
+                _t5 = _E["CT"].compile_wordstream_to_t5asm(_ws2, "showcase")
+                import subprocess as _sp
+                import tempfile as _tf2
+                _tp = os.path.join(_tf2.gettempdir(), "gate_native.t5asm")
+                open(_tp, "w", encoding="utf-8").write(_t5)
+                _pr = _sp.run([_E["engine"], "--run", _tp],
+                              capture_output=True, text=True, timeout=90)
+                assert _pr.returncode == 0, f"native run rc={_pr.returncode}"
+                _nat = {}
+                for _ln in _pr.stdout.splitlines():
+                    if "=" in _ln and not _ln.startswith(("-", "[")):
+                        _k, _, _v = _ln.partition("=")
+                        try:
+                            _nat[_k.strip()] = int(_v.strip())
+                        except ValueError:
+                            pass
+                for _k in ("row", "t22", "t23", "w", "word"):
+                    assert _k in _nat, f"native trailer missing {_k}"
+                    _wv = int(float(str(_rep["vars"].get(_k))))
+                    assert _nat[_k] == _wv, \
+                        f"native {_k}={_nat[_k]} != walker {_wv}"
+                print("NATIVE PARITY OK — the decode ran on the C engine: "
+                      f"row={_nat['row']} t23={_nat['t23']} "
+                      f"t22={_nat['t22']} word={_nat['word']} — value-equal "
+                      "with the Walk")
         print("SMOKE OK — FlowCode DPG builds clean")
         dpg.destroy_context()
         return
