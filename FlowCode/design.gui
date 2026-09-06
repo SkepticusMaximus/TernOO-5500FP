@@ -1,6 +1,6 @@
 {
  "ternoo_version": "0.3",
- "source_file": "Word-Format-Explorer.gui",
+ "source_file": "design.gui",
  "source_type": "ternoo_design",
  "word_stream": [],
  "symbols": [
