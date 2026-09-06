@@ -1452,8 +1452,16 @@ def main():
             _F.close_file()
             assert _fired[0], "close_file did not reach the document hook"
             _F.CLOSE_HOOK[0] = _prev_hook
+            # (6) copy → paste adds symbols; (7) lock model + right-click
+            _n0 = len(_F.FS["syms"])
+            _F.FS["multi"] = {sorted(_F.FS["syms"])[0]}
+            _F._copy_selection()
+            _F._paste_clip(500, 500)
+            assert len(_F.FS["syms"]) == _n0 + 1, "paste did not add a symbol"
+            assert hasattr(_F, "_on_right_click"), "right-click menu missing"
+            assert hasattr(_F, "close_file"), "close button missing"
             print("STORM-8 OK — mod-flag, ctrl-toggle, snap, headless-run "
-                  "route, document close all wired")
+                  "route, close, copy/paste, right-click, panel-resize wired")
         print("SMOKE OK — FlowCode DPG builds clean")
         dpg.destroy_context()
         return

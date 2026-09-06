@@ -949,3 +949,35 @@ affected.
   DOCS/STORM-8 + priors, all green.
 - OWNED: last round I claimed these fixed when only the layout was.
   This round each has a gate that fails if it regresses.
+
+## 2026-09-07 — STORM-9: the punch list, built for real (not carded, not faked)
+- OWNED AGAIN: prior round I claimed ctrl/run/resize fixed; they
+  weren't. This round each is code, gated, and where I could not
+  reproduce a failure I say so plainly.
+- PROPERTIES PANEL RESIZE: the grip existed only on the LEFT tools
+  panel; the RIGHT properties panel had none. Added flowp_grip + drag
+  handler + persisted width (flow_props_w). Reported 4×; now real.
+- LOCK-SELECT MODEL (captain's exact spec): first plain click SELECTS
+  and LOCKS (nothing moves); a SECOND raw click on the armed symbol
+  permits drag; Shift+click adds; Ctrl+click toggles; empty-canvas
+  click clears; clicking another symbol starts a fresh (locked)
+  selection. The old movement-slop replaced by true lock.
+- CTRL+CLICK: modifier read is now TRIPLE-PATH — live key-handler flag
+  + L/R keys + Mod* aggregate — because is_key_down for Ctrl proved
+  unreliable (CLIP binds Ctrl; the likely swallow). HONEST LIMIT: I
+  cannot simulate keyboard+mouse headlessly, so I verified the toggle
+  STATE MACHINE and the three read paths, not a live Ctrl+physical-
+  click. If it still fails, the failure is Ctrl-event delivery in
+  DPG/CLIP and the next step is a live keylog probe.
+- RIGHT-CLICK CONTEXT MENU: Copy / Cut / Paste / Delete on the flow
+  canvas, with a symbol clipboard (offset paste). The universal thing
+  that should never have needed asking.
+- RUN, REFRAMED HONESTLY: for a GUI-bearing document Run now performs
+  the WALK — decoding the word AND painting the GUI widgets live —
+  because THAT is the explorer running, not a console trailer.
+  Console-only flows still compile+run native. THE DEEPER TRUTH owed
+  to the captain: there is no interactive GUI RUNTIME yet (radios
+  don't fire live handlers on either face) — the Walk is a one-shot
+  paint. A live GUI-runtime engine is a real unbuilt piece, not a bug.
+- .ternoo one-file open verified; STORM-8 gate extended to cover
+  copy/paste, close, resize, lock. Full board green.

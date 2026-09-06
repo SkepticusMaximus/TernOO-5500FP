@@ -51,7 +51,9 @@ FS = {
     "syms": {}, "raw": {}, "edges": [], "rawdoc": None, "variables": [],
     "next": 0, "sel": None, "sel_edge": None, "file": None,
     "tool": "select", "edge_src": None, "edge_wps": [], "drag": None,
-    "wpdrag": None, "grip": None, "zoom": 1.0, "dirty": False,
+    "wpdrag": None, "grip": None, "pgrip": None, "armed": None,
+    "kmod_ctrl": False, "kmod_shift": False, "snap_grid": True,
+    "zoom": 1.0, "dirty": False,
     "multi": set(), "lasso": None, "scope": None, "on_flow_tab": True,
     "undo": [], "redo": [],
 }
@@ -448,14 +450,30 @@ def _entry_meta():
 
 
 def do_run_sdl(*_):
-    """▶▶ Run — compile the flow to t5asm and execute it on the native C
-    engine (SDL window), exactly as the Tk face does."""
+    """▶▶ Run — execute the program. For a GUI-bearing document (widgets in
+    the GUI organ) the meaningful run is the WALK, which decodes the word
+    AND paints the result into the GUI widgets live — that IS the program
+    working (captain 07-09: "load on ONE tab and hit run"). Console-only
+    flows compile to native t5asm and run on the C engine, output in the
+    pane below."""
+    if not FS["syms"]:
+        _out("✗ Flow canvas is empty — open a program first (File ▸ Open)",
+             (255, 120, 90))
+        return
+    _gui = STYLE.get("GUI")
+    _has_widgets = bool(_gui is not None and getattr(_gui, "GS", {}).get(
+        "widgets"))
+    if _has_widgets:
+        _out("▶ Running the program — decoding and painting the GUI "
+             "widgets live (see the GUI tab)…", (63, 208, 143))
+        do_walk()
+        _out("  the GUI tab now shows the decoded word; the Walk trace and "
+             "values are above. This is the explorer running.",
+             STYLE.get("DIM"))
+        return
     E = _exec_mods()
     if E.get("err"):
         _out(f"✗ execution layer unavailable: {E['err']}", (255, 120, 90))
-        return
-    if not FS["syms"]:
-        _out("✗ Flow canvas is empty — place symbols first", (255, 120, 90))
         return
     engine = E["engine"]
     if not (os.path.isfile(engine) and os.access(engine, os.X_OK)):
@@ -935,6 +953,88 @@ def delete_selected(*_):
 
 def _set_mod(which, on):
     FS[f"kmod_{which}"] = bool(on)
+
+
+# STORM-9: right-click context menu with Copy/Cut/Paste/Delete (captain
+# 07-09: "right click context menus … that practically go without saying").
+_SYM_CLIP = [[]]                                # copied symbol dicts
+
+
+def _copy_selection(cut=False):
+    ids = FS["multi"] or ({FS["sel"]} if FS["sel"] is not None else set())
+    ids = {i for i in ids if i in FS["syms"]}
+    if not ids:
+        return
+    _SYM_CLIP[0] = [dict(FS["syms"][i]) for i in ids]
+    _status(f"{'cut' if cut else 'copied'} {len(ids)} symbol(s)")
+    if cut:
+        _snapshot()
+        for i in list(ids):
+            delete_symbol(i)
+        FS["multi"] = set()
+        FS["sel"] = None
+        redraw()
+
+
+def _paste_clip(mx=None, my=None):
+    if not _SYM_CLIP[0]:
+        _status("clipboard empty")
+        return
+    _snapshot()
+    ox = mx if mx is not None else 40
+    oy = my if my is not None else 40
+    base = _SYM_CLIP[0]
+    minx = min(s["x"] for s in base)
+    miny = min(s["y"] for s in base)
+    newids = set()
+    for s in base:
+        nid = add_symbol(s.get("kind", "flow_process"),
+                         ox + (s["x"] - minx), oy + (s["y"] - miny),
+                         s.get("label", ""))
+        for p in s.get("properties", []) or []:
+            if isinstance(p, dict):
+                sym_prop_set(FS["syms"][nid], p.get("name"), p.get("value"))
+        newids.add(nid)
+    FS["multi"] = newids
+    FS["sel"] = next(iter(newids)) if len(newids) == 1 else None
+    redraw()
+    _status(f"pasted {len(newids)} symbol(s)")
+
+
+def _show_context_menu(mx, my):
+    tag = "flow_ctx_menu"
+    if dpg.does_item_exist(tag):
+        dpg.delete_item(tag)
+    sid = _hit_symbol(mx, my)
+    if sid is not None and sid not in FS["multi"]:
+        FS["multi"] = {sid}
+        FS["sel"] = sid
+        FS["armed"] = sid
+        redraw()
+    vpx, vpy = dpg.get_mouse_pos(local=False)
+    with dpg.window(tag=tag, popup=True, no_title_bar=True,
+                    pos=(int(vpx), int(vpy)), min_size=(120, 10)):
+        have = bool(FS["multi"] or FS["sel"] is not None)
+        dpg.add_menu_item(label="Copy", enabled=have,
+                          callback=lambda: (_copy_selection(),
+                                            dpg.delete_item(tag)))
+        dpg.add_menu_item(label="Cut", enabled=have,
+                          callback=lambda: (_copy_selection(cut=True),
+                                            dpg.delete_item(tag)))
+        dpg.add_menu_item(label="Paste", enabled=bool(_SYM_CLIP[0]),
+                          callback=lambda: (_paste_clip(mx + 20, my + 20),
+                                            dpg.delete_item(tag)))
+        dpg.add_separator()
+        dpg.add_menu_item(label="Delete", enabled=have,
+                          callback=lambda: (_copy_selection(cut=True),
+                                            dpg.delete_item(tag)))
+
+
+def _on_right_click(*_):
+    if not dpg.is_item_hovered("flowc_draw"):
+        return
+    mx, my = _mpos()
+    _show_context_menu(mx, my)
 
 
 def toggle_snap(*_):
@@ -1514,14 +1614,22 @@ def _on_click(*_):
                 return
     sid = _hit_symbol(mx, my)
     FS["sel_edge"] = None
-    _shift = bool(FS.get("kmod_shift")) or \
-        dpg.is_key_down(dpg.mvKey_LShift) or dpg.is_key_down(dpg.mvKey_RShift)
-    _ctrl = bool(FS.get("kmod_ctrl")) or \
-        dpg.is_key_down(dpg.mvKey_LControl) or \
-        dpg.is_key_down(dpg.mvKey_RControl)
+    # Triple-path modifier read (STORM-9): the live flag from key handlers,
+    # the L/R keys, AND the aggregate Mod* keys — so Ctrl has three chances
+    # to register even if one path is swallowed (CLIP binds Ctrl; is_key_down
+    # for it proved unreliable — captain's repeated ctrl+click failure).
+    def _mod_down(flag, *keys):
+        if FS.get(flag):
+            return True
+        return any(dpg.is_key_down(k) for k in keys
+                   if isinstance(k, int))
+    _shift = _mod_down("kmod_shift", dpg.mvKey_LShift, dpg.mvKey_RShift,
+                       getattr(dpg, "mvKey_ModShift", None))
+    _ctrl = _mod_down("kmod_ctrl", dpg.mvKey_LControl, dpg.mvKey_RControl,
+                      getattr(dpg, "mvKey_ModCtrl", None))
+
     if sid is not None and _ctrl:
-        # STORM-6 (captain's kit): Ctrl+click TOGGLES membership — the
-        # discriminating deselect for overlap-heavy lassos. Never drags.
+        # Ctrl+click TOGGLES membership. Never drags.
         if sid in FS["multi"]:
             FS["multi"].discard(sid)
             if FS["sel"] == sid:
@@ -1530,44 +1638,62 @@ def _on_click(*_):
             FS["multi"].add(sid)
             FS["sel"] = sid
         FS["drag"] = None
-        _selinfo(f"selection: {len(FS['multi'])} symbol(s)")
+        FS["armed"] = None
+        _selinfo(f"selection: {len(FS['multi'])} symbol(s) — Ctrl+click "
+                 "toggles")
         redraw()
         return
     if sid is not None and _shift:
-        # Shift+click ADDS to the selection. Never drags.
+        # Shift+click ADDS. Never drags.
         FS["multi"].add(sid)
         FS["sel"] = sid
         FS["drag"] = None
-        _selinfo(f"selection: {len(FS['multi'])} symbol(s)")
+        FS["armed"] = None
+        _selinfo(f"selection: {len(FS['multi'])} symbol(s) — Shift+click "
+                 "adds")
         redraw()
         return
     if sid is not None:
+        # THE LOCK MODEL (captain's spec 07-09): the FIRST plain click on a
+        # symbol SELECTS and LOCKS — nothing moves. Only a SECOND raw click
+        # on the already-armed symbol permits drag. Clicking a different
+        # symbol starts a fresh selection (also locked).
         if sid in FS["multi"] and len(FS["multi"]) > 1:
-            _snapshot()          # group drag: move every selected symbol
+            # a member of a live multi-selection: arm the whole group's drag
+            _snapshot()
             FS["sel"] = sid
             FS["drag"] = {"group": {i: (FS["syms"][i]["x"],
                                         FS["syms"][i]["y"])
-                                    for i in FS["multi"]
-                                    if i in FS["syms"]}}
+                                    for i in FS["multi"] if i in FS["syms"]},
+                          "armed": True}
             _selinfo(f"group of {len(FS['multi'])} — drag to move")
-        else:
-            FS["multi"] = {sid}
-            FS["sel"] = sid
+        elif FS.get("armed") == sid and FS["sel"] == sid:
+            # SECOND raw click on the armed symbol → drag is now permitted
             s = FS["syms"][sid]
             _snapshot()
-            FS["drag"] = {"orig": (s["x"], s["y"])}
-            _selinfo(f"{s['label']}  {s['name']}  ({s['x']},{s['y']})")
+            FS["drag"] = {"orig": (s["x"], s["y"]), "armed": True}
+            _selinfo(f"{s['label']} — drag to move")
+        else:
+            # FIRST click → select + LOCK (no drag this click)
+            FS["multi"] = {sid}
+            FS["sel"] = sid
+            FS["armed"] = sid
+            FS["drag"] = None
+            s = FS["syms"][sid]
+            _selinfo(f"{s['label']}  {s['name']}  — locked; click again to "
+                     "drag, Shift/Ctrl+click to multi-select")
     else:
         ei = _hit_edge(mx, my)
         FS["sel_edge"] = ei
         FS["sel"] = None
         FS["multi"] = set()
+        FS["armed"] = None
         if ei is not None:
             e = FS["edges"][ei]
             _selinfo(f"Edge  {FS['syms'][e['src']]['label']} → "
                      f"{FS['syms'][e['dst']]['label']}  "
                      f"({len(e.get('waypoints', []))} waypoints)")
-        else:                    # empty canvas: begin the lasso
+        else:                    # empty canvas: clear + begin the lasso
             FS["lasso"] = {"a": (mx, my), "b": (mx, my)}
             _selinfo("")
     redraw()
@@ -1580,6 +1706,16 @@ def _on_drag(sender, app_data):
         _b, gdx, _gdy = app_data
         dpg.configure_item("flowc_panel",
                            width=max(140, min(int(FS["grip"] + gdx), 480)))
+        return
+    # STORM-9: PROPERTIES panel resize (drag its grip → wider/narrower)
+    if dpg.is_item_active("flowp_grip") and FS.get("pgrip") is None:
+        FS["pgrip"] = dpg.get_item_width("flowp_panel") or FS.get(
+            "props_w", 260)
+    if FS.get("pgrip") is not None:
+        _b, gdx, _gdy = app_data
+        neww = max(180, min(int(FS["pgrip"] - gdx), 620))
+        dpg.configure_item("flowp_panel", width=neww)
+        dpg.configure_item("flowc_wrap", width=-(neww + 22))
         return
     if FS["wpdrag"] is not None:
         _b, dx, dy = app_data
@@ -1603,12 +1739,8 @@ def _on_drag(sender, app_data):
     if FS["drag"] is None:
         return
     _b, dx, dy = app_data
-    # STORM-6: the LOCK-ON-SELECT slop — the most careful click cannot
-    # nudge a symbol; movement begins only past a real drag distance.
-    if not FS["drag"].get("armed"):
-        if abs(dx) < 7 and abs(dy) < 7:
-            return
-        FS["drag"]["armed"] = True
+    # The lock model already guarantees drag is only armed on a deliberate
+    # second click, so movement here is always intended.
     z = FS["zoom"]
 
     def _place(v):
@@ -1648,6 +1780,13 @@ def _on_release(*_):
         cfg = STYLE.get("CFG")
         if cfg is not None:
             cfg["flow_panel_w"] = dpg.get_item_width("flowc_panel")
+            if STYLE.get("SAVE"):
+                STYLE["SAVE"]()
+    if FS.get("pgrip") is not None:
+        FS["pgrip"] = None
+        cfg = STYLE.get("CFG")
+        if cfg is not None:
+            cfg["flow_props_w"] = dpg.get_item_width("flowp_panel")
             if STYLE.get("SAVE"):
                 STYLE["SAVE"]()
     if FS["lasso"] is not None:
@@ -1974,16 +2113,23 @@ def build_flow_tab(style):
             dpg.add_button(tag="flowc_grip", label="", width=-1,
                            height=2600)
         pw = int(C.get("CFG", {}).get("flow_props_w", 260))
-        with dpg.child_window(tag="flowc_wrap", width=-(pw + 12),
+        FS["props_w"] = pw
+        with dpg.child_window(tag="flowc_wrap", width=-(pw + 22),
                               horizontal_scrollbar=True):
             with dpg.group(horizontal=True, tag="flowc_crumbs"):
                 pass
             with dpg.drawlist(width=CANVAS_W, height=CANVAS_H,
                               tag="flowc_draw"):
                 pass
+        # STORM-9 (captain 07-09, reported 4×): the PROPERTIES panel gets
+        # its OWN drag grip — drag left/right to resize it, remembered.
+        with dpg.child_window(width=10, height=-1, no_scrollbar=True,
+                              border=False):
+            dpg.add_button(tag="flowp_grip", label="⋮", width=-1,
+                           height=2600)
         # PROPERTIES ride the RIGHT (captain's ruling 20-08): the canvas
         # in the middle, tools left, the selected thing's story right.
-        with dpg.child_window(tag="flowp_panel", width=-1):
+        with dpg.child_window(tag="flowp_panel", width=pw):
             with dpg.collapsing_header(label="PROPERTIES",
                                        default_open=True):
                 with dpg.group(tag="flowp_rows"):
@@ -2098,6 +2244,8 @@ def _register_handlers():
                                       callback=_on_release)
         dpg.add_mouse_double_click_handler(dpg.mvMouseButton_Left,
                                            callback=_on_dblclick)
+        dpg.add_mouse_click_handler(dpg.mvMouseButton_Right,
+                                    callback=_on_right_click)
         dpg.add_key_press_handler(dpg.mvKey_Delete, callback=_on_del_key)
         dpg.add_key_press_handler(dpg.mvKey_Escape, callback=_on_esc)
         # STORM-8: track modifier state LIVE (captain 07-09 — Ctrl+click
