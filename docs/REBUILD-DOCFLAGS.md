@@ -807,3 +807,37 @@ affected.
   filename did not take, and (2) offers no overwrite confirmation —
   data loss from a file dialog; bit the captain's first .gui. Card:
   overwrite-confirm across all organ save dialogs.
+
+## 2026-09-06 — CAPTAIN'S TEST FLIGHT: layout fixed, minimap restored, cards logged
+- SHOWCASE LAYOUT DEFECT (mine, fixed same night): the generated .fc
+  placed the widget-write column and bail inside the loop container's
+  span — overlapping symbols on the Tk canvas. Regenerated with
+  collision-free coordinates; geometric overlap audit now part of the
+  fix verification (top-level overlaps: NONE); SHOWCASE gate green.
+- MINIMAP "DISAPPEARANCE": not a regression — flow_minimap2 had been
+  toggled False in the captain's config (View menu toggle). Restored
+  to True. The toggle lives in the View menu.
+- TK RUN(SDL) ON THE SHOWCASE: compiles only the pre-family subset
+  (36 lines — terminators/processes); decision/loop/IO codegen is the
+  PARKED "Veg" leg, so the native engine exits silently. The walk
+  (DPG face) is the showcase runtime by design. If the captain wants
+  the showcase native-runnable, the codegen leg is the next bundle.
+- THE RUMOR, ANSWERED (capability matrix, honest): Tk face =
+  native compile + SDL run + live word-stream mirror + GristMill tab;
+  DPG face = decision/loop/IO families + walker + write-back + the
+  27-gate suite + the showcase. NEITHER subsumes the other today; the
+  figure's caption must scope its claims accordingly (walk-driven).
+- XED HAUNTING: the text editor reopening ternoo-mesh-chat-reviews.log
+  is xed's own session restore (the log was opened once via
+  Mesh-Chat ▸ Open review log and stays as a remembered tab). Close
+  the tab once in xed and it stops. Not a FlowCode defect.
+- CARDS LOGGED from the captain's test flight (unbuilt):
+  1. Flow-canvas selection parity with the GUI VB kit: lasso that
+     respects z-order/layers, Ctrl+click deselect, Shift+click
+     multi-select, click-slop threshold (no shift on select), and
+     snap/align-to-grid — BOTH faces.
+  2. Per-file CLOSE in every organ (today only Clear-or-exit; memory
+     state opaque to the user).
+  3. DPG properties panel: draggable resize (fixed width today).
+  4. GUI tab: widget hierarchy tree-view (Tk parity).
+  (Save-dialog overwrite-confirm card already logged 06-09.)
