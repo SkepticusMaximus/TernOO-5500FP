@@ -251,6 +251,31 @@ def _menu_save(*_):
         dpg.set_value("statusbar", "no file actions on this tab")
 
 
+def _menu_close(*_):
+    """Close the active tab's file (captain's card, 06-09): clear the
+    surface AND forget the file binding, so nothing lingers in memory and
+    Save cannot silently land on the old path."""
+    t = ACTIVE_TAB[0]
+    pairs = {"flow": (FLOW_ORGAN, "FS"), "gui": (GUI_ORGAN, "GS"),
+             "sheet": (SHEET_ORGAN, "SS"), "connectors": (CONN_ORGAN, "CS")}
+    org, st = pairs.get(t, (None, None))
+    if org is None:
+        dpg.set_value("statusbar", "no file actions on this tab")
+        return
+    state = getattr(org, st)
+    was = state.get("file")
+    try:
+        org.clear_all()
+    except Exception:                           # noqa: BLE001
+        pass
+    state["file"] = None
+    state["dirty"] = False
+    dpg.set_value("statusbar",
+                  "closed " + (os.path.basename(was) if was
+                               else "(homeless content)")
+                  + " — surface empty, no file bound")
+
+
 def _menu_save_as(*_):
     t = ACTIVE_TAB[0]
     if t == "flow" and FLOW_ORGAN:
@@ -822,6 +847,7 @@ def build_ui():
                                   callback=_menu_save)
                 dpg.add_menu_item(label="Save as...", callback=_menu_save_as)
                 dpg.add_menu_item(label="Open...", callback=_menu_open)
+                dpg.add_menu_item(label="Close file", callback=_menu_close)
                 dpg.add_menu_item(label="Import into Flow...",
                                   callback=lambda: FLOW_ORGAN and
                                   dpg.show_item("flowc_import_dlg"))
@@ -1346,6 +1372,16 @@ def main():
                         **_ikw)
     dpg.setup_dearpygui()
     dpg.show_viewport()
+    # STORM-5a: minimap re-clamps to its corner on maximise/resize
+    # (captain's card, 06-09)
+    def _on_vp_resize(*_a):
+        try:
+            if FLOW_ORGAN:
+                FLOW_ORGAN.set_minimap_visible(
+                    FLOW_ORGAN.FS.get("on_flow_tab", True))
+        except Exception:                       # noqa: BLE001
+            pass
+    dpg.set_viewport_resize_callback(_on_vp_resize)
     dpg.set_primary_window("main", True)
     dpg.set_global_font_scale(SCALE)
     # Periodic timed autosave (captain's ruling 20-08): every ~2 minutes,
