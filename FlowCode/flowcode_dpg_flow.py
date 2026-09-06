@@ -367,6 +367,18 @@ def do_step(*_):
     if _STEPPING[0]:
         _status("step-run already in progress", ok=False)
         return
+    if any(s.get("kind") in ("flow_decision", "flow_loop", "flow_io")
+           for s in FS["syms"].values()):
+        # STORM-4: the legacy interpreter predates the I/O family — it
+        # treats every I/O symbol as console INPUT and prompts through Tk
+        # dialogs (the captain's "series of little windows", 06-09). For
+        # new-family flows the Walk IS the step engine: same highlight,
+        # honest semantics.
+        _out("▶ Step: this flow uses decision/loop/I-O families — "
+             "delegating to Walk (the legacy interpreter would prompt "
+             "for every I/O).", STYLE.get("AMB"))
+        do_walk()
+        return
     E = _exec_mods()
     if E.get("err"):
         _out(f"✗ execution layer unavailable: {E['err']}", (255, 120, 90))
