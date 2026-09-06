@@ -1879,6 +1879,14 @@ def build_flow_tab(style):
                 with dpg.group(tag="flowp_watch"):
                     dpg.add_text("names appear here when\nthe Walk "
                                  "touches them", color=C["DIM"])
+            with dpg.collapsing_header(label="WORDS — live stream",
+                                       default_open=True):
+                with dpg.group(tag="flowp_words"):
+                    dpg.add_text("the diagram AS TernOO words\n"
+                                 "(§7.4 mirror — rebuilds on\nevery edit)",
+                                 color=C["DIM"])
+                dpg.add_button(label="dump stream to Output", small=True,
+                               callback=lambda: dump_stream())
     dpg.add_text("", tag="flowc_selinfo", color=(74, 158, 255))
     with dpg.group(horizontal=True):
         dpg.add_text("tool: Select — click to select · drag to move · "
@@ -2174,8 +2182,116 @@ def _sync_flow_props():
 _flow_redraw_core = redraw
 
 
+# ── the live word-stream mirror (§7.4, ported from the Tk face 06-09) ───────
+# The diagram AS TernOO words, rebuilt whenever the drawing changes: every
+# symbol an RNODE, every edge an REDGE, identity words (MMID + OTree)
+# derived by the GristMill engine. Cheap change-detection keeps it honest
+# without burning frames.
+_STREAM = {"prog": None, "sig": None, "err": ""}
+_GHMC = [None]
+
+
+def _ghmc():
+    if _GHMC[0] is None:
+        import importlib.util as _ilu
+        p = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "5500fp", "ghost_meccano.py")
+        spec = _ilu.spec_from_file_location("ghost_meccano", p)
+        mod = _ilu.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _GHMC[0] = mod
+    return _GHMC[0]
+
+
+def _stream_sig():
+    return (tuple(sorted((i, s.get("kind"), s.get("x"), s.get("y"),
+                          s.get("w"), s.get("h"), s.get("label"))
+                         for i, s in FS["syms"].items())),
+            tuple((e.get("src"), e.get("dst"), e.get("branch", ""))
+                  for e in FS["edges"]))
+
+
+def rebuild_stream(force=False):
+    """Rebuild the Meccano/PIGART word stream from the live canvas.
+    Returns the MeccanoProgram or None (empty canvas / bridge error)."""
+    sig = _stream_sig()
+    if not force and sig == _STREAM["sig"]:
+        return _STREAM["prog"]
+    _STREAM["sig"] = sig
+    if not FS["syms"]:
+        _STREAM["prog"], _STREAM["err"] = None, ""
+        _words_refresh()
+        return None
+    try:
+        prog = _ghmc().flow_symbols_to_meccano(FS["syms"], FS["edges"])
+        _STREAM["prog"], _STREAM["err"] = prog, ""
+    except Exception as e:                      # noqa: BLE001
+        _STREAM["prog"], _STREAM["err"] = None, str(e)
+    _words_refresh()
+    return _STREAM["prog"]
+
+
+def _words_refresh():
+    if not dpg.does_item_exist("flowp_words"):
+        return
+    dpg.delete_item("flowp_words", children_only=True)
+    C = STYLE
+    p = _STREAM["prog"]
+    if _STREAM["err"]:
+        dpg.add_text(f"bridge error:\n{_STREAM['err'][:120]}",
+                     parent="flowp_words", color=C.get("AMB"))
+        return
+    if p is None:
+        dpg.add_text("empty canvas — no words yet",
+                     parent="flowp_words", color=C.get("DIM"))
+        return
+    dpg.add_text(f"{len(p.words)} words · "
+                 f"{len(FS['syms'])} symbols · {len(FS['edges'])} edges",
+                 parent="flowp_words", color=C.get("GRN"))
+    dpg.add_text(f"MMID  {p.mmid.word:+d}", parent="flowp_words",
+                 color=C.get("TEXT"))
+    dpg.add_text(f"OTree {p.otree_word:+d}", parent="flowp_words",
+                 color=C.get("TEXT"))
+
+
+def dump_stream(*_):
+    p = rebuild_stream(force=True)
+    if p is None:
+        _out("⬇ stream: empty canvas (or bridge error — see panel)",
+             (255, 120, 90))
+        return
+    _out(f"⬇ WordStream — {len(p.words)} words · MMID {p.mmid.word:+d} · "
+         f"OTree {p.otree_word:+d}", (74, 158, 255))
+    desc = None
+    try:
+        import importlib.util as _ilu
+        _p3 = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "5500fp", "5500fp_ternoo_v03.py")
+        _s3 = _ilu.spec_from_file_location("v03_desc", _p3)
+        _m3 = _ilu.module_from_spec(_s3)
+        _s3.loader.exec_module(_m3)
+        desc = _m3.describe_word
+    except Exception:                           # noqa: BLE001
+        desc = None
+    for i, w in enumerate(p.words[:60]):
+        line = f"  [{i:3d}] {w:+d}"
+        if desc:
+            try:
+                line += f"   {desc(w)}"
+            except Exception:                   # noqa: BLE001
+                pass
+        _out(line, STYLE.get("DIM"))
+    if len(p.words) > 60:
+        _out(f"  … {len(p.words) - 60} more (full stream rides the "
+             "words, not the pane)", STYLE.get("DIM"))
+
+
 def redraw():
     _flow_redraw_core()
+    try:
+        rebuild_stream()
+    except Exception:                           # noqa: BLE001
+        pass
     _sync_flow_props()
 
 

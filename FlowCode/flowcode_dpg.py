@@ -1279,6 +1279,18 @@ def main():
             assert _gw["help_3"]["label"] == "offset, code-seg, data-seg."
             print(f"SHOWCASE OK — Word Explorer walked {_rep['steps']} steps,"
                   f" 24-trit UDP decode true, {_applied} widget writes landed")
+            # ── STREAM MIRROR: the §7.4 live word-stream, DPG face ────────
+            _p1 = FLOW_ORGAN.rebuild_stream(force=True)
+            assert _p1 is not None and len(_p1.words) > 100, "stream empty"
+            _ot1 = _p1.otree_word
+            FLOW_ORGAN.FS["syms"][0]["x"] += 40         # nudge the entry
+            _p2 = FLOW_ORGAN.rebuild_stream()
+            assert _p2 is not None and _p2.otree_word != _ot1, \
+                "OTree identity did not track the edit"
+            FLOW_ORGAN.FS["syms"][0]["x"] -= 40
+            FLOW_ORGAN.rebuild_stream()
+            print(f"STREAM MIRROR OK — {len(_p1.words)} words live on the "
+                  f"canvas, MMID {_p1.mmid.word:+d}, OTree tracks edits")
         print("SMOKE OK — FlowCode DPG builds clean")
         dpg.destroy_context()
         return
