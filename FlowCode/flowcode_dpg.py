@@ -864,7 +864,10 @@ def build_ui():
                                  "DIM": DIM, "GRN": GRN, "AMB": AMB,
                                  "CFG": CFGD, "SAVE": save_cfg, "CLIP": CLIP,
                                  "ACTIVE": lambda: ACTIVE_TAB[0],
-                                 "BRIDGE": BRIDGE})
+                                 "BRIDGE": BRIDGE,
+                                 # the blessed namespace, wired (06-09):
+                                 # walks resolve A1 cells + widget.props
+                                 "SHEET": SHEET_ORGAN, "GUI": GUI_ORGAN})
                         else:
                             dpg.add_text("Flow organ failed to load: "
                                          + FLOW_ORGAN_ERR, color=AMB)
@@ -1245,6 +1248,37 @@ def main():
             doc = json.load(open(tmp, encoding="utf-8"))
             assert doc["ternoo_version"] == "0.3" and doc["symbols"]
             print("GUI ROUND-TRIP OK — Tk-schema .gui verified")
+        if FLOW_ORGAN and GUI_ORGAN and SHEET_ORGAN:
+            # ── SHOWCASE: the Word Format Explorer, walked end-to-end ──────
+            # The committed artifact pair IS the test: flow + cells load from
+            # the .fc, widgets from the .gui, the walk decodes the paper's
+            # richest word (a USER-DEF POINTER) trit by trit, and the widget
+            # write-back must land the decode on the named labels.
+            _fc = os.path.join(_HERE, "Word-Format-Explorer.fc")
+            _gu = os.path.join(_HERE, "Word-Format-Explorer.gui")
+            FLOW_ORGAN.load_from(_fc)
+            SHEET_ORGAN.load_from(_fc)
+            GUI_ORGAN.load_from(_gu)
+            _wk = FLOW_ORGAN._wk()
+            _rep = _wk.walk(FLOW_ORGAN.FS["syms"], FLOW_ORGAN.FS["edges"],
+                            FLOW_ORGAN._walk_resolver(), lambda _l: None,
+                            variables={})
+            _GT = "−+ · ++00 · +0000+−−0000+00+−+"
+            assert _rep["vars"].get("strip") == _GT, "showcase strip wrong"
+            assert _rep["vars"].get("row") == 4 and _rep["vars"].get("w") == 0
+            _applied = 0
+            for _ev in _rep["events"]:
+                if _ev[0] == "watch" and GUI_ORGAN.apply_widget_write(
+                        _ev[1], _ev[2]):
+                    _applied += 1
+            _gw = {w.get("name"): w for w in GUI_ORGAN.GS["widgets"].values()}
+            assert _gw["trit_strip"]["label"] == _GT
+            assert _gw["tname"]["label"] == "DATA"
+            assert _gw["tstatus"]["label"] == "Defined"
+            assert _gw["q_row4"]["label"] == "T18  0  = USER-DEF PTR"
+            assert _gw["help_3"]["label"] == "offset, code-seg, data-seg."
+            print(f"SHOWCASE OK — Word Explorer walked {_rep['steps']} steps,"
+                  f" 24-trit UDP decode true, {_applied} widget writes landed")
         print("SMOKE OK — FlowCode DPG builds clean")
         dpg.destroy_context()
         return

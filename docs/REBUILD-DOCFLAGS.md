@@ -763,3 +763,47 @@ affected.
   birth commit, violating the §1.5 one-network-organ boundary. The
   reachability probe now dials through p2pcp_socket.SocketOrgan.connect;
   the module is socket-free; 160/160 PASS.
+
+## 2026-09-06 — THE SHOWCASE: Word Format Explorer, the first vibe-coded FlowCode program
+- CAI's build brief (06-09, via the captain) executed: a full FlowCode
+  program whose SUBJECT is the TernOO word — figure-grade, corpus-grade,
+  and a real tool. Artifacts committed as the pair:
+  FlowCode/Word-Format-Explorer.fc (45 flow symbols, 43 edges, 82 sheet
+  cells) + Word-Format-Explorer.gui (the captain's 13-widget layout
+  extended to 51: trit strip as 24 bordered cells grouped 2/4/18, live
+  strip line, word readout, 4 qualifier rows, help panel, radios
+  relabelled with trit pairs).
+- THE PROGRAM: entry → seed word from cell A1 → FOR loop i=0..23
+  extracting balanced trits by the machine's own arithmetic
+  (t ⇐ IF(MOD(w,3)=2, MOD(w,3)−3, MOD(w,3)); w ⇐ (w−t)/3) while
+  building the grouped glyph strip — then row ⇐ t23×3+t22+6 and a
+  widget-write chain pulling name/status/qualifier rows/help lines
+  from the sheet by DYNAMIC A1 lookup (CELL(CONCAT("B", row))): the
+  nine-way fan CAI feared replaced by one table lookup, exactly as
+  briefed. Nine radio-handler terminators (radio_N_toggled, the 7c-2
+  wiring names) each set that primary's exemplar word and join one
+  connector into the same spine: nine signals, one machine.
+- DEMO WORD: the paper's richest — a USER-DEF POINTER minted by v0.3
+  itself (subclass (1,0), offset 5, code-seg 3, data-seg 7; int
+  −48,685,545,956) — strip "−+ · ++00 · +0000+−−0000+00+−+"; the
+  extraction algorithm verified against decode_word.
+- CAI'S TWO QUESTIONS ANSWERED: (1) trit strip needs NO custom
+  surface — 24 gui_labels in three bordered boxes carry it, plus one
+  live strip label; (2) bind_value_to is live in the Tk face
+  (Stage 8-4 label override) but the DPG walk write-back is the better
+  demonstration — BUILT: walk I/O widget-channel writes now LAND on
+  named widgets' labels live during the animated replay
+  (GUI.apply_widget_write; the walker's own "committed write-back
+  rides a later ruling" note is hereby ruled for the replay side).
+- WIRING GAP FOUND AND FIXED: main never passed SHEET/GUI into the
+  flow organ's STYLE, so no walk could resolve A1 cells or
+  widget.props — the blessed namespace was blessed but unplugged.
+  Plugged (06-09); walks now see all three surfaces.
+- NEW PERMANENT GATE: SHOWCASE — loads the committed pair, walks it,
+  asserts the 24-trit decode, the row-4 lookup, and 11 widget writes
+  landing. The artifact can never rot silently. Suite green.
+- DEFECTS LOGGED FROM THE BRIEF (not fixed tonight): the DPG save
+  dialog (1) silently overwrote an existing file when the edited
+  filename did not take, and (2) offers no overwrite confirmation —
+  data loss from a file dialog; bit the captain's first .gui. Card:
+  overwrite-confirm across all organ save dialogs.

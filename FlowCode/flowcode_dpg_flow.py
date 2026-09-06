@@ -2464,6 +2464,10 @@ def do_walk(*_):
             elif ev[0] == "watch":
                 _WATCHVALS[ev[1]] = ev[2]
                 _watch_refresh()
+                g = STYLE.get("GUI")            # showcase write-back (06-09):
+                if g is not None and hasattr(g, "apply_widget_write"):
+                    if g.apply_widget_write(ev[1], ev[2]):
+                        delay = 8               # let the paint be SEEN
         except Exception:                       # noqa: BLE001
             pass
         dpg.set_frame_callback(dpg.get_frame_count() + delay,
