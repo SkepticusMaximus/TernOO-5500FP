@@ -209,7 +209,7 @@
     },
     {
      "name": "expression",
-     "value": "IF(MOD(w,3)=2, MOD(w,3)-3, MOD(w,3))"
+     "value": "IF(MOD(MOD(w,3)+3,3)=2, MOD(MOD(w,3)+3,3)-3, MOD(MOD(w,3)+3,3))"
     }
    ],
    "entry_points": [],

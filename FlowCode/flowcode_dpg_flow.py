@@ -457,6 +457,13 @@ def do_run_sdl(*_):
     meta, auto_entry = _entry_meta()
     ws._flow_meta = meta
     ws._flow_edges = [dict(e) for e in FS["edges"]]
+    _sheet = STYLE.get("SHEET")                 # STORM-2: cells fold into
+    if _sheet is not None:                      # the native program as data
+        try:
+            ws._cell_meta = {rc: dict(c)
+                             for rc, c in _sheet.SS["cells"].items()}
+        except Exception:                       # noqa: BLE001
+            pass
     if auto_entry is not None:
         _out(f"  entry: \"{auto_entry}\" (auto-detected — no-incoming "
              "terminator)", STYLE.get("DIM"))
@@ -481,10 +488,10 @@ def do_run_sdl(*_):
                   if _s.get("kind") in ("flow_decision", "flow_loop",
                                         "flow_io"))
     if _newfam:
-        _out(f"  note: {_newfam} decision/loop/I-O symbol(s) — their "
-             "semantics are not in the native codegen yet (parked leg), so "
-             "the SDL run covers the legacy subset only. ▶ Walk "
-             "(doors+loops) runs the FULL program.", STYLE.get("AMB"))
+        _out(f"  STORM-2 native codegen: {_newfam} decision/loop/I-O "
+             "symbol(s) compiled (numeric engine). String and "
+             "widget-channel symbols ride the Walk; every variable prints "
+             "name=value at HALT.", STYLE.get("GRN"))
     try:
         proc = subprocess.Popen([engine, "--display", "sdl", "--run", tmp],
                                 stdout=subprocess.PIPE,

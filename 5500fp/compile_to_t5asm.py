@@ -1797,6 +1797,451 @@ def _compile_trivial(stream: 'WordStream', source_path: str) -> str:
 
 
 # ===========================================================================
+# Storm leg 2 (captain's gale order, 06-09): FLOW-FAMILY NATIVE CODEGEN —
+# decisions, loops and I/O compile to t5asm and run on the native engine.
+# Scope, stated not hidden: the NUMERIC subset (formula_t5asm's engine —
+# + - * / compare IF MOD ROUND ABS MIN MAX POWER…). String expressions
+# (CONCAT/CELL-dynamic) and widget/cell OUT channels are emitted as
+# comments — they belong to the GUI runtime (the Walk), not the CPU, until
+# DATA-STRING codegen lands. Cell REFERENCES (A1 style) constant-fold:
+# numeric cell values become initialised data slots at compile time.
+# Every variable's final value prints as a `name=value` trailer so a
+# native run is observable — and cross-checkable against the walker.
+# ===========================================================================
+
+_FLOW_NEW_KINDS = {'flow_decision', 'flow_loop', 'flow_io'}
+
+
+def _fprop(sym, name, default=''):
+    for p in sym.get('properties', []) or []:
+        if isinstance(p, dict) and p.get('name') == name:
+            return p.get('value', default)
+    return default
+
+
+def _has_flow_families(stream) -> bool:
+    meta = getattr(stream, '_flow_meta', None) or {}
+    return any(s.get('kind') in _FLOW_NEW_KINDS for s in meta.values())
+
+
+def _flow_collect_refs(node, out):
+    """Bare-name refs in a sheet_formula AST (cells excluded by caller)."""
+    if not isinstance(node, tuple):
+        return
+    if node[0] == 'ref' and isinstance(node[1], str):
+        out.add(node[1])
+    for part in node[1:]:
+        if isinstance(part, tuple):
+            _flow_collect_refs(part, out)
+        elif isinstance(part, list):
+            for it in part:
+                _flow_collect_refs(it, out)
+
+
+class _FlowEmit:
+    """One flow-program emission: variables, cells, control graph."""
+
+    def __init__(self, stream):
+        self.meta = getattr(stream, '_flow_meta', None) or {}
+        self.edges = [dict(e) for e in
+                      (getattr(stream, '_flow_edges', None) or [])]
+        self.cells = getattr(stream, '_cell_meta', None) or {}
+        self.vars = {}                   # name -> data label
+        self.cell_slots = {}             # (r,c) -> (label, value)
+        self.lines = []
+        self.skipped = []                # (label, why)
+        self.n_expr = 0
+        self.visited = set()
+
+    # ── slots ───────────────────────────────────────────────────────────
+    def var_slot(self, name):
+        name = str(name).strip() or 'it'
+        if name not in self.vars:
+            safe = ''.join(ch if ch.isalnum() else '_' for ch in name)
+            self.vars[name] = f'fvar_{safe}'
+        return self.vars[name]
+
+    def _cell_slot(self, rc):
+        if rc not in self.cell_slots:
+            cell = self.cells.get(rc)
+            val = 0
+            if cell is not None:
+                try:
+                    val = int(float(str(cell.get('value', 0)).strip()))
+                except Exception:               # noqa: BLE001
+                    val = 0                     # non-numeric cell → 0
+            self.cell_slots[rc] = (f'fcell_{rc[0]}_{rc[1]}', val)
+        return self.cell_slots[rc][0]
+
+    def resolver(self, ref):
+        if isinstance(ref, tuple):
+            return None                         # widget/signal: GUI runtime
+        try:
+            rc = _sheetf.a1_to_rc(str(ref))
+            if rc in self.cells:
+                return self._cell_slot(rc)
+        except Exception:                       # noqa: BLE001
+            pass
+        return self.var_slot(ref)
+
+    # ── expressions ─────────────────────────────────────────────────────
+    def expr(self, text, dst=None):
+        """Compile an expression; returns (lines, result_reg) or None if
+        the expression needs the string engine."""
+        dst = dst if dst is not None else _fxc._BASE_REG
+        try:
+            node = _sheetf.parse(str(text).strip().lstrip('='))
+        except Exception as e:                  # noqa: BLE001
+            return None, f'parse: {e}'
+        refs = set()
+        _flow_collect_refs(node, refs)
+        for r in refs:
+            self.resolver(r)                    # pre-create slots
+        try:
+            out = _fxc.compile_ast(node, dst, self.resolver)
+        except _fxc.FormulaCompileError as e:
+            return None, str(e)
+        self.n_expr += 1
+        out = [ln.replace('_fx_', f'_fx{self.n_expr}_') for ln in out]
+        return out, dst
+
+    # ── graph helpers ───────────────────────────────────────────────────
+    def _door(self, sid, door):
+        for e in self.edges:
+            if e['src'] == sid and e.get('branch', '') == door:
+                return e['dst']
+        return None
+
+    def _next(self, sid, within=None):
+        for e in self.edges:
+            if e['src'] == sid and not e.get('branch'):
+                if within is not None and e['dst'] not in within:
+                    return None
+                return e['dst']
+        return None
+
+    def _pocket(self, container):
+        name = container.get('name', '')
+        members = {i for i, s in self.meta.items()
+                   if s.get('parent_scope') == name}
+        with_in = {e['dst'] for e in self.edges
+                   if e['dst'] in members and e['src'] in members}
+        entry = None
+        for i in sorted(members):
+            if i not in with_in:
+                entry = i
+                break
+        if entry is None and members:
+            entry = sorted(members)[0]
+        return entry, members
+
+    def L(self, sid):
+        return f'fsym_{sid}'
+
+    # ── emission ────────────────────────────────────────────────────────
+    def emit_from(self, sid, within=None):
+        while sid is not None and sid not in self.visited:
+            self.visited.add(sid)
+            s = self.meta.get(sid)
+            if s is None:
+                return
+            kind = s.get('kind', '')
+            lab = s.get('label', '?')
+            self.lines.append(f'{self.L(sid)}:                ; {kind} '
+                              f'"{lab}"')
+            if kind == 'flow_terminator':
+                is_entry = bool(_fprop(s, 'is_entry', False))
+                if not is_entry and len(self.visited) > 1:
+                    self.lines.append('    JMP  flow_epilogue')
+                    return
+                sid = self._next(sid, within)
+                continue
+            if kind == 'flow_io':
+                self._emit_io(s)
+                sid = self._next(sid, within)
+                continue
+            if kind == 'flow_decision':
+                self._emit_decision(sid, s)
+                return                          # doors did the routing
+            if kind == 'flow_loop':
+                nxt = self._emit_loop(sid, s)
+                sid = nxt
+                continue
+            # process / connector / anything inert: fall through
+            sid = self._next(sid, within)
+        if sid is not None and sid in self.visited:
+            self.lines.append(f'    JMP  {self.L(sid)}')
+
+    def _emit_io(self, s):
+        d = _fprop(s, 'direction', 'in')
+        ch = _fprop(s, 'channel', 'variable')
+        addr = str(_fprop(s, 'address', '')).strip()
+        lab = s.get('label', '?')
+        if d == 'out' and ch in ('variable', 'console'):
+            code, why = self.expr(_fprop(s, 'expression', '0'))
+            if code is None:
+                self.lines.append(f'    ; SKIP "{lab}" — string-engine '
+                                  f'expression ({why}) — Walk runtime')
+                self.skipped.append((lab, why))
+                return
+            self.lines += code
+            base = _fxc._BASE_REG
+            if ch == 'variable':
+                slot = self.var_slot(addr or 'it')
+                self.lines += [f'    LI   R20, {slot}',
+                               f'    STW  R{base}, R20, 0   ; {addr} ⇐ …']
+            else:                               # console: print the value
+                self.lines.append(f'    MOV  R16, R{base}')
+                self.lines += _emit_print_int_inline(f'io{self.n_expr}')
+                self.lines += [
+                    f'    LI   R1, {_SYS_PRINT_NL:<6}  ; SYSCALL PRINT_NL',
+                    '    SYSCALL']
+            return
+        if d == 'in' and ch == 'cell' and addr:
+            slot = None
+            try:
+                rc = _sheetf.a1_to_rc(addr)
+                if rc in self.cells:
+                    slot = self._cell_slot(rc)
+            except Exception:                   # noqa: BLE001
+                slot = None
+            tgt = str(_fprop(s, 'var', '')).strip() or addr
+            if slot:
+                base = _fxc._BASE_REG
+                self.lines += [
+                    f'    LI   R{base}, {slot}',
+                    f'    LDW  R{base}, R{base}, 0   ; read cell {addr}',
+                    f'    LI   R20, {self.var_slot(tgt)}',
+                    f'    STW  R{base}, R20, 0']
+                return
+        self.lines.append(f'    ; SKIP "{lab}" — {d}·{ch} channel is '
+                          'GUI/Walk runtime')
+        self.skipped.append((lab, f'{d}·{ch}'))
+
+    def _emit_decision(self, sid, s):
+        code, why = self.expr(_fprop(s, 'condition', '0'))
+        base = _fxc._BASE_REG
+        if code is None:
+            self.lines.append(f'    ; decision unanswerable natively '
+                              f'({why}) — take 0 door')
+            code = [f'    LI   R{base}, 0']
+        self.lines += code
+        plus, minus, zero = (self._door(sid, '+'), self._door(sid, '-'),
+                             self._door(sid, '0'))
+        n = sid
+        self.lines += [
+            f'    BGTZ R{base}, fdoor_p_{n}',
+            f'    BLTZ R{base}, fdoor_m_{n}',
+            f'    JMP  {self.L(zero) if zero is not None else "flow_epilogue"}',
+            f'fdoor_p_{n}:',
+            f'    JMP  {self.L(plus) if plus is not None else "flow_epilogue"}',
+            f'fdoor_m_{n}:',
+            f'    JMP  {self.L(minus) if minus is not None else "flow_epilogue"}',
+        ]
+        for door_target in (plus, minus, zero):
+            if door_target is not None and door_target not in self.visited:
+                self.emit_from(door_target)
+
+    def _emit_loop(self, sid, s):
+        kind = str(_fprop(s, 'kind', 'while'))
+        base = _fxc._BASE_REG
+        entry, members = self._pocket(s)
+        exit_minus = self._door(sid, '-')
+        exit_zero = self._door(sid, '0')
+        end_lbl = (self.L(exit_minus) if exit_minus is not None
+                   else 'flow_epilogue')
+        bail_lbl = (self.L(exit_zero) if exit_zero is not None else end_lbl)
+        top = f'floop_{sid}'
+        if kind == 'for':
+            var = str(_fprop(s, 'var', 'i')) or 'i'
+            vslot = self.var_slot(var)
+            for prop_name, dflt in (('from', '0'),):
+                code, why = self.expr(_fprop(s, prop_name, dflt))
+                if code is None:
+                    self.lines.append(f'    ; for-from unanswerable '
+                                      f'({why}) — bail')
+                    self.lines.append(f'    JMP  {bail_lbl}')
+                    return None
+                self.lines += code
+            self.lines += [f'    LI   R20, {vslot}',
+                           f'    STW  R{base}, R20, 0   ; {var} = from']
+            self.lines.append(f'{top}:')
+            code_to, why = self.expr(_fprop(s, 'to', '0'))
+            if code_to is None:
+                self.lines.append(f'    JMP  {bail_lbl}   ; to '
+                                  f'unanswerable ({why})')
+                return None
+            self.lines += code_to                       # R21 = to
+            self.lines += [
+                f'    LI   R20, {vslot}',
+                f'    LDW  R22, R20, 0   ; {var}',
+                f'    SUB  R22, R22, R{base}   ; var - to',
+                f'    BGTZ R22, floopend_{sid}   ; var > to → done',
+            ]
+            if entry is not None:
+                self.emit_from(entry, within=members)
+            step = str(_fprop(s, 'step', '1') or '1')
+            code_st, why = self.expr(step)
+            if code_st is None:
+                code_st = [f'    LI   R{base}, 1']
+            self.lines += code_st
+            self.lines += [
+                f'    LI   R20, {vslot}',
+                f'    LDW  R22, R20, 0',
+                f'    ADD  R22, R22, R{base}',
+                f'    STW  R22, R20, 0   ; {var} += step',
+                f'    JMP  {top}',
+                f'floopend_{sid}:',
+                f'    JMP  {end_lbl}',
+            ]
+        elif kind == 'do':                      # body first, then condition
+            self.lines.append(f'{top}:          ; do-loop body (priming '
+                              'pass = first fall-through)')
+            if entry is not None:
+                self.emit_from(entry, within=members)
+            code, why = self.expr(_fprop(s, 'condition', '0'))
+            if code is None:
+                self.lines.append(f'    JMP  {bail_lbl}   ; condition '
+                                  f'unanswerable ({why})')
+                return None
+            self.lines += code
+            self.lines += [
+                f'    BGTZ R{base}, {top}        ; cond > 0 → again',
+                f'    BEQZ R{base}, floopbail_{sid}  ; cond = 0 → bail',
+                f'    JMP  floopend_{sid}',
+                f'floopbail_{sid}:',
+                f'    JMP  {bail_lbl}',
+                f'floopend_{sid}:',
+                f'    JMP  {end_lbl}',
+            ]
+        else:                                   # while
+            self.lines.append(f'{top}:')
+            code, why = self.expr(_fprop(s, 'condition', '0'))
+            if code is None:
+                self.lines.append(f'    JMP  {bail_lbl}   ; condition '
+                                  f'unanswerable ({why})')
+                return None
+            self.lines += code
+            self.lines += [
+                f'    BLTZ R{base}, floopend_{sid}   ; cond < 0 → done',
+                f'    BEQZ R{base}, floopbail_{sid}  ; cond = 0 → bail',
+            ]
+            if entry is not None:
+                self.emit_from(entry, within=members)
+            self.lines += [
+                f'    JMP  {top}',
+                f'floopbail_{sid}:',
+                f'    JMP  {bail_lbl}',
+                f'floopend_{sid}:',
+                f'    JMP  {end_lbl}',
+            ]
+        # continue emission at the minus door target
+        if exit_minus is not None and exit_minus not in self.visited:
+            self.emit_from(exit_minus)
+        if exit_zero is not None and exit_zero not in self.visited:
+            self.emit_from(exit_zero)
+        return None
+
+    def compile(self, source_path):
+        entry_id = None
+        for i, s in sorted(self.meta.items()):
+            if s.get('kind') == 'flow_terminator' and \
+                    s.get('parent_scope') is None and \
+                    bool(_fprop(s, 'is_entry', False)):
+                entry_id = i
+                break
+        if entry_id is None:
+            raise CompileError('No entry terminator (is_entry) found')
+        now = datetime.datetime.now().astimezone()
+        head = [
+            '; Auto-generated by FlowCode compiler',
+            f'; Source:    {os.path.basename(source_path)}',
+            f'; Generated: {now.strftime("%Y-%m-%dT%H:%M:%S%z")}',
+            '; Phase:     STORM-2 (decision/loop/I-O native codegen, '
+            'numeric engine)',
+            '',
+            'main:',
+        ]
+        self.emit_from(entry_id)
+        # trailer: every variable observable
+        tail = ['flow_epilogue:']
+        for name in sorted(self.vars):
+            slot = self.vars[name]
+            tail.append(f'    ; print {name}=<value>')
+            tail += _emit_print_char_sequence(f'{name}=')
+            tail += [
+                f'    LI   R16, {slot}',
+                '    LDW  R16, R16, 0',
+            ] + _emit_print_int_inline(f'tr_{slot}')
+            tail += [f'    LI   R1, {_SYS_PRINT_NL:<6}  ; SYSCALL PRINT_NL',
+                     '    SYSCALL']
+        tail += ['    HALT', '']
+        if self.skipped:
+            tail.append('; Skipped (GUI/Walk-runtime symbols, stated not '
+                        'hidden):')
+            for lab, why in self.skipped:
+                tail.append(f';   - "{lab}" ({why})')
+            tail.append('')
+        data = ['; ============ Data ============']
+        for name in sorted(self.vars):
+            data += [f'{self.vars[name]}:',
+                     f'    .word 0              ; var {name}']
+        for rc in sorted(self.cell_slots):
+            lbl, val = self.cell_slots[rc]
+            data += [f'{lbl}:',
+                     f'    .word {val:<6}  ; cell {rc}']
+        return '\n'.join(head + self.lines + tail + data) + '\n'
+
+
+def _emit_print_int_inline(tag) -> list:
+    """Print the signed integer in R16 via PRINT_CHAR. Clobbers R16-R19,
+    R1, R2. STACK-FREE (the C engine's assembler has no PUSH/POP):
+    most-significant-digit-first via a power-of-ten divisor."""
+    return [
+        f'    LI   R1, {_SYS_PRINT_CHAR:<6}  ; SYSCALL PRINT_CHAR',
+        f'    BGTZ R16, pi_pos_{tag}',
+        f'    BLTZ R16, pi_neg_{tag}',
+        '    LI   R2, 48          ; "0"',
+        '    SYSCALL',
+        f'    JMP  pi_done_{tag}',
+        f'pi_neg_{tag}:',
+        '    LI   R2, 45          ; "-"',
+        '    SYSCALL',
+        '    SUB  R16, R0, R16    ; negate',
+        f'pi_pos_{tag}:',
+        '    LI   R18, 1          ; d = 1',
+        f'pi_pow_{tag}:',
+        '    LI   R19, 10',
+        '    MUL  R19, R18, R19   ; d*10',
+        '    SUB  R17, R16, R19   ; value - d*10',
+        f'    BLTZ R17, pi_pdone_{tag}',
+        '    LI   R19, 10',
+        '    MUL  R18, R18, R19   ; d *= 10',
+        f'    JMP  pi_pow_{tag}',
+        f'pi_pdone_{tag}:',
+        f'pi_dig_{tag}:',
+        '    DIV  R17, R16, R18   ; digit = value / d',
+        '    ADDI R17, R17, 48',
+        '    MOV  R2, R17',
+        '    SYSCALL',
+        '    SUBI R17, R17, 48',
+        '    MUL  R17, R17, R18',
+        '    SUB  R16, R16, R17   ; value %= d',
+        '    LI   R19, 10',
+        '    DIV  R18, R18, R19   ; d /= 10',
+        f'    BGTZ R18, pi_dig_{tag}',
+        f'pi_done_{tag}:',
+    ]
+
+
+def _compile_flow_program(stream: 'WordStream', source_path: str) -> str:
+    if _fxc is None or _sheetf is None:
+        raise CompileError('flow-family codegen needs formula_t5asm + '
+                           'sheet_formula')
+    return _FlowEmit(stream).compile(source_path)
+
+
+# ===========================================================================
 # Public API
 # ===========================================================================
 
@@ -1808,6 +2253,8 @@ def compile_wordstream_to_t5asm(stream: 'WordStream',
       - Any gui_* widget → Phase 7b-4 full PIGART path
       - No gui_* widgets → Phase 7b-1 trivial print-and-halt path
     """
+    if _has_flow_families(stream):     # STORM-2: doors/loops/I-O go native
+        return _compile_flow_program(stream, source_path)
     has_gui   = any(w.kind.startswith('gui_') for w in stream.iter_widgets())
     has_cells = bool(getattr(stream, '_cell_meta', {}))
     if has_gui or has_cells or _has_ports(stream):   # cells/ports need the PIGART path
