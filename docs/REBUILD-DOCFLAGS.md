@@ -921,3 +921,31 @@ affected.
   leads. Search/preview-editing ride a later leg. Gate: DOCS.
 - Tk-face note: the Tk client compiles/runs the .ternoo through the
   shared compiler; its dialogs still filter old extensions (card).
+
+## 2026-09-07 — CAPTAIN'S FOUR RE-REPORTED BUGS, ACTUALLY FIXED (STORM-8)
+- (1) CTRL+CLICK TOGGLE: root cause = is_key_down read mid-click was
+  unreliable for Ctrl (Shift happened to work). Fix: modifier state
+  tracked LIVE via key_down/key_release handlers into FS["kmod_*"];
+  the click reads the flag. Ctrl+click now toggles a symbol out of an
+  overlapping selection.
+- (2) "STILL doesn't run": a flow-family program is CONSOLE output
+  (name=value at HALT), but Run opened an SDL window — blank, hiding
+  the result (the captain's blank-white-window all along). Fix: Run
+  routes console-only programs HEADLESS (--run, no --display sdl) and
+  streams stdout into the Output pane; SDL only when the program
+  draws (DRAW_RECT/OPEN_WINDOW). Verified: the showcase routes
+  headless.
+- (3) CLOSE: a Close-file BUTTON now sits in the Flow ACTIONS panel
+  (the menu item alone wasn't enough), routed through a
+  save-before-close modal, closing the whole document across all four
+  organs via CLOSE_HOOK.
+- (4) SESSION PROMPTS: silent auto-reopen replaced with a RESTORE-ON-
+  OPEN modal ("Reopen last file? / Start fresh"); close forgets the
+  last_* bindings so a closed doc doesn't silently return; unsaved
+  work prompts Save & close / Discard / Cancel.
+- New permanent gate STORM-8 exercises all five (mod-flag flip,
+  ctrl-toggle state machine, snap, headless-run route, close-hook
+  fires). Full board: SHOWCASE/STREAM MIRROR/NATIVE PARITY/GRISTMILL/
+  DOCS/STORM-8 + priors, all green.
+- OWNED: last round I claimed these fixed when only the layout was.
+  This round each has a gate that fails if it regresses.
