@@ -571,7 +571,7 @@ def build_sheet_tab(style):
                          tag="shc_save_dlg", width=780, height=480,
                          default_path=_designs, default_filename="design",
                          callback=lambda s, a: save_to(_picked(a))):
-        dpg.add_file_extension("Sheets (*.sheet *.fc){.sheet,.fc}",
+        dpg.add_file_extension("Sheets (*.sheet *.fc *.ternoo){.sheet,.fc,.ternoo}",
                                color=(122, 255, 122))
         dpg.add_file_extension(".sheet", color=(255, 204, 68))
         dpg.add_file_extension(".fc", color=(63, 208, 143))
@@ -580,7 +580,7 @@ def build_sheet_tab(style):
                          tag="shc_open_dlg", width=780, height=480,
                          default_path=_designs, default_filename="",
                          callback=lambda s, a: load_from(_picked(a))):
-        dpg.add_file_extension("Sheets (*.sheet *.fc){.sheet,.fc}",
+        dpg.add_file_extension("Sheets (*.sheet *.fc *.ternoo){.sheet,.fc,.ternoo}",
                                color=(122, 255, 122))
         dpg.add_file_extension(".fc", color=(63, 208, 143))
         dpg.add_file_extension(".sheet", color=(255, 204, 68))

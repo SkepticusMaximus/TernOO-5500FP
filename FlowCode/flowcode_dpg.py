@@ -179,9 +179,7 @@ TAB_CHROME = [
     {"key": "babble-fish", "title": "Babble-Fish",   "live": True},
     {"key": "academy",     "title": "Academy",       "live": True},
     {"key": "mesh",        "title": "Mesh-Chat",     "live": True},
-    {"key": "docs",        "title": "Documentation", "live": False,
-     "charter": "The helpdown viewer — index, search, raw/preview\n"
-                "editing with atomic saves."},
+    {"key": "docs",        "title": "Documentation", "live": True},
 ]
 
 # ── Shell tab: the native console ───────────────────────────────────────────
@@ -257,6 +255,47 @@ def _menu_save(*_):
         text_save()
     else:
         dpg.set_value("statusbar", "no file actions on this tab")
+
+
+_HELP_DIR = os.path.join(os.path.dirname(_HERE), "docs", "help")
+
+
+def _docs_show(fname):
+    p = os.path.join(_HELP_DIR, fname)
+    try:
+        body = open(p, encoding="utf-8").read()
+    except Exception as e:                      # noqa: BLE001
+        body = f"(couldn't read {fname}: {e})"
+    if dpg.does_item_exist("docs_title"):
+        dpg.set_value("docs_title", fname)
+        dpg.set_value("docs_view", body)
+
+
+def build_docs_tab():
+    """STORM-7 (captain's order 07-09): the helpdown viewer, plumbed.
+    Index on the left from docs/help/*.md, raw-markdown reading pane on
+    the right. Search/edit ride a later leg — reading comes first."""
+    topics = []
+    try:
+        topics = sorted(f for f in os.listdir(_HELP_DIR)
+                        if f.endswith(".md"))
+    except Exception:                           # noqa: BLE001
+        pass
+    if "welcome.md" in topics:                  # welcome leads
+        topics.remove("welcome.md")
+        topics.insert(0, "welcome.md")
+    with dpg.group(horizontal=True):
+        with dpg.child_window(width=250):
+            dpg.add_text(f"help topics ({len(topics)})", color=DIM)
+            for f in topics:
+                dpg.add_selectable(label=f[:-3], user_data=f,
+                                   callback=lambda s, a, u: _docs_show(u))
+        with dpg.child_window():
+            dpg.add_text("welcome.md", tag="docs_title", color=GRN)
+            dpg.add_input_text(tag="docs_view", multiline=True,
+                               readonly=True, width=-1, height=-1)
+    if topics:
+        _docs_show(topics[0])
 
 
 def _menu_close(*_):
@@ -972,6 +1011,8 @@ def build_ui():
                                            callback=shell_clear)
                     elif row["key"] == "text":
                         build_text_tab()
+                    elif row["key"] == "docs":
+                        build_docs_tab()
                     elif row["key"] == "gristmill":
                         if GRISTMILL_ORGAN:
                             GRISTMILL_ORGAN.build_gristmill_tab(
@@ -1298,11 +1339,10 @@ def main():
             # the .fc, widgets from the .gui, the walk decodes the paper's
             # richest word (a USER-DEF POINTER) trit by trit, and the widget
             # write-back must land the decode on the named labels.
-            _fc = os.path.join(_HERE, "Word-Format-Explorer.fc")
-            _gu = os.path.join(_HERE, "Word-Format-Explorer.gui")
-            FLOW_ORGAN.load_from(_fc)
-            SHEET_ORGAN.load_from(_fc)
-            GUI_ORGAN.load_from(_gu)
+            _tn = os.path.join(_HERE, "Word-Format-Explorer.ternoo")
+            FLOW_ORGAN.load_from(_tn)       # ONE file (captain 07-09):
+            SHEET_ORGAN.load_from(_tn)      # every organ reads its own
+            GUI_ORGAN.load_from(_tn)        # sections from the same doc
             _wk = FLOW_ORGAN._wk()
             _rep = _wk.walk(FLOW_ORGAN.FS["syms"], FLOW_ORGAN.FS["edges"],
                             FLOW_ORGAN._walk_resolver(), lambda _l: None,
@@ -1374,6 +1414,10 @@ def main():
                 print(f"GRISTMILL OK — {_gm['sections']} vocabulary "
                       "sections + live program tree, second face over the "
                       "Tk builders")
+            assert dpg.does_item_exist("docs_view"), "docs tab missing"
+            assert len(dpg.get_value("docs_view") or "") > 100, \
+                "docs viewer loaded no content"
+            print("DOCS OK — helpdown viewer live, welcome.md loaded")
         print("SMOKE OK — FlowCode DPG builds clean")
         dpg.destroy_context()
         return
@@ -1450,6 +1494,53 @@ def main():
                            (CONN_ORGAN, "CS", "last_conn")):
         if organ:
             _remember(organ, st, key)
+
+    # ONE FILE, ONE OPEN (captain's ruling 07-09): a FlowCode document
+    # carries every surface's sections; opening it in ANY tab loads every
+    # section into its organ. "If it doesn't work that way it isn't
+    # working." Wraps the (already-wrapped) load_from of each organ.
+    _PROPAGATING = [False]
+
+    def _open_document_everywhere(path):
+        if _PROPAGATING[0]:
+            return
+        _PROPAGATING[0] = True
+        try:
+            import json as _json
+            try:
+                doc = _json.load(open(path, encoding="utf-8"))
+            except Exception:                   # noqa: BLE001
+                return
+            routes = (
+                (FLOW_ORGAN, "FS", "flow_symbols"),
+                (GUI_ORGAN, "GS", "symbols"),
+                (SHEET_ORGAN, "SS", "cell_symbols"),
+                (CONN_ORGAN, "CS", "cmd_symbols"),
+            )
+            for organ, st, section in routes:
+                if organ is None or not doc.get(section):
+                    continue
+                state = getattr(organ, st)
+                if state.get("file") == path:
+                    continue                    # already home
+                try:
+                    organ.load_from(path)
+                except Exception:               # noqa: BLE001
+                    pass
+        finally:
+            _PROPAGATING[0] = False
+
+    def _propagate(organ):
+        orig = organ.load_from
+
+        def wrapped(path, _orig=orig):
+            out = _orig(path)
+            _open_document_everywhere(path)
+            return out
+        organ.load_from = wrapped
+    for organ in (FLOW_ORGAN, GUI_ORGAN, SHEET_ORGAN, CONN_ORGAN):
+        if organ:
+            _propagate(organ)
     if not os.environ.get("SMOKE"):
         for organ, key in ((FLOW_ORGAN, "last_flow"),
                            (GUI_ORGAN, "last_gui"),

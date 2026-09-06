@@ -896,3 +896,28 @@ affected.
   surface; GUI hierarchy tree-view; properties-panel resize;
   flow-canvas selection polish (z-order lasso, click-slop, snap).
   The Tk-only list is now: docs wiring + those text-area gaps.
+
+## 2026-09-07 — CAPTAIN'S PUNCH LIST, BUILT THIS TIME (not carded)
+- OWNED: last night I fixed only my own diagram's layout and filed the
+  captain's selection bugs as cards. Corrected today — built:
+- SELECTION KIT (Flow canvas): click-slop LOCK-ON-SELECT (7px — the
+  most careful click cannot nudge a symbol; the captain's own idea,
+  named); Shift+click ADDS to selection; Ctrl+click TOGGLES (the
+  discriminating deselect for overlapping lassos); Shift+lasso adds
+  to the current set; SNAP-TO-GRID on every move (View-menu
+  toggleable, default on).
+- ONE FILE, ONE OPEN (captain's ruling: "if it doesn't work that way
+  it isn't working"): opening a document in ANY tab now routes every
+  section to its organ (flow_symbols→Flow, symbols→GUI,
+  cell_symbols→Sheet, cmd_symbols→Connectors). Load once, hit Run or
+  Walk — it works.
+- .TERNOO EXTENSION (captain's ruling): the whole-program document.
+  The showcase now ships as ONE file — Word-Format-Explorer.ternoo
+  (51 widgets + 45 flow symbols + 82 cells); the .fc/.gui pair
+  untracked; all organ dialogs accept *.ternoo. NOTE for CAI: the
+  File-Extensions-Policy doc needs a .ternoo clause.
+- HELP SYSTEM PLUMBED (DPG): the Documentation tab is LIVE — 18
+  docs/help topics indexed, raw-markdown reading pane, welcome.md
+  leads. Search/preview-editing ride a later leg. Gate: DOCS.
+- Tk-face note: the Tk client compiles/runs the .ternoo through the
+  shared compiler; its dialogs still filter old extensions (card).

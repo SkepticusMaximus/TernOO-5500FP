@@ -920,19 +920,28 @@ def delete_selected(*_):
         delete_edge(FS["sel_edge"])
 
 
+def toggle_snap(*_):
+    FS["snap_grid"] = not FS.get("snap_grid", True)
+    _status(f"snap to grid: {'ON' if FS['snap_grid'] else 'off'}")
+
+
 def _lasso_apply(rect):
-    """Select every symbol intersecting the lasso rectangle."""
+    """Select every symbol intersecting the lasso rectangle. Shift held =
+    ADD to the current selection (STORM-6); Ctrl+click then prunes."""
     x0, y0, x1, y1 = rect
     hits = {sid for sid, s in FS["syms"].items()
             if s["x"] < x1 and s["x"] + s["w"] > x0
             and s["y"] < y1 and s["y"] + s["h"] > y0
             and _in_scope(s)}
+    if (dpg.is_key_down(dpg.mvKey_LShift)
+            or dpg.is_key_down(dpg.mvKey_RShift)):
+        hits |= FS["multi"]                 # shift-lasso adds
     FS["multi"] = hits
     FS["sel"] = next(iter(hits)) if len(hits) == 1 else None
     redraw()
     if hits:
-        _selinfo(f"lasso: {len(hits)} selected — drag any to move the "
-                 "group · Del deletes all")
+        _selinfo(f"lasso: {len(hits)} selected — drag moves the group · "
+                 "Ctrl+click removes one · Shift+click/lasso adds")
         _status(f"{len(hits)} symbols selected")
     else:
         _selinfo("")
@@ -1444,6 +1453,32 @@ def _on_click(*_):
                 return
     sid = _hit_symbol(mx, my)
     FS["sel_edge"] = None
+    _shift = (dpg.is_key_down(dpg.mvKey_LShift)
+              or dpg.is_key_down(dpg.mvKey_RShift))
+    _ctrl = (dpg.is_key_down(dpg.mvKey_LControl)
+             or dpg.is_key_down(dpg.mvKey_RControl))
+    if sid is not None and _ctrl:
+        # STORM-6 (captain's kit): Ctrl+click TOGGLES membership — the
+        # discriminating deselect for overlap-heavy lassos. Never drags.
+        if sid in FS["multi"]:
+            FS["multi"].discard(sid)
+            if FS["sel"] == sid:
+                FS["sel"] = next(iter(FS["multi"]), None)
+        else:
+            FS["multi"].add(sid)
+            FS["sel"] = sid
+        FS["drag"] = None
+        _selinfo(f"selection: {len(FS['multi'])} symbol(s)")
+        redraw()
+        return
+    if sid is not None and _shift:
+        # Shift+click ADDS to the selection. Never drags.
+        FS["multi"].add(sid)
+        FS["sel"] = sid
+        FS["drag"] = None
+        _selinfo(f"selection: {len(FS['multi'])} symbol(s)")
+        redraw()
+        return
     if sid is not None:
         if sid in FS["multi"] and len(FS["multi"]) > 1:
             _snapshot()          # group drag: move every selected symbol
@@ -1506,13 +1541,24 @@ def _on_drag(sender, app_data):
     if FS["drag"] is None:
         return
     _b, dx, dy = app_data
+    # STORM-6: the LOCK-ON-SELECT slop — the most careful click cannot
+    # nudge a symbol; movement begins only past a real drag distance.
+    if not FS["drag"].get("armed"):
+        if abs(dx) < 7 and abs(dy) < 7:
+            return
+        FS["drag"]["armed"] = True
     z = FS["zoom"]
+
+    def _place(v):
+        v = max(0, int(v))
+        return snap(v) if FS.get("snap_grid", True) else v
+
     if "group" in FS["drag"]:
         for i, (ox, oy) in FS["drag"]["group"].items():
             gs = FS["syms"].get(i)
             if gs:
-                gs["x"] = max(0, int(ox + dx / z))
-                gs["y"] = max(0, int(oy + dy / z))
+                gs["x"] = _place(ox + dx / z)
+                gs["y"] = _place(oy + dy / z)
         redraw()
         return
     if FS["sel"] is None:
@@ -1521,7 +1567,7 @@ def _on_drag(sender, app_data):
     if s is None:
         return
     ox, oy = FS["drag"]["orig"]
-    s["x"], s["y"] = max(0, int(ox + dx / z)), max(0, int(oy + dy / z))
+    s["x"], s["y"] = _place(ox + dx / z), _place(oy + dy / z)
     redraw()
 
 
@@ -1788,7 +1834,7 @@ def build_flow_tab(style):
                          tag="flowc_save_dlg", width=780, height=480,
                          default_path=_designs, default_filename="design",
                          callback=lambda s, a: save_to(_picked(a))):
-        dpg.add_file_extension("FlowCode (*.flow *.fc){.flow,.fc}",
+        dpg.add_file_extension("FlowCode (*.flow *.fc *.ternoo){.flow,.fc,.ternoo}",
                                color=(122, 255, 122))
         dpg.add_file_extension(".flow", color=(74, 158, 255))
         dpg.add_file_extension(".fc", color=(63, 208, 143))
@@ -1797,7 +1843,7 @@ def build_flow_tab(style):
                          tag="flowc_open_dlg", width=780, height=480,
                          default_path=_designs, default_filename="",
                          callback=lambda s, a: load_from(_picked(a))):
-        dpg.add_file_extension("FlowCode (*.flow *.fc){.flow,.fc}",
+        dpg.add_file_extension("FlowCode (*.flow *.fc *.ternoo){.flow,.fc,.ternoo}",
                                color=(122, 255, 122))
         dpg.add_file_extension(".fc", color=(63, 208, 143))
         dpg.add_file_extension(".flow", color=(74, 158, 255))
@@ -1806,7 +1852,7 @@ def build_flow_tab(style):
                          tag="flowc_import_dlg", width=780, height=480,
                          default_path=_designs, default_filename="",
                          callback=lambda s, a: _import_merge(_picked(a))):
-        dpg.add_file_extension("FlowCode (*.flow *.fc){.flow,.fc}",
+        dpg.add_file_extension("FlowCode (*.flow *.fc *.ternoo){.flow,.fc,.ternoo}",
                                color=(122, 255, 122))
         dpg.add_file_extension(".fc", color=(63, 208, 143))
         dpg.add_file_extension(".flow", color=(74, 158, 255))
