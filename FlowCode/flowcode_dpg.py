@@ -116,6 +116,13 @@ try:
 except Exception as e:                          # noqa: BLE001
     SHEET_ORGAN_ERR = str(e)
 
+GRISTMILL_ORGAN = None
+GRISTMILL_ORGAN_ERR = ""
+try:
+    GRISTMILL_ORGAN = _load_organ("flowcode_dpg_gristmill")
+except Exception as e:                          # noqa: BLE001
+    GRISTMILL_ORGAN_ERR = str(e)
+
 CONN_ORGAN = None
 CONN_ORGAN_ERR = ""
 try:
@@ -168,6 +175,7 @@ TAB_CHROME = [
     {"key": "connectors",  "title": "Connectors",    "live": True},
     {"key": "shell",       "title": "Shell",         "live": True},
     {"key": "text",        "title": "Text",          "live": True},
+    {"key": "gristmill",   "title": "GristMill",     "live": True},
     {"key": "babble-fish", "title": "Babble-Fish",   "live": True},
     {"key": "academy",     "title": "Academy",       "live": True},
     {"key": "mesh",        "title": "Mesh-Chat",     "live": True},
@@ -964,6 +972,16 @@ def build_ui():
                                            callback=shell_clear)
                     elif row["key"] == "text":
                         build_text_tab()
+                    elif row["key"] == "gristmill":
+                        if GRISTMILL_ORGAN:
+                            GRISTMILL_ORGAN.build_gristmill_tab(
+                                {"BORDER": BORDER, "TEXT": TEXT,
+                                 "DIM": DIM, "GRN": GRN, "AMB": AMB,
+                                 "FLOW": FLOW_ORGAN, "GUI": GUI_ORGAN,
+                                 "CLIP": CLIP})
+                        else:
+                            dpg.add_text("GristMill organ failed: "
+                                         + GRISTMILL_ORGAN_ERR, color=AMB)
                     elif row["key"] == "babble-fish":
                         if BABBLE_ORGAN:
                             BABBLE_ORGAN.build_babble_tab(
@@ -1351,6 +1369,11 @@ def main():
                       f"row={_nat['row']} t23={_nat['t23']} "
                       f"t22={_nat['t22']} word={_nat['word']} — value-equal "
                       "with the Walk")
+            if GRISTMILL_ORGAN:
+                _gm = GRISTMILL_ORGAN._selftest()
+                print(f"GRISTMILL OK — {_gm['sections']} vocabulary "
+                      "sections + live program tree, second face over the "
+                      "Tk builders")
         print("SMOKE OK — FlowCode DPG builds clean")
         dpg.destroy_context()
         return

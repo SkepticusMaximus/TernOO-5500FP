@@ -864,3 +864,35 @@ affected.
   properties or defer to Walk. Card logged.
 - MINIMAP (card): does not re-clamp to the corner when the DPG window
   is maximised/resized — needs a viewport-resize handler.
+
+## 2026-09-07 (small hours) — THE GALE-FORCE STORM: the two faces converge
+- CAPTAIN'S ORDER (06-09 ~23:00): "Make those two faces synchronised,
+  or make the DPG do the native-execution things that the TK client
+  does. CODE CODE CODE like the wind." Executed as five legs, each
+  gated and committed:
+- LEG 1 — LIVE WORD-STREAM MIRROR (DPG): the §7.4 claim now true on
+  both faces. WORDS panel rebuilds the Meccano/PIGART stream on every
+  edit; MMID + OTree identity live; dump-to-Output with describe_word.
+  Gate: STREAM MIRROR (938 words on the showcase; OTree tracks edits).
+- LEG 2 — THE CODEGEN LEG (the parked "Veg", landed): decisions,
+  loops and I/O now COMPILE TO NATIVE t5asm via a control-graph
+  emitter over formula_t5asm's numeric engine. FOR/WHILE/DO, three-
+  door branches, variable stores, console prints (stack-free MSD
+  integer printer — the C engine has no PUSH/POP), cells constant-
+  folded as data, string/widget symbols skipped with stated reasons,
+  name=value trailer at HALT. The SHOWCASE DECODE RAN ON THE C ENGINE
+  (2138 cycles) VALUE-EQUAL WITH THE WALK — gate: NATIVE PARITY.
+  Shared compiler → the Tk face gains the same power for free.
+- LEG 3 — GRISTMILL TAB (DPG): new organ, a second face over the Tk
+  view's own pure builders (vocabulary registries + live program tree
+  + stream identity + render_detail). Gate: GRISTMILL.
+- LEG 4 — Step on new-family flows delegates to Walk (the legacy
+  interpreter's Tk-dialog parade retired for those flows).
+- LEG 5 — per-file CLOSE in the File menu (clears surface AND forgets
+  the binding, all four organs); minimap re-clamps on viewport
+  resize/maximise.
+- REMAINING PARITY CARDS (named, unbuilt): Documentation tab content
+  wiring; DPG text-area undo + CLIP coverage sweep of every text
+  surface; GUI hierarchy tree-view; properties-panel resize;
+  flow-canvas selection polish (z-order lasso, click-slop, snap).
+  The Tk-only list is now: docs wiring + those text-area gaps.
