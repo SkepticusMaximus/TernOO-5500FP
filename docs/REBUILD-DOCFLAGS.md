@@ -841,3 +841,26 @@ affected.
   3. DPG properties panel: draggable resize (fixed width today).
   4. GUI tab: widget hierarchy tree-view (Tk parity).
   (Save-dialog overwrite-confirm card already logged 06-09.)
+
+## 2026-09-06 — CORRECTION OF LAST NIGHT'S MATRIX + Step/Run truth (captain's re-test)
+- I MISREAD THE FACES, twice: the earlier "Tk" screenshot was the DPG
+  face (titles now differ: Tk = "FlowCode v0.7.0 — ... Visual IDE";
+  DPG = "FlowCode - TernOO"). Standing corrected by the captain.
+- MATRIX CORRECTED: the DPG face DOES carry the native actions —
+  Word Dump, Load→EMU, Step, Run (SDL) — via the bridge, same engine
+  as Tk. What differs today: Tk keeps the live word-stream mirror +
+  GristMill tab; DPG carries the new language families + walker +
+  write-back + gates. The showcase's rumor shrinks accordingly.
+- WHY EACH RUN LOOKED DEAD (all one root cause — the parked codegen
+  leg): the compiled 36-line subset excludes decision/loop/I-O
+  semantics, so (a) Tk Run showed a persistent BLANK SDL window,
+  (b) DPG Run's engine exited instantly (window blinked away). A
+  honesty note now prints in the DPG output whenever new-family
+  symbols are present, pointing at ▶ Walk as the full runtime.
+- STEP DEFECT (card): DPG Step drives the LEGACY interpreter, which
+  treats every I/O symbol as console-style INPUT and prompts through
+  Tk dialogs ("a series of little windows" — mixed-toolkit, wrong
+  semantics). Step must honor the I/O family's direction/channel
+  properties or defer to Walk. Card logged.
+- MINIMAP (card): does not re-clamp to the corner when the DPG window
+  is maximised/resized — needs a viewport-resize handler.

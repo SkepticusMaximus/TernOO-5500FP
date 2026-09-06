@@ -477,6 +477,14 @@ def do_run_sdl(*_):
     open(tmp, "w", encoding="utf-8").write(t5)
     _out(f"  compiled {len(t5.splitlines())} lines → {tmp}",
          STYLE.get("DIM"))
+    _newfam = sum(1 for _s in FS["syms"].values()
+                  if _s.get("kind") in ("flow_decision", "flow_loop",
+                                        "flow_io"))
+    if _newfam:
+        _out(f"  note: {_newfam} decision/loop/I-O symbol(s) — their "
+             "semantics are not in the native codegen yet (parked leg), so "
+             "the SDL run covers the legacy subset only. ▶ Walk "
+             "(doors+loops) runs the FULL program.", STYLE.get("AMB"))
     try:
         proc = subprocess.Popen([engine, "--display", "sdl", "--run", tmp],
                                 stdout=subprocess.PIPE,
