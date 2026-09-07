@@ -1063,3 +1063,18 @@ affected.
   to a comfortable 2700×1400 @ (90,55) that clearly clears the panel —
   canvas + Output both visible, no scrolling. Clamp-on-save tightened
   to match. max_height confirmed a valid create_viewport kwarg.
+
+## 2026-09-07 — STORM-15: "contents don't fit" — the canvas row now reserves Output space
+- CAPTAIN: window still felt wrong; contents don't fit inside the frame.
+  Root cause (separate from window SIZE): the Flow tab's canvas row
+  (tools | canvas | properties child-windows) had NO height, so DPG let
+  it fill the ENTIRE viewport — the Output pane placed after it fell off
+  the bottom regardless of how big the window was. That's why resizing
+  the window never revealed Output.
+- FIX: the five child-windows in the canvas row now use height=-300,
+  reserving the bottom band for the Output header + 170px log + status
+  lines. Canvas + Output are now visible together inside the window.
+- (Geometry note: if the window still opens maximised, that's Cinnamon
+  remembering the window state per WM_CLASS — the client size DPG
+  requests is 2700×1400; the WM may override. The content-fit fix is
+  what makes both panes visible regardless.)
