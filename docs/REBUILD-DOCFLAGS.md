@@ -1109,3 +1109,20 @@ affected.
   only disk entity being the known-MMID machine-state on load/boot. A
   showcase for GristMill's content-addressing married to the trit-level
   widget/object inheritance scheme. Added under the landmark list.
+
+## 2026-09-07 — STORM-18: the first custom TernOO widget — the trit-strip
+- CAPTAIN'S CHARTER (07-09): not text hacks — a real composite widget for
+  trit maps, "an object in its own right… only FITTING." BUILT:
+  draw_trit_strip() renders a 24-trit word on a DRAWLIST — pixel-aligned
+  by construction, so cells, their trit-index numbers ABOVE, and the
+  field names (type / qualifier / payload) centred BELOW their spans all
+  line up perfectly. Colour-encoded (+ green · 0 grey · − orange), one
+  line, no padding hacks. 596px wide; the Explorer window (660) fits it.
+  Reusable: draw_trit_strip(drawlist_tag, trits). The first pioneer
+  custom TernOO/FlowCode widget.
+- Replaces the 24 text-label strip in the Explorer; _refresh redraws the
+  widget and records glyphs for the gate. STORM-12 gate updated. 34 green.
+- Captain's design notes for the widget's future (post-ASPLOS, logged):
+  SVG composite + a less obtrusive font; the numbered cells make the
+  T-notation captions redundant; colour as canon not icing. A candidate
+  for the trit-level-inheritance widget showcase.
