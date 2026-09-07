@@ -2069,7 +2069,7 @@ def build_flow_tab(style):
     # STORM-15 (captain 07-09: "contents don't fit inside the window"):
     # the canvas row must RESERVE room for the Output pane below it, or the
     # child-windows fill the whole viewport and push Output off-screen.
-    _ROW_H = -300
+    _ROW_H = -336
     with dpg.group(horizontal=True):
         with dpg.child_window(width=int(C.get("CFG", {})
                               .get("flow_panel_w", 320)), height=_ROW_H,

@@ -1195,7 +1195,8 @@ def run_gui_window(*_):
     _RG["on_radio"] = _on_radio                   # module-level handle
 
     with dpg.window(label="Word Format Explorer — RUNNING", tag="rungui_win",
-                    width=760, height=520, pos=(120, 80)):
+                    width=760, height=600, pos=(120, 80),
+                    no_scrollbar=False):
         dpg.add_text("TernOO 24-trit Word Format Explorer", color=C["GRN"])
         dpg.add_text("", tag="rg_word", color=C["TEXT"])
         dpg.add_spacer(height=6)
@@ -1208,14 +1209,17 @@ def run_gui_window(*_):
         dpg.add_text("T23……T22  ·  T21…T18 (qualifier)  ·  T17…T0 (payload)",
                      color=C["DIM"])
         dpg.add_spacer(height=10)
+        # child-windows FILL to the window bottom (height=-8) — the same
+        # reserve-and-fill fix as the Flow tab, so the help panel's lines
+        # are never clipped whatever the window height (captain 07-09).
         with dpg.group(horizontal=True):
-            with dpg.child_window(width=250, height=340):
+            with dpg.child_window(width=250, height=-8):
                 dpg.add_text("primary type (click to decode):",
                              color=C["DIM"])
                 dpg.add_radio_button(
                     [f"{g} {n}" for g, n, _a, _b in _NINE],
                     default_value="−+ DATA", callback=_on_radio)
-            with dpg.child_window(width=-1, height=340):
+            with dpg.child_window(width=-1, height=-8):
                 dpg.add_text("?", tag="rg_tname", color=C["GRN"])
                 dpg.add_text("?", tag="rg_tstatus", color=C["TEXT"])
                 dpg.add_separator()
