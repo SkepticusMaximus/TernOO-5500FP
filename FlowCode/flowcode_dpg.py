@@ -1533,6 +1533,13 @@ def main():
             assert GUI_ORGAN._RG.get("glyphs") and \
                 GUI_ORGAN._RG["glyphs"][0] in ("+", "0", "−"), \
                 "trit strip widget not rendered"
+            _tr = GUI_ORGAN._RG.get("trits") or [0] * 24
+            _wnarrow = GUI_ORGAN.draw_trit_strip("rg_strip_dl", _tr,
+                                                 avail_w=500)
+            _wwide = GUI_ORGAN.draw_trit_strip("rg_strip_dl", _tr,
+                                               avail_w=1000)
+            assert _wwide > _wnarrow + 100, \
+                f"trit strip not spring-loaded: {_wnarrow} vs {_wwide}"
             GUI_ORGAN._RG["on_radio"](None, "0− NEURAL")
             assert dpg.get_value("rg_tname") == "NEURAL", \
                 f"Run-GUI radio→NEURAL: {dpg.get_value('rg_tname')}"
