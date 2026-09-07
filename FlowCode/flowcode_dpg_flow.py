@@ -2066,9 +2066,13 @@ def build_flow_tab(style):
         dpg.add_file_extension(".flow", color=(74, 158, 255))
         dpg.add_file_extension(".*")
 
+    # STORM-15 (captain 07-09: "contents don't fit inside the window"):
+    # the canvas row must RESERVE room for the Output pane below it, or the
+    # child-windows fill the whole viewport and push Output off-screen.
+    _ROW_H = -300
     with dpg.group(horizontal=True):
         with dpg.child_window(width=int(C.get("CFG", {})
-                              .get("flow_panel_w", 320)),
+                              .get("flow_panel_w", 320)), height=_ROW_H,
                               tag="flowc_panel"):
             with dpg.collapsing_header(label="TOOLS", default_open=True):
                 _icon_btn(_tool_icon("select"), " Select ", "move · edit",
@@ -2115,14 +2119,14 @@ def build_flow_tab(style):
                 _abtn(" ↪ Redo ", redo)
             dpg.add_spacer(height=8)
 
-        with dpg.child_window(width=10, height=-1, no_scrollbar=True,
+        with dpg.child_window(width=10, height=_ROW_H, no_scrollbar=True,
                               border=False):
             dpg.add_button(tag="flowc_grip", label="", width=-1,
                            height=2600)
         pw = int(C.get("CFG", {}).get("flow_props_w", 260))
         FS["props_w"] = pw
         with dpg.child_window(tag="flowc_wrap", width=-(pw + 22),
-                              horizontal_scrollbar=True):
+                              height=_ROW_H, horizontal_scrollbar=True):
             with dpg.group(horizontal=True, tag="flowc_crumbs"):
                 pass
             with dpg.drawlist(width=CANVAS_W, height=CANVAS_H,
@@ -2130,13 +2134,13 @@ def build_flow_tab(style):
                 pass
         # STORM-9 (captain 07-09, reported 4×): the PROPERTIES panel gets
         # its OWN drag grip — drag left/right to resize it, remembered.
-        with dpg.child_window(width=10, height=-1, no_scrollbar=True,
+        with dpg.child_window(width=10, height=_ROW_H, no_scrollbar=True,
                               border=False):
             dpg.add_button(tag="flowp_grip", label="⋮", width=-1,
                            height=2600)
         # PROPERTIES ride the RIGHT (captain's ruling 20-08): the canvas
         # in the middle, tools left, the selected thing's story right.
-        with dpg.child_window(tag="flowp_panel", width=pw):
+        with dpg.child_window(tag="flowp_panel", width=pw, height=_ROW_H):
             with dpg.collapsing_header(label="PROPERTIES",
                                        default_open=True):
                 with dpg.group(tag="flowp_rows"):
