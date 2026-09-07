@@ -1097,3 +1097,15 @@ affected.
   Babble-Fish; the vector manifold + distributed-inference RAM-pooling
   over LAN (host BIG models on P2PCP); train the new Professor to speak
   TernOO/FlowCode and to teach GHOST; GHOST running/learning in P2PVP.
+
+## 2026-09-07 — STORM-17: Output-reserve is a remembered View-menu setting
+- CAPTAIN: make the Output-pane reserve adjustable + sticky per client.
+  DONE: flow_output_h config value drives the canvas-row reserve; View ▸
+  "Output pane taller / shorter" nudges it ±40px LIVE (reconfigures the
+  five row child-windows) and persists via save_cfg. Range 120–700.
+- POST-ASPLOS VISION LOGGED (captain's digression, not built): a
+  consolidated settings panel where config is CONTENT-ADDRESSED via
+  GristMill — GUI → TernOO words → MMID, no .ini/.conf text files, the
+  only disk entity being the known-MMID machine-state on load/boot. A
+  showcase for GristMill's content-addressing married to the trit-level
+  widget/object inheritance scheme. Added under the landmark list.

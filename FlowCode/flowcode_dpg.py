@@ -932,6 +932,13 @@ def build_ui():
                 dpg.add_menu_item(label="Canvas zoom out  Ctrl -",
                                   callback=lambda: _canvas_zoom(-1))
                 dpg.add_separator()
+                dpg.add_menu_item(label="Output pane taller",
+                                  callback=lambda: FLOW_ORGAN and
+                                  FLOW_ORGAN.adjust_output_reserve(+40))
+                dpg.add_menu_item(label="Output pane shorter",
+                                  callback=lambda: FLOW_ORGAN and
+                                  FLOW_ORGAN.adjust_output_reserve(-40))
+                dpg.add_separator()
                 dpg.add_menu_item(label="UI text larger",
                                   callback=lambda: zoom(+0.1))
                 dpg.add_menu_item(label="UI text smaller",
