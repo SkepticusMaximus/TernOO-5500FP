@@ -1134,45 +1134,62 @@ _TS_COL = {1: (63, 208, 143), 0: (150, 160, 185), -1: (232, 150, 90)}
 _TS_GLY = {1: "+", 0: "0", -1: "−"}
 
 
-def _ts_xs():
-    """x offset for each of the 24 display cells (T23 leftmost), with field
-    gaps; returns (list_of_x, total_width)."""
+def _ts_xs(pitch):
+    """x offset for each of the 24 display cells (T23 leftmost) at a given
+    cell pitch, with field gaps; returns (list_of_x, cellw, total_width)."""
+    cellw = max(8, pitch - 4)
     xs, x = [], 0
     for disp in range(24):
         if disp in (2, 6):
             x += _TS_GAP
         xs.append(x)
-        x += _TS_CELL
-    return xs, x - (_TS_CELL - _TS_CELLW)
+        x += pitch
+    return xs, cellw, x - (pitch - cellw)
 
 
-_TS_XS, _TRITSTRIP_W = _ts_xs()
+_TS_XS, _TS_CW0, _TRITSTRIP_W = _ts_xs(_TS_CELL)
 
 
-def draw_trit_strip(dl, trits, ox=8, oy=20):
-    """Render a 24-trit word onto drawlist `dl`. trits = [t0..t23]."""
+def draw_trit_strip(dl, trits, ox=8, oy=22, avail_w=None):
+    """Render a 24-trit word onto drawlist `dl`. trits = [t0..t23].
+    SPRING-LOADED (captain 07-09): if avail_w is given, the cell pitch
+    scales so the strip STRETCHES to fill its container — the first
+    container-scoped, stretch-to-fill TernOO widget. Returns total width."""
     if not dpg.does_item_exist(dl):
-        return
+        return 0
+    if avail_w:
+        pitch = (avail_w - 2 * _TS_GAP - ox * 2) / 24.0
+        pitch = max(18.0, min(pitch, 60.0))
+    else:
+        pitch = _TS_CELL
+    xs, cellw, total = _ts_xs(pitch)
+    cellh = max(26, min(int(pitch * 1.3), 64))
+    gsz = max(13, min(int(pitch * 0.72), 40))    # glyph font
+    nsz = max(9, min(int(pitch * 0.42), 18))     # index-number font
     dpg.delete_item(dl, children_only=True)
+    if dpg.does_item_exist(dl):
+        dpg.configure_item(dl, width=int(total + ox * 2 + 8),
+                           height=int(oy + cellh + 34))
     for disp in range(24):
         ti = 23 - disp                          # T23 leftmost
         t = trits[ti]
-        x = ox + _TS_XS[disp]
+        x = ox + xs[disp]
         col = _TS_COL[t]
-        dpg.draw_text((x + 2, oy - 15), str(ti), size=11,
+        dpg.draw_text((x + 2, oy - nsz - 3), str(ti), size=nsz,
                       color=(140, 150, 170), parent=dl)
-        dpg.draw_rectangle((x, oy), (x + _TS_CELLW, oy + _TS_CELLH),
+        dpg.draw_rectangle((x, oy), (x + cellw, oy + cellh),
                            color=(70, 80, 100), fill=(col[0], col[1],
                            col[2], 60), rounding=3, parent=dl)
-        dpg.draw_text((x + 5, oy + 7), _TS_GLY[t], size=17, color=col,
-                      parent=dl)
-    ly = oy + _TS_CELLH + 8
+        dpg.draw_text((x + cellw * 0.28, oy + cellh * 0.22),
+                      _TS_GLY[t], size=gsz, color=col, parent=dl)
+    ly = oy + cellh + 8
     for lo, hi, name in _TS_FIELDS:
-        x_lo = ox + _TS_XS[lo]
-        x_hi = ox + _TS_XS[hi - 1] + _TS_CELLW
-        cx = (x_lo + x_hi) / 2 - len(name) * 3.2   # ~centre
+        x_lo = ox + xs[lo]
+        x_hi = ox + xs[hi - 1] + cellw
+        cx = (x_lo + x_hi) / 2 - len(name) * 3.4   # ~centre
         dpg.draw_text((cx, ly), name, size=13, color=(150, 160, 185),
                       parent=dl)
+    return total
 
 
 _NINE = [("−−", "EXEC", -1, -1), ("−0", "MAP", -1, 0), ("−+", "DATA", -1, 1),
@@ -1225,9 +1242,17 @@ def run_gui_window(*_):
         dpg.delete_item("rungui_win")
     state = {"word": _exemplar("DATA", -1, 1)}
 
+    def _strip_avail():
+        try:
+            w = dpg.get_item_rect_size("rungui_win")[0]
+            return max(300, int(w) - 40) if w else None
+        except Exception:                        # noqa: BLE001
+            return None
+
     def _refresh():
         trits = _decode_trits(state["word"])
-        draw_trit_strip("rg_strip_dl", trits)    # the custom widget
+        _RG["trits"] = trits
+        draw_trit_strip("rg_strip_dl", trits, avail_w=_strip_avail())
         _RG["glyphs"] = [_TS_GLY[trits[23 - i]] for i in range(24)]
         t23, t22 = trits[23], trits[22]
         row0 = t23 * 3 + t22 + 6 - 1
@@ -1262,7 +1287,7 @@ def run_gui_window(*_):
                 dpg.add_theme_style(dpg.mvStyleVar_ChildBorderSize, 1)
                 dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 4)
     with dpg.window(label="Word Format Explorer — RUNNING", tag="rungui_win",
-                    width=660, height=470, pos=(220, 130),
+                    width=720, height=500, pos=(200, 120),
                     no_scrollbar=False):
         dpg.bind_item_theme("rungui_win", "rungui_theme")
         dpg.add_text("TernOO 24-trit Word Format Explorer", color=C["GRN"])
@@ -1294,6 +1319,14 @@ def run_gui_window(*_):
                 dpg.add_separator()
                 for j in range(3):
                     dpg.add_text("", tag=f"rg_h{j}", color=C["DIM"])
+    # SPRING-LOADED: redraw the strip to fill whenever the window resizes.
+    if not dpg.does_item_exist("rungui_resize_h"):
+        with dpg.item_handler_registry(tag="rungui_resize_h"):
+            dpg.add_item_resize_handler(
+                callback=lambda: draw_trit_strip(
+                    "rg_strip_dl", _RG.get("trits") or _decode_trits(
+                        state["word"]), avail_w=_strip_avail()))
+    dpg.bind_item_handler_registry("rungui_win", "rungui_resize_h")
     _refresh()
 
 

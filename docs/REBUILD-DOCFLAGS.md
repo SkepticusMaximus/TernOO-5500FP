@@ -1126,3 +1126,13 @@ affected.
   SVG composite + a less obtrusive font; the numbered cells make the
   T-notation captions redundant; colour as canon not icing. A candidate
   for the trit-level-inheritance widget showcase.
+
+## 2026-09-07 — STORM-19: the trit-strip widget is SPRING-LOADED (stretch-to-fill)
+- CAPTAIN loved the widget; asked for bigger / "sprung loaded like other
+  stretch-to-fill, container-scoped widgets." DONE: draw_trit_strip now
+  takes avail_w and scales cell pitch, glyph/number fonts, and cell
+  height to FILL its container; an item_resize_handler on the Explorer
+  window redraws it live as the window resizes. The first container-
+  scoped, stretch-to-fill TernOO widget — a working micro-demo of the
+  trit-level contextual-defaults vision (#1). STORM-12 gate asserts it
+  scales (avail_w 500 vs 1000 → wider total). 34 gates green.
