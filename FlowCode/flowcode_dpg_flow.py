@@ -1049,6 +1049,24 @@ def toggle_snap(*_):
     _status(f"snap to grid: {'ON' if FS['snap_grid'] else 'off'}")
 
 
+def adjust_output_reserve(delta):
+    """STORM-17 (captain 07-09): grow/shrink the Output pane's reserved
+    band, live, and remember it per config. delta in pixels (+ = taller
+    Output / shorter canvas)."""
+    cfg = STYLE.get("CFG") or {}
+    cur = int(cfg.get("flow_output_h", 336))
+    new = max(120, min(cur + delta, 700))
+    cfg["flow_output_h"] = new
+    if STYLE.get("SAVE"):
+        STYLE["SAVE"]()
+    h = -new
+    for tag in ("flowc_panel", "flowc_gripwrap", "flowc_wrap",
+                "flowp_gripwrap", "flowp_panel"):
+        if dpg.does_item_exist(tag):
+            dpg.configure_item(tag, height=h)
+    _status(f"Output pane reserve: {new}px (View menu · remembered)")
+
+
 def _lasso_apply(rect):
     """Select every symbol intersecting the lasso rectangle. Shift held =
     ADD to the current selection (STORM-6); Ctrl+click then prunes."""
@@ -2066,10 +2084,10 @@ def build_flow_tab(style):
         dpg.add_file_extension(".flow", color=(74, 158, 255))
         dpg.add_file_extension(".*")
 
-    # STORM-15 (captain 07-09: "contents don't fit inside the window"):
-    # the canvas row must RESERVE room for the Output pane below it, or the
-    # child-windows fill the whole viewport and push Output off-screen.
-    _ROW_H = -336
+    # STORM-15/17: the canvas row RESERVES room for the Output pane below.
+    # The reserve is a remembered View-menu setting (flow_output_h) the
+    # captain can nudge himself; it sticks per config across restarts.
+    _ROW_H = -int(C.get("CFG", {}).get("flow_output_h", 336))
     with dpg.group(horizontal=True):
         with dpg.child_window(width=int(C.get("CFG", {})
                               .get("flow_panel_w", 320)), height=_ROW_H,
@@ -2120,7 +2138,7 @@ def build_flow_tab(style):
             dpg.add_spacer(height=8)
 
         with dpg.child_window(width=10, height=_ROW_H, no_scrollbar=True,
-                              border=False):
+                              border=False, tag="flowc_gripwrap"):
             dpg.add_button(tag="flowc_grip", label="", width=-1,
                            height=2600)
         pw = int(C.get("CFG", {}).get("flow_props_w", 260))
@@ -2135,7 +2153,7 @@ def build_flow_tab(style):
         # STORM-9 (captain 07-09, reported 4×): the PROPERTIES panel gets
         # its OWN drag grip — drag left/right to resize it, remembered.
         with dpg.child_window(width=10, height=_ROW_H, no_scrollbar=True,
-                              border=False):
+                              border=False, tag="flowp_gripwrap"):
             dpg.add_button(tag="flowp_grip", label="⋮", width=-1,
                            height=2600)
         # PROPERTIES ride the RIGHT (captain's ruling 20-08): the canvas
