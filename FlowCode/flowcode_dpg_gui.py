@@ -1165,7 +1165,7 @@ def draw_trit_strip(dl, trits, ox=8, oy=22, avail_w=None):
     xs, cellw, total = _ts_xs(pitch)
     cellh = max(26, min(int(pitch * 1.3), 64))
     gsz = max(13, min(int(pitch * 0.72), 40))    # glyph font
-    nsz = max(9, min(int(pitch * 0.42), 18))     # index-number font
+    nsz = max(12, min(int(pitch * 0.52), 21))    # index-number font (+2-3pt)
     dpg.delete_item(dl, children_only=True)
     if dpg.does_item_exist(dl):
         dpg.configure_item(dl, width=int(total + ox * 2 + 8),
@@ -1186,8 +1186,8 @@ def draw_trit_strip(dl, trits, ox=8, oy=22, avail_w=None):
     for lo, hi, name in _TS_FIELDS:
         x_lo = ox + xs[lo]
         x_hi = ox + xs[hi - 1] + cellw
-        cx = (x_lo + x_hi) / 2 - len(name) * 3.4   # ~centre
-        dpg.draw_text((cx, ly), name, size=13, color=(150, 160, 185),
+        cx = (x_lo + x_hi) / 2 - len(name) * 4.0   # ~centre
+        dpg.draw_text((cx, ly), name, size=16, color=(150, 160, 185),
                       parent=dl)
     return total
 
