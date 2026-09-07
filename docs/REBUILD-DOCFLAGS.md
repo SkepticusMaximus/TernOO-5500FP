@@ -1078,3 +1078,22 @@ affected.
   remembering the window state per WM_CLASS — the client size DPG
   requests is 2700×1400; the WM may override. The content-fit fix is
   what makes both panes visible regardless.)
+
+## 2026-09-07 — STORM-16: Explorer polish (out of the mud) + trit-strip alignment
+- CAPTAIN: Explorer window "sits like a mud crab camouflaged in the
+  mangroves" (same dark bg as the canvas); trit pattern misaligned with
+  its caption. FIXED: a distinct bordered window theme (lighter blue-grey
+  bg, blue border, active title bar) lifts it off the canvas; the trit
+  strip is rebuilt as three VERTICAL segment-groups (2 / 4 / 18) so each
+  caption sits directly under its own trits — alignment by construction.
+- POST-SUBMISSION FLOWCODE DESIGN HEADLINE (captain's landmark list,
+  noted): contextual-defaults-at-the-TRIT-level — a sane GUI inheritance
+  model where containers furnish child defaults (cascade down) and size
+  to content (pass up), grounded in the property-record canon + word-type
+  registry, down through config/content files. First big FlowCode design
+  bundle after ASPLOS; wants a CAI/CF5 design pass.
+- Other landmark candidates on the captain's list (for the record):
+  proper GristMill tab; Freenet client integration; Rust into
+  Babble-Fish; the vector manifold + distributed-inference RAM-pooling
+  over LAN (host BIG models on P2PCP); train the new Professor to speak
+  TernOO/FlowCode and to teach GHOST; GHOST running/learning in P2PVP.
