@@ -1002,3 +1002,20 @@ affected.
   captain's exact failing path, now green.
 - HONEST REMAINDER: the radios are not yet LIVE (clicking one doesn't
   re-decode) — that is the interactive GUI-runtime piece, next.
+
+## 2026-09-07 — STORM-11: the radios are LIVE (interactive GUI runtime, delivered)
+- CAPTAIN: "Don't just scope it FIX IT NOW." Done. A LIVE mode toggle
+  (▶ Live button, GUI toolbar): when on, clicking a control RUNS it.
+  Clicking a radio sets the word to the type it represents (read from
+  the flow's own set_<TYPE> symbol expression — no duplicated data)
+  and re-runs run_program, so the whole explorer repaints with that
+  type decoded. The interactive GUI runtime, built on the verified
+  synchronous Run — no separate engine to drift.
+- STORM-11 gate: LIVE-clicks EXEC then MAP on the real showcase,
+  asserts the decode + repaint changes tname EXEC→MAP. Green.
+- The Word Format Explorer is now a WORKING interactive tool: open the
+  .ternoo, hit Run (decodes the demo word), toggle ▶ Live, click any
+  of the nine type radios to decode that primary live.
+- Honest scope still open (carded, not blocking): the Tk face doesn't
+  carry LIVE mode; only radios are wired as live controls (buttons/
+  inputs would extend the same _live_activate dispatch).

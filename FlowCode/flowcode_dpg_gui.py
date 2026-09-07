@@ -105,6 +105,7 @@ GS = {
     "sel": None,
     "file": None,
     "pending": None,  # kind waiting to be placed
+    "live": False,    # LIVE mode: clicking a control runs it (07-09)
     "drag": None,     # {"mode": move|nw|ne|sw|se, "orig": (x,y,w,h)}
     "grip": None, "grip2": None, "zoom": 1.0, "dirty": False,
     "undo": [], "redo": [],
@@ -1112,6 +1113,51 @@ def _group_of(wid):
     return None
 
 
+def toggle_live(*_):
+    GS["live"] = not GS.get("live")
+    _status("LIVE mode ON — click a control to run it"
+            if GS["live"] else "design mode")
+    if dpg.does_item_exist("guic_live_btn"):
+        dpg.configure_item("guic_live_btn",
+                           label=(" ▶ LIVE (on) " if GS["live"]
+                                  else " ▶ Live "))
+
+
+def _live_activate(wid):
+    """LIVE mode (captain 07-09: 'make the radios live'): clicking a control
+    RUNS it. A radio sets the word to the type it represents (via the flow's
+    own set_<TYPE> symbol expression), then re-runs the program so every GUI
+    widget repaints with that type decoded. Reuses the verified run_program —
+    no separate runtime to drift."""
+    w = GS["widgets"].get(wid)
+    if not w:
+        return False
+    FLOW = STYLE.get("FLOW")
+    SHEET = STYLE.get("SHEET")
+    if FLOW is None or SHEET is None:
+        return False
+    label = str(w.get("label", ""))
+    tname = label.split()[-1] if label else ""       # "−− EXEC" → "EXEC"
+    setname = "set_" + tname.replace("/", "")
+    expr = None
+    for s in FLOW.FS["syms"].values():
+        if s.get("name") == setname:
+            for p in s.get("properties", []) or []:
+                if isinstance(p, dict) and p.get("name") == "expression":
+                    expr = p.get("value")
+    if expr is None:
+        _status(f"'{tname}' has no live binding")
+        return False
+    try:
+        SHEET.set_cell(0, 0, str(expr), name="A1")   # drive A1 = exemplar
+    except Exception:                                # noqa: BLE001
+        return False
+    FLOW.run_program()                               # decode + repaint
+    redraw()
+    _status(f"LIVE: {tname} — decoded and painted")
+    return True
+
+
 def _on_click(*_):
     if not dpg.is_item_hovered("guic_draw"):
         return
@@ -1121,6 +1167,10 @@ def _on_click(*_):
         GS["pending"] = None
         dpg.set_value("guic_tool", "tool: Select")
         return
+    if GS.get("live"):                               # LIVE mode: run controls
+        _w = _hit(mx, my)
+        if _w is not None and _live_activate(_w):
+            return
     mode = _handle_hit(mx, my)
     if mode:
         w = GS["widgets"][GS["sel"]]
@@ -1563,6 +1613,8 @@ def build_gui_tab(style):
             dpg.add_button(label=" Open ", width=-1,
                            callback=lambda: dpg.show_item("guic_open_dlg"))
             dpg.add_button(label=" Clear ", width=-1, callback=clear_all)
+            dpg.add_button(label=" ▶ Live ", width=-1, tag="guic_live_btn",
+                           callback=toggle_live)
             dpg.add_button(label=" Undo ", width=-1, callback=undo)
             dpg.add_button(label=" Redo ", width=-1, callback=redo)
         with dpg.child_window(width=10, height=-1, no_scrollbar=True,

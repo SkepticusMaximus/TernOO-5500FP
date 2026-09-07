@@ -974,6 +974,7 @@ def build_ui():
                                  "CFG": CFGD, "SAVE": save_cfg, "CLIP": CLIP,
                                  "ACTIVE": lambda: ACTIVE_TAB[0],
                                  "FLOW": FLOW_ORGAN,
+                                 "SHEET": SHEET_ORGAN,
                                  "BRIDGE": BRIDGE})
                         else:
                             dpg.add_text("GUI organ failed to load: "
@@ -1481,6 +1482,25 @@ def main():
             assert FLOW_ORGAN._WALKING[0] is False, "walk guard left wedged"
             print("STORM-10 OK — Run button: WATCH filled (row=4), GUI "
                   "painted (tname=DATA, trit strip live), guard clean")
+            # STORM-11: LIVE radios (captain 07-09 "make the radios live").
+            # Clicking a radio in LIVE mode sets the word to its type and
+            # re-runs — verify EXEC and MAP produce different, correct decodes.
+            GUI_ORGAN.GS["live"] = True
+            _rmap = {w.get("label", "").split()[-1]: wid
+                     for wid, w in GUI_ORGAN.GS["widgets"].items()
+                     if w.get("kind") == "gui_radio"}
+            assert "EXEC" in _rmap and "MAP" in _rmap, list(_rmap)
+            GUI_ORGAN._live_activate(_rmap["EXEC"])
+            _ex = {w.get("name"): w for w in
+                   GUI_ORGAN.GS["widgets"].values()}["tname"]["label"]
+            assert _ex == "EXEC", f"live EXEC radio → tname={_ex}"
+            GUI_ORGAN._live_activate(_rmap["MAP"])
+            _mp = {w.get("name"): w for w in
+                   GUI_ORGAN.GS["widgets"].values()}["tname"]["label"]
+            assert _mp == "MAP", f"live MAP radio → tname={_mp}"
+            GUI_ORGAN.GS["live"] = False
+            print("STORM-11 OK — LIVE radios: clicking EXEC then MAP "
+                  "re-decodes and repaints the explorer (tname EXEC→MAP)")
         print("SMOKE OK — FlowCode DPG builds clean")
         dpg.destroy_context()
         return
