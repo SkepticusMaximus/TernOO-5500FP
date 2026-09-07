@@ -1462,6 +1462,25 @@ def main():
             assert hasattr(_F, "close_file"), "close button missing"
             print("STORM-8 OK — mod-flag, ctrl-toggle, snap, headless-run "
                   "route, close, copy/paste, right-click, panel-resize wired")
+            # STORM-10: the REAL Run button, in the built app, end to end —
+            # load the showcase, press Run, assert the GUI widgets got
+            # painted and the WATCH panel filled (the captain's failing
+            # path). Synchronous, so no frame-pumping, no wedge.
+            _tn2 = os.path.join(_HERE, "Word-Format-Explorer.ternoo")
+            FLOW_ORGAN.load_from(_tn2)
+            SHEET_ORGAN.load_from(_tn2)
+            GUI_ORGAN.load_from(_tn2)
+            FLOW_ORGAN.run_program()
+            _wv = FLOW_ORGAN._WATCHVALS
+            assert _wv.get("row") == 4, f"Run didn't fill WATCH: {_wv.get('row')}"
+            assert str(_wv.get("strip")) == "−+ · ++00 · +0000+−−0000+00+−+"
+            _gw = {w.get("name"): w
+                   for w in GUI_ORGAN.GS["widgets"].values()}
+            assert _gw["tname"]["label"] == "DATA", "Run didn't paint GUI"
+            assert _gw["trit_strip"]["label"].startswith("−+"), "strip unpainted"
+            assert FLOW_ORGAN._WALKING[0] is False, "walk guard left wedged"
+            print("STORM-10 OK — Run button: WATCH filled (row=4), GUI "
+                  "painted (tname=DATA, trit strip live), guard clean")
         print("SMOKE OK — FlowCode DPG builds clean")
         dpg.destroy_context()
         return

@@ -463,13 +463,11 @@ def do_run_sdl(*_):
     _gui = STYLE.get("GUI")
     _has_widgets = bool(_gui is not None and getattr(_gui, "GS", {}).get(
         "widgets"))
-    if _has_widgets:
-        _out("▶ Running the program — decoding and painting the GUI "
-             "widgets live (see the GUI tab)…", (63, 208, 143))
-        do_walk()
-        _out("  the GUI tab now shows the decoded word; the Walk trace and "
-             "values are above. This is the explorer running.",
-             STYLE.get("DIM"))
+    _has_families = any(s.get("kind") in ("flow_decision", "flow_loop",
+                                          "flow_io") for s in FS["syms"].values())
+    if _has_widgets or _has_families:
+        # SYNCHRONOUS run — decode + paint, no wedge (captain 07-09)
+        run_program()
         return
     E = _exec_mods()
     if E.get("err"):
@@ -2834,11 +2832,56 @@ def _prewatch():
     _watch_refresh()
 
 
+def run_program(*_):
+    """▶▶ RUN — execute the whole program SYNCHRONOUSLY (captain 07-09:
+    "load on ONE tab and hit run … FIX IT"). No frame-chained animation
+    (that collided with the minimap/autosave frame callbacks and wedged
+    the walk-guard — the 'a walk is already playing' dead state). Runs the
+    design-graph to completion, fills the WATCH panel, and PAINTS every GUI
+    widget the program writes — the explorer decoding a word, done."""
+    _WALKING[0] = False                         # never inherit a wedge
+    WK = _wk()
+    if WK is None:
+        _out(f"✗ walker unavailable: {_WK[1]}", (255, 136, 136))
+        return
+    if not FS["syms"]:
+        _out("✗ nothing to run — open a program first (File ▸ Open)",
+             (255, 120, 90))
+        return
+    _out("▶ RUN — decoding…", (63, 208, 143))
+    _prewatch()
+    variables = _initial_vars()
+    for n, v in variables.items():
+        _WATCHVALS[n] = v
+    try:
+        rep = WK.walk(FS["syms"], FS["edges"], _walk_resolver(),
+                      variables=variables)
+    except Exception as e:                      # noqa: BLE001
+        _out(f"✗ run failed: {e}", (255, 136, 136))
+        return
+    g = STYLE.get("GUI")
+    painted = 0
+    for ev in rep["events"]:
+        if ev[0] == "line":
+            _out(ev[1], STYLE.get("DIM"))
+        elif ev[0] == "watch":
+            _WATCHVALS[ev[1]] = ev[2]
+            if g is not None and hasattr(g, "apply_widget_write"):
+                if g.apply_widget_write(ev[1], ev[2]):
+                    painted += 1
+    _watch_refresh()
+    _out(f"■ RUN complete — {rep['steps']} steps · {painted} GUI widget(s) "
+         "painted · values in the WATCH panel (right) and the GUI tab.",
+         (74, 158, 255))
+    _status(f"ran — {painted} widgets painted; see WATCH + GUI tab", ok=True)
+
+
 def do_walk(*_):
     WK = _wk()
     if WK is None:
         _out(f"✗ walker unavailable: {_WK[1]}", (255, 136, 136))
         return
+    _WALKING[0] = False                         # defensive: clear any wedge
     if _WALKING[0]:
         _status("a walk is already playing", ok=False)
         return

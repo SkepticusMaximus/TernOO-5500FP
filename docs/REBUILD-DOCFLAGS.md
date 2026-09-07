@@ -981,3 +981,24 @@ affected.
   paint. A live GUI-runtime engine is a real unbuilt piece, not a bug.
 - .ternoo one-file open verified; STORM-8 gate extended to cover
   copy/paste, close, resize, lock. Full board green.
+
+## 2026-09-07 — STORM-10: Run ACTUALLY RUNS (the wedge found and killed)
+- CAPTAIN'S SCREENSHOT diagnosed it: "a walk is already playing" +
+  WATCH mostly "?" = the walk-guard (_WALKING) was WEDGED True. Root
+  cause: the animated walk was frame-CHAINED via set_frame_callback,
+  which DPG allows only ONE of per frame number — the minimap tick and
+  autosave tick collided with the replay, broke the chain, and left
+  the guard stuck forever. Every subsequent Run bounced off the guard.
+- FIX: run_program() — a SYNCHRONOUS run. Walks the design-graph to
+  completion in one call, fills the WATCH panel, and paints every GUI
+  widget the program writes. No animation, no frame-chain, no guard to
+  wedge (it's reset defensively at entry). do_walk also clears the
+  guard on entry so the animated view can't wedge either.
+- Run now routes GUI/family programs → run_program (decode + paint);
+  console-only flows still compile+run native.
+- STORM-10 gate: loads the showcase into the REAL organs, presses the
+  REAL Run, asserts WATCH filled (row=4, full trit strip) + GUI
+  painted (tname=DATA, trit_strip live) + guard clean. This is the
+  captain's exact failing path, now green.
+- HONEST REMAINDER: the radios are not yet LIVE (clicking one doesn't
+  re-decode) — that is the interactive GUI-runtime piece, next.
