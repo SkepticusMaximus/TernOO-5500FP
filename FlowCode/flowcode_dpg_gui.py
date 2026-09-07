@@ -1150,7 +1150,7 @@ def _ts_xs(pitch):
 _TS_XS, _TS_CW0, _TRITSTRIP_W = _ts_xs(_TS_CELL)
 
 
-def draw_trit_strip(dl, trits, ox=8, oy=22, avail_w=None):
+def draw_trit_strip(dl, trits, ox=8, oy=30, avail_w=None):
     """Render a 24-trit word onto drawlist `dl`. trits = [t0..t23].
     SPRING-LOADED (captain 07-09): if avail_w is given, the cell pitch
     scales so the strip STRETCHES to fill its container — the first
@@ -1165,7 +1165,7 @@ def draw_trit_strip(dl, trits, ox=8, oy=22, avail_w=None):
     xs, cellw, total = _ts_xs(pitch)
     cellh = max(26, min(int(pitch * 1.3), 64))
     gsz = max(13, min(int(pitch * 0.72), 40))    # glyph font
-    nsz = max(12, min(int(pitch * 0.52), 21))    # index-number font (+2-3pt)
+    nsz = max(15, min(int(pitch * 0.62), 24))    # index-number font (+another 2-3pt)
     dpg.delete_item(dl, children_only=True)
     if dpg.does_item_exist(dl):
         dpg.configure_item(dl, width=int(total + ox * 2 + 8),
@@ -1186,8 +1186,8 @@ def draw_trit_strip(dl, trits, ox=8, oy=22, avail_w=None):
     for lo, hi, name in _TS_FIELDS:
         x_lo = ox + xs[lo]
         x_hi = ox + xs[hi - 1] + cellw
-        cx = (x_lo + x_hi) / 2 - len(name) * 4.0   # ~centre
-        dpg.draw_text((cx, ly), name, size=16, color=(150, 160, 185),
+        cx = (x_lo + x_hi) / 2 - len(name) * 4.6   # ~centre
+        dpg.draw_text((cx, ly), name, size=19, color=(150, 160, 185),
                       parent=dl)
     return total
 
@@ -1297,7 +1297,7 @@ def run_gui_window(*_):
         # TernOO/FlowCode widget): a drawlist so cells, their index numbers
         # above, and the field names below are pixel-aligned by construction.
         # Colour-encoded, one line, no padding hacks.
-        dpg.add_drawlist(width=_TRITSTRIP_W + 16, height=76,
+        dpg.add_drawlist(width=_TRITSTRIP_W + 16, height=92,
                          tag="rg_strip_dl")
         dpg.add_spacer(height=8)
         # child-windows FILL to the window bottom (height=-8) — the same
