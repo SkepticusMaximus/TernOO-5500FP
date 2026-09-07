@@ -257,6 +257,22 @@ def _menu_save(*_):
         dpg.set_value("statusbar", "no file actions on this tab")
 
 
+def _screen_size():
+    """Best-effort display size (Linux). Falls back to 1920×1080."""
+    try:
+        import subprocess
+        out = subprocess.run(["xdpyinfo"], capture_output=True, text=True,
+                             timeout=3).stdout
+        for line in out.splitlines():
+            if "dimensions:" in line:
+                dims = line.split("dimensions:")[1].strip().split()[0]
+                w, h = dims.split("x")
+                return int(w), int(h)
+    except Exception:                           # noqa: BLE001
+        pass
+    return 1920, 1080
+
+
 _HELP_DIR = os.path.join(os.path.dirname(_HERE), "docs", "help")
 
 
@@ -1527,14 +1543,23 @@ def main():
                         "..", "tools", "flowcode.ico")
     _ikw = ({"small_icon": _ico, "large_icon": _ico}
             if os.path.exists(_ico) else {})
-    # ASCII title ONLY: the em-dash reached WM_CLASS/WM_NAME as Latin-1
-    # mojibake ("â€”") and broke both the panel's icon match and its label.
+    # STORM-13 (captain 07-09): the saved geometry could exceed the visible
+    # work area — the window slid under the taskbar so canvas + output
+    # couldn't both be seen. Clamp to the real screen minus room for the
+    # panel and title bar, so the whole app is always on-screen.
+    _sw, _sh = _screen_size()
+    _MARGIN_BOTTOM = 96          # panel + a little air
+    _MARGIN_TOP = 40            # window title bar / top panel
+    _max_w = _sw - 20
+    _max_h = _sh - _MARGIN_TOP - _MARGIN_BOTTOM
+    _vw = min(int(CFGD.get("vp_w", 1460)), _max_w)
+    _vh = min(int(CFGD.get("vp_h", 980)), _max_h)
+    _vx = max(0, min(int(CFGD.get("vp_x", 100)), _sw - _vw))
+    _vy = max(_MARGIN_TOP, min(int(CFGD.get("vp_y", 40)),
+                               _sh - _vh - _MARGIN_BOTTOM))
     dpg.create_viewport(title="FlowCode - TernOO",
-                        width=int(CFGD.get("vp_w", 1460)),
-                        height=int(CFGD.get("vp_h", 980)),
-                        x_pos=int(CFGD.get("vp_x", 100)),
-                        y_pos=int(CFGD.get("vp_y", 40)),
-                        **_ikw)
+                        width=_vw, height=_vh, x_pos=_vx, y_pos=_vy,
+                        max_height=_max_h, **_ikw)
     dpg.setup_dearpygui()
     dpg.show_viewport()
     # STORM-5a: minimap re-clamps to its corner on maximise/resize
@@ -1705,9 +1730,14 @@ def main():
         print(f"SMOKE_FRAMES OK — rendered {frames} frames")
     else:
         dpg.start_dearpygui()
-        CFGD["vp_w"] = dpg.get_viewport_width()
-        CFGD["vp_h"] = dpg.get_viewport_height()
-        CFGD["vp_x"], CFGD["vp_y"] = dpg.get_viewport_pos()
+        # STORM-13: clamp before persisting so a maximised session never
+        # saves an off-screen geometry that hides the output pane next time.
+        _sw2, _sh2 = _screen_size()
+        CFGD["vp_w"] = min(dpg.get_viewport_width(), _sw2 - 20)
+        CFGD["vp_h"] = min(dpg.get_viewport_height(), _sh2 - 136)
+        _px, _py = dpg.get_viewport_pos()
+        CFGD["vp_x"] = max(0, min(int(_px), _sw2 - CFGD["vp_w"]))
+        CFGD["vp_y"] = max(40, min(int(_py), _sh2 - CFGD["vp_h"] - 96))
         save_cfg()
     dpg.destroy_context()
 

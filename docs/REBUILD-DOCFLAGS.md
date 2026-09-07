@@ -1038,3 +1038,14 @@ affected.
   radios decode (DATA→NEURAL→DATA). Green. 34 gates total.
 - This is a genuinely running, interactive, screenshotable GUI in the
   DPG face — the ASPLOS figure the captain needs.
+
+## 2026-09-07 — STORM-13: viewport fits the screen (window no longer hides under the panel)
+- CAPTAIN 07-09: the FlowCode window opened larger than the work area
+  — slid under the taskbar so canvas + output couldn't both be seen.
+  Saved geometry was 3072×1592 @ (0,56) on a 3072×1728 display.
+- FIX: _screen_size() (xdpyinfo, fallback 1920×1080); the viewport is
+  clamped on LAUNCH to screen minus panel/title margins (max_height
+  set too), and clamped again on SAVE so a maximised session never
+  persists an off-screen geometry. His stuck config clamped in place.
+- FlowCode DPG now always opens fully on-screen with the Output pane
+  visible beneath the canvas. 34 gates green.
