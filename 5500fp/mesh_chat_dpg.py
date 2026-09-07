@@ -1122,6 +1122,12 @@ def _global_rclick(*_):
 
 
 def open_path(p):
+    # STORM-14 (captain 07-09): under SMOKE the FlowCode gate's CLICK-PATH
+    # sweep fires EVERY callback — including "Open review log / config /
+    # macro dir" — which spawned xed/file-manager windows on the captain's
+    # screen every time CC ran the gate. No external launches during tests.
+    if os.environ.get("SMOKE") or os.environ.get("FLOW_DPG_TEST"):
+        return
     try:
         subprocess.Popen(["xdg-open", p], stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL)

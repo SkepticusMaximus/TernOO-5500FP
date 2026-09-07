@@ -1548,9 +1548,9 @@ def main():
     # couldn't both be seen. Clamp to the real screen minus room for the
     # panel and title bar, so the whole app is always on-screen.
     _sw, _sh = _screen_size()
-    _MARGIN_BOTTOM = 96          # panel + a little air
-    _MARGIN_TOP = 40            # window title bar / top panel
-    _max_w = _sw - 20
+    _MARGIN_BOTTOM = 150         # panel + title bar + clear air below Output
+    _MARGIN_TOP = 50            # top panel / decoration
+    _max_w = _sw - 40
     _max_h = _sh - _MARGIN_TOP - _MARGIN_BOTTOM
     _vw = min(int(CFGD.get("vp_w", 1460)), _max_w)
     _vh = min(int(CFGD.get("vp_h", 980)), _max_h)
@@ -1733,11 +1733,11 @@ def main():
         # STORM-13: clamp before persisting so a maximised session never
         # saves an off-screen geometry that hides the output pane next time.
         _sw2, _sh2 = _screen_size()
-        CFGD["vp_w"] = min(dpg.get_viewport_width(), _sw2 - 20)
-        CFGD["vp_h"] = min(dpg.get_viewport_height(), _sh2 - 136)
+        CFGD["vp_w"] = min(dpg.get_viewport_width(), _sw2 - 40)
+        CFGD["vp_h"] = min(dpg.get_viewport_height(), _sh2 - 200)
         _px, _py = dpg.get_viewport_pos()
         CFGD["vp_x"] = max(0, min(int(_px), _sw2 - CFGD["vp_w"]))
-        CFGD["vp_y"] = max(40, min(int(_py), _sh2 - CFGD["vp_h"] - 96))
+        CFGD["vp_y"] = max(50, min(int(_py), _sh2 - CFGD["vp_h"] - 150))
         save_cfg()
     dpg.destroy_context()
 

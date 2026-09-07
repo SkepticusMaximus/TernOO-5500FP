@@ -1049,3 +1049,17 @@ affected.
   persists an off-screen geometry. His stuck config clamped in place.
 - FlowCode DPG now always opens fully on-screen with the Output pane
   visible beneath the canvas. 34 gates green.
+
+## 2026-09-07 — STORM-14: the editor-haunting solved + viewport really fits
+- THE HAUNTING (captain: "every time YOU edit flowcode_dpg.py the editor
+  opens ternoo-mesh-chat-reviews.log"): NOT a Claude hook. The gate's
+  CLICK-PATH sweep fires EVERY callback, including the mesh tab's
+  "Open review log / open config / open macro dir" → open_path() →
+  xdg-open → xed/file-manager windows spawned on the captain's screen,
+  every time CC ran the gate after an edit. FIX: open_path() no-ops
+  under SMOKE/FLOW_DPG_TEST. No external launches during tests.
+- VIEWPORT (round 2): 1592px was still 92% of screen height. Margins
+  widened (bottom 150, top 50), and the captain's saved geometry reset
+  to a comfortable 2700×1400 @ (90,55) that clearly clears the panel —
+  canvas + Output both visible, no scrolling. Clamp-on-save tightened
+  to match. max_height confirmed a valid create_viewport kwarg.
