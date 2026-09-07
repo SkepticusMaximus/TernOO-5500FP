@@ -1119,6 +1119,62 @@ def _group_of(wid):
 # radios, the trit strip lighting up. Self-contained decode over the loaded
 # Sheet so it never depends on the fragile walk.
 _RG = {}
+
+# ── The TernOO trit-strip widget (captain's charter, 07-09) — a drawlist
+# widget rendering a 24-trit word: each cell numbered with its trit index
+# above, colour-encoded by value, with the field names (type / qualifier /
+# payload) centred below their spans. Pixel-aligned by construction. The
+# first custom TernOO/FlowCode widget; reusable via draw_trit_strip().
+_TS_CELL = 24          # cell pitch (px)
+_TS_CELLW = 20         # drawn cell width
+_TS_CELLH = 30
+_TS_GAP = 12           # gap between the 2 / 4 / 18 fields
+_TS_FIELDS = [(0, 2, "type"), (2, 6, "qualifier"), (6, 24, "payload")]
+_TS_COL = {1: (63, 208, 143), 0: (150, 160, 185), -1: (232, 150, 90)}
+_TS_GLY = {1: "+", 0: "0", -1: "−"}
+
+
+def _ts_xs():
+    """x offset for each of the 24 display cells (T23 leftmost), with field
+    gaps; returns (list_of_x, total_width)."""
+    xs, x = [], 0
+    for disp in range(24):
+        if disp in (2, 6):
+            x += _TS_GAP
+        xs.append(x)
+        x += _TS_CELL
+    return xs, x - (_TS_CELL - _TS_CELLW)
+
+
+_TS_XS, _TRITSTRIP_W = _ts_xs()
+
+
+def draw_trit_strip(dl, trits, ox=8, oy=20):
+    """Render a 24-trit word onto drawlist `dl`. trits = [t0..t23]."""
+    if not dpg.does_item_exist(dl):
+        return
+    dpg.delete_item(dl, children_only=True)
+    for disp in range(24):
+        ti = 23 - disp                          # T23 leftmost
+        t = trits[ti]
+        x = ox + _TS_XS[disp]
+        col = _TS_COL[t]
+        dpg.draw_text((x + 2, oy - 15), str(ti), size=11,
+                      color=(140, 150, 170), parent=dl)
+        dpg.draw_rectangle((x, oy), (x + _TS_CELLW, oy + _TS_CELLH),
+                           color=(70, 80, 100), fill=(col[0], col[1],
+                           col[2], 60), rounding=3, parent=dl)
+        dpg.draw_text((x + 5, oy + 7), _TS_GLY[t], size=17, color=col,
+                      parent=dl)
+    ly = oy + _TS_CELLH + 8
+    for lo, hi, name in _TS_FIELDS:
+        x_lo = ox + _TS_XS[lo]
+        x_hi = ox + _TS_XS[hi - 1] + _TS_CELLW
+        cx = (x_lo + x_hi) / 2 - len(name) * 3.2   # ~centre
+        dpg.draw_text((cx, ly), name, size=13, color=(150, 160, 185),
+                      parent=dl)
+
+
 _NINE = [("−−", "EXEC", -1, -1), ("−0", "MAP", -1, 0), ("−+", "DATA", -1, 1),
          ("0−", "NEURAL", 0, -1), ("00", "I/O", 0, 0), ("0+", "CRYPTO", 0, 1),
          ("+−", "OPCODE", 1, -1), ("+0", "OPEN_B", 1, 0), ("++", "POOL", 1, 1)]
@@ -1171,11 +1227,8 @@ def run_gui_window(*_):
 
     def _refresh():
         trits = _decode_trits(state["word"])
-        for i in range(24):
-            t = trits[23 - i]                    # T23 leftmost
-            if dpg.does_item_exist(f"rg_trit_{i}"):
-                dpg.set_value(f"rg_trit_{i}", f" {GLY[t]}")
-                dpg.configure_item(f"rg_trit_{i}", color=COL[t])
+        draw_trit_strip("rg_strip_dl", trits)    # the custom widget
+        _RG["glyphs"] = [_TS_GLY[trits[23 - i]] for i in range(24)]
         t23, t22 = trits[23], trits[22]
         row0 = t23 * 3 + t22 + 6 - 1
         dpg.set_value("rg_word", f"word: {state['word']}")
@@ -1209,29 +1262,19 @@ def run_gui_window(*_):
                 dpg.add_theme_style(dpg.mvStyleVar_ChildBorderSize, 1)
                 dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 4)
     with dpg.window(label="Word Format Explorer — RUNNING", tag="rungui_win",
-                    width=780, height=600, pos=(150, 100),
+                    width=660, height=470, pos=(220, 130),
                     no_scrollbar=False):
         dpg.bind_item_theme("rungui_win", "rungui_theme")
         dpg.add_text("TernOO 24-trit Word Format Explorer", color=C["GRN"])
         dpg.add_text("", tag="rg_word", color=C["TEXT"])
+        dpg.add_spacer(height=4)
+        # THE TRIT-STRIP WIDGET (captain's 07-09 charter — the first custom
+        # TernOO/FlowCode widget): a drawlist so cells, their index numbers
+        # above, and the field names below are pixel-aligned by construction.
+        # Colour-encoded, one line, no padding hacks.
+        dpg.add_drawlist(width=_TRITSTRIP_W + 16, height=76,
+                         tag="rg_strip_dl")
         dpg.add_spacer(height=8)
-        # the trit strip, grouped 2 / 4 / 18 — each segment is a VERTICAL
-        # group so its caption sits directly UNDER its own trits (alignment
-        # by construction, captain 07-09).
-        _SEG = [(0, 2, "T23·T22"), (2, 6, "T21…T18  (qualifier)"),
-                (6, 24, "T17…T0  (payload)")]
-        with dpg.group(horizontal=True):
-            for si, (lo, hi, cap) in enumerate(_SEG):
-                if si:
-                    with dpg.group():
-                        dpg.add_text(" | ", color=C["DIM"])
-                        dpg.add_text("")
-                with dpg.group():
-                    with dpg.group(horizontal=True):
-                        for i in range(lo, hi):
-                            dpg.add_text(" 0", tag=f"rg_trit_{i}")
-                    dpg.add_text(cap, color=C["DIM"])
-        dpg.add_spacer(height=12)
         # child-windows FILL to the window bottom (height=-8) — the same
         # reserve-and-fill fix as the Flow tab, so the help panel's lines
         # are never clipped whatever the window height (captain 07-09).
