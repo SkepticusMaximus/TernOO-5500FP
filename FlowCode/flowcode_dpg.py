@@ -1501,6 +1501,21 @@ def main():
             GUI_ORGAN.GS["live"] = False
             print("STORM-11 OK — LIVE radios: clicking EXEC then MAP "
                   "re-decodes and repaints the explorer (tname EXEC→MAP)")
+            # STORM-12: the REAL Run-GUI window — actual DPG widgets,
+            # screenshotable, live radios. Build it and drive a radio.
+            GUI_ORGAN.run_gui_window()
+            assert dpg.does_item_exist("rungui_win"), "Run-GUI window missing"
+            assert dpg.get_value("rg_tname") == "DATA", \
+                f"Run-GUI default decode: {dpg.get_value('rg_tname')}"
+            assert dpg.get_value("rg_trit_0") in ("+", "0", "−"), \
+                "trit strip not rendered"
+            GUI_ORGAN._RG["on_radio"](None, "0− NEURAL")
+            assert dpg.get_value("rg_tname") == "NEURAL", \
+                f"Run-GUI radio→NEURAL: {dpg.get_value('rg_tname')}"
+            GUI_ORGAN._RG["on_radio"](None, "−+ DATA")
+            print("STORM-12 OK — Run-GUI window renders real widgets: trit "
+                  "strip live, radios decode (DATA→NEURAL→DATA) — "
+                  "screenshotable running explorer")
         print("SMOKE OK — FlowCode DPG builds clean")
         dpg.destroy_context()
         return

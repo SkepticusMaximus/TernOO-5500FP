@@ -1019,3 +1019,22 @@ affected.
 - Honest scope still open (carded, not blocking): the Tk face doesn't
   carry LIVE mode; only radios are wired as live controls (buttons/
   inputs would extend the same _live_activate dispatch).
+
+## 2026-09-07 — STORM-12: a REAL running GUI window to screenshot (the deliverable)
+- CAPTAIN: "I don't have a running GUI program I can screenshot for the
+  ASPLOS submission. FIX IT." Root gap: the GUI tab is a DESIGNER — it
+  draws flat mockup rectangles on a drawlist, not a running app. No
+  screenshot of that reads as "software running."
+- BUILT: run_gui_window() — renders the Word Format Explorer as a REAL
+  DPG window with actual widgets: the 24-cell trit strip (coloured
+  +/0/− , grouped 2/4/18), a real 9-way radio group, and a live help
+  panel (type name, status, four qualifier rows, three description
+  lines). Clicking a radio decodes that primary live and updates every
+  field. Self-contained decode over the loaded Sheet; exemplar words
+  read from the flow's own set_<TYPE> expressions (stable, never the
+  mutable A1). ▶ Run GUI button in the GUI toolbar; Flow's Run opens
+  it too for a GUI program — load, Run, screenshot.
+- STORM-12 gate: builds the window, asserts the trit strip renders and
+  radios decode (DATA→NEURAL→DATA). Green. 34 gates total.
+- This is a genuinely running, interactive, screenshotable GUI in the
+  DPG face — the ASPLOS figure the captain needs.

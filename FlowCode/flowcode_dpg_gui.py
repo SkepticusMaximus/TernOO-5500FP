@@ -1113,6 +1113,120 @@ def _group_of(wid):
     return None
 
 
+# ── STORM-12: RUN GUI — render the design as a REAL, interactive, ──────────
+# screenshotable window (captain 07-09: "a running GUI program I can
+# screenshot"). Not the designer's flat mockup — actual DPG widgets, live
+# radios, the trit strip lighting up. Self-contained decode over the loaded
+# Sheet so it never depends on the fragile walk.
+_RG = {}
+_NINE = [("−−", "EXEC", -1, -1), ("−0", "MAP", -1, 0), ("−+", "DATA", -1, 1),
+         ("0−", "NEURAL", 0, -1), ("00", "I/O", 0, 0), ("0+", "CRYPTO", 0, 1),
+         ("+−", "OPCODE", 1, -1), ("+0", "OPEN_B", 1, 0), ("++", "POOL", 1, 1)]
+
+
+def _decode_trits(word):
+    x, trits = int(word), []
+    for _ in range(24):
+        t = x % 3
+        if t == 2:
+            t = -1
+        x = round((x - t) / 3)
+        trits.append(t)                          # t0..t23
+    return trits
+
+
+def _cellval(row0, col0):
+    SHEET = STYLE.get("SHEET")
+    if SHEET is None:
+        return ""
+    c = SHEET.SS["cells"].get((row0, col0))
+    return str(c.get("value", "")) if c else ""
+
+
+def _exemplar(name, t23, t22):
+    # Stable source: the flow's own set_<TYPE> symbol expression (DATA there
+    # is the rich demo UDP). Never the mutable A1 cell. Falls back to the
+    # skeleton word if the flow isn't loaded.
+    FLOW = STYLE.get("FLOW")
+    if FLOW is not None:
+        setname = "set_" + name.replace("/", "")
+        for s in FLOW.FS["syms"].values():
+            if s.get("name") == setname:
+                for p in s.get("properties", []) or []:
+                    if isinstance(p, dict) and p.get("name") == "expression":
+                        try:
+                            return int(float(str(p.get("value")).strip()))
+                        except Exception:        # noqa: BLE001
+                            pass
+    return t23 * 3**23 + t22 * 3**22
+
+
+def run_gui_window(*_):
+    C = STYLE
+    GLY = {1: "+", 0: "0", -1: "−"}
+    COL = {1: (63, 208, 143), 0: (120, 150, 200), -1: (230, 150, 90)}
+    if dpg.does_item_exist("rungui_win"):
+        dpg.delete_item("rungui_win")
+    state = {"word": _exemplar("DATA", -1, 1)}
+
+    def _refresh():
+        trits = _decode_trits(state["word"])
+        for i in range(24):
+            t = trits[23 - i]                    # T23 leftmost
+            if dpg.does_item_exist(f"rg_trit_{i}"):
+                dpg.set_value(f"rg_trit_{i}", GLY[t])
+                dpg.configure_item(f"rg_trit_{i}", color=COL[t])
+        t23, t22 = trits[23], trits[22]
+        row0 = t23 * 3 + t22 + 6 - 1
+        dpg.set_value("rg_word", f"word: {state['word']}")
+        dpg.set_value("rg_tname", _cellval(row0, 1) or "?")
+        dpg.set_value("rg_tstatus", _cellval(row0, 2) or "?")
+        for j in range(4):
+            dpg.set_value(f"rg_q{j}", _cellval(row0, 3 + j))
+        for j in range(3):
+            dpg.set_value(f"rg_h{j}", _cellval(row0, 7 + j))
+
+    def _on_radio(sender, val):
+        for _g, name, a, b in _NINE:
+            if val.endswith(name):
+                state["word"] = _exemplar(name, a, b)
+                break
+        _refresh()
+    _RG["on_radio"] = _on_radio                   # module-level handle
+
+    with dpg.window(label="Word Format Explorer — RUNNING", tag="rungui_win",
+                    width=760, height=520, pos=(120, 80)):
+        dpg.add_text("TernOO 24-trit Word Format Explorer", color=C["GRN"])
+        dpg.add_text("", tag="rg_word", color=C["TEXT"])
+        dpg.add_spacer(height=6)
+        # the trit strip, grouped 2 / 4 / 18
+        with dpg.group(horizontal=True):
+            for i in range(24):
+                if i in (2, 6):
+                    dpg.add_text(" | ", color=C["DIM"])
+                dpg.add_text("0", tag=f"rg_trit_{i}")
+        dpg.add_text("T23……T22  ·  T21…T18 (qualifier)  ·  T17…T0 (payload)",
+                     color=C["DIM"])
+        dpg.add_spacer(height=10)
+        with dpg.group(horizontal=True):
+            with dpg.child_window(width=250, height=340):
+                dpg.add_text("primary type (click to decode):",
+                             color=C["DIM"])
+                dpg.add_radio_button(
+                    [f"{g} {n}" for g, n, _a, _b in _NINE],
+                    default_value="−+ DATA", callback=_on_radio)
+            with dpg.child_window(width=-1, height=340):
+                dpg.add_text("?", tag="rg_tname", color=C["GRN"])
+                dpg.add_text("?", tag="rg_tstatus", color=C["TEXT"])
+                dpg.add_separator()
+                for j in range(4):
+                    dpg.add_text("", tag=f"rg_q{j}", color=C["TEXT"])
+                dpg.add_separator()
+                for j in range(3):
+                    dpg.add_text("", tag=f"rg_h{j}", color=C["DIM"])
+    _refresh()
+
+
 def toggle_live(*_):
     GS["live"] = not GS.get("live")
     _status("LIVE mode ON — click a control to run it"
@@ -1613,6 +1727,8 @@ def build_gui_tab(style):
             dpg.add_button(label=" Open ", width=-1,
                            callback=lambda: dpg.show_item("guic_open_dlg"))
             dpg.add_button(label=" Clear ", width=-1, callback=clear_all)
+            dpg.add_button(label=" ▶ Run GUI ", width=-1,
+                           callback=run_gui_window)
             dpg.add_button(label=" ▶ Live ", width=-1, tag="guic_live_btn",
                            callback=toggle_live)
             dpg.add_button(label=" Undo ", width=-1, callback=undo)

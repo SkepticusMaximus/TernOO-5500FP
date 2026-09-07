@@ -465,8 +465,17 @@ def do_run_sdl(*_):
         "widgets"))
     _has_families = any(s.get("kind") in ("flow_decision", "flow_loop",
                                           "flow_io") for s in FS["syms"].values())
-    if _has_widgets or _has_families:
-        # SYNCHRONOUS run — decode + paint, no wedge (captain 07-09)
+    if _has_widgets:
+        # A GUI program: RUN it as a real window (captain 07-09 — the
+        # screenshotable running explorer), and fill WATCH too.
+        run_program()
+        if hasattr(_gui, "run_gui_window"):
+            _gui.run_gui_window()
+            _out("▶ Word Format Explorer is RUNNING — the window is open; "
+                 "click the type radios to decode each primary.",
+                 (63, 208, 143))
+        return
+    if _has_families:
         run_program()
         return
     E = _exec_mods()
