@@ -1523,7 +1523,7 @@ def main():
             assert dpg.does_item_exist("rungui_win"), "Run-GUI window missing"
             assert dpg.get_value("rg_tname") == "DATA", \
                 f"Run-GUI default decode: {dpg.get_value('rg_tname')}"
-            assert dpg.get_value("rg_trit_0") in ("+", "0", "−"), \
+            assert dpg.get_value("rg_trit_0").strip() in ("+", "0", "−"), \
                 "trit strip not rendered"
             GUI_ORGAN._RG["on_radio"](None, "0− NEURAL")
             assert dpg.get_value("rg_tname") == "NEURAL", \

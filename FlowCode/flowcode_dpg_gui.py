@@ -1174,7 +1174,7 @@ def run_gui_window(*_):
         for i in range(24):
             t = trits[23 - i]                    # T23 leftmost
             if dpg.does_item_exist(f"rg_trit_{i}"):
-                dpg.set_value(f"rg_trit_{i}", GLY[t])
+                dpg.set_value(f"rg_trit_{i}", f" {GLY[t]}")
                 dpg.configure_item(f"rg_trit_{i}", color=COL[t])
         t23, t22 = trits[23], trits[22]
         row0 = t23 * 3 + t22 + 6 - 1
@@ -1194,21 +1194,44 @@ def run_gui_window(*_):
         _refresh()
     _RG["on_radio"] = _on_radio                   # module-level handle
 
+    # STORM-16: lift the window OUT OF THE MUD (captain 07-09) — a distinct,
+    # lighter, bordered window theme so the running explorer reads as its own
+    # app over the dark canvas, not camouflaged in it.
+    if not dpg.does_item_exist("rungui_theme"):
+        with dpg.theme(tag="rungui_theme"):
+            with dpg.theme_component(dpg.mvAll):
+                dpg.add_theme_color(dpg.mvThemeCol_WindowBg, (34, 40, 54))
+                dpg.add_theme_color(dpg.mvThemeCol_ChildBg, (26, 31, 43))
+                dpg.add_theme_color(dpg.mvThemeCol_Border, (90, 130, 190))
+                dpg.add_theme_color(dpg.mvThemeCol_TitleBgActive,
+                                    (46, 96, 150))
+                dpg.add_theme_style(dpg.mvStyleVar_WindowBorderSize, 2)
+                dpg.add_theme_style(dpg.mvStyleVar_ChildBorderSize, 1)
+                dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 4)
     with dpg.window(label="Word Format Explorer — RUNNING", tag="rungui_win",
-                    width=760, height=600, pos=(120, 80),
+                    width=780, height=600, pos=(150, 100),
                     no_scrollbar=False):
+        dpg.bind_item_theme("rungui_win", "rungui_theme")
         dpg.add_text("TernOO 24-trit Word Format Explorer", color=C["GRN"])
         dpg.add_text("", tag="rg_word", color=C["TEXT"])
-        dpg.add_spacer(height=6)
-        # the trit strip, grouped 2 / 4 / 18
+        dpg.add_spacer(height=8)
+        # the trit strip, grouped 2 / 4 / 18 — each segment is a VERTICAL
+        # group so its caption sits directly UNDER its own trits (alignment
+        # by construction, captain 07-09).
+        _SEG = [(0, 2, "T23·T22"), (2, 6, "T21…T18  (qualifier)"),
+                (6, 24, "T17…T0  (payload)")]
         with dpg.group(horizontal=True):
-            for i in range(24):
-                if i in (2, 6):
-                    dpg.add_text(" | ", color=C["DIM"])
-                dpg.add_text("0", tag=f"rg_trit_{i}")
-        dpg.add_text("T23……T22  ·  T21…T18 (qualifier)  ·  T17…T0 (payload)",
-                     color=C["DIM"])
-        dpg.add_spacer(height=10)
+            for si, (lo, hi, cap) in enumerate(_SEG):
+                if si:
+                    with dpg.group():
+                        dpg.add_text(" | ", color=C["DIM"])
+                        dpg.add_text("")
+                with dpg.group():
+                    with dpg.group(horizontal=True):
+                        for i in range(lo, hi):
+                            dpg.add_text(" 0", tag=f"rg_trit_{i}")
+                    dpg.add_text(cap, color=C["DIM"])
+        dpg.add_spacer(height=12)
         # child-windows FILL to the window bottom (height=-8) — the same
         # reserve-and-fill fix as the Flow tab, so the help panel's lines
         # are never clipped whatever the window height (captain 07-09).
