@@ -229,6 +229,81 @@ class EchoBackend:
         return f"(echo professor) I would say something about: {q}"
 
 
+class ServerBackend:
+    """The Professor as a RESIDENT model behind llama-server's local API.
+
+    Why this exists (airport session, 08-09-2026): HP ships llama-server but
+    no one-shot CLI, and a resident server is the better shape anyway — the
+    model stays in RAM, so there is no cold reload per question (Lenny's
+    subprocess path pays ~43s every time). Fully offline: the server listens
+    on the loopback address only.
+
+    §1.5 ONE-ORGAN LAW: this module keeps NO python networking surface
+    (pinned by the boundary tests, which scan this source literally). The
+    request therefore rides `curl` in a subprocess — exactly as the model
+    itself rides a subprocess. Nothing is imported here to talk to a wire.
+    """
+
+    def __init__(self, url: str, n_predict: int = 384, timeout: float = 600.0,
+                 fmt: str = 'qwen3', temp: float = 0.2):
+        self.url = str(url).rstrip('/')
+        self.n_predict = n_predict
+        self.timeout = timeout
+        self.fmt = fmt if fmt in FORMATS else 'qwen3'
+        self.temp = temp
+
+    def argv(self, prompt: str) -> list:
+        body = json.dumps({
+            'prompt': FORMATS[self.fmt]['wrap'](SYSTEM_PROMPT, prompt),
+            'n_predict': self.n_predict,
+            'temperature': self.temp,
+            'stream': False,
+            'cache_prompt': True,
+        })
+        return ['curl', '-sS', '--max-time', str(int(self.timeout)),
+                '-H', 'Content-Type: application/json',
+                '-X', 'POST', f'{self.url}/completion', '-d', body]
+
+    def generate(self, prompt: str) -> str:
+        try:
+            r = subprocess.run(self.argv(prompt), capture_output=True,
+                               text=True, timeout=self.timeout + 15)
+        except FileNotFoundError:
+            raise BackendError('curl not installed — needed to reach '
+                               'llama-server')
+        if r.returncode != 0:
+            raise BackendError(
+                f'could not reach llama-server at {self.url} '
+                f'(curl rc={r.returncode}): {(r.stderr or "").strip()[:160]}')
+        try:
+            data = json.loads(r.stdout)
+        except Exception:
+            raise BackendError(
+                f'llama-server gave no JSON: {(r.stdout or "")[:160]}')
+        text = clean_reply(str(data.get('content', '')))
+        if not text:
+            raise BackendError('the resident professor returned nothing '
+                               f'(server said: {str(data)[:160]})')
+        return text
+
+
+def server_alive(url: str, timeout: float = 4.0) -> bool:
+    """True if a llama-server answers at `url`. `curl -f` already fails on
+    any non-success status, so the exit code alone is the verdict."""
+    base = str(url).rstrip('/')
+    for path in ('/health', '/props'):
+        try:
+            r = subprocess.run(
+                ['curl', '-sS', '-f', '-o', '/dev/null',
+                 '--max-time', str(int(timeout)), base + path],
+                capture_output=True, text=True, timeout=timeout + 5)
+            if r.returncode == 0:
+                return True
+        except Exception:                       # noqa: BLE001
+            pass
+    return False
+
+
 class LlamaBackend:
     """Shells the proven llama.cpp invocation (from bonsai_interview_sed.py,
     already verified on this machine) — one subprocess per ask, pipes only."""
@@ -459,6 +534,52 @@ def _make_backend(argv) -> object:
                         min_free_mb=int(min_free) if min_free else None,
                         draft_model=_opt(argv, '--draft-model'),
                         draft_max=int(_opt(argv, '--draft-max') or 12))
+
+
+def backend_from_config(cfg: dict):
+    """ONE place that turns bonsai.json into a live backend, so every seat
+    (Mesh-Chat local, the Academy, the mesh worker) agrees. Returns
+    (backend, None) or (None, honest_reason) — callers decide whether an
+    empty seat falls back to the echo mock.
+
+    Order: a RESIDENT llama-server (server_url) wins when it answers — the
+    model stays in RAM, no cold reload — else the one-shot CLI subprocess.
+    """
+    cfg = cfg or {}
+    fmt = cfg.get('format', 'qwen3')
+    url = cfg.get('server_url')
+    if url:
+        if server_alive(url):
+            return ServerBackend(
+                url,
+                n_predict=int(cfg.get('n_predict', 384)),
+                timeout=float(cfg.get('ask_timeout', 600)),
+                fmt=fmt), None
+        reason = f'llama-server not answering at {url}'
+    else:
+        reason = None
+    llama, model = cfg.get('llama'), cfg.get('model')
+    if not (llama and model):
+        found = discover()
+        if found:
+            llama = llama or found['llama']
+            model = model or found['model']
+    if not (llama and model):
+        return None, (reason or 'no local model configured — pick a .gguf, '
+                                'or run a llama-server and set server_url')
+    if not os.path.exists(model):
+        return None, f'model file missing: {model}'
+    if not runnable(llama):
+        return None, (reason or f'llama binary not runnable: {llama}')
+    return LlamaBackend(
+        llama, model,
+        n_predict=int(cfg.get('n_predict', 384)),
+        threads=int(cfg.get('threads', 3)),
+        ctx=int(cfg.get('ctx', 2048)),
+        timeout=float(cfg.get('ask_timeout', 2400)),
+        min_free_mb=cfg.get('min_free_mb'),
+        draft_model=cfg.get('draft_model'),
+        fmt=fmt), None
 
 
 def ask_timeout(config_path: str = None) -> float:

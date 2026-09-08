@@ -1136,3 +1136,37 @@ affected.
   scoped, stretch-to-fill TernOO widget — a working micro-demo of the
   trit-level contextual-defaults vision (#1). STORM-12 gate asserts it
   scales (avail_w 500 vs 1000 → wider total). 34 gates green.
+
+## 2026-09-08 — AIRPORT SESSION: the resident-server seat (HP had no CLI binary)
+- CONTEXT: submission #1275 is IN. Captain at the airport with both
+  machines so CC could set up the offline environment. Two network
+  facts, measured: the public WiFi has CLIENT ISOLATION (a whole-subnet
+  sweep answers once, from infrastructure), and its firewall BLOCKS
+  Tailscale's control plane (times out at 20s while github answers in
+  0.42s). So CC could not reach HP by any route — config travels by
+  GIT instead (tools/setup_offline_hp.sh, run by the captain on HP).
+- HP'S GAP: it ships llama-server but NO one-shot CLI (no
+  llama-completion/llama-cli/main) — only llama-server, llama-quantize,
+  llama-bench. The subprocess seat could never work there.
+- BUILT — ServerBackend (bonsai_runner): the Professor as a RESIDENT
+  model behind llama-server's local API. Better shape than the
+  subprocess path anyway: weights stay in RAM, so no ~43s cold reload
+  per question. §1.5 ONE-ORGAN LAW respected — the module keeps no
+  python networking surface (the boundary test scans the source
+  literally, so even the word in a COMMENT trips it, and '%{http_code}'
+  in curl args would too); the request rides `curl` in a subprocess,
+  exactly as the model does. Proven live on Lenny against a real
+  llama-server: server_alive True, answers in ~10s, model resident.
+- BUILT — backend_from_config(): ONE assembly point turning bonsai.json
+  into a live backend (resident server first, then CLI), now used by
+  BOTH mesh_chat_dpg.local_backend and p2pcp_bonsai.professor_backend.
+  Kills the Tk/DPG-style drift before it starts.
+- tools/setup_offline_hp.sh: pulls, verifies models, hunts the binary
+  tree properly, detects a resident server on 8090/8080/8081/8099 and
+  wires server_url, else configures the CLI seat — PRESERVING any seat
+  already chosen (caught in test: it clobbered Lenny's OLMo on the
+  first run). `--resident` opts into a systemd --user service that
+  keeps the model loaded; NOT automatic, since that is a standing
+  multi-GB RAM commitment. Readiness verdict now asks the real
+  assembler, so it can't drift from the app.
+- Gates: 65 bonsai + 160 P2P + 34 FlowCode, all green.

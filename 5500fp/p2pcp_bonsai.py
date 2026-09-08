@@ -40,6 +40,16 @@ def professor_backend(config_path=None):
     still speaks the contract rather than crashing."""
     B = _load("bonsai_runner")
     cfg = B.load_config(config_path) or {}
+    # Resident-server seats (and every other shape) come from the one
+    # assembly point; the mesh worker still degrades to the echo mock so a
+    # node without a model speaks the contract instead of crashing.
+    _be, _why = B.backend_from_config(cfg)
+    if _be is not None:
+        return _be
+    if cfg.get("server_url") or cfg.get("model"):
+        sys.stderr.write(f"[p2pcp_bonsai] local seat empty ({_why}) — "
+                         "serving the echo professor\n")
+        return B.EchoBackend()
     llama, model = cfg.get("llama"), cfg.get("model")
     if not (llama and model):
         found = B.discover()

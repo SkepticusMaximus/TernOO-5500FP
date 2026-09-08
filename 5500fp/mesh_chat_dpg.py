@@ -138,27 +138,10 @@ def local_backend(fresh=False):
         return _LOCAL[0], (_LOCAL[1] or None)
     B = _bonsai_mod()
     cfg = B.load_config() or {}
-    llama, model = cfg.get("llama"), cfg.get("model")
-    if not (llama and model):
-        found = B.discover()
-        if found:
-            llama, model = llama or found["llama"], model or found["model"]
-    if not (llama and model):
-        _LOCAL[1] = "no local model configured — Model... picks a .gguf"
-    elif not os.path.exists(model):
-        _LOCAL[1] = f"model file missing: {model}"
-    elif not B.runnable(llama):
-        _LOCAL[1] = f"llama binary not runnable: {llama}"
-    else:
-        _LOCAL[0] = B.LlamaBackend(
-            llama, model,
-            n_predict=int(cfg.get("n_predict", 384)),
-            threads=int(cfg.get("threads", 3)),
-            ctx=int(cfg.get("ctx", 2048)),
-            timeout=float(cfg.get("ask_timeout", 2400)),
-            min_free_mb=cfg.get("min_free_mb"),
-            draft_model=cfg.get("draft_model"),
-            fmt=cfg.get("format", "qwen3"))
+    # ONE assembly point (bonsai_runner.backend_from_config): resident
+    # llama-server first, else the one-shot CLI. Keeps every seat in step.
+    be, why = B.backend_from_config(cfg)
+    _LOCAL[0], _LOCAL[1] = be, (why or "")
     return _LOCAL[0], (_LOCAL[1] or None)
 
 

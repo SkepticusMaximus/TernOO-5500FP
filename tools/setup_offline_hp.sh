@@ -56,9 +56,86 @@ else
         2>/dev/null | head -12 | sed 's/^/    /'
 fi
 
+say "3b. Resident llama-server (the preferred seat — model stays in RAM)"
+SRV_BIN=$(find "$HOME/LOCAL_AI" -maxdepth 5 -type f -perm -u+x \
+    -name 'llama-server' -printf '%T@ %p\n' 2>/dev/null |
+    sort -rn | head -1 | cut -d' ' -f2-)
+[ -n "$SRV_BIN" ] && ok "binary: $SRV_BIN" || bad "no llama-server binary"
+SRV_URL=""
+for port in 8090 8080 8081 8099; do
+    if curl -sS -f -o /dev/null --max-time 3 "http://127.0.0.1:$port/health" \
+        2>/dev/null; then
+        SRV_URL="http://127.0.0.1:$port"
+        ok "a server is already answering on port $port"
+        break
+    fi
+done
+WANT_RESIDENT=0
+[ "${1:-}" = "--resident" ] && WANT_RESIDENT=1
+if [ -z "$SRV_URL" ] && [ -n "$SRV_BIN" ] && [ -n "$best" ] \
+   && [ "$WANT_RESIDENT" = "1" ]; then
+    # Only on request: a resident model holds its weights in RAM for good
+    # (~2.5-4 GB). Great on a big machine, a real commitment on a small one,
+    # so the captain opts in rather than finding it done to him.
+    echo "  raising a resident server for $(basename "$best")"
+    mkdir -p "$HOME/.config/systemd/user"
+    cat > "$HOME/.config/systemd/user/ternoo-professor.service" <<UNIT
+[Unit]
+Description=TernOO Professor — resident local model (llama-server, loopback only)
+After=default.target
+
+[Service]
+Type=simple
+Environment=LD_LIBRARY_PATH=$(dirname "$SRV_BIN")
+ExecStart=$SRV_BIN -m $best --host 127.0.0.1 --port 8099 -c 4096 --threads $(( $(nproc) > 4 ? $(nproc) - 2 : 2 )) -n 512
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+UNIT
+    systemctl --user daemon-reload 2>/dev/null
+    systemctl --user enable --now ternoo-professor.service 2>/dev/null
+    for i in $(seq 1 30); do
+        sleep 2
+        if curl -sS -f -o /dev/null --max-time 3 \
+            http://127.0.0.1:8099/health 2>/dev/null; then
+            SRV_URL="http://127.0.0.1:8099"
+            ok "resident professor up on 8099 (auto-starts from now on)"
+            break
+        fi
+    done
+    [ -z "$SRV_URL" ] && bad "service installed but not answering yet — \
+check: systemctl --user status ternoo-professor"
+elif [ -z "$SRV_URL" ] && [ -n "$SRV_BIN" ]; then
+    echo "  none resident. Re-run as:  bash tools/setup_offline_hp.sh --resident"
+    echo "  to keep the model loaded in RAM (instant answers, no cold start)."
+fi
+
 say "4. Professor seat config (5500fp/bonsai.json)"
 CFG="$REPO/5500fp/bonsai.json"
-if [ -n "$LLAMA_BIN" ] && [ -n "$best" ]; then
+if [ -n "$SRV_URL" ] && [ -n "$best" ]; then
+    python3 - "$CFG" "$SRV_URL" "$best" <<'PY'
+import json, os, sys
+cfg_path, url, model = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    cfg = json.load(open(cfg_path))
+except Exception:
+    cfg = {}
+cfg["enabled"] = True
+cfg["server_url"] = url
+cur = cfg.get("model")
+if not (cur and os.path.exists(cur)):
+    cfg["model"] = model
+name = os.path.basename(cfg.get("model", model)).lower()
+cfg["format"] = "tulu" if ("olmo" in name or "tulu" in name) else "qwen3"
+cfg.setdefault("n_predict", 384)
+cfg.setdefault("ask_timeout", 600)
+json.dump(cfg, open(cfg_path, "w"), indent=2)
+print(f"  seat -> RESIDENT server {url}  format={cfg['format']}")
+PY
+    ok "bonsai.json points at the resident server"
+elif [ -n "$LLAMA_BIN" ] && [ -n "$best" ]; then
     python3 - "$CFG" "$LLAMA_BIN" "$best" <<'PY'
 import json, os, sys
 cfg_path, llama, model = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -111,15 +188,17 @@ cd "$REPO/FlowCode" && SMOKE=1 FLOW_DPG_TEST=1 "$VENV" flowcode_dpg.py 2>&1 \
     | grep -cE " OK" | xargs -I{} echo "  {} gates passed"
 
 say "7. Offline readiness"
-SEATED=$(python3 - "$CFG" <<'PY' 2>/dev/null
-import json, os, sys
-try:
-    c = json.load(open(sys.argv[1]))
-    m, l = c.get("model", ""), c.get("llama", "")
-    print(os.path.basename(m) if (m and l and os.path.exists(m)
-                                  and os.path.exists(l)) else "")
-except Exception:
+SEATED=$(cd "$REPO/5500fp" && python3 - <<'PY' 2>/dev/null
+# Ask the real assembler, so this verdict can never drift from the app.
+import importlib.util as u
+s = u.spec_from_file_location("B", "bonsai_runner.py")
+B = u.module_from_spec(s); s.loader.exec_module(B)
+be, why = B.backend_from_config(B.load_config() or {})
+if be is None:
     print("")
+else:
+    kind = type(be).__name__
+    print("resident server" if kind == "ServerBackend" else "local CLI")
 PY
 )
 if [ -n "$SEATED" ]; then
