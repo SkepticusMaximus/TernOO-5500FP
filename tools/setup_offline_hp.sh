@@ -32,13 +32,29 @@ for m in "Ternary-Bonsai-8B-TQ2_0.gguf" "OLMo-2-1124-7B-SFT.i1-Q4_K_M.gguf"; do
 done
 
 say "3. llama binary"
+# The one-shot CLI we need is llama-completion / llama-cli / main. Search
+# the usual homes AND anywhere under ~/LOCAL_AI, newest first — HP's tree
+# differs from Lenny's (its bonsai-server ships llama-server beside them).
 LLAMA_BIN=""
 for c in "$LLAMA_DIR/prism-official/build/bin/llama-completion" \
          "$HOME/LOCAL_AI/llama-bin/llama-completion" \
-         "$HOME/LOCAL_AI/llama-bin/llama-cli"; do
-    [ -x "$c" ] && { LLAMA_BIN="$c"; ok "$c"; break; }
+         "$HOME/LOCAL_AI/llama-bin/llama-cli" \
+         "$HOME/LOCAL_AI/llama-bin/main"; do
+    [ -x "$c" ] && { LLAMA_BIN="$c"; break; }
 done
-[ -z "$LLAMA_BIN" ] && bad "no llama binary found — local seat will stay empty"
+if [ -z "$LLAMA_BIN" ]; then
+    LLAMA_BIN=$(find "$HOME/LOCAL_AI" -maxdepth 5 -type f -perm -u+x \
+        \( -name 'llama-completion' -o -name 'llama-cli' -o -name 'main' \) \
+        -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+fi
+if [ -n "$LLAMA_BIN" ]; then
+    ok "$LLAMA_BIN"
+else
+    bad "no one-shot llama binary (llama-completion/llama-cli/main)"
+    echo "  what IS present under ~/LOCAL_AI:"
+    find "$HOME/LOCAL_AI" -maxdepth 5 -type f -perm -u+x -name 'llama-*' \
+        2>/dev/null | head -12 | sed 's/^/    /'
+fi
 
 say "4. Professor seat config (5500fp/bonsai.json)"
 CFG="$REPO/5500fp/bonsai.json"
@@ -95,6 +111,23 @@ cd "$REPO/FlowCode" && SMOKE=1 FLOW_DPG_TEST=1 "$VENV" flowcode_dpg.py 2>&1 \
     | grep -cE " OK" | xargs -I{} echo "  {} gates passed"
 
 say "7. Offline readiness"
-printf '  local model  : %s\n' "$([ -n "$best" ] && basename "$best" || echo NONE)"
-printf '  works w/o net: yes (model + engine are local)\n'
-printf '\nDone. Open FlowCode, Mesh-Chat tab, pick the "Local" seat.\n'
+SEATED=$(python3 - "$CFG" <<'PY' 2>/dev/null
+import json, os, sys
+try:
+    c = json.load(open(sys.argv[1]))
+    m, l = c.get("model", ""), c.get("llama", "")
+    print(os.path.basename(m) if (m and l and os.path.exists(m)
+                                  and os.path.exists(l)) else "")
+except Exception:
+    print("")
+PY
+)
+if [ -n "$SEATED" ]; then
+    printf '  local seat   : %s\n' "$SEATED"
+    printf '  works w/o net: YES — model + engine are both local\n'
+    printf '\nDone. Open FlowCode, Mesh-Chat tab, pick the "Local" seat.\n'
+else
+    printf '  local seat   : EMPTY\n'
+    printf '  works w/o net: NO — the mesh seat still needs another machine\n'
+    printf '\nSend CC the section-3 listing above and he will wire it.\n'
+fi
