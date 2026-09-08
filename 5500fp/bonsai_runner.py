@@ -287,6 +287,37 @@ class ServerBackend:
         return text
 
 
+def server_model(url: str, timeout: float = 4.0) -> str | None:
+    """Which model is the resident server ACTUALLY holding? Asks /props.
+
+    Matters because the seat's chat template must match the model in the
+    server, not the `model` path left in bonsai.json — HP's config named
+    OLMo while its server was serving Qwen3-30B, which would have posted
+    Tülu markup to a Qwen model (08-09-2026)."""
+    base = str(url).rstrip('/')
+    try:
+        r = subprocess.run(['curl', '-sS', '-f', '--max-time',
+                            str(int(timeout)), base + '/props'],
+                           capture_output=True, text=True,
+                           timeout=timeout + 5)
+        if r.returncode != 0:
+            return None
+        d = json.loads(r.stdout)
+    except Exception:                           # noqa: BLE001
+        return None
+    for key in ('model_path', 'model'):
+        v = d.get(key)
+        if isinstance(v, str) and v:
+            return v
+    gen = d.get('default_generation_settings')
+    if isinstance(gen, dict):
+        for key in ('model', 'model_path'):
+            v = gen.get(key)
+            if isinstance(v, str) and v:
+                return v
+    return None
+
+
 def server_alive(url: str, timeout: float = 4.0) -> bool:
     """True if a llama-server answers at `url`. `curl -f` already fails on
     any non-success status, so the exit code alone is the verdict."""
@@ -550,6 +581,10 @@ def backend_from_config(cfg: dict):
     url = cfg.get('server_url')
     if url:
         if server_alive(url):
+            # The TEMPLATE must match the model the SERVER holds, not the
+            # `model` path in the file — they can differ (08-09-2026).
+            live = server_model(url)
+            fmt = guess_format(live) or fmt if live else fmt
             return ServerBackend(
                 url,
                 n_predict=int(cfg.get('n_predict', 384)),
