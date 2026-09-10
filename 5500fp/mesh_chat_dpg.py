@@ -621,9 +621,20 @@ def _hard_wrap(text, width_px):
     return "\n".join(out), len(out)
 
 
+def _pane_px():
+    """The chat pane's REAL pixel width (no pre-scale division — that's
+    only for dpg's own wrap=; _hard_wrap wants actual pixels, and feeding
+    it the pre-divided value made blocks think they were 40% wider than
+    life: one long clipped line, the captain's 10-09 screenshot)."""
+    try:
+        return max(240, int(dpg.get_item_rect_size("chat")[0]) - 30)
+    except Exception:
+        return 880
+
+
 def append_block(who, text, who_color):
     dpg.add_text(who, parent="chat", color=who_color)
-    wrapped, nlines = _hard_wrap(text, _wrap_width())
+    wrapped, nlines = _hard_wrap(text, _pane_px())
     fld = dpg.add_input_text(default_value=wrapped, multiline=True,
                              readonly=True, parent="chat", width=-1,
                              height=int((nlines + 1) * 17 * max(0.5, SCALE) + 8))
