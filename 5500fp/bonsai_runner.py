@@ -286,6 +286,46 @@ class ServerBackend:
                                f'(server said: {str(data)[:160]})')
         return text
 
+    def chat_argv(self, messages: list) -> list:
+        body = json.dumps({
+            'messages': messages,
+            'max_tokens': self.n_predict,
+            'temperature': self.temp,
+            'stream': False,
+        })
+        return ['curl', '-sS', '--max-time', str(int(self.timeout)),
+                '-H', 'Content-Type: application/json',
+                '-X', 'POST', f'{self.url}/v1/chat/completions', '-d', body]
+
+    def chat(self, messages: list) -> str:
+        """Ask via the chat endpoint: llama-server applies the MODEL'S OWN
+        built-in template, so the wrap can never drift from what the server
+        actually holds — the tulu-markup-posted-to-Qwen class of bug cannot
+        exist on this path. ``messages`` = [{'role': 'system'|'user'|
+        'assistant', 'content': str}, ...] — real turns, not a screenplay
+        blob, so the model answers instead of continuing the transcript."""
+        try:
+            r = subprocess.run(self.chat_argv(messages), capture_output=True,
+                               text=True, timeout=self.timeout + 15)
+        except FileNotFoundError:
+            raise BackendError('curl not installed — needed to reach '
+                               'llama-server')
+        if r.returncode != 0:
+            raise BackendError(
+                f'could not reach llama-server at {self.url} '
+                f'(curl rc={r.returncode}): {(r.stderr or "").strip()[:160]}')
+        try:
+            data = json.loads(r.stdout)
+            text = data['choices'][0]['message']['content']
+        except Exception:
+            raise BackendError(
+                f'llama-server gave no chat JSON: {(r.stdout or "")[:200]}')
+        text = clean_reply(str(text or ''))
+        if not text:
+            raise BackendError('the resident professor returned nothing '
+                               f'(server said: {str(data)[:160]})')
+        return text
+
 
 def server_model(url: str, timeout: float = 4.0) -> str | None:
     """Which model is the resident server ACTUALLY holding? Asks /props.
