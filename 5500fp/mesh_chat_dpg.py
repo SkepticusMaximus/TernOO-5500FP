@@ -666,21 +666,44 @@ def _picked_path(app_data):
     return p
 
 
+def _read_attachment(path):
+    """A file as TEXT the Professor can actually read. PDFs go through
+    pdftotext (raw PDF bytes read as utf-8 are compression-stream salad —
+    the captain attached the ASPLOS submission and would have fed the
+    model 20k chars of font dictionaries, 10-09)."""
+    if path.lower().endswith(".pdf"):
+        if not shutil.which("pdftotext"):
+            raise RuntimeError("PDF needs pdftotext (poppler-utils) — "
+                               "not installed on this box")
+        r = subprocess.run(["pdftotext", "-layout", path, "-"],
+                           capture_output=True, timeout=60)
+        if r.returncode != 0:
+            raise RuntimeError("pdftotext could not read it")
+        return r.stdout.decode("utf-8", "replace")
+    return open(path, encoding="utf-8", errors="replace").read()
+
+
 def on_attach_pick(_s, app_data):
     global ATTACH
     path = _picked_path(app_data)
     if not path:
         return
     try:
-        body = open(path, encoding="utf-8", errors="replace").read()
+        body = _read_attachment(path)
     except Exception as e:                      # noqa: BLE001
         set_status(f"couldn't read file: {e}", RED)
         return
     clipped = len(body) > ATTACH_MAX
     ATTACH = {"name": os.path.basename(path), "text": body[:ATTACH_MAX]}
-    dpg.set_value("attachlbl",
-                  f"[{ATTACH['name']}]" + (" (clipped)" if clipped else ""))
-    set_status("attachment armed — rides with your next ask")
+    # ellipsize: an unbounded filename label reflows the control row and
+    # shoves the Ask button off a small screen (10-09 screenshot)
+    shown = ATTACH["name"]
+    if len(shown) > 18:
+        shown = shown[:15] + "..."
+    dpg.set_value("attachlbl", f"[{shown}]" + ("*" if clipped else ""))
+    set_status(f"attachment armed — {ATTACH['name']}"
+               + (" (clipped to fit)" if clipped else "")
+               + " — rides with your next ask")
 
 
 # ── macros: same specs, DPG dialogs ──────────────────────────────────────────
