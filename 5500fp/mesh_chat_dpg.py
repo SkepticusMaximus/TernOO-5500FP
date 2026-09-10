@@ -90,7 +90,7 @@ VP_Y = int(CFGD.get("vp_y", 30))
 def zoom(delta):
     """Live text zoom — remembered between sessions."""
     global SCALE
-    SCALE = max(0.8, min(1.9, round(SCALE + delta, 2)))
+    SCALE = max(0.5, min(1.9, round(SCALE + delta, 2)))
     dpg.set_global_font_scale(SCALE)
     CFGD["font_scale"] = SCALE
     _cfg_save(CFGD)
@@ -203,6 +203,76 @@ def on_model_pick(_s, app):
         dpg.set_value("seat_sel", seat_value())
     set_status(f"Professor re-seated: {seat_model_name()} — "
                "the next ask loads it", GRN)
+
+
+def sw(px):
+    """A row width that breathes with the text zoom: the shipped sculpt
+    (130%) keeps its pixels; zooming out genuinely frees row space — the
+    HP's small screen was hiding the Ask button behind fixed widths."""
+    return max(90, int(px * SCALE / 1.3))
+
+
+def toggle_workshop(*_):
+    """Collapse/restore the macro-workshop sidebar (small screens)."""
+    show = not dpg.is_item_shown("workshop")
+    dpg.configure_item("workshop", show=show)
+    dpg.configure_item("wsgrip_btn", label="<" if show else ">")
+    CFGD["panel_collapsed"] = not show
+    _cfg_save(CFGD)
+
+
+# ── the Model seat panel (10-09: config/search/filter as a real tab) ─────────
+MODEL_ROOTS = [os.path.expanduser("~/LOCAL_AI")]
+
+
+def scan_models():
+    """Every .gguf under the model roots: (path, GiB, quant, family)."""
+    rows = []
+    for root in MODEL_ROOTS:
+        for dirpath, _dirs, files in os.walk(root):
+            for f in files:
+                if not f.lower().endswith(".gguf"):
+                    continue
+                p = os.path.join(dirpath, f)
+                try:
+                    gib = os.path.getsize(p) / 2**30
+                except OSError:
+                    continue
+                m = re.search(r"((?:i1-)?(?:I?Q|TQ)\d[_A-Za-z0-9]*)", f)
+                fam = (_bonsai_mod().guess_format(f) or "?")
+                rows.append((p, gib, m.group(1) if m else "?", fam))
+    rows.sort(key=lambda r: -r[1])
+    return rows
+
+
+def refresh_model_rows(*_):
+    if not dpg.does_item_exist("modelrows"):
+        return
+    dpg.delete_item("modelrows", children_only=True)
+    filt = (dpg.get_value("modelfilt") or "").strip().lower()
+    B = _bonsai_mod()
+    cfg = B.load_config() or {}
+    seated = cfg.get("model") or ""
+    live = B.server_model(cfg.get("server_url")) if cfg.get("server_url") else None
+    hdr = f"seat file names: {os.path.basename(seated) or '(none)'}"
+    if live:
+        hdr += f"   ·   resident server holds: {os.path.basename(live)}"
+    dpg.add_text(hdr, parent="modelrows",
+                 color=GRN if (live and os.path.basename(seated) ==
+                               os.path.basename(live)) else ORN)
+    dpg.add_spacer(height=4, parent="modelrows")
+    for p, gib, quant, fam in scan_models():
+        name = os.path.basename(p)
+        if filt and filt not in name.lower():
+            continue
+        with dpg.group(horizontal=True, parent="modelrows"):
+            dpg.add_button(label="seat", small=True,
+                           callback=(lambda _s, _a, path=p:
+                                     on_model_pick(None,
+                                                   {"selections": {"f": path}})))
+            mark = "> " if name == os.path.basename(seated) else "  "
+            dpg.add_text(f"{mark}{name}", color=TEXT)
+            dpg.add_text(f"{gib:5.2f} GiB  {quant}  {fam}", color=DIM)
 
 
 def seat_live_name(be):
@@ -1165,7 +1235,7 @@ def open_path(p):
 
 def zoom_abs(v):
     global SCALE
-    SCALE = max(0.8, min(1.9, round(float(v), 2)))
+    SCALE = max(0.5, min(1.9, round(float(v), 2)))
     dpg.set_global_font_scale(SCALE)
     CFGD["font_scale"] = SCALE
     _cfg_save(CFGD)
@@ -1178,7 +1248,7 @@ def show_settings(*_):
     with dpg.window(label="Settings", modal=True, tag=tag, width=600,
                     height=430, pos=(320, 130)):
         dpg.add_text("text zoom", color=DIM)
-        dpg.add_slider_float(default_value=SCALE, min_value=0.8,
+        dpg.add_slider_float(default_value=SCALE, min_value=0.5,
                              max_value=1.9, width=-1,
                              callback=lambda _s, a: zoom_abs(a))
         dpg.add_text("auto-review after this many idle seconds", color=DIM)
@@ -1441,7 +1511,8 @@ def build():
 
         with dpg.group(horizontal=True):
             # ── left: the macro workshop ──────────────────────────────────
-            with dpg.child_window(width=PANEL_W, tag="workshop"):
+            with dpg.child_window(width=PANEL_W, tag="workshop",
+                                  show=not CFGD.get("panel_collapsed", False)):
                 dpg.add_text("macro workshop", color=DIM)
                 with dpg.tab_bar():
                     with dpg.tab(label=" Macros "):
@@ -1495,6 +1566,8 @@ def build():
             # press-and-hold state only buttons have in DPG
             with dpg.child_window(tag="hgrip", width=12, height=-1,
                                   border=False, no_scrollbar=True):
+                dpg.add_button(tag="wsgrip_btn", label="<", width=-1,
+                               small=True, callback=toggle_workshop)
                 dpg.add_button(tag="hgrip_btn", label="", width=-1,
                                height=2600)
             # ── right: the chat ───────────────────────────────────────────
@@ -1516,11 +1589,11 @@ def build():
                                    callback=lambda: zoom(-0.1))
                     dpg.add_button(label="A+", small=True,
                                    callback=lambda: zoom(+0.1))
-                    dpg.add_combo([], tag="chatsel", width=300,
+                    dpg.add_combo([], tag="chatsel", width=sw(300),
                                   callback=on_chat_pick)
                     dpg.add_button(label="...", small=True, callback=chat_menu)
                     dpg.add_button(label="New chat", callback=new_chat)
-                    dpg.add_combo(seat_items(), tag="seat_sel", width=260,
+                    dpg.add_combo(seat_items(), tag="seat_sel", width=sw(260),
                                   default_value=seat_value(),
                                   callback=on_seat_pick)
                     dpg.add_button(label="Model...", small=True,
@@ -1560,11 +1633,29 @@ def build():
                                     dpg.add_text("+ / 0 / -", color=ORN)
                         dpg.add_node_link("n1o", "n2i", parent="nodes")
                         dpg.add_node_link("n2o", "n3i", parent="nodes")
+                    with dpg.tab(label=" Model seat "):
+                        with dpg.group(horizontal=True):
+                            dpg.add_input_text(tag="modelfilt", hint="filter",
+                                               width=sw(260),
+                                               callback=refresh_model_rows)
+                            dpg.add_button(label="Rescan", small=True,
+                                           callback=refresh_model_rows)
+                            dpg.add_button(label="Browse...", small=True,
+                                           callback=lambda: dpg.show_item(
+                                               "modeldlg"))
+                        dpg.add_text("every .gguf under ~/LOCAL_AI — seat one "
+                                     "as the local Professor. A resident "
+                                     "server keeps ITS model until reseated "
+                                     "(tools/professor_resident.sh).",
+                                     color=DIM)
+                        with dpg.child_window(tag="modelrows", height=-32):
+                            pass
                 dpg.add_text("starting...", tag="status", color=DIM)
 
     dpg.bind_item_theme("chat", "chatpane")
     refresh_macro_buttons()
     refresh_chats()
+    refresh_model_rows()
 
     # right-click context menus — built from primitives (DPG 2.3's popup()
     # helper is broken: its __enter__ pops a container it never pushed)
