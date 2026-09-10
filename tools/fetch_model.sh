@@ -23,6 +23,19 @@ while :; do
         echo "[fetch] complete: $DEST ($have bytes)"
         break
     fi
+    # PORTAL GUARD (10-09 postmortem): a captive portal can answer a range
+    # request with its login page — 200 OK, HTML, silently appended, sha256
+    # ruined. Probe the resume point first; only append when the wire is
+    # serving real bytes.
+    if [ "$have" -gt 0 ]; then
+        p=$(curl -sfL -r "$have-$((have + 63))" --connect-timeout 15 \
+                 --max-time 45 "$URL" | head -c 64 || true)
+        if [ -z "$p" ] || printf '%s' "$p" | grep -qi '<html\|<!doct'; then
+            echo "[fetch] portal/no-data at resume point — waiting"
+            sleep 15
+            continue
+        fi
+    fi
     echo "[fetch] at $have of $WANT bytes — (re)starting"
     curl -L -C - --fail --retry 10 --retry-delay 5 --connect-timeout 20 \
          -o "$DEST" "$URL"
