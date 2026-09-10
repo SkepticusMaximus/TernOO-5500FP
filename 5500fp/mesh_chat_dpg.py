@@ -253,14 +253,37 @@ _MB = {"page": 0, "cache": [], "qtags": []}
 _MB_PAGE = 10
 
 
+def _model_params(name):
+    """Parameter count sniffed from the filename ('32B', '7B'...)."""
+    m = re.search(r"(\d+)[Bb](?![a-z])", name)
+    return f"{m.group(1)}B" if m else "?"
+
+
+def _model_tuning(name):
+    n = name.lower()
+    if "instruct" in n or n.endswith("-it.gguf") or "-it-" in n:
+        return "Instruct"
+    if "sft" in n:
+        return "SFT"
+    return "Base"
+
+
 def model_facets():
     """Facet values discovered from the DISK, never hardcoded — the browser
     filters what the ship actually carries."""
-    fams, quants = set(), set()
-    for _p, _g, quant, fam in scan_models():
+    fams, quants, params, tunings = set(), set(), set(), set()
+    top = 1.0
+    for p, gib, quant, fam in scan_models():
+        name = os.path.basename(p)
         fams.add(fam)
         quants.add(quant)
-    return sorted(fams), sorted(quants)
+        params.add(_model_params(name))
+        tunings.add(_model_tuning(name))
+        top = max(top, gib)
+    def _pkey(v):
+        return (0, int(v[:-1])) if v[:-1].isdigit() else (1, 0)
+    return (sorted(fams), sorted(quants),
+            sorted(params, key=_pkey), sorted(tunings), top)
 
 
 def model_apply(reset=True, *_):
@@ -272,14 +295,28 @@ def model_apply(reset=True, *_):
         _MB["page"] = 0
         name = (dpg.get_value("mb_name") or "").strip().lower()
         fam_want = dpg.get_value("mb_family") or "All"
+        par_want = dpg.get_value("mb_params") or "All"
         quants_on = {q for t, q in _MB["qtags"] if dpg.get_value(t)}
+        tunes_on = {q for t, q in _MB.get("ttags", []) if dpg.get_value(t)}
+        try:
+            smin = float(dpg.get_value("mb_smin") or 0)
+            smax = float(dpg.get_value("mb_smax") or 0) or 10**6
+        except (TypeError, ValueError):
+            smin, smax = 0, 10**6
         rows = []
         for p, gib, quant, fam in scan_models():
+            base = os.path.basename(p)
             if fam_want != "All" and fam != fam_want:
+                continue
+            if par_want != "All" and _model_params(base) != par_want:
                 continue
             if _MB["qtags"] and quant not in quants_on:
                 continue
-            if name and name not in os.path.basename(p).lower():
+            if _MB.get("ttags") and _model_tuning(base) not in tunes_on:
+                continue
+            if not (smin <= gib <= smax):
+                continue
+            if name and name not in base.lower():
                 continue
             rows.append((p, gib, quant, fam))
         rows.sort(key=lambda r: -r[1])
@@ -324,34 +361,66 @@ def model_apply(reset=True, *_):
 
 
 def show_filters(*_):
-    """The Search Filters dialog — the captain's mock made flesh: a
-    floating window, not a cramped corner panel. Facets discovered from
-    disk each time it opens."""
+    """The Search Filters dialog — the captain's mock made flesh: a MODAL
+    (background dims — unmistakably a dialog), themed to stand off the
+    window, facets discovered from disk each open, and the action row
+    PINNED at the bottom so 'I'm finished — apply' is always in reach."""
     tag = "mb_filters"
     if dpg.does_item_exist(tag):
         dpg.delete_item(tag)
-    fams, quants = model_facets()
+    fams, quants, params, tunings, top = model_facets()
     _MB["qtags"].clear()
-    with dpg.window(label="Search Filters", tag=tag, width=340, height=430,
-                    pos=(560, 90)):
-        dpg.add_text("Model family:")
-        dpg.add_combo(["All"] + fams, tag="mb_family", default_value="All",
-                      width=-1)
-        dpg.add_spacer(height=8)
-        dpg.add_text("Quantization precision:")
-        for q in quants:
-            t = f"mb_q_{q}"
-            dpg.add_checkbox(label=q, tag=t, default_value=True)
-            _MB["qtags"].append((t, q))
-        dpg.add_spacer(height=8)
-        dpg.add_text("Name contains:")
-        dpg.add_input_text(tag="mb_name", width=-1)
-        dpg.add_spacer(height=12)
+    _MB["ttags"] = []
+
+    def _apply_close():
+        model_apply(True)
+        dpg.delete_item(tag)
+
+    with dpg.window(label="Search Filters", tag=tag, modal=True,
+                    width=380, height=520, pos=(480, 60)):
+        with dpg.child_window(height=-52, border=False):
+            dpg.add_text("Model family:")
+            dpg.add_combo(["All"] + fams, tag="mb_family",
+                          default_value="All", width=-1)
+            dpg.add_spacer(height=8)
+            dpg.add_text("Parameter count:")
+            dpg.add_combo(["All"] + params, tag="mb_params",
+                          default_value="All", width=-1)
+            dpg.add_spacer(height=8)
+            dpg.add_text("Tuning:")
+            for q in tunings:
+                t = f"mb_t_{q}"
+                dpg.add_checkbox(label=q, tag=t, default_value=True)
+                _MB["ttags"].append((t, q))
+            dpg.add_spacer(height=8)
+            dpg.add_text("Quantization precision:")
+            for q in quants:
+                t = f"mb_q_{q}"
+                dpg.add_checkbox(label=q, tag=t, default_value=True)
+                _MB["qtags"].append((t, q))
+            dpg.add_spacer(height=8)
+            dpg.add_text("Size range (GiB):")
+            with dpg.group(horizontal=True):
+                dpg.add_input_float(tag="mb_smin", default_value=0.0,
+                                    width=sw(120), step=1.0, format="%.1f")
+                dpg.add_text("to", color=DIM)
+                dpg.add_input_float(tag="mb_smax",
+                                    default_value=float(int(top) + 1),
+                                    width=sw(120), step=1.0, format="%.1f")
+            dpg.add_spacer(height=8)
+            dpg.add_text("Name contains:")
+            dpg.add_input_text(tag="mb_name", width=-1)
         dpg.add_separator()
-        ap = dpg.add_button(label="Apply Filter Criteria", width=-1,
-                            height=34,
-                            callback=lambda: model_apply(True))
-        dpg.bind_item_theme(ap, "greenbtn")
+        with dpg.group(horizontal=True):
+            ap = dpg.add_button(label="  Apply  ", height=32,
+                                callback=lambda: model_apply(True))
+            dpg.bind_item_theme(ap, "greenbtn")
+            ac = dpg.add_button(label="  Apply & close  ", height=32,
+                                callback=_apply_close)
+            dpg.bind_item_theme(ac, "greenbtn")
+            dpg.add_button(label="Cancel", height=32,
+                           callback=lambda: dpg.delete_item(tag))
+    dpg.bind_item_theme(tag, "dialogwin")
 
 
 def model_more(*_):
@@ -608,6 +677,7 @@ def raw_transcript(*_):
         for role, t in HISTORY) or "(empty chat)"
     with dpg.window(label="Raw transcript — select and copy", tag=tag,
                     width=820, height=520, pos=(120, 90)):
+        dpg.bind_item_theme(tag, "dialogwin")
         dpg.add_input_text(default_value=text, multiline=True, readonly=True,
                            width=-1, height=-40)
         dpg.add_button(label="Copy all", small=True,
@@ -623,6 +693,7 @@ def chat_menu(*_):
     title = rec.get("title", "") if rec else ""
     with dpg.window(label="This chat", modal=True, tag=tag, width=560,
                     height=250, pos=(300, 200)):
+        dpg.bind_item_theme(tag, "dialogwin")
         dpg.add_button(label="Raw transcript (selectable text)",
                        callback=raw_transcript)
         dpg.add_spacer(height=4)
@@ -1425,6 +1496,7 @@ def show_settings(*_):
         dpg.delete_item(tag)
     with dpg.window(label="Settings", modal=True, tag=tag, width=600,
                     height=430, pos=(320, 130)):
+        dpg.bind_item_theme(tag, "dialogwin")
         dpg.add_text("text zoom", color=DIM)
         dpg.add_slider_float(default_value=SCALE, min_value=0.5,
                              max_value=1.9, width=-1,
@@ -1639,6 +1711,17 @@ def build():
     with dpg.theme(tag="chatpane"):
         with dpg.theme_component(dpg.mvChildWindow):
             dpg.add_theme_color(dpg.mvThemeCol_ChildBg, CHAT_BG)
+    with dpg.theme(tag="dialogwin"):
+        # dialogs must LOOK like dialogs: lifted surface, bright edge,
+        # accent title — separation the captain asked for (10-09)
+        with dpg.theme_component(dpg.mvWindowAppItem):
+            dpg.add_theme_color(dpg.mvThemeCol_WindowBg, (34, 40, 56))
+            dpg.add_theme_color(dpg.mvThemeCol_Border, GRN)
+            dpg.add_theme_color(dpg.mvThemeCol_TitleBg, (24, 66, 48))
+            dpg.add_theme_color(dpg.mvThemeCol_TitleBgActive, (30, 96, 66))
+            dpg.add_theme_style(dpg.mvStyleVar_WindowBorderSize, 2)
+            dpg.add_theme_style(dpg.mvStyleVar_WindowRounding, 8)
+            dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 12, 10)
     with dpg.theme(tag="chatblock"):
         # a read-only input field dressed as plain chat text: no frame, no
         # background shift — but carrying ImGui's native text selection
