@@ -268,10 +268,28 @@ def _model_tuning(name):
     return "Base"
 
 
+def _model_modality(name):
+    """Modality / domain sniffed from the filename — the power-user facet:
+    a farm sells niche crops (vision, speech, code...) and a buyer hunting
+    economy targets exactly the speciality they need (captain, 10-09)."""
+    n = name.lower()
+    if "llava" in n or "vision" in n or re.search(r"[-_]vl[-_]", n):
+        return "Vision"
+    if "whisper" in n or "speech" in n or "audio" in n:
+        return "Speech"
+    if "coder" in n or re.search(r"[-_]code[-_]?", n):
+        return "Code"
+    if "math" in n:
+        return "Math"
+    if "embed" in n or "bge" in n or "minilm" in n:
+        return "Embedding"
+    return "Text"
+
+
 def model_facets():
     """Facet values discovered from the DISK, never hardcoded — the browser
     filters what the ship actually carries."""
-    fams, quants, params, tunings = set(), set(), set(), set()
+    fams, quants, params, tunings, mods = set(), set(), set(), set(), set()
     top = 1.0
     for p, gib, quant, fam in scan_models():
         name = os.path.basename(p)
@@ -279,11 +297,12 @@ def model_facets():
         quants.add(quant)
         params.add(_model_params(name))
         tunings.add(_model_tuning(name))
+        mods.add(_model_modality(name))
         top = max(top, gib)
     def _pkey(v):
         return (0, int(v[:-1])) if v[:-1].isdigit() else (1, 0)
     return (sorted(fams), sorted(quants),
-            sorted(params, key=_pkey), sorted(tunings), top)
+            sorted(params, key=_pkey), sorted(tunings), sorted(mods), top)
 
 
 def model_apply(reset=True, *_):
@@ -304,11 +323,14 @@ def model_apply(reset=True, *_):
         except (TypeError, ValueError):
             smin, smax = 0, 10**6
         rows = []
+        mod_want = dpg.get_value("mb_modality") or "All"
         for p, gib, quant, fam in scan_models():
             base = os.path.basename(p)
             if fam_want != "All" and fam != fam_want:
                 continue
             if par_want != "All" and _model_params(base) != par_want:
+                continue
+            if mod_want != "All" and _model_modality(base) != mod_want:
                 continue
             if _MB["qtags"] and quant not in quants_on:
                 continue
@@ -368,7 +390,7 @@ def show_filters(*_):
     tag = "mb_filters"
     if dpg.does_item_exist(tag):
         dpg.delete_item(tag)
-    fams, quants, params, tunings, top = model_facets()
+    fams, quants, params, tunings, mods, top = model_facets()
     _MB["qtags"].clear()
     _MB["ttags"] = []
 
@@ -377,39 +399,53 @@ def show_filters(*_):
         dpg.delete_item(tag)
 
     with dpg.window(label="Search Filters", tag=tag, modal=True,
-                    width=380, height=520, pos=(480, 60)):
-        with dpg.child_window(height=-52, border=False):
-            dpg.add_text("Model family:")
-            dpg.add_combo(["All"] + fams, tag="mb_family",
-                          default_value="All", width=-1)
-            dpg.add_spacer(height=8)
-            dpg.add_text("Parameter count:")
-            dpg.add_combo(["All"] + params, tag="mb_params",
-                          default_value="All", width=-1)
-            dpg.add_spacer(height=8)
-            dpg.add_text("Tuning:")
-            for q in tunings:
-                t = f"mb_t_{q}"
-                dpg.add_checkbox(label=q, tag=t, default_value=True)
-                _MB["ttags"].append((t, q))
-            dpg.add_spacer(height=8)
-            dpg.add_text("Quantization precision:")
-            for q in quants:
-                t = f"mb_q_{q}"
-                dpg.add_checkbox(label=q, tag=t, default_value=True)
-                _MB["qtags"].append((t, q))
-            dpg.add_spacer(height=8)
-            dpg.add_text("Size range (GiB):")
-            with dpg.group(horizontal=True):
-                dpg.add_input_float(tag="mb_smin", default_value=0.0,
-                                    width=sw(120), step=1.0, format="%.1f")
-                dpg.add_text("to", color=DIM)
-                dpg.add_input_float(tag="mb_smax",
-                                    default_value=float(int(top) + 1),
-                                    width=sw(120), step=1.0, format="%.1f")
-            dpg.add_spacer(height=8)
-            dpg.add_text("Name contains:")
-            dpg.add_input_text(tag="mb_name", width=-1)
+                    width=720, height=460, pos=(280, 80)):
+        # SPREAD, not scrolled: two columns, everything visible at once
+        with dpg.table(header_row=False,
+                       policy=dpg.mvTable_SizingStretchSame, height=-52):
+            dpg.add_table_column()
+            dpg.add_table_column()
+            with dpg.table_row():
+                with dpg.group():
+                    dpg.add_text("Model family:")
+                    dpg.add_combo(["All"] + fams, tag="mb_family",
+                                  default_value="All", width=-1)
+                    dpg.add_spacer(height=10)
+                    dpg.add_text("Parameter count:")
+                    dpg.add_combo(["All"] + params, tag="mb_params",
+                                  default_value="All", width=-1)
+                    dpg.add_spacer(height=10)
+                    dpg.add_text("Modality / domain:")
+                    dpg.add_combo(["All"] + mods, tag="mb_modality",
+                                  default_value="All", width=-1)
+                    dpg.add_spacer(height=10)
+                    dpg.add_text("Tuning:")
+                    with dpg.group(horizontal=True):
+                        for q in tunings:
+                            t = f"mb_t_{q}"
+                            dpg.add_checkbox(label=q, tag=t,
+                                             default_value=True)
+                            _MB["ttags"].append((t, q))
+                with dpg.group():
+                    dpg.add_text("Quantization precision:")
+                    for q in quants:
+                        t = f"mb_q_{q}"
+                        dpg.add_checkbox(label=q, tag=t, default_value=True)
+                        _MB["qtags"].append((t, q))
+                    dpg.add_spacer(height=10)
+                    dpg.add_text("Size range (GiB):")
+                    with dpg.group(horizontal=True):
+                        dpg.add_input_float(tag="mb_smin", default_value=0.0,
+                                            width=sw(200), step=1.0,
+                                            format="%.1f")
+                        dpg.add_text("to", color=DIM)
+                        dpg.add_input_float(tag="mb_smax",
+                                            default_value=float(int(top) + 1),
+                                            width=sw(200), step=1.0,
+                                            format="%.1f")
+                    dpg.add_spacer(height=10)
+                    dpg.add_text("Name contains:")
+                    dpg.add_input_text(tag="mb_name", width=-1)
         dpg.add_separator()
         with dpg.group(horizontal=True):
             ap = dpg.add_button(label="  Apply  ", height=32,
@@ -1696,8 +1732,12 @@ def build():
             dpg.add_theme_color(dpg.mvThemeCol_Tab, BG)
             dpg.add_theme_color(dpg.mvThemeCol_TabHovered, FIELD)
             dpg.add_theme_color(dpg.mvThemeCol_TabActive, PANEL)
-            dpg.add_theme_color(dpg.mvThemeCol_ScrollbarBg, BG)
-            dpg.add_theme_color(dpg.mvThemeCol_ScrollbarGrab, FIELD)
+            # scrollbars must be SEEN to be believed (captain, 10-09):
+            # a visible track and a bright grab, not field-on-background
+            dpg.add_theme_color(dpg.mvThemeCol_ScrollbarBg, (28, 32, 44))
+            dpg.add_theme_color(dpg.mvThemeCol_ScrollbarGrab, (96, 108, 132))
+            dpg.add_theme_color(dpg.mvThemeCol_ScrollbarGrabHovered, GRN)
+            dpg.add_theme_color(dpg.mvThemeCol_ScrollbarGrabActive, GRN)
             dpg.add_theme_color(dpg.mvThemeCol_CheckMark, GRN)
             dpg.add_theme_style(dpg.mvStyleVar_WindowRounding, 6)
             dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, 6)
@@ -1705,7 +1745,7 @@ def build():
             dpg.add_theme_style(dpg.mvStyleVar_FrameBorderSize, 1)
             dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 10, 7)
             dpg.add_theme_style(dpg.mvStyleVar_ItemSpacing, 9, 8)
-            dpg.add_theme_style(dpg.mvStyleVar_ScrollbarSize, 12)
+            dpg.add_theme_style(dpg.mvStyleVar_ScrollbarSize, 16)
     dpg.bind_theme(t)
 
     with dpg.theme(tag="chatpane"):
