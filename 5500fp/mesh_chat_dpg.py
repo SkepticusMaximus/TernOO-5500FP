@@ -205,13 +205,32 @@ def on_model_pick(_s, app):
                "the next ask loads it", GRN)
 
 
-def ask_professor(prompt):
+def seat_live_name(be):
+    """What the seat will ACTUALLY answer with: a resident server is asked
+    directly (/props), whatever model bonsai.json happens to name — the two
+    can differ, and the label must tell the truth (10-09 parrot postmortem)."""
+    B = _bonsai_mod()
+    url = getattr(be, "url", None)
+    if url:
+        live = B.server_model(url)
+        if live:
+            return os.path.splitext(os.path.basename(live))[0]
+    return seat_model_name()
+
+
+def ask_professor(prompt, messages=None):
     """One Professor, one seat: every asker (chat, Forge, Editor review)
     comes through this door. Returns (where, answer)."""
     if SEAT[0] == "local":
         be, why = local_backend()
         if be is None:
             raise RuntimeError(f"local seat is empty: {why}")
+        if hasattr(be, "chat"):
+            # Real turns via the server's own built-in template: the wrap
+            # cannot drift from the model the server holds, and a
+            # screenplay-style prompt can no longer teach it to echo.
+            msgs = messages or [{"role": "user", "content": prompt}]
+            return f"local · {seat_live_name(be)}", be.chat(msgs)
         return f"local · {seat_model_name()}", be.generate(prompt)
     return BUYER.ask_mesh(prompt, candidates=candidates())
 
@@ -272,6 +291,31 @@ def build_context():
         prefix = (f'[The user attached a file "{ATTACH["name"]}". Its contents:]\n'
                   f'"""\n{ATTACH["text"]}\n"""\n\n')
     return PERSONA + prefix + "".join(lines) + "Professor:"
+
+
+SYSTEM_MSG = ("You are the Professor, the ship's assistant. Answer the "
+              "user's last message directly and helpfully; stay concise.")
+
+
+def build_messages():
+    """The chat as REAL turns for a chat-capable seat (ServerBackend.chat).
+    Same 2400-char context budget and attachment rule as build_context —
+    but roles ride as roles, so the model answers the last user message
+    instead of continuing a "You:/Professor:" screenplay."""
+    msgs, total = [], 0
+    for role, text in reversed(HISTORY):
+        chunk = str(text)
+        if total + len(chunk) > 2400 and msgs:
+            break
+        msgs.append({"role": "user" if role == "user" else "assistant",
+                     "content": chunk})
+        total += len(chunk)
+    msgs.reverse()
+    if ATTACH and msgs and msgs[-1]["role"] == "user":
+        msgs[-1]["content"] = (
+            f'[The user attached a file "{ATTACH["name"]}". Its contents:]\n'
+            f'"""\n{ATTACH["text"]}\n"""\n\n' + msgs[-1]["content"])
+    return [{"role": "system", "content": SYSTEM_MSG}] + msgs
 
 
 def trim_followups(ans):
@@ -467,6 +511,7 @@ def on_ask(*_):
     append_block("You", shown, DIM)
     dpg.set_value("prompt", "")
     context = build_context()
+    turns = build_messages()
     BUSY = True
     dpg.configure_item("askbtn", label="  ...thinking  ", enabled=False)
     dpg.add_text("Professor is thinking...", parent="chat", tag="pending",
@@ -479,7 +524,7 @@ def on_ask(*_):
         global BUSY, ATTACH
         where = ans = err = None
         try:
-            where, ans = ask_professor(context)
+            where, ans = ask_professor(context, messages=turns)
         except Exception as e:                  # noqa: BLE001 — surfaced to user
             err = str(e)
 
