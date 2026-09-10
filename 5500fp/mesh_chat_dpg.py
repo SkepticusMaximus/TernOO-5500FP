@@ -1932,31 +1932,8 @@ def build():
                                          "the Professor anything. Ctrl+Enter "
                                          "sends.", color=DIM, wrap=int(880 / max(0.5, SCALE)))
                             dpg.add_spacer(height=6)
-                    with dpg.tab(label=" FlowCode taste "):
-                        dpg.add_text("DPG's native node editor — FlowCode's "
-                                     "future organ, stock:", color=DIM)
-                        with dpg.node_editor(tag="nodes", height=-32):
-                            with dpg.node(label="Terminator", pos=(40, 60)):
-                                with dpg.node_attribute(
-                                        attribute_type=dpg.mvNode_Attr_Output,
-                                        tag="n1o"):
-                                    dpg.add_text("start", color=GRN)
-                            with dpg.node(label="Process", pos=(260, 140)):
-                                with dpg.node_attribute(tag="n2i"):
-                                    dpg.add_text("in", color=BLU)
-                                with dpg.node_attribute(
-                                        attribute_type=dpg.mvNode_Attr_Output,
-                                        tag="n2o"):
-                                    dpg.add_text("out", color=BLU)
-                            with dpg.node(label="Decision", pos=(490, 80)):
-                                with dpg.node_attribute(tag="n3i"):
-                                    dpg.add_text("test", color=ORN)
-                                with dpg.node_attribute(
-                                        attribute_type=dpg.mvNode_Attr_Output,
-                                        tag="n3y"):
-                                    dpg.add_text("+ / 0 / -", color=ORN)
-                        dpg.add_node_link("n1o", "n2i", parent="nodes")
-                        dpg.add_node_link("n2o", "n3i", parent="nodes")
+                    # (the "FlowCode taste" node-editor demo retired 10-09 —
+                    #  candidate successor: a live Mesh/colony status tab)
                     with dpg.tab(label=" Model "):
                         with dpg.group(horizontal=True):
                             dpg.add_text("Professor seat:", color=DIM)
