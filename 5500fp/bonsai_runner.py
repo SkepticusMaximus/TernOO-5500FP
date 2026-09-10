@@ -518,6 +518,13 @@ def classroom_command(config_path: str = None, roots=None) -> list | None:
     if cfg is not None:
         if not cfg.get('enabled', True):
             return None                       # the OFF switch
+        url = cfg.get('server_url')
+        if url and server_alive(url):
+            # RESIDENT seat: the classroom rides the server that already
+            # holds a model — never spawn a CLI that cold-loads a second
+            # copy (17.5 GB × 2 on a 31 GB box, 10-09). '--seat' resolves
+            # through backend_from_config at spawn time.
+            return [sys.executable, os.path.abspath(__file__), '--seat']
         llama, model = cfg.get('llama'), cfg.get('model')
         if llama and model and os.path.exists(llama) and os.path.exists(model):
             argv = [sys.executable, os.path.abspath(__file__),
@@ -587,6 +594,15 @@ def _opt(argv, flag):
 def _make_backend(argv) -> object:
     if '--mock' in argv:
         return EchoBackend()
+    if '--seat' in argv:
+        # Resolve from bonsai.json via the ONE assembly point: the resident
+        # server wins, so a pipe never cold-loads a second copy of a model
+        # the server already holds (the Academy's 10-09 near-OOM path).
+        be, why = backend_from_config(load_config() or {})
+        if be is not None:
+            return be
+        sys.stderr.write(f"[bonsai_runner] seat empty ({why}); "
+                         "falling back to discovery\n")
     llama = _opt(argv, '--llama')
     model = _opt(argv, '--model')
     if not (llama and model):

@@ -413,5 +413,46 @@ class TestFormats(unittest.TestCase):
         self.assertIsNone(g('/y/Mistral-7B-v0.3.gguf'))   # honest "dunno"
 
 
+class TestClassroomPrefersResidentSeat(unittest.TestCase):
+    """A live server seat must win the classroom spawn — never a CLI that
+    cold-loads a second copy of a model the server already holds (10-09)."""
+
+    def test_server_seat_spawns_seat_argv(self):
+        import json as _json
+        import tempfile
+        with tempfile.NamedTemporaryFile('w', suffix='.json',
+                                         delete=False) as f:
+            _json.dump({'server_url': 'http://127.0.0.1:1',
+                        'enabled': True}, f)
+            path = f.name
+        alive = R.server_alive
+        R.server_alive = lambda url, timeout=4.0: True
+        try:
+            argv = R.classroom_command(config_path=path)
+        finally:
+            R.server_alive = alive
+            os.unlink(path)
+        self.assertIsNotNone(argv)
+        self.assertIn('--seat', argv)
+        self.assertNotIn('--llama', argv)     # no CLI cold-load
+
+    def test_dead_server_still_falls_through(self):
+        import json as _json
+        import tempfile
+        with tempfile.NamedTemporaryFile('w', suffix='.json',
+                                         delete=False) as f:
+            _json.dump({'server_url': 'http://127.0.0.1:1',
+                        'enabled': True}, f)
+            path = f.name
+        alive = R.server_alive
+        R.server_alive = lambda url, timeout=4.0: False
+        try:
+            argv = R.classroom_command(config_path=path, roots=['/nonexistent'])
+        finally:
+            R.server_alive = alive
+            os.unlink(path)
+        self.assertNotIn('--seat', argv or [])   # dead seat never claimed
+
+
 if __name__ == '__main__':
     unittest.main()
