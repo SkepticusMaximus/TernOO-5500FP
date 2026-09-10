@@ -247,34 +247,89 @@ def scan_models():
     return rows
 
 
-def refresh_model_rows(*_):
+_MB = {"page": 0, "cache": [], "qtags": []}
+_MB_PAGE = 10
+
+
+def model_facets():
+    """Facet values discovered from the DISK, never hardcoded — the browser
+    filters what the ship actually carries."""
+    fams, quants = set(), set()
+    for _p, _g, quant, fam in scan_models():
+        fams.add(fam)
+        quants.add(quant)
+    return sorted(fams), sorted(quants)
+
+
+def model_apply(reset=True, *_):
+    """Apply Filter Criteria — the captain's 10-09 mock, wired to real
+    ggufs: facet filters, best-N sort (size), 10-at-a-time batches."""
     if not dpg.does_item_exist("modelrows"):
         return
+    if reset:
+        _MB["page"] = 0
+        name = (dpg.get_value("mb_name") or "").strip().lower()
+        fam_want = dpg.get_value("mb_family") or "All"
+        quants_on = {q for t, q in _MB["qtags"] if dpg.get_value(t)}
+        rows = []
+        for p, gib, quant, fam in scan_models():
+            if fam_want != "All" and fam != fam_want:
+                continue
+            if _MB["qtags"] and quant not in quants_on:
+                continue
+            if name and name not in os.path.basename(p).lower():
+                continue
+            rows.append((p, gib, quant, fam))
+        rows.sort(key=lambda r: -r[1])
+        _MB["cache"] = rows
     dpg.delete_item("modelrows", children_only=True)
-    filt = (dpg.get_value("modelfilt") or "").strip().lower()
     B = _bonsai_mod()
     cfg = B.load_config() or {}
-    seated = cfg.get("model") or ""
-    live = B.server_model(cfg.get("server_url")) if cfg.get("server_url") else None
-    hdr = f"seat file names: {os.path.basename(seated) or '(none)'}"
+    seated = os.path.basename(cfg.get("model") or "")
+    live = (B.server_model(cfg.get("server_url"))
+            if cfg.get("server_url") else None)
+    hdr = f"seat file names: {seated or '(none)'}"
     if live:
         hdr += f"   ·   resident server holds: {os.path.basename(live)}"
     dpg.add_text(hdr, parent="modelrows",
-                 color=GRN if (live and os.path.basename(seated) ==
-                               os.path.basename(live)) else ORN)
+                 color=GRN if (live and seated == os.path.basename(live))
+                 else ORN)
     dpg.add_spacer(height=4, parent="modelrows")
-    for p, gib, quant, fam in scan_models():
+    total = len(_MB["cache"])
+    lo = _MB["page"] * _MB_PAGE
+    batch = _MB["cache"][lo:lo + _MB_PAGE]
+    if not batch:
+        dpg.add_text("No models match the current filters.",
+                     parent="modelrows", color=ORN)
+    for i, (p, gib, quant, fam) in enumerate(batch, start=lo + 1):
         name = os.path.basename(p)
-        if filt and filt not in name.lower():
-            continue
         with dpg.group(horizontal=True, parent="modelrows"):
             dpg.add_button(label="seat", small=True,
                            callback=(lambda _s, _a, path=p:
                                      on_model_pick(None,
                                                    {"selections": {"f": path}})))
-            mark = "> " if name == os.path.basename(seated) else "  "
-            dpg.add_text(f"{mark}{name}", color=TEXT)
-            dpg.add_text(f"{gib:5.2f} GiB  {quant}  {fam}", color=DIM)
+            mark = "> " if name == seated else "  "
+            dpg.add_text(f"{i:2d}. {mark}[{fam}] {name}", color=TEXT)
+            dpg.add_text(f"{gib:5.2f} GiB · {quant}", color=DIM)
+    more = lo + _MB_PAGE < total
+    if dpg.does_item_exist("model_more"):
+        dpg.configure_item(
+            "model_more", show=more or total > _MB_PAGE,
+            label=(f"Continue showing next {min(_MB_PAGE, total - lo - _MB_PAGE)} "
+                   f"matches...  (currently {lo + 1}-{min(lo + _MB_PAGE, total)} "
+                   f"of {total})") if more else
+            f"Back to first matches  (currently {lo + 1}-{total} of {total})")
+
+
+def model_more(*_):
+    total = len(_MB["cache"])
+    _MB["page"] = (_MB["page"] + 1
+                   if (_MB["page"] + 1) * _MB_PAGE < total else 0)
+    model_apply(reset=False)
+
+
+def refresh_model_rows(*_):
+    model_apply(reset=True)
 
 
 def seat_live_name(be):
@@ -414,9 +469,27 @@ def _wrap_width():
         return int(880 / max(0.5, SCALE))
 
 
+def _hard_wrap(text, width_px):
+    """Pre-wrap text to the pane width. Read-only input fields give NATIVE
+    selection (click-drag, double-click word, triple-click line) — the one
+    thing drawn text can never do — but they do not soft-wrap, so the wrap
+    is done here, once, at append time."""
+    import textwrap
+    cols = max(32, int(width_px / (8.2 * max(0.5, SCALE))))
+    out = []
+    for line in str(text).splitlines() or [""]:
+        out.extend(textwrap.wrap(line, cols, replace_whitespace=False,
+                                 drop_whitespace=False) or [""])
+    return "\n".join(out), len(out)
+
+
 def append_block(who, text, who_color):
     dpg.add_text(who, parent="chat", color=who_color)
-    dpg.add_text(text, parent="chat", color=TEXT, wrap=_wrap_width())
+    wrapped, nlines = _hard_wrap(text, _wrap_width())
+    fld = dpg.add_input_text(default_value=wrapped, multiline=True,
+                             readonly=True, parent="chat", width=-1,
+                             height=int((nlines + 1) * 17 * max(0.5, SCALE) + 8))
+    dpg.bind_item_theme(fld, "chatblock")
     urls = re.findall(r"https?://[^\s<>\"')\]]+", text)
     if urls:
         for u in urls[:6]:
@@ -1533,6 +1606,13 @@ def build():
     with dpg.theme(tag="chatpane"):
         with dpg.theme_component(dpg.mvChildWindow):
             dpg.add_theme_color(dpg.mvThemeCol_ChildBg, CHAT_BG)
+    with dpg.theme(tag="chatblock"):
+        # a read-only input field dressed as plain chat text: no frame, no
+        # background shift — but carrying ImGui's native text selection
+        with dpg.theme_component(dpg.mvInputText):
+            dpg.add_theme_color(dpg.mvThemeCol_FrameBg, (0, 0, 0, 0))
+            dpg.add_theme_color(dpg.mvThemeCol_Text, TEXT)
+            dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 0, 2)
     with dpg.theme(tag="linkbtn"):
         with dpg.theme_component(dpg.mvButton):
             dpg.add_theme_color(dpg.mvThemeCol_Button, (0, 0, 0, 0))
@@ -1645,37 +1725,44 @@ def build():
                                height=2600)
             # ── right: the chat ───────────────────────────────────────────
             with dpg.group():
-                with dpg.group(horizontal=True):
-                    hdr = dpg.add_text("Ask the mesh", color=TEXT)
-                    if big:
-                        dpg.bind_item_font(hdr, big)
+                # chat management left, text size right — one line, no
+                # wasted header (captain's 10-09 layout ruling)
+                with dpg.table(header_row=False,
+                               policy=dpg.mvTable_SizingStretchProp):
+                    dpg.add_table_column(width_stretch=True)
+                    dpg.add_table_column(width_fixed=True)
+                    with dpg.table_row():
+                        with dpg.group(horizontal=True):
+                            dpg.add_combo([], tag="chatsel", width=sw(300),
+                                          default_value="- select chat -",
+                                          callback=on_chat_pick)
+                            dpg.add_button(label="Edit", small=True,
+                                           callback=chat_menu)
+                            dpg.add_button(label="New chat",
+                                           callback=new_chat)
+                        with dpg.group(horizontal=True):
+                            dpg.add_button(label="A-", small=True,
+                                           callback=lambda: zoom(-0.1))
+                            dpg.add_button(label="A+", small=True,
+                                           callback=lambda: zoom(+0.1))
                 dpg.add_input_text(multiline=True, width=-1, height=PROMPT_H,
                                    tag="prompt")
                 # drag this bar to give the ask-box more (or less) height —
                 # a plain button: the mechanism that provably worked
                 dpg.add_button(tag="vgrip_btn", label="", width=-1, height=10)
-                with dpg.group(horizontal=True):
-                    dpg.add_button(label="Attach file",
-                                   callback=lambda: dpg.show_item("filedlg"))
-                    dpg.add_text("", tag="attachlbl", color=DIM)
-                    dpg.add_button(label="A-", small=True,
-                                   callback=lambda: zoom(-0.1))
-                    dpg.add_button(label="A+", small=True,
-                                   callback=lambda: zoom(+0.1))
-                    dpg.add_combo([], tag="chatsel", width=sw(300),
-                                  default_value="- select chat -",
-                                  callback=on_chat_pick)
-                    dpg.add_button(label="Edit", small=True,
-                                   callback=chat_menu)
-                    dpg.add_button(label="New chat", callback=new_chat)
-                    dpg.add_combo(seat_items(), tag="seat_sel", width=sw(260),
-                                  default_value=seat_value(),
-                                  callback=on_seat_pick)
-                    dpg.add_button(label="Model...", small=True,
-                                   callback=lambda: dpg.show_item("modeldlg"))
-                    ask = dpg.add_button(label="   Ask   ", tag="askbtn",
-                                         callback=on_ask)
-                    dpg.bind_item_theme(ask, "greenbtn")
+                with dpg.table(header_row=False,
+                               policy=dpg.mvTable_SizingStretchProp):
+                    dpg.add_table_column(width_stretch=True)
+                    dpg.add_table_column(width_fixed=True)
+                    with dpg.table_row():
+                        with dpg.group(horizontal=True):
+                            dpg.add_button(label="Attach file",
+                                           callback=lambda: dpg.show_item(
+                                               "filedlg"))
+                            dpg.add_text("", tag="attachlbl", color=DIM)
+                        ask = dpg.add_button(label="   Ask   ", tag="askbtn",
+                                             callback=on_ask)
+                        dpg.bind_item_theme(ask, "greenbtn")
                 with dpg.tab_bar():
                     with dpg.tab(label=" Chat "):
                         with dpg.child_window(tag="chat", height=-32):
@@ -1708,23 +1795,57 @@ def build():
                                     dpg.add_text("+ / 0 / -", color=ORN)
                         dpg.add_node_link("n1o", "n2i", parent="nodes")
                         dpg.add_node_link("n2o", "n3i", parent="nodes")
-                    with dpg.tab(label=" Model seat "):
+                    with dpg.tab(label=" Model "):
                         with dpg.group(horizontal=True):
-                            dpg.add_input_text(tag="modelfilt", hint="filter",
-                                               width=sw(260),
-                                               callback=refresh_model_rows)
-                            dpg.add_button(label="Rescan", small=True,
-                                           callback=refresh_model_rows)
+                            dpg.add_text("Professor seat:", color=DIM)
+                            dpg.add_combo(seat_items(), tag="seat_sel",
+                                          width=sw(280),
+                                          default_value=seat_value(),
+                                          callback=on_seat_pick)
                             dpg.add_button(label="Browse...", small=True,
                                            callback=lambda: dpg.show_item(
                                                "modeldlg"))
-                        dpg.add_text("every .gguf under ~/LOCAL_AI — seat one "
-                                     "as the local Professor. A resident "
-                                     "server keeps ITS model until reseated "
-                                     "(tools/professor_resident.sh).",
-                                     color=DIM)
-                        with dpg.child_window(tag="modelrows", height=-32):
-                            pass
+                        dpg.add_separator()
+                        _fams, _quants = model_facets()
+                        with dpg.table(header_row=False,
+                                       policy=dpg.mvTable_SizingStretchProp):
+                            dpg.add_table_column(width_stretch=True)
+                            dpg.add_table_column(width_fixed=True)
+                            with dpg.table_row():
+                                with dpg.group():
+                                    with dpg.child_window(tag="modelrows",
+                                                          height=-64):
+                                        pass
+                                    dpg.add_button(tag="model_more",
+                                                   label="Continue...",
+                                                   width=-1, show=False,
+                                                   callback=model_more)
+                                with dpg.child_window(width=sw(280),
+                                                      height=-32):
+                                    dpg.add_text("Model family:")
+                                    dpg.add_combo(["All"] + _fams,
+                                                  tag="mb_family",
+                                                  default_value="All",
+                                                  width=-1)
+                                    dpg.add_spacer(height=6)
+                                    dpg.add_text("Quantization:")
+                                    _MB["qtags"].clear()
+                                    for _q in _quants:
+                                        _t = f"mb_q_{_q}"
+                                        dpg.add_checkbox(label=_q, tag=_t,
+                                                         default_value=True)
+                                        _MB["qtags"].append((_t, _q))
+                                    dpg.add_spacer(height=6)
+                                    dpg.add_text("Name contains:")
+                                    dpg.add_input_text(tag="mb_name",
+                                                       width=-1)
+                                    dpg.add_spacer(height=10)
+                                    dpg.add_separator()
+                                    _ap = dpg.add_button(
+                                        label="Apply Filter Criteria",
+                                        width=-1, height=30,
+                                        callback=lambda: model_apply(True))
+                                    dpg.bind_item_theme(_ap, "greenbtn")
                 dpg.add_text("starting...", tag="status", color=DIM)
 
     dpg.bind_item_theme("chat", "chatpane")
