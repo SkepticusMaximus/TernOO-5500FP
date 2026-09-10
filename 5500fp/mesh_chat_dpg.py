@@ -76,6 +76,8 @@ def _cfg_save(d):
 
 
 CFGD = _cfg_load()
+# the captain's own lines wear his name and a bright voice, not a dim "You"
+USER_NAME = (CFGD.get("user_name") or os.environ.get("USER", "You")).title()
 # shipped defaults = the captain's sculpt of 09-08 (zoom 130%, tall ask-box)
 SCALE = float(CFGD.get("font_scale", 1.3))
 PANEL_W = int(CFGD.get("panel_w", 400))
@@ -216,7 +218,7 @@ def toggle_workshop(*_):
     """Collapse/restore the macro-workshop sidebar (small screens)."""
     show = not dpg.is_item_shown("workshop")
     dpg.configure_item("workshop", show=show)
-    dpg.configure_item("wsgrip_btn", label="<" if show else ">")
+    dpg.configure_item("wsgrip_btn", label="<<" if show else ">>")
     CFGD["panel_collapsed"] = not show
     _cfg_save(CFGD)
 
@@ -479,12 +481,31 @@ def load_chat(cid):
     dpg.delete_item("chat", children_only=True)
     for m in rec.get("messages", []):
         if m.get("role") == "user":
-            append_block("You", m.get("text", ""), DIM)
+            append_block(USER_NAME, m.get("text", ""), BLU)
         else:
             via = m.get("via")
             append_block(f"Professor · {via}" if via else "Professor",
                          m.get("text", ""), GRN)
     set_status(f"continuing: {rec.get('title', '')[:44]}", GRN)
+
+
+def raw_transcript(*_):
+    """The whole conversation in ONE selectable text field. DPG's drawn text
+    can't be click-drag selected (an ImGui limit, not a choice) — this view
+    is the honest workaround: read-only input text, native selection,
+    Ctrl+C works, character-precise."""
+    tag = "rawview"
+    if dpg.does_item_exist(tag):
+        dpg.delete_item(tag)
+    text = "\n\n".join(
+        f"{USER_NAME if role == 'user' else 'Professor'}: {t}"
+        for role, t in HISTORY) or "(empty chat)"
+    with dpg.window(label="Raw transcript — select and copy", tag=tag,
+                    width=820, height=520, pos=(120, 90)):
+        dpg.add_input_text(default_value=text, multiline=True, readonly=True,
+                           width=-1, height=-40)
+        dpg.add_button(label="Copy all", small=True,
+                       callback=lambda: clip_set(text))
 
 
 def chat_menu(*_):
@@ -496,6 +517,9 @@ def chat_menu(*_):
     title = rec.get("title", "") if rec else ""
     with dpg.window(label="This chat", modal=True, tag=tag, width=560,
                     height=250, pos=(300, 200)):
+        dpg.add_button(label="Raw transcript (selectable text)",
+                       callback=raw_transcript)
+        dpg.add_spacer(height=4)
         if not rec:
             dpg.add_text("No saved chat yet — ask something first, or pick "
                          "one from the dropdown.", color=DIM, wrap=int(520 / max(0.5, SCALE)))
@@ -578,7 +602,7 @@ def on_ask(*_):
         return
     shown = prompt + (f"\n[attached: {ATTACH['name']}]" if ATTACH else "")
     HISTORY.append(("user", shown))
-    append_block("You", shown, DIM)
+    append_block(USER_NAME, shown, BLU)
     dpg.set_value("prompt", "")
     context = build_context()
     turns = build_messages()
@@ -1083,6 +1107,25 @@ def _dpg_clip_read():
         return ""
 
 
+_TKROOT = [None]
+
+
+def _tk_clip_read():
+    """Read the X clipboard through ONE persistent hidden Tk root. The old
+    create-a-root-per-call under a held Ctrl (key auto-repeat ≈ 30/s) was an
+    X-connection storm that killed the whole window — the captain's
+    'holding Ctrl closes the app' bug (10-09)."""
+    import tkinter as _tk
+    if _TKROOT[0] is None:
+        rt = _tk.Tk()
+        rt.withdraw()
+        _TKROOT[0] = rt
+    try:
+        return _TKROOT[0].clipboard_get()
+    except Exception:                           # noqa: BLE001 — empty clipboard
+        return ""
+
+
 def clip_get():
     """Paste from the real system clipboard first; DPG's buffer as fallback."""
     for tool in (["xclip", "-selection", "clipboard", "-o"],
@@ -1095,13 +1138,7 @@ def clip_get():
             except Exception:                   # noqa: BLE001
                 pass
     try:                                        # no xclip/xsel (the HP)? Tk
-        import tkinter as _tk                   # can still READ the X clipboard
-        rt = _tk.Tk()
-        rt.withdraw()
-        try:
-            t = rt.clipboard_get()
-        finally:
-            rt.destroy()
+        t = _tk_clip_read()
         if t:
             return t
     except Exception:                           # noqa: BLE001
@@ -1109,9 +1146,21 @@ def clip_get():
     return _dpg_clip_read()
 
 
+_CTRL_LATCH = [False]
+
+
+def _ctrl_release(*_):
+    _CTRL_LATCH[0] = False
+
+
 def _ctrl_pull(*_):
     """Ctrl just went down: pull the X clipboard into DPG's buffer, so a
-    Ctrl+V one keystroke later pastes what the SYSTEM holds."""
+    Ctrl+V one keystroke later pastes what the SYSTEM holds. Latched — key
+    auto-repeat must not re-run this while Ctrl is HELD (the storm that
+    used to kill the window)."""
+    if _CTRL_LATCH[0]:
+        return
+    _CTRL_LATCH[0] = True
     t = clip_get()
     try:
         if t and t != _dpg_clip_read():
@@ -1566,8 +1615,9 @@ def build():
             # press-and-hold state only buttons have in DPG
             with dpg.child_window(tag="hgrip", width=12, height=-1,
                                   border=False, no_scrollbar=True):
-                dpg.add_button(tag="wsgrip_btn", label="<", width=-1,
-                               small=True, callback=toggle_workshop)
+                ws = dpg.add_button(tag="wsgrip_btn", label="<<", width=-1,
+                                    height=30, callback=toggle_workshop)
+                dpg.bind_item_theme(ws, "greenbtn")
                 dpg.add_button(tag="hgrip_btn", label="", width=-1,
                                height=2600)
             # ── right: the chat ───────────────────────────────────────────
@@ -1590,8 +1640,10 @@ def build():
                     dpg.add_button(label="A+", small=True,
                                    callback=lambda: zoom(+0.1))
                     dpg.add_combo([], tag="chatsel", width=sw(300),
+                                  default_value="- select chat -",
                                   callback=on_chat_pick)
-                    dpg.add_button(label="...", small=True, callback=chat_menu)
+                    dpg.add_button(label="Edit", small=True,
+                                   callback=chat_menu)
                     dpg.add_button(label="New chat", callback=new_chat)
                     dpg.add_combo(seat_items(), tag="seat_sel", width=sw(260),
                                   default_value=seat_value(),
@@ -1742,6 +1794,8 @@ def build():
         # keep DPG's app-internal clipboard in step with the real X one
         dpg.add_key_press_handler(dpg.mvKey_LControl, callback=_ctrl_pull)
         dpg.add_key_press_handler(dpg.mvKey_RControl, callback=_ctrl_pull)
+        dpg.add_key_release_handler(dpg.mvKey_LControl, callback=_ctrl_release)
+        dpg.add_key_release_handler(dpg.mvKey_RControl, callback=_ctrl_release)
         dpg.add_key_press_handler(dpg.mvKey_C, callback=_ctrl_push)
         dpg.add_key_press_handler(dpg.mvKey_X, callback=_ctrl_push)
         dpg.add_mouse_wheel_handler(callback=_ctrl_wheel)
