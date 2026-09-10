@@ -240,6 +240,8 @@ def scan_models():
                     gib = os.path.getsize(p) / 2**30
                 except OSError:
                     continue
+                if gib < 0.1:
+                    continue        # tokenizer/vocab stubs, not models
                 m = re.search(r"((?:i1-)?(?:I?Q|TQ)\d[_A-Za-z0-9]*)", f)
                 fam = (_bonsai_mod().guess_format(f) or "?")
                 rows.append((p, gib, m.group(1) if m else "?", fam))
@@ -319,6 +321,37 @@ def model_apply(reset=True, *_):
                    f"matches...  (currently {lo + 1}-{min(lo + _MB_PAGE, total)} "
                    f"of {total})") if more else
             f"Back to first matches  (currently {lo + 1}-{total} of {total})")
+
+
+def show_filters(*_):
+    """The Search Filters dialog — the captain's mock made flesh: a
+    floating window, not a cramped corner panel. Facets discovered from
+    disk each time it opens."""
+    tag = "mb_filters"
+    if dpg.does_item_exist(tag):
+        dpg.delete_item(tag)
+    fams, quants = model_facets()
+    _MB["qtags"].clear()
+    with dpg.window(label="Search Filters", tag=tag, width=340, height=430,
+                    pos=(560, 90)):
+        dpg.add_text("Model family:")
+        dpg.add_combo(["All"] + fams, tag="mb_family", default_value="All",
+                      width=-1)
+        dpg.add_spacer(height=8)
+        dpg.add_text("Quantization precision:")
+        for q in quants:
+            t = f"mb_q_{q}"
+            dpg.add_checkbox(label=q, tag=t, default_value=True)
+            _MB["qtags"].append((t, q))
+        dpg.add_spacer(height=8)
+        dpg.add_text("Name contains:")
+        dpg.add_input_text(tag="mb_name", width=-1)
+        dpg.add_spacer(height=12)
+        dpg.add_separator()
+        ap = dpg.add_button(label="Apply Filter Criteria", width=-1,
+                            height=34,
+                            callback=lambda: model_apply(True))
+        dpg.bind_item_theme(ap, "greenbtn")
 
 
 def model_more(*_):
@@ -1725,46 +1758,52 @@ def build():
                                height=2600)
             # ── right: the chat ───────────────────────────────────────────
             with dpg.group():
-                # chat management left, text size right — one line, no
-                # wasted header (captain's 10-09 layout ruling)
-                with dpg.table(header_row=False,
-                               policy=dpg.mvTable_SizingStretchProp):
-                    dpg.add_table_column(width_stretch=True)
-                    dpg.add_table_column(width_fixed=True)
-                    with dpg.table_row():
-                        with dpg.group(horizontal=True):
-                            dpg.add_combo([], tag="chatsel", width=sw(300),
-                                          default_value="- select chat -",
-                                          callback=on_chat_pick)
-                            dpg.add_button(label="Edit", small=True,
-                                           callback=chat_menu)
-                            dpg.add_button(label="New chat",
-                                           callback=new_chat)
-                        with dpg.group(horizontal=True):
-                            dpg.add_button(label="A-", small=True,
-                                           callback=lambda: zoom(-0.1))
-                            dpg.add_button(label="A+", small=True,
-                                           callback=lambda: zoom(+0.1))
-                dpg.add_input_text(multiline=True, width=-1, height=PROMPT_H,
-                                   tag="prompt")
-                # drag this bar to give the ask-box more (or less) height —
-                # a plain button: the mechanism that provably worked
-                dpg.add_button(tag="vgrip_btn", label="", width=-1, height=10)
-                with dpg.table(header_row=False,
-                               policy=dpg.mvTable_SizingStretchProp):
-                    dpg.add_table_column(width_stretch=True)
-                    dpg.add_table_column(width_fixed=True)
-                    with dpg.table_row():
-                        with dpg.group(horizontal=True):
-                            dpg.add_button(label="Attach file",
-                                           callback=lambda: dpg.show_item(
-                                               "filedlg"))
-                            dpg.add_text("", tag="attachlbl", color=DIM)
-                        ask = dpg.add_button(label="   Ask   ", tag="askbtn",
-                                             callback=on_ask)
-                        dpg.bind_item_theme(ask, "greenbtn")
+                # tabs at the TOP: the prompt/ask apparatus belongs to the
+                # Chat tab alone, so Model and FlowCode get the whole pane
+                # (captain's 10-09 layout ruling, round four)
                 with dpg.tab_bar():
                     with dpg.tab(label=" Chat "):
+                        with dpg.table(header_row=False,
+                                       policy=dpg.mvTable_SizingStretchProp):
+                            dpg.add_table_column(width_stretch=True)
+                            dpg.add_table_column(width_fixed=True)
+                            with dpg.table_row():
+                                with dpg.group(horizontal=True):
+                                    dpg.add_combo([], tag="chatsel",
+                                                  width=sw(300),
+                                                  default_value="- select chat -",
+                                                  callback=on_chat_pick)
+                                    dpg.add_button(label="Edit", small=True,
+                                                   callback=chat_menu)
+                                    dpg.add_button(label="New chat",
+                                                   callback=new_chat)
+                                with dpg.group(horizontal=True):
+                                    dpg.add_button(label="A-", small=True,
+                                                   callback=lambda: zoom(-0.1))
+                                    dpg.add_button(label="A+", small=True,
+                                                   callback=lambda: zoom(+0.1))
+                        dpg.add_input_text(multiline=True, width=-1,
+                                           height=PROMPT_H, tag="prompt")
+                        # drag this bar to resize the ask-box — a plain
+                        # button: the mechanism that provably worked
+                        dpg.add_button(tag="vgrip_btn", label="", width=-1,
+                                       height=10)
+                        with dpg.table(header_row=False,
+                                       policy=dpg.mvTable_SizingStretchProp):
+                            dpg.add_table_column(width_stretch=True)
+                            dpg.add_table_column(width_fixed=True)
+                            with dpg.table_row():
+                                with dpg.group(horizontal=True):
+                                    dpg.add_button(
+                                        label="Attach file",
+                                        callback=lambda: dpg.show_item(
+                                            "filedlg"))
+                                    dpg.add_text("", tag="attachlbl",
+                                                 color=DIM)
+                                ask = dpg.add_button(label="   Ask   ",
+                                                     tag="askbtn",
+                                                     callback=on_ask)
+                                dpg.bind_item_theme(ask, "greenbtn")
                         with dpg.child_window(tag="chat", height=-32):
                             dpg.add_text("You're connected to the mesh — ask "
                                          "the Professor anything. Ctrl+Enter "
@@ -1802,50 +1841,19 @@ def build():
                                           width=sw(280),
                                           default_value=seat_value(),
                                           callback=on_seat_pick)
+                            dpg.add_button(label="Filters...",
+                                           callback=show_filters)
+                            dpg.add_button(label="Rescan", small=True,
+                                           callback=lambda: model_apply(True))
                             dpg.add_button(label="Browse...", small=True,
                                            callback=lambda: dpg.show_item(
                                                "modeldlg"))
                         dpg.add_separator()
-                        _fams, _quants = model_facets()
-                        with dpg.table(header_row=False,
-                                       policy=dpg.mvTable_SizingStretchProp):
-                            dpg.add_table_column(width_stretch=True)
-                            dpg.add_table_column(width_fixed=True)
-                            with dpg.table_row():
-                                with dpg.group():
-                                    with dpg.child_window(tag="modelrows",
-                                                          height=-64):
-                                        pass
-                                    dpg.add_button(tag="model_more",
-                                                   label="Continue...",
-                                                   width=-1, show=False,
-                                                   callback=model_more)
-                                with dpg.child_window(width=sw(280),
-                                                      height=-32):
-                                    dpg.add_text("Model family:")
-                                    dpg.add_combo(["All"] + _fams,
-                                                  tag="mb_family",
-                                                  default_value="All",
-                                                  width=-1)
-                                    dpg.add_spacer(height=6)
-                                    dpg.add_text("Quantization:")
-                                    _MB["qtags"].clear()
-                                    for _q in _quants:
-                                        _t = f"mb_q_{_q}"
-                                        dpg.add_checkbox(label=_q, tag=_t,
-                                                         default_value=True)
-                                        _MB["qtags"].append((_t, _q))
-                                    dpg.add_spacer(height=6)
-                                    dpg.add_text("Name contains:")
-                                    dpg.add_input_text(tag="mb_name",
-                                                       width=-1)
-                                    dpg.add_spacer(height=10)
-                                    dpg.add_separator()
-                                    _ap = dpg.add_button(
-                                        label="Apply Filter Criteria",
-                                        width=-1, height=30,
-                                        callback=lambda: model_apply(True))
-                                    dpg.bind_item_theme(_ap, "greenbtn")
+                        with dpg.child_window(tag="modelrows", height=-64):
+                            pass
+                        dpg.add_button(tag="model_more", label="Continue...",
+                                       width=-1, show=False,
+                                       callback=model_more)
                 dpg.add_text("starting...", tag="status", color=DIM)
 
     dpg.bind_item_theme("chat", "chatpane")
