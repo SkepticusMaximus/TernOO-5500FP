@@ -80,6 +80,64 @@ def _first_json(text):
     return None
 
 
+def _json_closers(fragment):
+    """The closing brackets a truncated JSON fragment still owes, in order —
+    string- and escape-aware."""
+    stack, in_str, esc = [], False, False
+    for ch in fragment:
+        if esc:
+            esc = False
+        elif in_str:
+            if ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"':
+            in_str = True
+        elif ch in "{[":
+            stack.append("}" if ch == "{" else "]")
+        elif ch in "}]" and stack:
+            stack.pop()
+    return "".join(reversed(stack))
+
+
+def _forge_json(text):
+    """The forge's parser: a SPEC (an object carrying \"fields\"), never an
+    inner fragment. A truncated reply used to 'succeed' as the first field
+    object — zero fields, empty tree (12-09). Order: (1) any balanced
+    object WITH fields; (2) truncation repair — cut back to a complete
+    member, close what's owed; (3) the old first-balanced fallback."""
+    import json as _json
+    dec = _json.JSONDecoder()
+    first = None
+    for i, ch in enumerate(text or ""):
+        if ch == "{":
+            try:
+                obj, _ = dec.raw_decode(text[i:])
+            except ValueError:
+                continue
+            if isinstance(obj, dict) and "fields" in obj:
+                return obj
+            if first is None:
+                first = obj
+    start = (text or "").find("{")
+    if start >= 0:
+        frag = text[start:]
+        cut = frag.rfind("}")
+        for _ in range(60):
+            if cut < 0:
+                break
+            candidate = frag[:cut + 1]
+            try:
+                obj = _json.loads(candidate + _json_closers(candidate))
+                if isinstance(obj, dict) and obj.get("fields"):
+                    return obj
+            except ValueError:
+                pass
+            cut = frag.rfind("}", 0, cut)
+    return first
+
+
 def _specs():
     """Load every macro spec in MACRO_DIR, sorted by name; skip broken ones."""
     out = []
@@ -635,7 +693,7 @@ class MacroPanel:
             return
         text = self._forge_result
         self._forge_result = None
-        obj = _first_json(text)
+        obj = _forge_json(text)
         if obj is None:
             # off-protocol prose → the raw view, labelled as salvage
             self._forge_spec = {"name": (self._forge_name.get() or "").strip()
