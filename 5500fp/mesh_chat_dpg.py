@@ -1295,8 +1295,14 @@ def forge_start(cmd):
         dpg.set_value("fg_msg", f"couldn't read {cmd} --help: {e}")
         return
     FORGE_CMD = cmd
-    FORGE_SPEC = {"name": cmd, "kind": "command", "command": cmd, "fields": []}
-    dpg.set_value("fg_file", cmd)
+    # the captain's typed button name and file are SOVEREIGN — forging must
+    # never overwrite what the user already chose ("GREP MD FILES" came
+    # back as "grep", 12-09). The command token only fills BLANK fields.
+    keep_name = (dpg.get_value("fg_name") or "").strip()
+    keep_file = (dpg.get_value("fg_file") or "").strip()
+    FORGE_SPEC = {"name": keep_name or cmd, "kind": "command",
+                  "command": cmd, "fields": []}
+    dpg.set_value("fg_file", keep_file or cmd)
     forge_show_tree()                 # clear any stale tree — no ls ghosts
     dpg.set_value("fg_msg", f"the Professor is reading `{cmd} --help`... "
                             "(a minute or two)")
@@ -1315,11 +1321,13 @@ def forge_start(cmd):
             if obj is None:
                 dpg.set_value("fg_msg", "the Professor went off-protocol — "
                                         "see { } for his raw reply")
-                FORGE_SPEC = {"name": cmd, "kind": "command", "command": cmd,
-                              "fields": [], "_raw": text}
+                FORGE_SPEC = {"name": keep_name or cmd, "kind": "command",
+                              "command": cmd, "fields": [], "_raw": text}
                 return
             obj["kind"] = "command"
             obj["command"] = cmd
+            if keep_name:
+                obj["name"] = keep_name   # the user's label outranks the model's
             FORGE_SPEC = obj
             forge_show_tree()
             err = MP._validate(obj)

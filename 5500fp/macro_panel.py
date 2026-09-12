@@ -608,7 +608,10 @@ class MacroPanel:
             self._forge_msg.config(text=f"couldn't read {cmd} --help: {e}")
             return
         self._forge_cmd = cmd
-        self._forge_name.set(cmd)
+        # the user's typed button name is SOVEREIGN (12-09 clobber, both
+        # faces): the command token only fills a BLANK name
+        if not (self._forge_name.get() or "").strip():
+            self._forge_name.set(cmd)
         self._forge_msg.config(
             text=f"🤖 the Professor is reading `{cmd} --help`… (a minute or two)")
         prompt = FORGE_HEAD + f"\nCOMMAND: {cmd}\nHELP TEXT:\n{help_text[:5000]}"
@@ -635,7 +638,8 @@ class MacroPanel:
         obj = _first_json(text)
         if obj is None:
             # off-protocol prose → the raw view, labelled as salvage
-            self._forge_spec = {"name": self._forge_cmd or "macro",
+            self._forge_spec = {"name": (self._forge_name.get() or "").strip()
+                                or self._forge_cmd or "macro",
                                 "kind": "command",
                                 "command": self._forge_cmd or "",
                                 "fields": []}
@@ -650,6 +654,9 @@ class MacroPanel:
         obj["kind"] = "command"
         if self._forge_cmd:
             obj["command"] = self._forge_cmd
+        typed = (self._forge_name.get() or "").strip()
+        if typed:
+            obj["name"] = typed       # the user's label outranks the model's
         self._forge_spec = obj
         self._show_tree()
         err = _validate(obj)
