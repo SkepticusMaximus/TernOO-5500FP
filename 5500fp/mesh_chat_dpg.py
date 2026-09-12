@@ -97,6 +97,7 @@ def zoom(delta):
     CFGD["font_scale"] = SCALE
     _cfg_save(CFGD)
     try:
+        redraw_chat()
         set_status(f"text zoom {int(SCALE * 100)}%")
     except Exception:
         pass
@@ -607,13 +608,39 @@ def _wrap_width():
         return int(880 / max(0.5, SCALE))
 
 
+def _char_px():
+    """One character's TRUE pixel width at the current zoom, MEASURED from
+    the font atlas — the 8.2px guess ran wide and every block grew its own
+    scrollbars (the captain's land-of-many-scroll-bars, 12-09). Monospace,
+    so one sample of 80 chars is exact."""
+    try:
+        w = dpg.get_text_size("M" * 80)[0]
+        if w and w > 0:
+            return (w / 80.0) * max(0.5, SCALE)
+    except Exception:
+        pass
+    return 8.2 * max(0.5, SCALE)
+
+
+def _line_px():
+    """One text line's true pixel height at the current zoom."""
+    try:
+        h = dpg.get_text_size("Mg")[1]
+        if h and h > 0:
+            return h * max(0.5, SCALE) + 3
+    except Exception:
+        pass
+    return 17 * max(0.5, SCALE) + 3
+
+
 def _hard_wrap(text, width_px):
     """Pre-wrap text to the pane width. Read-only input fields give NATIVE
     selection (click-drag, double-click word, triple-click line) — the one
     thing drawn text can never do — but they do not soft-wrap, so the wrap
-    is done here, once, at append time."""
+    is done here from MEASURED character width, with margin so no line
+    ever meets the field edge (edge-kisses grow scrollbars)."""
     import textwrap
-    cols = max(32, int(width_px / (8.2 * max(0.5, SCALE))))
+    cols = max(32, int(width_px / _char_px()) - 3)
     out = []
     for line in str(text).splitlines() or [""]:
         out.extend(textwrap.wrap(line, cols, replace_whitespace=False,
@@ -635,9 +662,11 @@ def _pane_px():
 def append_block(who, text, who_color):
     dpg.add_text(who, parent="chat", color=who_color)
     wrapped, nlines = _hard_wrap(text, _pane_px())
+    # measured height with headroom: a field that exactly kisses its
+    # content grows scrollbars; one spare line keeps them away for good
     fld = dpg.add_input_text(default_value=wrapped, multiline=True,
                              readonly=True, parent="chat", width=-1,
-                             height=int((nlines + 1) * 17 * max(0.5, SCALE) + 8))
+                             height=int((nlines + 1) * _line_px() + 10))
     dpg.bind_item_theme(fld, "chatblock")
     urls = re.findall(r"https?://[^\s<>\"')\]]+", text)
     if urls:
@@ -709,6 +738,23 @@ def load_chat(cid):
             append_block(f"Professor · {via}" if via else "Professor",
                          m.get("text", ""), GRN)
     set_status(f"continuing: {rec.get('title', '')[:44]}", GRN)
+
+
+def redraw_chat():
+    """Re-render every block at the CURRENT zoom and pane width — wrap and
+    height are baked at append time, so zooming would otherwise leave the
+    old geometry behind (stale clipping after a zoom, 12-09)."""
+    if not dpg.does_item_exist("chat"):
+        return
+    if CHAT_ID and STORE:
+        load_chat(CHAT_ID)
+        return
+    dpg.delete_item("chat", children_only=True)
+    for role, text in HISTORY:
+        if role == "user":
+            append_block(USER_NAME, text, BLU)
+        else:
+            append_block("Professor", text, GRN)
 
 
 def raw_transcript(*_):
@@ -1535,6 +1581,10 @@ def zoom_abs(v):
     dpg.set_global_font_scale(SCALE)
     CFGD["font_scale"] = SCALE
     _cfg_save(CFGD)
+    try:
+        redraw_chat()
+    except Exception:
+        pass
 
 
 def show_settings(*_):
