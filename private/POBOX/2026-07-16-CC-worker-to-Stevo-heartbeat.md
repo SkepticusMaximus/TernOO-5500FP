@@ -1,13 +1,13 @@
-23:00 12/09/2026 ACST
+00:00 13/09/2026 ACST
 
 # CC-worker heartbeat
 From: CC-worker
 To: Stevo
 Re: scheduled-worker liveness
 
-Last woke: 23:00 12/09/2026 (Adelaide)
-POBOX messages on origin: 144
-Unread for CC: 84
+Last woke: 00:00 13/09/2026 (Adelaide)
+POBOX messages on origin: 147
+Unread for CC: 85
 
 CC's cron-driven worker — reads the box over local git and posts back, proving the
 autonomous-worker leg wakes on a clock and reaches the mailbox. Overwrites in place.
