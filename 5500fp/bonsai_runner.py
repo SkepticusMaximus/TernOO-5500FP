@@ -286,10 +286,10 @@ class ServerBackend:
                                f'(server said: {str(data)[:160]})')
         return text
 
-    def chat_argv(self, messages: list) -> list:
+    def chat_argv(self, messages: list, max_tokens: int = None) -> list:
         body = json.dumps({
             'messages': messages,
-            'max_tokens': self.n_predict,
+            'max_tokens': int(max_tokens or self.n_predict),
             'temperature': self.temp,
             'stream': False,
         })
@@ -297,7 +297,7 @@ class ServerBackend:
                 '-H', 'Content-Type: application/json',
                 '-X', 'POST', f'{self.url}/v1/chat/completions', '-d', body]
 
-    def chat(self, messages: list) -> str:
+    def chat(self, messages: list, max_tokens: int = None) -> str:
         """Ask via the chat endpoint: llama-server applies the MODEL'S OWN
         built-in template, so the wrap can never drift from what the server
         actually holds — the tulu-markup-posted-to-Qwen class of bug cannot
@@ -305,7 +305,8 @@ class ServerBackend:
         'assistant', 'content': str}, ...] — real turns, not a screenplay
         blob, so the model answers instead of continuing the transcript."""
         try:
-            r = subprocess.run(self.chat_argv(messages), capture_output=True,
+            r = subprocess.run(self.chat_argv(messages, max_tokens),
+                               capture_output=True,
                                text=True, timeout=self.timeout + 15)
         except FileNotFoundError:
             raise BackendError('curl not installed — needed to reach '

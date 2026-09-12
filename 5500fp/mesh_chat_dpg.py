@@ -485,9 +485,11 @@ def seat_live_name(be):
     return seat_model_name()
 
 
-def ask_professor(prompt, messages=None):
+def ask_professor(prompt, messages=None, max_tokens=None):
     """One Professor, one seat: every asker (chat, Forge, Editor review)
-    comes through this door. Returns (where, answer)."""
+    comes through this door. Returns (where, answer). ``max_tokens`` lets
+    long-form asks (the forge's spec JSON) outgrow the seat's chat-sized
+    budget — 384 tokens truncated grep's field list mid-object (12-09)."""
     if SEAT[0] == "local":
         be, why = local_backend()
         if be is None:
@@ -497,7 +499,8 @@ def ask_professor(prompt, messages=None):
             # cannot drift from the model the server holds, and a
             # screenplay-style prompt can no longer teach it to echo.
             msgs = messages or [{"role": "user", "content": prompt}]
-            return f"local · {seat_live_name(be)}", be.chat(msgs)
+            return (f"local · {seat_live_name(be)}",
+                    be.chat(msgs, max_tokens=max_tokens))
         return f"local · {seat_model_name()}", be.generate(prompt)
     return BUYER.ask_mesh(prompt, candidates=candidates())
 
@@ -1310,14 +1313,14 @@ def forge_start(cmd):
 
     def work():
         try:
-            _w, ans = ask_professor(prompt)
+            _w, ans = ask_professor(prompt, max_tokens=2000)
             text = ans or "(no model answered)"
         except Exception as ex:                 # noqa: BLE001
             text = f"(forge failed: {ex})"
 
         def done():
             global FORGE_SPEC
-            obj = MP._first_json(text)
+            obj = MP._forge_json(text)
             if obj is None:
                 dpg.set_value("fg_msg", "the Professor went off-protocol — "
                                         "see { } for his raw reply")
