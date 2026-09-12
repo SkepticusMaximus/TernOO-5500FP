@@ -222,6 +222,7 @@ def toggle_workshop(*_):
     dpg.configure_item("wsgrip_btn", label="<<" if show else ">>")
     CFGD["panel_collapsed"] = not show
     _cfg_save(CFGD)
+    _schedule_redraw()          # pane width just changed — rewrap blocks
 
 
 # ── the Model seat panel (10-09: config/search/filter as a real tab) ─────────
@@ -755,6 +756,29 @@ def redraw_chat():
             append_block(USER_NAME, text, BLU)
         else:
             append_block("Professor", text, GRN)
+
+
+_REDRAW_PENDING = [False]
+
+
+def _schedule_redraw(delay=3):
+    """Debounced redraw a few frames out — width changes (sidebar toggle,
+    panel drag, window resize) need the NEW layout to settle before blocks
+    re-measure, and resize events fire in bursts (12-09)."""
+    if _REDRAW_PENDING[0]:
+        return
+    _REDRAW_PENDING[0] = True
+
+    def _do():
+        _REDRAW_PENDING[0] = False
+        try:
+            redraw_chat()
+        except Exception:
+            pass
+    try:
+        dpg.set_frame_callback(dpg.get_frame_count() + delay, _do)
+    except Exception:
+        _REDRAW_PENDING[0] = False
 
 
 def raw_transcript(*_):
@@ -2156,8 +2180,11 @@ _DRAG = {"h": None, "v": None, "n": None}      # base size at drag start
 
 def _grip_up(*_):
     if any(v is not None for v in _DRAG.values()):
+        rewrap = _DRAG["h"] is not None        # h-drag changes pane width
         _cfg_save(CFGD)                        # settle the sculpt on release
         _DRAG["h"] = _DRAG["v"] = _DRAG["n"] = None
+        if rewrap:
+            _schedule_redraw()
 
 
 def _drag_grips(*_):
@@ -2237,6 +2264,9 @@ def main():
                         width=VP_W, height=VP_H, x_pos=VP_X, y_pos=VP_Y,
                         **_ikw)
     dpg.setup_dearpygui()
+    # window resize changes the pane width too — same rewrap rule, longer
+    # debounce because resize events arrive in bursts while dragging
+    dpg.set_viewport_resize_callback(lambda: _schedule_redraw(30))
     dpg.show_viewport()
     dpg.set_primary_window("main", True)
     dpg.set_global_font_scale(SCALE)          # your remembered zoom
