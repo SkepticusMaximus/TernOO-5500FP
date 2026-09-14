@@ -85,6 +85,68 @@ class TestAudit(unittest.TestCase):
         self.assertEqual(a, b)
 
 
+REAL_JOB = json.dumps(
+    {"weights": ["bonsai-b0-gate-81x512", "bonsai-b0-down-27x81",
+                 "bonsai-b0-attnq-9x27"],
+     "x": [(i * 37) % 19 - 9 for i in range(512)]}).encode()
+
+
+class TestRealWeights(unittest.TestCase):
+    """v0.2: tensors pulled from the actual Bonsai GGUF (TQ2_0 → trits),
+    committed as canonical .dick files, chained through the kernel."""
+
+    def test_real_weights_run_and_carry_shas(self):
+        out = json.loads(K.run_unit(REAL_JOB, 0))
+        self.assertEqual(out["unit"], "dick-v0.2-file")
+        self.assertEqual(len(out["weights_sha256"]), 3)
+
+    def test_pinned_real_weights_digest(self):
+        # Bonsai blk.0 slices, x=(37i mod 19)-9: proven on HP 15-09-2026.
+        # If this drifts, either the kernel or the weight files changed —
+        # both are audit events, never silent ones.
+        out = json.loads(K.run_unit(REAL_JOB, 0))
+        self.assertEqual(
+            out["final_digest"],
+            "ef8dbb9344bb96019cd22a2286bb03e5aeb7d85b738213331584450489b82d7f")
+
+    def test_registry_files_are_pure_ternary(self):
+        import gguf_ternary as G
+        for n in ("bonsai-b0-gate-81x512", "bonsai-b0-down-27x81"):
+            m, _o, _s = G.load_dick_file(
+                os.path.join(K.WEIGHTS_DIR, n + ".dick"))
+            self.assertTrue(all(v in (-1, 0, 1) for row in m for v in row))
+
+
+class TestCheckpointAudit(unittest.TestCase):
+    """v0.2: verify ONE layer from its predecessor's checkpoint — the
+    cheap audit that makes big work economically auditable."""
+
+    def setUp(self):
+        self.claimed = json.loads(K.run_unit(REAL_JOB, 0))["layer_digests"]
+
+    def test_layer0_needs_no_checkpoint(self):
+        self.assertTrue(K.audit_one_layer(REAL_JOB, 0, self.claimed, 0))
+
+    def test_middle_layers_verify_from_checkpoints(self):
+        for i in (1, 2):
+            ck = K.checkpoint(REAL_JOB, 0, i - 1)
+            self.assertTrue(K.audit_one_layer(REAL_JOB, 0, self.claimed,
+                                              i, ck))
+
+    def test_forged_claim_fails(self):
+        ck = K.checkpoint(REAL_JOB, 0, 0)
+        bad = list(self.claimed)
+        bad[1] = "0" * 64
+        self.assertFalse(K.audit_one_layer(REAL_JOB, 0, bad, 1, ck))
+
+    def test_forged_checkpoint_fails(self):
+        self.assertFalse(K.audit_one_layer(REAL_JOB, 0, self.claimed, 1,
+                                           b"[1,2,3]"))
+
+    def test_out_of_range_layer_refused(self):
+        self.assertFalse(K.audit_one_layer(REAL_JOB, 0, self.claimed, 99))
+
+
 class TestOnTheMesh(unittest.TestCase):
     """DICK sells verifiable inference and earns a vote — the colony's
     native-class economics, end to end."""
