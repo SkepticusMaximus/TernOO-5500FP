@@ -97,19 +97,58 @@ def relu_requant(v):
     return [min(x // (3**TRIT_SHIFT), RELU_CAP) if x > 0 else 0 for x in v]
 
 
-def forward(seed, x, n_layers, width):
-    """Run the seed-derived n_layers×width MLP on integer vector x.
-    Returns the list of per-layer OUTPUTS (post ReLU/requant) — the audit
-    surface: each entry is what a verifier must reproduce bit-for-bit."""
+def forward_layers(Ws, x):
+    """Run an explicit chain of ternary matrices on integer vector x.
+    Returns per-layer OUTPUTS (post ReLU/requant) — the audit surface:
+    each entry is what a verifier must reproduce bit-for-bit."""
     outs = []
     v = list(map(int, x))
-    n_in = len(v)
-    for i in range(n_layers):
-        W = ternary_layer(seed + i * 7919, n_in, width)   # 7919: 1000th prime
+    for W in Ws:
         v = relu_requant(tmatmul(W, v))
         outs.append(v)
-        n_in = width
     return outs
+
+
+def forward(seed, x, n_layers, width):
+    """Seed-derived demo network (v0.1 path — digests pinned, never drift)."""
+    Ws = []
+    n_in = len(x)
+    for i in range(n_layers):
+        Ws.append(ternary_layer(seed + i * 7919, n_in, width))  # 7919: 1000th prime
+        n_in = width
+    return forward_layers(Ws, x)
+
+
+# ── REAL weights (v0.2): canonical .dick files from an actual model ──────────
+WEIGHTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "dick_weights")
+
+
+def _gguf_mod():
+    import importlib.util as ilu
+    here = os.path.dirname(os.path.abspath(__file__))
+    spec = ilu.spec_from_file_location(
+        "gguf_ternary", os.path.join(here, "gguf_ternary.py"))
+    m = ilu.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def load_weight_chain(names):
+    """Resolve .dick weight files by NAME from the git-synced registry dir.
+    Returns (matrices, sha256 list). The shas ride in the audited output,
+    so a mismatched registry can never silently settle: different file,
+    different sha, different digest, no coin."""
+    G = _gguf_mod()
+    Ws, shas = [], []
+    for name in names:
+        base = os.path.basename(str(name))     # no path escape via job cargo
+        if not base.endswith(".dick"):
+            base += ".dick"
+        m, _obj, sha = G.load_dick_file(os.path.join(WEIGHTS_DIR, base))
+        Ws.append(m)
+        shas.append(sha)
+    return Ws, shas
 
 
 # ── digests: SHA3 gates the mint; the ternary MMID is the native label ───────
@@ -143,63 +182,127 @@ def native_label(vec):
 
 # ── the job: run, digest, audit ───────────────────────────────────────────────
 def decode_job(job: bytes, index: int):
-    """Deterministically derive (seed, x, n_layers, width) from cargo+index.
-    JSON {"seed":..,"x":[..],"layers":..,"width":..} or arbitrary bytes
-    (folded through SHA3 into a seed; x from the bytes). Chunk index
-    perturbs the seed: distinct chunks are distinct units."""
-    seed = None
+    """Deterministically derive the work from cargo+index. Three forms:
+    JSON {"weights":[names],"x":[..]}  → REAL file weights (v0.2);
+    JSON {"seed":..,"x":..,"layers":..,"width":..} → seed demo (v0.1);
+    arbitrary bytes → seed demo folded from SHA3. Chunk index perturbs
+    the input (file path) or seed (demo): distinct chunks, distinct units.
+    Returns (kind, payload) with kind in {"file","seed"}."""
     try:
         obj = json.loads(job.decode("utf-8"))
-        if isinstance(obj, dict) and "seed" in obj:
-            seed = int(obj["seed"])
-            x = [int(v) for v in obj.get("x", [1, 2, 3])]
-            n_layers = max(1, min(int(obj.get("layers", 4)), 64))
-            width = max(2, min(int(obj.get("width", 27)), 729))
     except Exception:                            # noqa: BLE001
-        pass
-    if seed is None:
-        digest = hashlib.sha3_256(job or b"\x00").digest()
-        seed = int.from_bytes(digest[:4], "big")
-        x = [b - 128 for b in (job[:27] or b"\x01")]
-        n_layers, width = 4, 27
-    return seed + int(index), x, n_layers, width
+        obj = None
+    if isinstance(obj, dict) and "weights" in obj:
+        names = [str(n) for n in obj["weights"]][:16]
+        x = [int(v) for v in obj.get("x", [1, 2, 3])]
+        # index perturbs the INPUT deterministically (weights are fixed)
+        x = [v + (int(index) % 3) - 1 for v in x]
+        return "file", (names, x)
+    if isinstance(obj, dict) and "seed" in obj:
+        seed = int(obj["seed"])
+        x = [int(v) for v in obj.get("x", [1, 2, 3])]
+        n_layers = max(1, min(int(obj.get("layers", 4)), 64))
+        width = max(2, min(int(obj.get("width", 27)), 729))
+        return "seed", (seed + int(index), x, n_layers, width)
+    digest = hashlib.sha3_256(job or b"\x00").digest()
+    seed = int.from_bytes(digest[:4], "big")
+    x = [b - 128 for b in (job[:27] or b"\x01")]
+    return "seed", (seed + int(index), x, 4, 27)
+
+
+def _job_outputs(job: bytes, index: int):
+    """(layer outputs, unit tag, weights shas or None) for a decoded job —
+    the ONE compute path both worker and auditor share."""
+    kind, payload = decode_job(job, index)
+    if kind == "file":
+        names, x = payload
+        Ws, shas = load_weight_chain(names)
+        return forward_layers(Ws, x), "dick-v0.2-file", shas
+    seed, x, n_layers, width = payload
+    return forward(seed, x, n_layers, width), "dick-v0-mlp", None
 
 
 def run_unit(job: bytes, index: int = 0) -> bytes:
     """The DICK unit of work: forward pass + per-layer SHA3 digests.
     Canonical JSON bytes out — an auditor re-running (job, index) gets
-    identical bytes, and can ALSO spot-check any single layer (below)."""
-    seed, x, n_layers, width = decode_job(job, index)
-    outs = forward(seed, x, n_layers, width)
+    identical bytes, and can ALSO spot-check single layers (below)."""
+    outs, unit, shas = _job_outputs(job, index)
     digests = [layer_digest(v) for v in outs]
     out = {
-        "v": 1,
-        "unit": "dick-v0-mlp",
+        "v": 2,
+        "unit": unit,
         "index": int(index),
-        "layers": n_layers,
-        "width": width,
+        "layers": len(outs),
         "layer_digests": digests,
         "final": outs[-1][:9],
         "final_digest": digests[-1],
         "native_label": native_label(outs[-1]),
     }
+    if shas is not None:
+        out["weights_sha256"] = shas
     return json.dumps(out, separators=(",", ":"), sort_keys=True).encode()
 
 
 def audit_layers(job: bytes, index: int, claimed_digests, k: int = 3,
                  audit_seed: int = 1) -> bool:
-    """Spot-check k pseudo-randomly chosen layers of a CLAIMED result:
-    recompute the full pass (v0.1 recomputes all — layer checkpointing
-    arrives with big models), compare the k sampled digests. The sample
-    choice derives from audit_seed so an auditor's picks are themselves
-    reproducible — auditors can be audited."""
-    seed, x, n_layers, width = decode_job(job, index)
-    if len(claimed_digests) != n_layers:
+    """Spot-check k pseudo-randomly chosen layers of a CLAIMED result by
+    full recompute. The sample choice derives from audit_seed so an
+    auditor's picks are themselves reproducible — auditors can be
+    audited. (For the CHEAP audit, see audit_one_layer.)"""
+    outs, _unit, _shas = _job_outputs(job, index)
+    if len(claimed_digests) != len(outs):
         return False
-    outs = forward(seed, x, n_layers, width)
-    g = _lcg(audit_seed + seed)
-    picks = {next(g) % n_layers for _ in range(max(1, k))}
+    g = _lcg(audit_seed + len(claimed_digests)
+             + int(claimed_digests[0][:8], 16))
+    picks = {next(g) % len(outs) for _ in range(max(1, k))}
     return all(layer_digest(outs[i]) == claimed_digests[i] for i in picks)
+
+
+# ── single-layer checkpoint audit (v0.2): the CHEAP audit ────────────────────
+def checkpoint(job: bytes, index: int, layer_i: int) -> bytes:
+    """The canonical bytes of layer_i's output — served by a WORKER on
+    request so an auditor can verify layer_i+1 without recomputing the
+    whole pass. The checkpoint can't lie usefully: its own digest must
+    match the claimed chain, and the next layer is recomputed from it."""
+    outs, _unit, _shas = _job_outputs(job, index)
+    return canonical_bytes(outs[int(layer_i)])
+
+
+def _layer_input(job: bytes, index: int, layer_i: int, prev_ckpt: bytes):
+    """The input vector for layer_i: the job's own x for layer 0, else the
+    provided predecessor checkpoint (whose digest the caller verifies)."""
+    if layer_i == 0:
+        kind, payload = decode_job(job, index)
+        return payload[1]
+    return json.loads(prev_ckpt.decode())
+
+
+def audit_one_layer(job: bytes, index: int, claimed_digests, layer_i: int,
+                    prev_ckpt: bytes = b"") -> bool:
+    """Verify ONE layer of a claimed result at ~1/n of the recompute cost:
+    (1) the predecessor checkpoint's digest must equal the claimed chain
+    entry — a forged checkpoint fails here; (2) recompute ONLY layer_i
+    from it; (3) its digest must equal the claim. With real model files,
+    this is what makes auditing big work economically sane."""
+    layer_i = int(layer_i)
+    if layer_i < 0 or layer_i >= len(claimed_digests):
+        return False
+    if layer_i > 0:
+        prev_digest = hashlib.sha3_256(prev_ckpt).hexdigest()
+        if prev_digest != claimed_digests[layer_i - 1]:
+            return False
+    v = _layer_input(job, index, layer_i, prev_ckpt)
+    kind, payload = decode_job(job, index)
+    if kind == "file":
+        names, _x = payload
+        Ws, _shas = load_weight_chain(names)
+        W = Ws[layer_i]
+    else:
+        seed, x, n_layers, width = payload
+        n_in = len(x) if layer_i == 0 else width
+        W = ternary_layer(seed + layer_i * 7919, n_in, width)
+    out_i = relu_requant(tmatmul(W, list(map(int, v))))
+    return layer_digest(out_i) == claimed_digests[layer_i]
 
 
 # ── mesh worker (optional glue, zero hard dependency — earn_unit pattern) ────

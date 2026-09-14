@@ -1,0 +1,1 @@
+{"kind":"dick-weights","meta":{"crop":[9,27],"source_dims":[4096,4096],"source_tensor":"blk.0.attn_q.weight"},"scales_fp16_raw":[[9240],[9408],[9344],[9376],[9400],[9416],[9416],[9472],[9616]],"shape":[9,27],"trits_b64":"ZAalhYZJgKoSVAVJIBWmECSRKZQaWEmWalGEVYhqCIFZGZiAAZkAQWQopAZUmCQEWYakAVQlkWoaGWGSSg==","v":1}
