@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TernOO-5500FP — Canonical &amp; Mirrors</title>
+  <meta name="description" content="The canonical home of TernOO-5500FP documentation, and the mirrors that reference it." />
+  <style>
+    :root {
+      --bg: #f5f1e8; --paper: #fffdf8; --ink: #1f1d1a; --muted: #625a4d;
+      --rule: #d7cdbd; --accent: #6e4b1f; --accent-soft: #efe5d3;
+      --link: #5b3f1d; --max: 860px;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink);
+           font: 17px/1.65 Georgia, 'Times New Roman', serif; }
+    main { max-width: var(--max); margin: 0 auto; padding: 3rem 1.5rem; }
+    h1 { font-size: 1.9rem; border-bottom: 2px solid var(--rule); padding-bottom: .4rem; }
+    h2 { color: var(--accent); font-size: 1.25rem; margin-top: 2.2rem; }
+    a { color: var(--link); }
+    .card { background: var(--paper); border: 1px solid var(--rule);
+            border-radius: 8px; padding: 1rem 1.25rem; margin: .8rem 0; }
+    .tag { display: inline-block; background: var(--accent-soft); color: var(--accent);
+           border-radius: 4px; padding: 0 .5rem; font-size: .8rem; margin-right: .5rem;
+           font-family: monospace; }
+    .muted { color: var(--muted); font-size: .92rem; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Canonical &amp; Mirrors</h1>
+  <p>This page is served <strong>directly from the repository</strong> — the
+  single source of truth. Anything you read elsewhere is a mirror, and every
+  mirror should point back here or to the repository itself. When a mirror
+  disagrees with the repo, the repo wins.</p>
+
+  <h2>The canonical sources</h2>
+  <div class="card">
+    <span class="tag">repo</span>
+    <a href="https://github.com/SkepticusMaximus/TernOO-5500FP">github.com/SkepticusMaximus/TernOO-5500FP</a>
+    <p class="muted">The living archive: architecture, FlowCode IDE, emulators,
+    P2PCP/P2PVP, specs, and this very page (<code>docs/site/</code>).</p>
+  </div>
+  <div class="card">
+    <span class="tag">archived</span>
+    <a href="https://doi.org/10.5281/zenodo.18881738">DOI 10.5281/zenodo.18881738</a>
+    <p class="muted">The TernOO-5500FP whitepaper, archived on Zenodo — a
+    citable, timestamped snapshot outside any one platform's control.</p>
+  </div>
+  <div class="card">
+    <span class="tag">intro</span>
+    <a href="index.html">The TernOO-5500FP introduction</a>
+    <p class="muted">The front door — same origin, same repo.</p>
+  </div>
+
+  <h2>How this stays true</h2>
+  <p>Documents are written into the repository over authenticated, audited
+  rails (a self-hosted broker holds the credentials; the writing seats never
+  see them). The web view you are reading simply serves the repo's
+  <code>docs/site/</code> directory. No copy steps, no drift.</p>
+
+  <p class="muted">TernOO-5500FP — balanced-ternary computing, done in the open.</p>
+</main>
+</body>
+</html>
