@@ -172,11 +172,25 @@ arithmetic. Everything resting on them, including the backpropagation-breadcrumb
 conjecture, is speculation and is held in the docs seat's speculation note,
 deliberately outside the repository.
 
+**MRS scope — ruled 19/09.** MRS covers both the signalling topology and the
+proposition that the base channel can carry traversal provenance, with
+**P2PVP's vector training manifold as the use case where it must pay rent**. The
+testable form: can the serial base channel carry a backpropagation path that a
+verifier walks rather than recomputes?
+
+**On what "hypothesis" means here — captain's doctrine, 19/09.** A hypothesis in
+this project is a *what-if question, not an assertion*. The answer is valuable
+either way: discovering that the two signals propagate independently is a result,
+and discovering that they cannot is equally a result. Nothing is to be written
+as though a particular outcome is being defended. This governs how all three
+hypotheses are stated in any eventual paper.
+
 **Empirical path.** GristMill is the critical path for TDA and SE. If it emerges
 a working object library and interface from the word grammar, SE stops being a
 design philosophy and becomes a demonstrated result, and TDA gains a measured
-case. MRS needs a prototype of its own before it can claim more than arithmetic.
-Until then all three are assertions.
+case. MRS needs a prototype of its own before it can claim more than arithmetic;
+P2PVP is where that prototype would live. Until then all three are open
+questions rather than positions.
 
 Distinct from #1275, which is an architecture-and-languages paper and should
 remain one. Leading with the quasigroup would make it a theory paper and
