@@ -133,18 +133,50 @@ So the defect is an undefended claim, not a false one, and the remedy is a
 paragraph rather than a rewrite. Do not let this be recorded as "the maths was
 wrong".
 
-### 5.3 The theoretical trinity — a future submission
+### 5.3 The theoretical collective — a future submission
 
-Captain's framing, 19/09. A separate theory paper on three claims:
+Captain's framing, 19/09, revised the same day. **One established foundation
+underwriting three hypotheses**, rather than a trinity of equals:
 
-- **SQG** — settled and implemented in the HexMesh.
-- **TDA** — needs rigorous analysis and empirical support.
-- **SE** — needs empirical support.
+**The foundation — SQG.** The Steiner quasigroup is settled maths and shipped
+code: per-trit, balanced, idempotent for all 729 values, implemented in the
+HexMesh and fleet-deployed. It is not hypothetical and should not be presented
+as one of the claims under test. But it does not stop being theoretically
+important merely because it is built: it is the precursor from which the
+emergence and dimensional arguments descend. Present it as **established
+architecture that underwrites the three hypotheses**.
 
-GristMill is the critical path for the last two. If it emerges a working object
-library and interface from the word grammar, SE stops being a design philosophy
-and becomes a demonstrated result, and TDA gains a measured case. Until then
-both are assertions.
+**Hypothesis 1 — TDA (Ternary Dimensional Advantage).** Needs rigorous
+analysis and empirical support; see 5.2 for its current status and its
+undefended flank.
+
+**Hypothesis 2 — SE (Structural Emergence).** Needs empirical support; see 5.1
+for the principle.
+
+**Hypothesis 3 — MRS (Multi-Radix Signals).** The two-channel honeycomb: tribble
+values on the edges with the traversal turning at vertices, and a separate
+one-trit serial channel across the cell bases at three times the tribble clock.
+Partially ratified for mathematical rigour by DeepAI — the dual lattice, the
+sum-to-zero vertex condition as a flow law, the orientation requirement for
+deterministic traversal, and the independence of the two strata all check out.
+
+Two things to carry forward with it. The ratification has a known defect: that
+consultation repeatedly wrote Z/3^k as isomorphic to (Z/3)^k, which is false as
+groups and is the same error class that produced the idempotence near-miss. The
+algebra needs restating in the correct group before MRS is published. And the
+observations that make MRS interesting are the octal coincidence — two trits
+carry one octal digit, so a tribble carries three OTree levels of descent — and
+the capacity match, where the base channel's three trits per tribble step
+exactly meet the forward walk's three-way branching. Both are checkable
+arithmetic. Everything resting on them, including the backpropagation-breadcrumb
+conjecture, is speculation and is held in the docs seat's speculation note,
+deliberately outside the repository.
+
+**Empirical path.** GristMill is the critical path for TDA and SE. If it emerges
+a working object library and interface from the word grammar, SE stops being a
+design philosophy and becomes a demonstrated result, and TDA gains a measured
+case. MRS needs a prototype of its own before it can claim more than arithmetic.
+Until then all three are assertions.
 
 Distinct from #1275, which is an architecture-and-languages paper and should
 remain one. Leading with the quasigroup would make it a theory paper and
