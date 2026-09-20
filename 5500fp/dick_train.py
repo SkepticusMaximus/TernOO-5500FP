@@ -189,17 +189,29 @@ def accuracy(W1, W2, data, hp):
     return good, len(data)
 
 
+def _setup(hp):
+    """Everything a run (or a resumed epoch) derives from the job identity."""
+    W1, W2 = make_net(hp)
+    B = make_dfa(hp)
+    train_set, test_set = make_dataset(hp)
+    return W1, W2, B, train_set, test_set
+
+
+def _run_epoch(W1, W2, B, train_set, hp):
+    """Exactly one epoch, in place. Fixed sample order — the toy consumes
+    no shuffle stream, so an epoch is a pure function of (weights, job)."""
+    for x, y in train_set:
+        train_step(W1, W2, B, x, y, hp)
+
+
 def train(hp=None):
     """The whole run. Returns dict with final weights digest, the per-epoch
     digest chain, and train/test accuracy counts. Pure integers throughout."""
     hp = dict(HP, **(hp or {}))
-    W1, W2 = make_net(hp)
-    B = make_dfa(hp)
-    train_set, test_set = make_dataset(hp)
+    W1, W2, B, train_set, test_set = _setup(hp)
     epoch_digests = []
     for _ in range(hp["epochs"]):
-        for x, y in train_set:
-            train_step(W1, W2, B, x, y, hp)
+        _run_epoch(W1, W2, B, train_set, hp)
         epoch_digests.append(weights_digest([W1, W2]))
     tr_good, tr_n = accuracy(W1, W2, train_set, hp)
     te_good, te_n = accuracy(W1, W2, test_set, hp)
@@ -211,6 +223,120 @@ def train(hp=None):
         "test_acc": [te_good, te_n],
         "hp_digest": hashlib.sha3_256(canonical_bytes(hp)).hexdigest(),
     }
+
+
+# ── stage 4: log-and-replay as an audit primitive, and the mesh worker ──────
+# The sellable claim is the epoch digest chain. Verification comes in two
+# strengths: FULL REPLAY (rerun the job; every byte must match — δ = 0), and
+# the CHEAP AUDIT (verify ONE epoch from its predecessor's checkpoint — the
+# per-layer spot-check of dick_kernel, applied to training time).
+
+# a hostile job must not be able to buy a year of CPU with one line of JSON
+JOB_BOUNDS = {"epochs": 200, "n_train": 2000, "n_test": 500,
+              "n_in": 256, "n_hid": 256, "n_out": 128}
+
+
+def decode_job(job: bytes, index: int):
+    """Job bytes → hp. Overrides whitelist into HP and clamp to JOB_BOUNDS;
+    the chunk index perturbs the weight seed so each chunk is an
+    independent, individually-replayable run (a seed ensemble)."""
+    try:
+        obj = json.loads(job.decode("utf-8"))
+        over = obj.get("hp", {}) if isinstance(obj, dict) else {}
+    except Exception:
+        over = {}
+    hp = dict(HP)
+    for k, v in over.items():
+        if k in hp and isinstance(v, int):
+            hp[k] = min(v, JOB_BOUNDS[k]) if k in JOB_BOUNDS else v
+    hp["seed_weights"] = hp["seed_weights"] + index * (3**4 + 1)
+    return hp
+
+
+def run_unit(job: bytes, index: int) -> str:
+    """The worker's whole claim, canonical: digest chain + exact accuracy.
+    Weights never ride the wire — the digests commit to them."""
+    hp = decode_job(job, index)
+    r = train(hp)
+    out = {"unit": "dick-train-v0.3-unit", "index": index,
+           "final_digest": r["final_digest"],
+           "epoch_digests": r["epoch_digests"],
+           "train_acc": r["train_acc"], "test_acc": r["test_acc"],
+           "hp_digest": r["hp_digest"]}
+    return canonical_bytes(out).decode()
+
+
+VCLASS_NATIVE = "native"
+
+
+def as_worker():
+    """Training as a REPLAY-CLASS mesh worker (dick_kernel's exact
+    optional-wrapper discipline): full replay by the auditor = δ = 0
+    settlement, and the work mints weight-bearing native votes."""
+    try:
+        from p2pcp_worker import WorkerAdapter, VCLASS_NATIVE as _VN
+    except Exception:                            # noqa: BLE001
+        try:
+            from p2pcp.worker import WorkerAdapter, VCLASS_NATIVE as _VN
+        except Exception:
+            WorkerAdapter, _VN = None, VCLASS_NATIVE
+
+    if WorkerAdapter is not None:
+        class TrainWorker(WorkerAdapter):
+            """REPLAY-CLASS: bit-exactly reproducible training."""
+            vclass = _VN
+
+            def run_chunk(self, job: bytes, index: int) -> bytes:
+                return run_unit(job, index).encode()
+        return TrainWorker()
+
+    class _TrainWorker:                          # duck-typed fallback
+        vclass = VCLASS_NATIVE
+
+        def run_chunk(self, job: bytes, index: int) -> bytes:
+            return run_unit(job, index).encode()
+    return _TrainWorker()
+
+
+def checkpoint(job: bytes, index: int, epoch_i: int) -> bytes:
+    """Canonical [W1, W2] AFTER epoch epoch_i — what an honest worker logs
+    beside its digest chain so auditors can spot-check single epochs."""
+    hp = decode_job(job, index)
+    if not (0 <= epoch_i < hp["epochs"]):
+        raise ValueError("epoch out of range")
+    W1, W2, B, train_set, _ = _setup(hp)
+    for _ in range(epoch_i + 1):
+        _run_epoch(W1, W2, B, train_set, hp)
+    return canonical_bytes([W1, W2])
+
+
+def audit_one_epoch(job: bytes, index: int, claimed_digests, epoch_i: int,
+                    prev_ckpt: bytes = b"") -> bool:
+    """Verify ONE epoch of a claimed run without recomputing the rest.
+
+    (1) the offered checkpoint must hash to the PREVIOUS claimed digest —
+        a forged starting state fails before any compute is spent;
+    (2) recompute ONLY epoch epoch_i from it;
+    (3) the result must hash to the claimed digest for epoch_i.
+    Epoch 0 needs no checkpoint (its predecessor is the job-derived init).
+    """
+    hp = decode_job(job, index)
+    if not (0 <= epoch_i < hp["epochs"]) or epoch_i >= len(claimed_digests):
+        return False
+    _, _, B, train_set, _ = _setup(hp)
+    if epoch_i == 0:
+        W1, W2, _, _, _ = _setup(hp)
+    else:
+        if hashlib.sha3_256(prev_ckpt).hexdigest() != claimed_digests[epoch_i - 1]:
+            return False
+        try:
+            W1, W2 = json.loads(prev_ckpt.decode("utf-8"))
+        except Exception:
+            return False
+        if not all(isinstance(v, int) for M in (W1, W2) for row in M for v in row):
+            return False
+    _run_epoch(W1, W2, B, train_set, hp)
+    return weights_digest([W1, W2]) == claimed_digests[epoch_i]
 
 
 def main(argv=None):
