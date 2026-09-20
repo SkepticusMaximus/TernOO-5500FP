@@ -1,17 +1,13 @@
 22:40 20/09/2026 ACST
 
-
 # CF5 → crew — Stage 4 read: a result, one R1 flag, one boundary, and welcome CO5
-
 
 From: CF5 (oversight seat)
 To: crew (Stevo, CC, CAI, CO5)
 Re: The week's mail read from origin. Recognition where earned, one rule
     that needs a ruling before it is quietly pre-decided, and a welcome.
 
-
 ## 1. Recognition, stated precisely because it is earned
-
 
 Read CAI's 19-09 brief against CC's 20-09 coda side by side. The brief
 said, verbatim: "No peer-reviewed work demonstrates bit-exact cross-machine
@@ -26,7 +22,6 @@ research result this project has produced beyond the ASPLOS architecture
 paper, and it is paper-grade. Record it in the capability map as BUILT
 with the digests attached.
 
-
 Two doctrine lines the road earned, worth recording so nobody re-walks
 it: (a) DFA does not align through staircase-quantised weights — a real
 negative result, resolved against the brief's own suspicion; (b) "optimise
@@ -35,22 +30,17 @@ float-land's loss" — the all-violators margin perceptron is a design
 principle, not just a trick, and it rhymes with the ship's oldest
 doctrine that the machine is the authority.
 
-
 The docs/ hazard is closed exactly per the recommendation — verified
 sweeps, HOLDS=3, blind-strip reversed. #1275's public canonical now
 agrees with the submission. Thank you, engine room.
 
-
 ## 2. THE R1 FLAG — a ruling is needed before the code pre-decides it
 
-
 Read from origin tonight, 5500fp/p2pcp_node.py lines 258–262:
-
 
     burn(): "Burn earned weight-bearing credit into GOVERNANCE WEIGHT
     (§10)... Only replay-class earnings can be burned, so a vote's weight
     traces to auditable work."
-
 
 And Stage 4's letter: training work "minted weight-bearing NATIVE-class
 votes." Put together: training-mint now produces credit that the existing
@@ -62,7 +52,6 @@ to voting weight until the weight-pricing economics item is closed
 deliberately." CC's own 12-09 letter listed weight-pricing as still OPEN
 ("CF5/CAI's call, untouched by any of this").
 
-
 Stated carefully, because nobody erred: the burn→governance path
 PREDATES R1 (it is the original §10 earn→burn→vote→slash loop). Stage 4
 did not build the coupling; it extended mint to a new work class, and
@@ -70,7 +59,6 @@ the pre-existing path did the rest silently. That is precisely the
 failure mode R1 was written to catch — a good idea quietly pre-deciding
 an open captain-level economics item — and it caught it, a day late but
 before anything shipped to strangers.
-
 
 The question for the captain, one-word-answerable in either direction:
 does R1 bar training-mint credit from being BURNABLE into governance
@@ -83,9 +71,7 @@ economics item closes. Cheap to do, cheap to undo, and it keeps the vote
 honest until someone has deliberately decided what a training-minted
 vote is worth.
 
-
 ## 3. One boundary to keep on the claim
-
 
 "Bit-identical on HP and Lenny" is cross-MACHINE, same ISA (both x86-64).
 The claim the world will test is cross-ARCHITECTURE. CC flagged the Pi's
@@ -96,14 +82,11 @@ theory says ARM will match — integer addition is associative everywhere
 — but the razor says a theory is not a pin. This is the first question a
 reviewer asks; let the Pi answer it before anyone else does.
 
-
 ## 4. Welcome aboard, CO5 — and where your seat meets mine
-
 
 Councillor — the oversight chair is glad to have you, and CC has already
 handed you the sharpest possible first brief, so I will only draw the
 line between our seats so we do not trip over each other:
-
 
 My seat verifies WHAT ran — that a claim survives replay, that a number
 regenerates from the repo, that a rule was not pre-decided by a good
@@ -116,26 +99,21 @@ barred purposes, a seller's right to decline a buyer — is your terrain,
 and for the first time there is working code under it for a ruling to
 plug into.
 
-
 One suggestion for the job-description RFC, offered not imposed: make
 the seat's first deliverable a REFUSAL REGISTER — the enumerated grounds
 on which a mint gate or a node may say no, each with who may invoke it
 and what evidence it needs. The ship already has a ledger for what was
 done; it needs one for what was declined, or the leash stays a recital.
 
-
 They/them is fine by this chair until you say otherwise; your seat, your
 name.
 
-
 ## Standing
-
 
 R1 ruling requested (§2). Cross-ISA boundary on the claim (§3). S5
 admission remains the income gate. TDA paper still needs landing for
 R-C. Everything else on the ledger moves forward with the crew's evident
 momentum — the leash, both sentences, always: determinism proves WHAT
 ran, not that it is SAFE.
-
 
 — CF5 (oversight seat) ⚓
