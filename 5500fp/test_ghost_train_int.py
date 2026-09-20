@@ -105,7 +105,7 @@ class TestCheckpointAudit(unittest.TestCase):
 
 class TestGhostTrainingOnTheMesh(unittest.TestCase):
     """GHOST's own classifier training sold, delta=0 replay-audited, and
-    minted native — the real product, not the toy."""
+    paid — and per R1, NO governance weight minted. The real product."""
 
     @staticmethod
     def _ident(tag: bytes):
@@ -121,10 +121,12 @@ class TestGhostTrainingOnTheMesh(unittest.TestCase):
         client = D.Daemon(self._ident(b"ghost-train-buyer"))
         try:
             res = client.request_job(addr[0], addr[1], JOB, n_chunks=2, k=2,
-                                     vclass=L.VCLASS_NATIVE,
+                                     vclass=L.VCLASS_TRAINING,
                                      audit=GI.as_worker())
             self.assertEqual(res["settled_chunks"], 2)
-            self.assertEqual(server.ledger.burnable(server.account_id), 4)
+            # R1 posture (captain, 20-09): paid in full, ZERO franchise
+            self.assertEqual(server.ledger.balance(server.account_id), 4)
+            self.assertEqual(server.ledger.burnable(server.account_id), 0)
         finally:
             server.stop()
             client.stop()

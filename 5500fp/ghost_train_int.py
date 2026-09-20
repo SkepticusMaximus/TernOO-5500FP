@@ -257,31 +257,32 @@ def audit_one_epoch(job: bytes, index: int, claimed_digests, epoch_i: int,
         == claimed_digests[epoch_i]
 
 
-VCLASS_NATIVE = "native"
+VCLASS_TRAINING = 2   # R1-flagged class: pays, never votes (== p2pcp VCLASS_TRAINING)
 
 
 def as_worker():
-    """GHOST training as a REPLAY-CLASS mesh worker — δ = 0 settlement,
-    weight-bearing native votes. Same adapter discipline as dick_kernel."""
+    """GHOST training as a REPLAY-CLASS mesh worker — δ = 0 settlement.
+    R1-FLAGGED CLASS: pays spendable credit, mints NO governance weight
+    until the weight-pricing item closes (captain, 20-09-2026)."""
     try:
-        from p2pcp_worker import WorkerAdapter, VCLASS_NATIVE as _VN
+        from p2pcp_worker import WorkerAdapter, VCLASS_TRAINING as _VT
     except Exception:                            # noqa: BLE001
         try:
-            from p2pcp.worker import WorkerAdapter, VCLASS_NATIVE as _VN
+            from p2pcp.worker import WorkerAdapter, VCLASS_TRAINING as _VT
         except Exception:
-            WorkerAdapter, _VN = None, VCLASS_NATIVE
+            WorkerAdapter, _VT = None, VCLASS_TRAINING
 
     if WorkerAdapter is not None:
         class GhostTrainWorker(WorkerAdapter):
             """REPLAY-CLASS: bit-exactly reproducible GHOST training."""
-            vclass = _VN
+            vclass = _VT
 
             def run_chunk(self, job: bytes, index: int) -> bytes:
                 return run_unit(job, index).encode()
         return GhostTrainWorker()
 
     class _GhostTrainWorker:                     # duck-typed fallback
-        vclass = VCLASS_NATIVE
+        vclass = VCLASS_TRAINING
 
         def run_chunk(self, job: bytes, index: int) -> bytes:
             return run_unit(job, index).encode()

@@ -249,7 +249,7 @@ class Composer(tk.Toplevel):
             ent = tk.Entry(top, textvariable=v)
             ent.grid(row=i, column=1, sticky="ew", pady=2)
             attach_edit_menu(ent)
-        tk.Label(top, text="crew: CC, CF5, CAI, Stevo, crew  (commas for several)",
+        tk.Label(top, text="crew: CC, CF5, CAI, CO5, Stevo, crew  (commas for several)",
                  fg="#777").grid(row=1, column=2, sticky="w", padx=8)
         top.columnconfigure(1, weight=1)
 
