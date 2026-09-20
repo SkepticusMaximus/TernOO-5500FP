@@ -78,6 +78,49 @@ def fisher_yates(gen, seq):
         seq[i], seq[j] = seq[j], seq[i]
 
 
+def _epoch_pass(S1, S2, rows, feats, hp, ep, m):
+    """Exactly one epoch, in place: the sample loop over rows AS ORDERED.
+    NOTE: the caller owns the shuffle — this function trains on `rows`
+    verbatim, which is what lets an auditor replay one epoch alone."""
+    l2 = hp["lr2_shift"] + (1 if ep >= hp["decay_at"] else 0)
+    l1 = hp["lr1_shift"] + (1 if ep >= hp["decay_at"] else 0)
+    W1, W2 = quantise(S1), quantise(S2)
+    for text, y in rows:
+        f = feats[text]
+        nz = [i for i in range(NFEAT) if f[i]]
+        pre = [sum(f[i] * W1[i][j] for i in nz) for j in range(NHID)]
+        h = [p if p > 0 else 0 for p in pre]
+        logits = [sum(h[j] * W2[j][k] for j in range(NHID) if h[j])
+                  for k in range(NCLS)]
+        floor = logits[y] - m
+        viol = [k for k in range(NCLS) if k != y and logits[k] > floor]
+        if not viol:
+            continue
+        nv = len(viol)
+        for j in range(NHID):
+            hj = h[j]
+            if hj == 0:
+                continue
+            step = sym_shift(hj, l2)
+            if step == 0:
+                continue
+            rowS = S2[j]
+            rowS[y] = clip(rowS[y] + step * nv, S_CAP)
+            for r in viol:
+                rowS[r] = clip(rowS[r] - step, S_CAP)
+        for j in range(NHID):
+            if pre[j] <= 0:
+                continue
+            W2j = W2[j]
+            dh = sum(W2j[y] - W2j[r] for r in viol)
+            d = sym_shift(dh, l1)
+            if d == 0:
+                continue
+            for i in nz:
+                S1[i][j] = clip(S1[i][j] + d * f[i], S_CAP)
+        W1, W2 = quantise(S1), quantise(S2)
+
+
 def train(hp=None):
     """All-violators margin perceptron on the quantised forward, integer
     shadows underneath. The objective IS the routing rule: the true class
@@ -98,44 +141,8 @@ def train(hp=None):
 
     epoch_digests = []
     for ep in range(hp["epochs"]):
-        l2 = hp["lr2_shift"] + (1 if ep >= hp["decay_at"] else 0)
-        l1 = hp["lr1_shift"] + (1 if ep >= hp["decay_at"] else 0)
         fisher_yates(gs, rows)
-        W1, W2 = quantise(S1), quantise(S2)
-        for text, y in rows:
-            f = feats[text]
-            nz = [i for i in range(NFEAT) if f[i]]
-            pre = [sum(f[i] * W1[i][j] for i in nz) for j in range(NHID)]
-            h = [p if p > 0 else 0 for p in pre]
-            logits = [sum(h[j] * W2[j][k] for j in range(NHID) if h[j])
-                      for k in range(NCLS)]
-            floor = logits[y] - m
-            viol = [k for k in range(NCLS) if k != y and logits[k] > floor]
-            if not viol:
-                continue
-            nv = len(viol)
-            for j in range(NHID):
-                hj = h[j]
-                if hj == 0:
-                    continue
-                step = sym_shift(hj, l2)
-                if step == 0:
-                    continue
-                rowS = S2[j]
-                rowS[y] = clip(rowS[y] + step * nv, S_CAP)
-                for r in viol:
-                    rowS[r] = clip(rowS[r] - step, S_CAP)
-            for j in range(NHID):
-                if pre[j] <= 0:
-                    continue
-                W2j = W2[j]
-                dh = sum(W2j[y] - W2j[r] for r in viol)
-                d = sym_shift(dh, l1)
-                if d == 0:
-                    continue
-                for i in nz:
-                    S1[i][j] = clip(S1[i][j] + d * f[i], S_CAP)
-            W1, W2 = quantise(S1), quantise(S2)
+        _epoch_pass(S1, S2, rows, feats, hp, ep, m)
         epoch_digests.append(
             hashlib.sha3_256(canonical_bytes([S1, S2])).hexdigest())
 
@@ -151,6 +158,134 @@ def train(hp=None):
         "held_n": len(held),
         "W1": W1, "W2": W2,
     }
+
+
+# ── stage 4 surface: the sellable, auditable GHOST training job ─────────────
+JOB_BOUNDS = {"epochs": 150, "train_margin": 1024,
+              "lr2_shift": 24, "lr1_shift": 24, "decay_at": 150}
+
+
+def decode_job(job: bytes, index: int):
+    """Job bytes → hp: whitelist into HP, clamp against hostile jobs; the
+    chunk index perturbs the weight seed → independent replayable runs."""
+    try:
+        obj = json.loads(job.decode("utf-8"))
+        over = obj.get("hp", {}) if isinstance(obj, dict) else {}
+    except Exception:
+        over = {}
+    hp = dict(HP)
+    for k, v in over.items():
+        if k in hp and isinstance(v, int):
+            hp[k] = min(v, JOB_BOUNDS[k]) if k in JOB_BOUNDS else v
+    hp["seed_weights"] = hp["seed_weights"] + index * (3**4 + 1)
+    return hp
+
+
+def run_unit(job: bytes, index: int) -> str:
+    """The worker's canonical claim: digest chain + exact accuracies.
+    Weights never ride the wire — the digests commit to them."""
+    hp = decode_job(job, index)
+    r = train(hp)
+    out = {"unit": "ghost-train-int-v1-unit", "index": index,
+           "final_digest": r["final_digest"],
+           "epoch_digests": r["epoch_digests"],
+           "held_acc_pct": r["held_acc_pct"],
+           "train_acc_pct": r["train_acc_pct"], "held_n": r["held_n"]}
+    return canonical_bytes(out).decode()
+
+
+def _rows_at_epoch(hp, epoch_i):
+    """Sample order for epoch epoch_i, reconstructed WITHOUT training:
+    the shuffle stream is weight-independent, so an auditor replays the
+    permutations alone (cheap) and trains only the epoch under audit."""
+    gs = _lcg(hp["seed_shuffle"])
+    train_rows, _ = G.build_corpus(hp["corpus_seed"])
+    rows = list(train_rows)
+    for _ in range(epoch_i + 1):
+        fisher_yates(gs, rows)
+    return rows, train_rows
+
+
+def checkpoint(job: bytes, index: int, epoch_i: int) -> bytes:
+    """Canonical [S1, S2] AFTER epoch epoch_i — what an honest worker logs
+    beside its digest chain so auditors can spot-check single epochs."""
+    hp = decode_job(job, index)
+    if not (0 <= epoch_i < hp["epochs"]):
+        raise ValueError("epoch out of range")
+    gw = _lcg(hp["seed_weights"])
+    S1 = [[rand_int(gw, -S_CAP, S_CAP) for _ in range(NHID)] for _ in range(NFEAT)]
+    S2 = [[rand_int(gw, -S_CAP, S_CAP) for _ in range(NCLS)] for _ in range(NHID)]
+    gs = _lcg(hp["seed_shuffle"])
+    train_rows, _ = G.build_corpus(hp["corpus_seed"])
+    feats = {t: G.features(t) for t, _ in train_rows}
+    rows = list(train_rows)
+    for ep in range(epoch_i + 1):
+        fisher_yates(gs, rows)
+        _epoch_pass(S1, S2, rows, feats, hp, ep, hp["train_margin"])
+    return canonical_bytes([S1, S2])
+
+
+def audit_one_epoch(job: bytes, index: int, claimed_digests, epoch_i: int,
+                    prev_ckpt: bytes = b"") -> bool:
+    """Verify ONE epoch of a claimed GHOST training run.
+    (1) the offered checkpoint must hash to the previous claimed digest;
+    (2) reconstruct epoch_i's sample order by replaying shuffles only;
+    (3) train exactly that epoch; the result must hash to claimed[epoch_i].
+    """
+    hp = decode_job(job, index)
+    if not (0 <= epoch_i < hp["epochs"]) or epoch_i >= len(claimed_digests):
+        return False
+    if epoch_i == 0:
+        gw = _lcg(hp["seed_weights"])
+        S1 = [[rand_int(gw, -S_CAP, S_CAP) for _ in range(NHID)]
+              for _ in range(NFEAT)]
+        S2 = [[rand_int(gw, -S_CAP, S_CAP) for _ in range(NCLS)]
+              for _ in range(NHID)]
+    else:
+        if hashlib.sha3_256(prev_ckpt).hexdigest() != claimed_digests[epoch_i - 1]:
+            return False
+        try:
+            S1, S2 = json.loads(prev_ckpt.decode("utf-8"))
+        except Exception:
+            return False
+        if not all(isinstance(v, int) for M in (S1, S2) for row in M for v in row):
+            return False
+    rows, train_rows = _rows_at_epoch(hp, epoch_i)
+    feats = {t: G.features(t) for t, _ in train_rows}
+    _epoch_pass(S1, S2, rows, feats, hp, epoch_i, hp["train_margin"])
+    return hashlib.sha3_256(canonical_bytes([S1, S2])).hexdigest() \
+        == claimed_digests[epoch_i]
+
+
+VCLASS_NATIVE = "native"
+
+
+def as_worker():
+    """GHOST training as a REPLAY-CLASS mesh worker — δ = 0 settlement,
+    weight-bearing native votes. Same adapter discipline as dick_kernel."""
+    try:
+        from p2pcp_worker import WorkerAdapter, VCLASS_NATIVE as _VN
+    except Exception:                            # noqa: BLE001
+        try:
+            from p2pcp.worker import WorkerAdapter, VCLASS_NATIVE as _VN
+        except Exception:
+            WorkerAdapter, _VN = None, VCLASS_NATIVE
+
+    if WorkerAdapter is not None:
+        class GhostTrainWorker(WorkerAdapter):
+            """REPLAY-CLASS: bit-exactly reproducible GHOST training."""
+            vclass = _VN
+
+            def run_chunk(self, job: bytes, index: int) -> bytes:
+                return run_unit(job, index).encode()
+        return GhostTrainWorker()
+
+    class _GhostTrainWorker:                     # duck-typed fallback
+        vclass = VCLASS_NATIVE
+
+        def run_chunk(self, job: bytes, index: int) -> bytes:
+            return run_unit(job, index).encode()
+    return _GhostTrainWorker()
 
 
 def main(argv=None):

@@ -69,6 +69,67 @@ class TestModelShape(unittest.TestCase):
         self.assertEqual(got, "none")
 
 
+JOB = b'{"hp": {"epochs": 3}}'
+
+
+class TestCheckpointAudit(unittest.TestCase):
+    """Stage 4 on the REAL classifier: one-epoch spot-checks with shuffle
+    reconstruction (the stream is weight-independent, so order replays
+    without training)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        cls.claimed = json.loads(GI.run_unit(JOB, 0))["epoch_digests"]
+        cls.ck0 = GI.checkpoint(JOB, 0, 0)
+
+    def test_epoch0_needs_no_checkpoint(self):
+        self.assertTrue(GI.audit_one_epoch(JOB, 0, self.claimed, 0))
+
+    def test_epoch1_verifies_from_checkpoint(self):
+        self.assertTrue(GI.audit_one_epoch(JOB, 0, self.claimed, 1, self.ck0))
+
+    def test_forged_claim_fails(self):
+        bad = list(self.claimed)
+        bad[1] = "0" * 64
+        self.assertFalse(GI.audit_one_epoch(JOB, 0, bad, 1, self.ck0))
+
+    def test_forged_checkpoint_fails(self):
+        self.assertFalse(GI.audit_one_epoch(JOB, 0, self.claimed, 1,
+                                            b"[[1],[2]]"))
+
+    def test_hostile_job_clamped(self):
+        hp = GI.decode_job(b'{"hp": {"epochs": 1000000000}}', 0)
+        self.assertLessEqual(hp["epochs"], GI.JOB_BOUNDS["epochs"])
+
+
+class TestGhostTrainingOnTheMesh(unittest.TestCase):
+    """GHOST's own classifier training sold, delta=0 replay-audited, and
+    minted native — the real product, not the toy."""
+
+    @staticmethod
+    def _ident(tag: bytes):
+        import p2pcp_daemon as D
+        return D.L.Identity.from_seed(tag.ljust(32, b"\x00"))
+
+    def test_ghost_training_sells_and_settles(self):
+        import p2pcp_daemon as D
+        L = D.L
+        server = D.Daemon(self._ident(b"ghost-train-node"),
+                          worker=GI.as_worker())
+        addr = server.start()
+        client = D.Daemon(self._ident(b"ghost-train-buyer"))
+        try:
+            res = client.request_job(addr[0], addr[1], JOB, n_chunks=2, k=2,
+                                     vclass=L.VCLASS_NATIVE,
+                                     audit=GI.as_worker())
+            self.assertEqual(res["settled_chunks"], 2)
+            self.assertEqual(server.ledger.burnable(server.account_id), 4)
+        finally:
+            server.stop()
+            client.stop()
+
+
 class TestFloatBaselineUntouched(unittest.TestCase):
     def test_ghost_train_unmodified_in_tree(self):
         here = os.path.dirname(os.path.abspath(__file__))
