@@ -84,6 +84,76 @@ class TestPrimitives(unittest.TestCase):
                     self.assertIsInstance(v, int)
 
 
+JOB = (b'{"hp": {"epochs": 5, "n_train": 60, "n_test": 30}}')
+
+
+class TestCheckpointAudit(unittest.TestCase):
+    """Stage 4: verify ONE epoch from its predecessor's checkpoint — the
+    cheap audit that makes long training runs economically auditable."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.claimed = __import__("json").loads(
+            T.run_unit(JOB, 0))["epoch_digests"]
+        cls.ck1 = T.checkpoint(JOB, 0, 1)
+
+    def test_epoch0_needs_no_checkpoint(self):
+        self.assertTrue(T.audit_one_epoch(JOB, 0, self.claimed, 0))
+
+    def test_middle_epoch_verifies_from_checkpoint(self):
+        self.assertTrue(T.audit_one_epoch(JOB, 0, self.claimed, 2, self.ck1))
+
+    def test_forged_claim_fails(self):
+        bad = list(self.claimed)
+        bad[2] = "0" * 64
+        self.assertFalse(T.audit_one_epoch(JOB, 0, bad, 2, self.ck1))
+
+    def test_forged_checkpoint_fails(self):
+        self.assertFalse(T.audit_one_epoch(JOB, 0, self.claimed, 2,
+                                           b"[[1],[2]]"))
+
+    def test_out_of_range_refused(self):
+        self.assertFalse(T.audit_one_epoch(JOB, 0, self.claimed, 99))
+
+    def test_hostile_job_clamped(self):
+        hp = T.decode_job(b'{"hp": {"epochs": 1000000000}}', 0)
+        self.assertLessEqual(hp["epochs"], T.JOB_BOUNDS["epochs"])
+
+    def test_index_makes_independent_runs(self):
+        a = T.decode_job(JOB, 0)["seed_weights"]
+        b = T.decode_job(JOB, 1)["seed_weights"]
+        self.assertNotEqual(a, b)
+
+
+class TestTrainingOnTheMesh(unittest.TestCase):
+    """TRAINING work sold, delta=0 replay-audited, and MINTED as
+    weight-bearing native-class work — the P2PVP section-5 gap, closed."""
+
+    @staticmethod
+    def _ident(tag: bytes):
+        import p2pcp_daemon as D
+        return D.L.Identity.from_seed(tag.ljust(32, b"\x00"))
+
+    def test_training_sells_and_settles_native(self):
+        import p2pcp_daemon as D
+        L = D.L
+        server = D.Daemon(self._ident(b"train-node"), worker=T.as_worker())
+        addr = server.start()
+        client = D.Daemon(self._ident(b"train-buyer"))
+        try:
+            res = client.request_job(addr[0], addr[1], JOB, n_chunks=2, k=2,
+                                     vclass=L.VCLASS_NATIVE,
+                                     audit=T.as_worker())
+            self.assertEqual(res["settled_chunks"], 2)
+            self.assertEqual(server.ledger.burnable(server.account_id), 4)
+            for i, out in enumerate(res["outputs"]):
+                self.assertEqual(out.decode() if isinstance(out, bytes) else out,
+                                 T.run_unit(JOB, i))
+        finally:
+            server.stop()
+            client.stop()
+
+
 class TestFloatBaselineUntouched(unittest.TestCase):
     def test_ghost_train_still_present(self):
         # the float trainer stays in the tree as the accuracy baseline,
