@@ -85,7 +85,7 @@ def main():
         if input(f"Unsent draft: {d} — send now? [y/N] ").strip().lower() == "y":
             send(os.path.join(OUTBOX, d))
 
-    print("New mail — crew names: CC, CF5, CAI, CO5, Stevo, crew "
+    print("New mail — crew names: CC, CF5, CAI, Stevo, crew "
           "(workers: CC-worker, CF5-worker, CAI-worker)")
     to = input("To (comma-separated): ").strip()
     if not to:
