@@ -266,32 +266,33 @@ def run_unit(job: bytes, index: int) -> str:
     return canonical_bytes(out).decode()
 
 
-VCLASS_NATIVE = "native"
+VCLASS_TRAINING = 2   # R1-flagged class: pays, never votes (== p2pcp VCLASS_TRAINING)
 
 
 def as_worker():
     """Training as a REPLAY-CLASS mesh worker (dick_kernel's exact
     optional-wrapper discipline): full replay by the auditor = δ = 0
-    settlement, and the work mints weight-bearing native votes."""
+    settlement. R1-FLAGGED CLASS: pays spendable credit, mints NO governance
+    weight until the weight-pricing item closes (captain, 20-09-2026)."""
     try:
-        from p2pcp_worker import WorkerAdapter, VCLASS_NATIVE as _VN
+        from p2pcp_worker import WorkerAdapter, VCLASS_TRAINING as _VT
     except Exception:                            # noqa: BLE001
         try:
-            from p2pcp.worker import WorkerAdapter, VCLASS_NATIVE as _VN
+            from p2pcp.worker import WorkerAdapter, VCLASS_TRAINING as _VT
         except Exception:
-            WorkerAdapter, _VN = None, VCLASS_NATIVE
+            WorkerAdapter, _VT = None, VCLASS_TRAINING
 
     if WorkerAdapter is not None:
         class TrainWorker(WorkerAdapter):
             """REPLAY-CLASS: bit-exactly reproducible training."""
-            vclass = _VN
+            vclass = _VT
 
             def run_chunk(self, job: bytes, index: int) -> bytes:
                 return run_unit(job, index).encode()
         return TrainWorker()
 
     class _TrainWorker:                          # duck-typed fallback
-        vclass = VCLASS_NATIVE
+        vclass = VCLASS_TRAINING
 
         def run_chunk(self, job: bytes, index: int) -> bytes:
             return run_unit(job, index).encode()

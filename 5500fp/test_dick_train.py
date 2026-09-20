@@ -126,8 +126,10 @@ class TestCheckpointAudit(unittest.TestCase):
 
 
 class TestTrainingOnTheMesh(unittest.TestCase):
-    """TRAINING work sold, delta=0 replay-audited, and MINTED as
-    weight-bearing native-class work — the P2PVP section-5 gap, closed."""
+    """TRAINING work sold, delta=0 replay-audited, PAID — and per R1
+    (captain, 20-09) NOT convertible to governance weight until the
+    weight-pricing item closes. Verification-class: closed. Franchise:
+    deliberately deferred."""
 
     @staticmethod
     def _ident(tag: bytes):
@@ -142,10 +144,12 @@ class TestTrainingOnTheMesh(unittest.TestCase):
         client = D.Daemon(self._ident(b"train-buyer"))
         try:
             res = client.request_job(addr[0], addr[1], JOB, n_chunks=2, k=2,
-                                     vclass=L.VCLASS_NATIVE,
+                                     vclass=L.VCLASS_TRAINING,
                                      audit=T.as_worker())
             self.assertEqual(res["settled_chunks"], 2)
-            self.assertEqual(server.ledger.burnable(server.account_id), 4)
+            # R1 posture (captain, 20-09): paid in full, ZERO franchise
+            self.assertEqual(server.ledger.balance(server.account_id), 4)
+            self.assertEqual(server.ledger.burnable(server.account_id), 0)
             for i, out in enumerate(res["outputs"]):
                 self.assertEqual(out.decode() if isinstance(out, bytes) else out,
                                  T.run_unit(JOB, i))
