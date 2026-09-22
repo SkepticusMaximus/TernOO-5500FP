@@ -544,9 +544,18 @@ def apply_widget_write(name, value):
     label LIVE — the walk paints the GUI while you watch. Returns True when
     a widget took the value; unknown names return False (variables and cell
     shadows pass through untouched)."""
-    for w in GS["widgets"].values():
+    for wid, w in GS["widgets"].items():
         if w.get("name") == str(name):
             w["label"] = str(value)
+            tag = f"rgw_{wid}"
+            if dpg.does_item_exist(tag):        # the RUNNING window too
+                try:
+                    if dpg.get_item_type(tag).endswith("::mvButton"):
+                        dpg.configure_item(tag, label=str(value))
+                    else:
+                        dpg.set_value(tag, str(value))
+                except Exception:               # noqa: BLE001
+                    pass
             if dpg.does_item_exist("guic_draw"):
                 redraw()
             return True
@@ -1235,6 +1244,68 @@ def _exemplar(name, t23, t22):
 
 
 def run_gui_window(*_):
+    """RUN dispatch (captain 23-09 — 'still loading word explorer'):
+    the Word Format Explorer keeps its charter showcase window; every
+    OTHER design gets a generic app window rendered from the widgets
+    actually loaded — never someone else's program."""
+    names = {w.get("name") for w in GS["widgets"].values()}
+    if "trit_strip" in names and "q_row1" in names:
+        return _run_wfe_window()
+    return _run_generic_window()
+
+
+def _run_generic_window(*_):
+    """The design's OWN GUI as a running window: real widget tree,
+    native positions (offset to origin), labels live — walk write-back
+    lands on rgw_* items so the app updates while it runs."""
+    C = STYLE
+    if dpg.does_item_exist("rungui_win"):
+        dpg.delete_item("rungui_win")
+    title = os.path.basename(GS.get("file") or "program")
+    if not GS["widgets"]:
+        return
+    x0 = min(w["x"] for w in GS["widgets"].values())
+    y0 = min(w["y"] for w in GS["widgets"].values())
+    x1 = max(w["x"] + w["w"] for w in GS["widgets"].values())
+    y1 = max(w["y"] + w["h"] for w in GS["widgets"].values())
+    ww = min(x1 - x0 + 60, 980)
+    wh = min(y1 - y0 + 90, 660)
+    with dpg.window(label=f"{title} — RUNNING", tag="rungui_win",
+                    width=int(ww), height=int(wh), pos=(220, 130),
+                    horizontal_scrollbar=True):
+        for wid in render_order():
+            w = GS["widgets"][wid]
+            px = int(w["x"] - x0 + 12)
+            py = int(w["y"] - y0 + 30)
+            kind = w["kind"]
+            label = str(w.get("label", ""))
+            tag = f"rgw_{wid}"
+            try:
+                if kind in CONTAINER_KINDS:
+                    dpg.add_child_window(pos=(px, py), width=int(w["w"]),
+                                         height=int(w["h"]), border=True)
+                    if label and kind in ("gui_window", "gui_dialog",
+                                          "gui_frame", "gui_box",
+                                          "gui_notebook"):
+                        dpg.add_text(label, pos=(px + 8, py + 4),
+                                     color=C.get("DIM"), tag=tag)
+                elif kind == "gui_button":
+                    dpg.add_button(label=label or "button", pos=(px, py),
+                                   width=int(w["w"]), height=int(w["h"]),
+                                   tag=tag)
+                elif kind in ("gui_checkbox", "gui_radio"):
+                    dpg.add_text(("◉ " if kind == "gui_radio" else "☐ ")
+                                 + label, pos=(px, py), tag=tag)
+                elif kind == "gui_entry":
+                    dpg.add_input_text(default_value=label, pos=(px, py),
+                                       width=int(w["w"]), tag=tag)
+                else:
+                    dpg.add_text(label, pos=(px, py), tag=tag)
+            except Exception:                   # noqa: BLE001
+                pass
+
+
+def _run_wfe_window(*_):
     C = STYLE
     GLY = {1: "+", 0: "0", -1: "−"}
     COL = {1: (63, 208, 143), 0: (120, 150, 200), -1: (230, 150, 90)}
