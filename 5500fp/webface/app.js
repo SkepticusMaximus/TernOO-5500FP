@@ -277,9 +277,13 @@ async function openDesign(name) {
   GUI.widgets = new Map(); let maxid = 0;
   for (const s of raw.symbols || []) {
     if ((s.kind || "").startsWith("gui_")) {
-      GUI.widgets.set(s.id, s); maxid = Math.max(maxid, s.id);
+      GUI.widgets.set(s.id, {...s}); maxid = Math.max(maxid, s.id);
     }
   }
+  relToAbs();
+  GUI.zorder = (raw.sequence || []).map(Number)
+    .filter(i => GUI.widgets.has(i));
+  zorderSeq();
   GUI.next = maxid + 1; GUI.name = name; GUI.raw = raw;
   GSEL = null; guiRender(); guiProps();
   SHEET = {name, raw: new Map()};
@@ -300,13 +304,14 @@ function closeDesign() {
   $("world").innerHTML = "";
   $("flowtitle").textContent = "no design open — File ▸ Open";
   showProps();
-  GUI.widgets.clear(); GUI.name = null; GSEL = null;
+  GUI.widgets.clear(); GUI.zorder = []; GUI.name = null; GSEL = null;
   guiRender(); guiProps();
   SHEET = {name: null, raw: new Map()}; buildGrid();
   CONN = {name: "pipeline.fc", syms: new Map(), edges: [], next: 1};
   connRender(); connProps();
   $("runlines").textContent = "";
-  $("watchbody").textContent = "";
+  WATCHVALS = {}; $("watchbody").textContent = "";
+  $("connlines").textContent = "";
   toast("closed across all tabs");
 }
 async function saveDesign() {
@@ -321,13 +326,9 @@ async function saveDesign() {
   doc.source_file = name;
   if (FLOW) { doc.flow_symbols = [...FLOW.syms.values()];
               doc[FLOW.edgeKey || "flow_edges"] = FLOW.edges; }
-  doc.symbols = [...GUI.widgets.values()];
-  doc.cell_symbols = [...SHEET.raw.entries()].map(([rc, value], i) => {
-    const [row, col] = rc.split(",").map(Number);
-    return {id: i + 1, row, col, value,
-            kind: value.startsWith("=") ? "cell_formula" : "cell_value",
-            label: colName(col) + (row + 1), properties: []};
-  });
+  doc.symbols = guiSymbolsOut();
+  doc.sequence = zorderSeq().slice();
+  doc.cell_symbols = cellSymbolsOut();
   doc.cmd_symbols = [...CONN.syms.values()];
   doc.cmd_edges = CONN.edges;
   const res = await api("/api/design/" + encodeURIComponent(name) +
@@ -391,8 +392,51 @@ function propOf(s, name, dflt) {
     if (p.name === name) return p.value;
   return dflt;
 }
+let WATCHVALS = {};
+function liveDesignDoc() {
+  // run-what-you-see: assemble the design from LIVE tab state
+  const doc = Object.assign({ternoo_version: "0.3",
+    source_type: "ternoo_design", word_stream: [], symbols: [],
+    edges: [], flow_symbols: [], flow_edges: [], cmd_symbols: [],
+    cmd_edges: [], cell_symbols: [], sheet_regions: [], free_cells: [],
+    sequence: [], groups: {}}, (DOC && DOC.raw) || {});
+  if (FLOW) { doc.flow_symbols = [...FLOW.syms.values()];
+              doc[FLOW.edgeKey || "flow_edges"] = FLOW.edges; }
+  doc.symbols = guiSymbolsOut();
+  doc.sequence = zorderSeq().slice();
+  doc.cell_symbols = cellSymbolsOut();
+  doc.cmd_symbols = [...CONN.syms.values()];
+  doc.cmd_edges = CONN.edges;
+  return doc;
+}
+function cellKind(value) {
+  // Tk-face auto-detect: = → formula, number/bool → value, else text
+  if (value.startsWith("=")) return "cell_formula";
+  const s = value.trim().toLowerCase();
+  if (s === "true" || s === "false") return "cell_value";
+  return (s !== "" && !isNaN(Number(s))) ? "cell_value" : "cell_text";
+}
+function cellSymbolsOut() {
+  return [...SHEET.raw.entries()].map(([rc, value], i) => {
+    const [row, col] = rc.split(",").map(Number);
+    return {id: i + 1, row, col, value, kind: cellKind(value),
+            label: colName(col) + (row + 1), properties: []};
+  });
+}
+function applyWidgetWrite(name, value) {
+  // walk write-back parity with the DPG face: a watch write whose name
+  // matches a widget's name lands on that widget's label, live
+  for (const w of GUI.widgets.values())
+    if (w.name === String(name)) { w.label = String(value); return true; }
+  return false;
+}
+function watchRefresh() {
+  $("watchbody").textContent = Object.entries(WATCHVALS)
+    .map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join("\n");
+}
 async function runFlow() {
-  if (!FLOW) { toast("open a flow first"); return; }
+  if (!FLOW || !FLOW.syms.size) {
+    toast("nothing on the canvas to run"); return; }
   const vars = collectVars();
   for (const s of FLOW.syms.values()) {
     if (s.kind !== "flow_io") continue;
@@ -406,17 +450,28 @@ async function runFlow() {
       addVarRow(addr, v);
     }
   }
-  const rep = await api("/api/flow/" + encodeURIComponent(FLOW.name) +
-                        "/run", {variables: vars});
+  const rep = await api("/api/run",
+                        {design: liveDesignDoc(), variables: vars});
   if (rep.error || !rep.lines) {
     $("runlines").textContent = "✗ run failed: " +
       (rep.error || "no report from the engine");
     return;
   }
-  $("runlines").textContent = rep.lines.join("\n");
-  const w = $("watchbody");
-  w.textContent = Object.entries(rep.vars || {})
-    .map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join("\n");
+  WATCHVALS = {};
+  for (const [k, v] of Object.entries(vars)) WATCHVALS[k] = v;
+  let painted = 0;
+  for (const ev of rep.events || []) {
+    if (ev[0] === "watch") {
+      WATCHVALS[ev[1]] = ev[2];
+      if (applyWidgetWrite(ev[1], ev[2])) painted++;
+    }
+  }
+  if (painted) { guiRender(); guiProps(); }
+  watchRefresh();
+  $("runlines").textContent = rep.lines.join("\n") +
+    `\n■ RUN complete — ${rep.steps} step(s) · ${painted} ` +
+    "GUI widget(s) painted" +
+    (painted ? " — the GUI tab wears the result" : "");
 }
 async function saveFlow() {
   if (!FLOW) return;
@@ -456,7 +511,92 @@ let GUI = {name: null,
                  cmd_edges: [], cell_symbols: [], sheet_regions: [],
                  free_cells: [], sequence: [], groups: {}},
            widgets: new Map(), next: 1};
+GUI.zorder = [];
+// full adopter set — parity with the DPG organ's CONTAINER_KINDS
+const GUI_ADOPTERS = new Set([...GUI_CONTAINERS, "gui_grid", "gui_paned",
+  "gui_scrolled", "gui_stack", "gui_expander", "gui_revealer",
+  "gui_overlay", "gui_flowbox", "gui_listbox"]);
+const GUI_TOPLEVEL = ["gui_window", "gui_dialog"];
+const esc = s => String(s).replace(/[<>&]/g,
+  m => ({"<": "&lt;", ">": "&gt;", "&": "&amp;"}[m]));
 let GSEL = null, gdrag = null;
+function gDepth(id, seen) {
+  const w = GUI.widgets.get(id);
+  if (!w || w.parent_id == null || !GUI.widgets.has(w.parent_id)
+      || (seen || []).includes(id)) return 0;
+  return 1 + gDepth(w.parent_id, [...(seen || []), id]);
+}
+function relToAbs() {
+  // Tk schema: parented widgets carry centre-offsets from the parent's
+  // centre — convert to absolute, parents first
+  const ids = [...GUI.widgets.keys()].sort((a, b) => gDepth(a) - gDepth(b));
+  for (const id of ids) {
+    const w = GUI.widgets.get(id);
+    const p = GUI.widgets.get(w.parent_id);
+    if (p) {
+      w.x = Math.round(p.x + p.w / 2 + w.x - w.w / 2);
+      w.y = Math.round(p.y + p.h / 2 + w.y - w.h / 2);
+    } else if (w.parent_id != null) w.parent_id = null;
+  }
+}
+function guiSymbolsOut() {
+  // inverse transform on the way out — the file keeps the Tk schema
+  return [...GUI.widgets.values()].map(w => {
+    const out = {...w};
+    const p = GUI.widgets.get(w.parent_id);
+    if (p) {
+      out.x = Math.round(w.x + w.w / 2 - (p.x + p.w / 2));
+      out.y = Math.round(w.y + w.h / 2 - (p.y + p.h / 2));
+    }
+    return out;
+  });
+}
+function zorderSeq() {
+  GUI.zorder = (GUI.zorder || []).filter(i => GUI.widgets.has(i));
+  for (const i of GUI.widgets.keys())
+    if (!GUI.zorder.includes(i)) GUI.zorder.push(i);
+  return GUI.zorder;
+}
+function renderOrder() {
+  // roots in stacking sequence, each followed by its children — a child
+  // can never be buried under its own container
+  const seq = zorderSeq(), kids = new Map();
+  for (const i of seq) {
+    const p = GUI.widgets.get(i).parent_id;
+    const key = (p != null && GUI.widgets.has(p)) ? p : null;
+    if (!kids.has(key)) kids.set(key, []);
+    kids.get(key).push(i);
+  }
+  const out = [];
+  const walk = i => { out.push(i);
+    for (const c of kids.get(i) || []) walk(c); };
+  for (const r of kids.get(null) || []) walk(r);
+  for (const i of seq) if (!out.includes(i)) out.push(i);
+  return out;
+}
+function descendantsOf(id) {
+  const out = [];
+  for (const [i, w] of GUI.widgets)
+    if (w.parent_id === id) out.push(i, ...descendantsOf(i));
+  return out;
+}
+function adopt(id) {
+  // containment by geometry: centre inside a container → child of it;
+  // smallest container wins; windows/dialogs adopt, never get adopted
+  const w = GUI.widgets.get(id);
+  if (GUI_TOPLEVEL.includes(w.kind)) { w.parent_id = null; return; }
+  const cx = w.x + w.w / 2, cy = w.y + w.h / 2;
+  const kin = new Set([id, ...descendantsOf(id)]);
+  let best = null, bestArea = Infinity;
+  for (const [oid, o] of GUI.widgets) {
+    if (kin.has(oid) || !GUI_ADOPTERS.has(o.kind)) continue;
+    if (o.x <= cx && cx <= o.x + o.w && o.y <= cy && cy <= o.y + o.h) {
+      const area = o.w * o.h;
+      if (area < bestArea) { best = oid; bestArea = area; }
+    }
+  }
+  w.parent_id = best;
+}
 function buildGuiPalettes() {
   const mk = (kinds, host) => {
     const box = $(host); box.innerHTML = "";
@@ -481,28 +621,40 @@ function guiPlace(kind) {
     label: kind.replace("gui_", ""), name: `${kind.replace("gui_", "")}_${id}`,
     parent_id: null, layout_mode: "absolute", properties: [],
     signal_ids: {}});
+  GUI.zorder.push(id);
+  adopt(id);
   GSEL = id; guiRender(); guiProps();
 }
 function guiRender() {
   const c = $("guicanvas"); c.innerHTML = "";
-  const order = [...GUI.widgets.values()]
-    .sort((a, b) => (GUI_CONTAINERS.includes(b.kind) ? 1 : 0) -
-                    (GUI_CONTAINERS.includes(a.kind) ? 1 : 0));
-  for (const w of order) {
+  let maxx = 900, maxy = 600;
+  for (const id of renderOrder()) {
+    const w = GUI.widgets.get(id);
+    maxx = Math.max(maxx, w.x + w.w + 80);
+    maxy = Math.max(maxy, w.y + w.h + 80);
     const d = document.createElement("div");
-    d.className = "gw gw-" + w.kind + (GSEL === w.id ? " sel" : "");
+    d.className = "gw gw-" + w.kind +
+      (GUI_ADOPTERS.has(w.kind) ? "" : " gw-leaf") +
+      (GSEL === w.id ? " sel" : "");
     d.style.cssText =
       `left:${w.x}px;top:${w.y}px;width:${w.w}px;height:${w.h}px`;
     if (["gui_window", "gui_dialog", "gui_frame", "gui_notebook",
          "gui_box"].includes(w.kind)) {
-      d.innerHTML = `<div class="ttl">${w.label}</div>`;
+      d.innerHTML = `<div class="ttl">${esc(w.label)}</div>`;
+    } else if (w.kind === "gui_radio" || w.kind === "gui_checkbox") {
+      d.innerHTML = `<span class="mark">` +
+        (w.kind === "gui_radio" ? "◉" : "☐") + `</span>&nbsp;` +
+        esc(w.label);
     } else {
       d.textContent = w.label;
     }
     d.addEventListener("mousedown", e => {
       e.stopPropagation(); e.preventDefault();
       GSEL = w.id;
-      gdrag = {id: w.id, mx: e.clientX, my: e.clientY, sx: w.x, sy: w.y};
+      const fam = [w.id, ...descendantsOf(w.id)];
+      gdrag = {id: w.id, mx: e.clientX, my: e.clientY,
+               starts: new Map(fam.map(i => {
+                 const f = GUI.widgets.get(i); return [i, [f.x, f.y]]; }))};
       guiRender(); guiProps();
     });
     d.addEventListener("dblclick", () => {
@@ -511,17 +663,26 @@ function guiRender() {
     });
     c.appendChild(d);
   }
+  c.style.width = maxx + "px"; c.style.height = maxy + "px";
   $("guititle").textContent = (GUI.name || "new design") +
     ` — ${GUI.widgets.size} widget(s)`;
 }
 window.addEventListener("mousemove", e => {
   if (!gdrag) return;
-  const w = GUI.widgets.get(gdrag.id);
-  w.x = Math.max(0, gdrag.sx + e.clientX - gdrag.mx);
-  w.y = Math.max(0, gdrag.sy + e.clientY - gdrag.my);
+  const dx = e.clientX - gdrag.mx, dy = e.clientY - gdrag.my;
+  for (const [i, [sx, sy]] of gdrag.starts) {
+    const f = GUI.widgets.get(i);
+    if (f) { f.x = sx + dx; f.y = sy + dy; }
+  }
   guiRender();
 });
-window.addEventListener("mouseup", () => { gdrag = null; });
+window.addEventListener("mouseup", () => {
+  if (gdrag) {                          // adoption happens on the DROP
+    const moved = GUI.widgets.get(gdrag.id);
+    if (moved) { adopt(gdrag.id); guiRender(); guiProps(); }
+  }
+  gdrag = null;
+});
 function guiProps() {
   const pb = $("guiprops");
   if (GSEL === null || !GUI.widgets.has(GSEL)) {
@@ -537,9 +698,15 @@ function guiProps() {
     pb.appendChild(propRow(f, w[f], v => {
       const n = parseInt(v, 10);
       if (!isNaN(n)) { w[f] = n; guiRender(); } }));
+  const par = GUI.widgets.get(w.parent_id);
+  pb.appendChild(propRow("parent",
+    par ? (par.name || par.label) : "(top level)", null, true));
 }
 function guiDelete() {
   if (GSEL === null) return;
+  const w = GUI.widgets.get(GSEL);
+  for (const c of GUI.widgets.values())      // children go to grandparent
+    if (c.parent_id === GSEL) c.parent_id = w ? w.parent_id : null;
   GUI.widgets.delete(GSEL); GSEL = null; guiRender(); guiProps();
 }
 function guiNew() {
@@ -563,9 +730,13 @@ async function guiOpen(name) {
   GUI.raw = raw; GUI.name = name; GUI.widgets = new Map();
   let maxid = 0;
   for (const s of raw.symbols || []) {
-    GUI.widgets.set(s.id, s);
+    GUI.widgets.set(s.id, {...s});
     maxid = Math.max(maxid, s.id);
   }
+  relToAbs();
+  GUI.zorder = (raw.sequence || []).map(Number)
+    .filter(i => GUI.widgets.has(i));
+  zorderSeq();
   GUI.next = maxid + 1; GSEL = null;
   guiRender(); guiProps();
 }
@@ -574,9 +745,9 @@ async function guiSave() {
   if (!name) return;
   const doc = {...GUI.raw};
   doc.source_file = name;
-  doc.symbols = [...GUI.widgets.values()];
+  doc.symbols = guiSymbolsOut();
   doc.edges = doc.edges || [];
-  doc.sequence = [...GUI.widgets.keys()];
+  doc.sequence = zorderSeq().slice();
   doc.tgui_meta = {widget_count: GUI.widgets.size,
                    edge_count: (doc.edges || []).length,
                    flow_symbol_count: 0, flow_edge_count: 0};
@@ -588,11 +759,21 @@ async function guiSave() {
 }
 
 /* ══════════════════ SHEET ══════════════════ */
-const NROWS = 24, NCOLS = 10;
+let NROWS = 24, NCOLS = 10;
 let SHEET = {name: null, raw: new Map()};
 let FOCUS = null;
-function colName(c) { return String.fromCharCode(65 + c); }
+function colName(c) {
+  return c < 26 ? String.fromCharCode(65 + c)
+    : String.fromCharCode(64 + Math.floor(c / 26)) +
+      String.fromCharCode(65 + (c % 26));
+}
 function buildGrid() {
+  let mr = 0, mc = 0;                    // the grid grows to fit the data
+  for (const rc of SHEET.raw.keys()) {
+    const [r, c2] = rc.split(",").map(Number);
+    mr = Math.max(mr, r); mc = Math.max(mc, c2);
+  }
+  NROWS = Math.max(24, mr + 4); NCOLS = Math.max(10, mc + 2);
   const g = $("grid"); g.innerHTML = "";
   const thead = document.createElement("thead");
   let hr = "<tr><th></th>";
@@ -677,12 +858,7 @@ async function openSheet(name) {
 async function saveSheet() {
   const name = prompt("Save as (.sheet):", SHEET.name || "untitled.sheet");
   if (!name) return;
-  const c = [...SHEET.raw.entries()].map(([rc, value], i) => {
-    const [row, col] = rc.split(",").map(Number);
-    return {id: i + 1, row, col, value,
-            kind: value.startsWith("=") ? "cell_formula" : "cell_value",
-            label: colName(col) + (row + 1), properties: []};
-  });
+  const c = cellSymbolsOut();
   const res = await api("/api/sheet/" + encodeURIComponent(name) +
                         "/save", {sheet: {c, r: [], f: [], n: c.length + 1}});
   if (res.saved) { toast(`saved ${res.saved}`); SHEET.name = res.saved;
@@ -727,8 +903,15 @@ function connTool(t) {
     e.preventDefault(); czoomBy(e.deltaY < 0 ? 1.12 : 1 / 1.12);
   }, {passive: false});
 })();
+let CMDSPECS = {};
 async function buildCmdPalette() {
-  const names = await api("/api/commands");
+  const specs = await api("/api/commands");
+  CMDSPECS = {};
+  const names = [];
+  for (const sp of specs || []) {
+    if (typeof sp === "string") { names.push(sp); continue; }
+    CMDSPECS[sp.name] = sp; names.push(sp.name);
+  }
   const fams = {};
   for (const n of names) {
     const fam = n.split("_")[1] || "misc";
@@ -810,10 +993,20 @@ function connRender() {
 }
 function connWireClick(id) {
   if (!CWIRE.src) { CWIRE.src = id; return; }
-  if (CWIRE.src !== id)
+  if (CWIRE.src !== id) {
+    const spec = CMDSPECS[(CONN.syms.get(id) || {}).kind] || {};
+    const ps = (spec.params || []).map(p => p.name);
+    let dst_param = ps[0] || "";
+    if (ps.length > 1) {
+      const pick = prompt(
+        `Feed which input socket? (${ps.join(", ")})`, ps[0]);
+      if (pick === null) { CWIRE = {src: null}; connRender(); return; }
+      if (ps.includes(pick.trim())) dst_param = pick.trim();
+    }
     CONN.edges.push({src: CWIRE.src, dst: id, privilege: 0,
       call_style: 0, return_type: 1, seg_idx: 0, offset: 0,
-      waypoints: [], condition: ""});
+      waypoints: [], condition: "", dst_param});
+  }
   CWIRE = {src: null}; connRender();
 }
 function connProps() {
@@ -824,10 +1017,45 @@ function connProps() {
   }
   const s = CONN.syms.get(CSEL);
   pb.innerHTML = "";
+  const spec = CMDSPECS[s.kind] || {};
   pb.appendChild(propRow("cmd", s.kind, null, true));
   pb.appendChild(propRow("label", s.label, v => {
     s.label = v; connRender(); }));
   pb.appendChild(propRow("name", s.name, v => { s.name = v; }));
+  if (spec.output)
+    pb.appendChild(propRow("output →", spec.output, null, true));
+  const piped = {};
+  for (const e of CONN.edges)
+    if (e.dst === CSEL) {
+      const src = CONN.syms.get(e.src);
+      piped[e.dst_param || ((spec.params || [{}])[0] || {}).name] =
+        src ? (src.label || src.kind) : e.src;
+    }
+  for (const p of spec.params || []) {
+    if (piped[p.name] !== undefined) {
+      pb.appendChild(propRow(`${p.name} [${p.type}]`,
+        `⇐ pipe from ${piped[p.name]}`, null, true));
+      continue;
+    }
+    s.input_bindings = s.input_bindings || {};
+    const b = s.input_bindings[p.name] =
+      s.input_bindings[p.name] || {kind: "constant", value: ""};
+    pb.appendChild(propRow(`${p.name} [${p.type}]`, b.value,
+      v => { b.value = v; }));
+  }
+}
+async function connRun() {
+  if (!CONN.syms.size) { toast("place commands first"); return; }
+  const rep = await api("/api/pipeline/run",
+    {cmd_symbols: [...CONN.syms.values()], cmd_edges: CONN.edges});
+  if (rep.error || !rep.lines) {
+    $("connlines").textContent = "✗ pipeline failed: " +
+      (rep.error || "no report"); return; }
+  const outs = Object.entries(rep.outputs || {}).map(([i, v]) =>
+    `▸ ${(CONN.syms.get(Number(i)) || {}).label || i} ⇒ ` +
+    JSON.stringify(v));
+  $("connlines").textContent = rep.lines.join("\n") +
+    (outs.length ? "\n— pipeline outputs —\n" + outs.join("\n") : "");
 }
 async function connSave() {
   const name = prompt("Save pipeline as (.fc):", CONN.name);

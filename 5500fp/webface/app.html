@@ -168,7 +168,9 @@
   #grid td input:focus { background: var(--panel2); }
 
   /* gui canvas: widgets are real HTML */
-  #guicanvas { position: absolute; inset: 0; }
+  #guiwrap { overflow: auto; }
+  #guicanvas { position: absolute; top: 0; left: 0;
+               min-width: 100%; min-height: 100%; }
   .gw { position: absolute; border: 1px solid var(--line);
         border-radius: 6px; background: var(--panel2); cursor: move;
         overflow: hidden; user-select: none; font-size: 13px; }
@@ -176,6 +178,10 @@
   .gw .ttl { background: var(--panel); color: var(--dim);
              font-size: 11px; padding: 2px 8px;
              border-bottom: 1px solid var(--line); pointer-events: none; }
+  .gw-leaf { display: flex; align-items: center; padding: 0 6px; }
+  .gw-gui_radio { background: none; border-color: transparent; }
+  .gw-gui_radio .mark { color: var(--accent); }
+  .gw-gui_listbox { background: var(--bg); }
   .gw-gui_button { background: var(--accent); color: #10131c;
       display: flex; align-items: center; justify-content: center;
       font-weight: 600; border-radius: 7px; }
@@ -451,6 +457,8 @@
     <div class="phead open" onclick="togglePanel(this)">
       <span class="chev">▶</span> ACTIONS</div>
     <div class="pbody">
+      <button class="tool" onclick="connRun()">
+        <span class="glyph">▶</span> Run pipeline</button>
       <button class="tool" onclick="connSave()">
         <span class="glyph">💾</span> Save .fc</button>
     </div>
@@ -468,7 +476,14 @@
       </div>
     </div>
     <div class="hints">click a command to place · drag to move · Wire:
-      source then target · Delete tool removes</div>
+      source then target (picks the input socket) · Delete tool
+      removes</div>
+    <div class="outpane">
+      <div class="ophead"><span>Output</span>
+        <button onclick="$('connlines').textContent=''">clear output</button>
+      </div>
+      <pre id="connlines">pipeline output appears here — ▶ Run pipeline executes through the live registry</pre>
+    </div>
   </div>
   <div class="rpanel">
     <div class="phead open" onclick="togglePanel(this)">

@@ -118,6 +118,82 @@ def _design_resolver(d):
     return resolver
 
 
+def _cell_kind(text):
+    """Tk-face auto-detect: = → formula, number/bool → value, else text."""
+    if text.startswith("="):
+        return "cell_formula"
+    s = text.strip().lower()
+    if s in ("true", "false"):
+        return "cell_value"
+    try:
+        float(s)
+        return "cell_value"
+    except ValueError:
+        return "cell_text"
+
+
+def _run_pipeline(symbols, edges, seed=None):
+    """Execute a Connectors pipeline through the live command registry.
+    Topological order over the pipes; a node's args come from (in order
+    of precedence) drawn pipes (dst_param, or the first input socket),
+    its input_bindings constants, its properties, then the seed value
+    for first-socket-less roots. Same registry GHOST routes to."""
+    if FCMD is None:
+        return {"error": "command registry unavailable"}
+    nodes = {int(s["id"]): s for s in symbols}
+    down, incoming = {}, {}
+    indeg = {i: 0 for i in nodes}
+    outdeg = {i: 0 for i in nodes}
+    for e in edges:
+        s, d = e.get("src"), e.get("dst")
+        if s in nodes and d in nodes:
+            incoming.setdefault(d, []).append((s, e.get("dst_param") or ""))
+            down.setdefault(s, []).append(d)
+            indeg[d] += 1
+            outdeg[s] += 1
+    order, q = [], sorted(i for i in nodes if indeg[i] == 0)
+    deg = dict(indeg)
+    while q:
+        n = q.pop(0)
+        order.append(n)
+        for m in down.get(n, []):
+            deg[m] -= 1
+            if deg[m] == 0:
+                q.append(m)
+    if len(order) < len(nodes):
+        stuck = [nodes[i].get("label", i) for i in nodes if i not in order]
+        return {"error": f"pipeline has a cycle through: {stuck}"}
+    results, lines = {}, []
+    for i in order:
+        s = nodes[i]
+        kind = s.get("kind", "")
+        params = FCMD.input_params(kind) or []
+        pnames = [p[0] for p in params]
+        args = {}
+        for pname, _pt in params:
+            b = (s.get("input_bindings") or {}).get(pname) or {}
+            if b.get("kind") == "constant" and str(b.get("value", "")):
+                args[pname] = b.get("value")
+        for pr in s.get("properties", []):
+            if pr.get("name") in pnames and pr.get("name") not in args:
+                args[pr["name"]] = pr.get("value")
+        first = pnames[0] if pnames else None
+        for src, dparam in incoming.get(i, []):
+            tgt = dparam if dparam in pnames else first
+            if tgt:
+                args[tgt] = results.get(src)
+        if (first and first not in args and seed is not None
+                and indeg[i] == 0):
+            args[first] = seed
+        val = FCMD.run_command(kind, args)
+        results[i] = val
+        shown = {k: v for k, v in args.items() if v not in (None, "")}
+        lines.append(f"⚙ {s.get('label') or kind}({shown}) ⇒ {val!r}")
+    sinks = {str(i): results[i] for i in order if outdeg[i] == 0}
+    return {"lines": lines, "outputs": sinks,
+            "results": {str(i): results[i] for i in order}}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "TernOOWeb/0.1"
 
@@ -179,13 +255,21 @@ class Handler(BaseHTTPRequestHandler):
             with open(p, encoding="utf-8") as f:
                 self._send(200, f.read().encode(), "application/json")
         elif self.path == "/api/commands":
-            names = []
+            specs = []
             if FCMD is not None:
                 try:
-                    names = list(FCMD.command_names())
+                    for n in FCMD.command_names():
+                        sp = FCMD.COMMAND_REGISTRY.get(n, {})
+                        specs.append({
+                            "name": n, "desc": sp.get("desc", ""),
+                            "output": sp.get("output", ""),
+                            "params": [{k: p.get(k) for k in
+                                        ("name", "type", "optional",
+                                         "default")}
+                                       for p in sp.get("params", [])]})
                 except Exception:               # noqa: BLE001
-                    names = []
-            self._send(200, names)
+                    specs = []
+            self._send(200, specs)
         elif self.path == "/api/guis":
             out = sorted(f for f in os.listdir(FLOWDIR)
                          if f.endswith(".gui"))
@@ -239,9 +323,8 @@ class Handler(BaseHTTPRequestHandler):
             cells = {}
             for c in req.get("cells", []):
                 text = str(c.get("value", ""))
-                kind = "cell_formula" if text.startswith("=") else "cell_value"
                 cells[(int(c["row"]), int(c["col"]))] = {
-                    "kind": kind, "value": text,
+                    "kind": _cell_kind(text), "value": text,
                     "row": int(c["row"]), "col": int(c["col"])}
             try:
                 results, errors = SHEETF.evaluate_sheet(cells)
@@ -304,6 +387,31 @@ class Handler(BaseHTTPRequestHandler):
                       encoding="utf-8") as f:
                 json.dump(doc, f, indent=1)
             self._send(200, {"saved": name})
+            return
+        if self.path == "/api/run":
+            # Run-what-you-see: the client posts its LIVE design state
+            # (all tabs) — no file read, no stale-run class of bug. The
+            # resolver speaks the posted design's own cross-tab tongue.
+            d = req.get("design") or {}
+            syms = {s["id"]: s for s in d.get("flow_symbols", [])}
+            edges = d.get("flow_edges", d.get("edges", []))
+            try:
+                rep = WALKER.walk(syms, edges,
+                                  resolver=_design_resolver(d),
+                                  variables=req.get("variables") or {})
+                self._send(200, {"steps": rep["steps"],
+                                 "lines": rep["lines"],
+                                 "vars": rep["vars"],
+                                 "events": rep.get("events", [])})
+            except Exception as e:              # noqa: BLE001
+                self._send(200, {"steps": 0, "vars": {}, "events": [],
+                                 "lines": [f"run failed: {e}"]})
+            return
+        if self.path == "/api/pipeline/run":
+            self._send(200, _run_pipeline(
+                req.get("cmd_symbols") or [],
+                req.get("cmd_edges") or [],
+                req.get("input")))
             return
         if self.path.startswith("/api/flow/") and self.path.endswith("/run"):
             name = os.path.basename(
