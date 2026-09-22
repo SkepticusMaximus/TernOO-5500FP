@@ -28,9 +28,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import terndoc as TD
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-POBOX = os.path.join(os.path.dirname(_HERE), "private", "POBOX")
-OUTBOX = os.path.join(POBOX, "Outbox")
-ROSTER = "CC, CF5, CAI, Stevo, crew"
+from pobox_store import POBOX, ROSTER, parse_headers, list_mail  # noqa: E402
+import pobox_store as _STORE  # noqa: E402
+OUTBOX = _STORE.OUTBOX
 
 COL_TEXT = (220, 220, 225)
 COL_BOLD = (245, 245, 250)
@@ -46,32 +46,6 @@ M = {"files": [], "checker": None, "prefix": "mail"}
 
 def _t(name):
     return f"{M['prefix']}_{name}"
-
-
-# ── mailbox reading ──────────────────────────────────────────────────────────
-def list_mail():
-    if not os.path.isdir(POBOX):
-        return []
-    out = []
-    for f in os.listdir(POBOX):
-        p = os.path.join(POBOX, f)
-        if os.path.isfile(p) and f.endswith(".md"):
-            out.append(f)
-    # date-stamped letters first, newest first; README and friends last
-    return sorted(out, key=lambda f: (f[0].isdigit(), f), reverse=True)
-
-
-def parse_headers(text):
-    """Best-effort From/To/Subject from the ship's letter conventions."""
-    hdr = {"from": "?", "to": "?", "subject": ""}
-    for ln in text.splitlines()[:14]:
-        m = re.match(r"(From|To|Subject):\s*(.+)", ln.strip())
-        if m:
-            hdr[m.group(1).lower()] = m.group(2).strip()
-        m2 = re.match(r"#\s+(.*)", ln.strip())
-        if m2 and not hdr["subject"]:
-            hdr["subject"] = m2.group(1)
-    return hdr
 
 
 # ── rendered read pane (drawlist; shared style family with terndoc_dpg) ──────
