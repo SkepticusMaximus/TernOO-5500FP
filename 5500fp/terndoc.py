@@ -294,24 +294,26 @@ _INLINE = re.compile(
     r"|(`(?P<c>[^`]+)`)|(\[(?P<lt>[^\]]+)\]\((?P<href>[^)\s]+)\))")
 
 
-def _parse_inline(text):
+def _parse_inline(text, base=()):
+    """Recursive over the honest subset: bold may contain italic/code/link,
+    italic may contain code. `base` carries inherited styles."""
     spans_, pos = [], 0
     for m in _INLINE.finditer(text):
         if m.start() > pos:
-            spans_.append(span(text[pos:m.start()]))
+            spans_.append(span(text[pos:m.start()], base))
         if m.group("bi") is not None:
-            spans_.append(span(m.group("bi"), ("b", "i")))
+            spans_.append(span(m.group("bi"), base + ("b", "i")))
         elif m.group("b") is not None:
-            spans_.append(span(m.group("b"), ("b",)))
+            spans_.extend(_parse_inline(m.group("b"), base + ("b",)))
         elif m.group("i") is not None:
-            spans_.append(span(m.group("i"), ("i",)))
+            spans_.extend(_parse_inline(m.group("i"), base + ("i",)))
         elif m.group("c") is not None:
-            spans_.append(span(m.group("c"), ("c",)))
+            spans_.append(span(m.group("c"), base + ("c",)))
         else:
-            spans_.append(span(m.group("lt"), (), m.group("href")))
+            spans_.append(span(m.group("lt"), base, m.group("href")))
         pos = m.end()
     if pos < len(text):
-        spans_.append(span(text[pos:]))
+        spans_.append(span(text[pos:], base))
     return _normalize_spans(spans_)
 
 
@@ -363,6 +365,39 @@ def _span_md(s):
     return t
 
 
+def _spans_md(spans_):
+    """Serialize a span list with RUN GROUPING: consecutive bold spans get
+    ONE **…** pair with italic sub-runs inside — adjacency of markers
+    (**a*****b***) would otherwise re-parse wrong."""
+    out, i = [], 0
+    while i < len(spans_):
+        s = spans_[i]
+        plain_b = ("b" in s["st"] and not s["href"] and "c" not in s["st"])
+        if plain_b:
+            j = i
+            while (j < len(spans_) and "b" in spans_[j]["st"]
+                   and not spans_[j]["href"] and "c" not in spans_[j]["st"]):
+                j += 1
+            inner = "".join(
+                f"*{sp['t']}*" if "i" in sp["st"] else sp["t"]
+                for sp in spans_[i:j])
+            out.append(f"**{inner}**")
+            i = j
+            continue
+        plain_i = (s["st"] == ["i"] and not s["href"])
+        if plain_i:
+            j = i
+            while (j < len(spans_) and spans_[j]["st"] == ["i"]
+                   and not spans_[j]["href"]):
+                j += 1
+            out.append("*" + "".join(sp["t"] for sp in spans_[i:j]) + "*")
+            i = j
+            continue
+        out.append(_span_md(s))
+        i += 1
+    return "".join(out)
+
+
 def to_markdown(doc):
     out, prev_list = [], False
     for i, b in enumerate(doc.blocks):
@@ -374,7 +409,7 @@ def to_markdown(doc):
             out.append(b["text"])
             out.append("```")
         else:
-            body = "".join(_span_md(s) for s in b["spans"])
+            body = _spans_md(b["spans"])
             prefix = {"h1": "# ", "h2": "## ", "h3": "### ",
                       "ul": "- ", "ol": "1. ", "p": ""}[b["kind"]]
             out.append(prefix + body)
@@ -409,7 +444,8 @@ def to_html(doc, title=""):
             body.append(f"</{'ul' if in_list == 'ul' else 'ol'}>")
             in_list = None
         if kind == "code":
-            body.append(f"<pre><code>{_esc(b['text'])}</code></pre>")
+            cls = f' class="language-{_esc(b["lang"])}"' if b.get("lang") else ""
+            body.append(f"<pre><code{cls}>{_esc(b['text'])}</code></pre>")
         elif kind in ("ul", "ol"):
             if in_list != kind:
                 body.append(f"<{kind}>")

@@ -129,7 +129,8 @@ class TestHtml(unittest.TestCase):
         h = TD.to_html(TD.from_markdown(MD), title="log")
         for frag in ("<h1>", "<strong>bold</strong>", "<em>style</em>",
                      "<code>code</code>", '<a href="https://x.net/d">',
-                     "<ul>", "</ul>", "<ol>", "<pre><code>"):
+                     "<ul>", "</ul>", "<ol>",
+                     '<pre><code class="language-python">'):
             self.assertIn(frag, h)
 
     def test_escaping(self):
