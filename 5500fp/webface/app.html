@@ -3,28 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FlowCode — TernOO</title>
+<title>TernOO-FlowCode</title>
 <style>
   :root {
     --bg: #14141b; --panel: #1c1c26; --panel2: #22222f;
     --ink: #e6e6ec; --dim: #9a9aac; --line: #32324a;
     --accent: #6ea8fe; --accent2: #e8c890; --good: #7dd3a0;
-    --code-bg: #2a2a38; --io: #4f8fd9; --proc: #5fae8a;
-    --dec: #d9a44f; --term: #b06ad9;
+    --code-bg: #2a2a38;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
-         font: 15px/1.55 system-ui, "Segoe UI", Roboto, sans-serif;
+         font: 14.5px/1.5 system-ui, "Segoe UI", Roboto, sans-serif;
          height: 100vh; display: flex; flex-direction: column;
          overflow: hidden; }
   header { display: flex; align-items: center; gap: 14px;
-           padding: 8px 18px; background: var(--panel);
+           padding: 7px 16px; background: var(--panel);
            border-bottom: 1px solid var(--line); flex-shrink: 0; }
   header h1 { font-size: 16px; margin: 0; letter-spacing: .07em; }
-  header .sub { color: var(--dim); font-size: 12px; }
-  header nav { display: flex; gap: 5px; margin-left: 18px; }
+  header .sub { color: var(--dim); font-size: 12px; margin-left: auto; }
+  header nav { display: flex; gap: 5px; margin-left: 16px; }
   .navbtn { background: none; border: 1px solid var(--line);
-            color: var(--ink); padding: 6px 15px; border-radius: 7px;
+            color: var(--ink); padding: 5px 14px; border-radius: 7px;
             cursor: pointer; font-size: 13.5px; }
   .navbtn.active { background: var(--accent); color: #10131c;
                    border-color: var(--accent); font-weight: 600; }
@@ -32,88 +31,109 @@
   section { flex: 1; overflow: hidden; display: flex; min-width: 0; }
   .hidden { display: none !important; }
 
-  /* sidebar tree */
-  aside { width: 260px; min-width: 200px; background: var(--panel);
-          border-right: 1px solid var(--line); overflow-y: auto;
-          padding: 8px 0; }
-  .treehead { display: flex; align-items: center; gap: 6px;
-              padding: 7px 14px; cursor: pointer; user-select: none;
-              color: var(--accent2); font-weight: 600; font-size: 13px; }
-  .treehead .chev { transition: transform .15s; font-size: 11px; }
-  .treehead.open .chev { transform: rotate(90deg); }
-  .treeitems { overflow: hidden; }
-  .treeitem { padding: 6px 14px 6px 34px; cursor: pointer;
-              font-size: 13.5px; white-space: nowrap; overflow: hidden;
+  /* — desktop-spec chrome: left tools, right props, bottom output — */
+  .lpanel { width: 215px; min-width: 180px; background: var(--panel);
+            border-right: 1px solid var(--line); overflow-y: auto;
+            padding: 8px 0; flex-shrink: 0; }
+  .rpanel { width: 250px; min-width: 210px; background: var(--panel);
+            border-left: 1px solid var(--line); overflow-y: auto;
+            padding: 8px 0; flex-shrink: 0; }
+  .phead { display: flex; align-items: center; gap: 6px;
+           padding: 6px 12px; cursor: pointer; user-select: none;
+           color: var(--accent2); font-weight: 600; font-size: 12.5px;
+           letter-spacing: .05em; }
+  .phead .chev { transition: transform .15s; font-size: 10px; }
+  .phead.open .chev { transform: rotate(90deg); }
+  .pbody { padding: 2px 10px 8px; }
+  .pbody .hint, .hint { color: var(--dim); font-size: 11.5px;
+                        padding: 0 4px 6px; }
+  .tool { display: flex; align-items: center; gap: 8px; width: 100%;
+          background: var(--panel2); color: var(--ink); text-align: left;
+          border: 1px solid var(--line); border-radius: 6px;
+          padding: 6px 10px; margin: 3px 0; cursor: pointer;
+          font-size: 13px; }
+  .tool:hover { border-color: var(--accent); }
+  .tool.arm { background: var(--accent); color: #10131c; font-weight: 600; }
+  .tool .glyph { width: 20px; text-align: center; }
+  .prop-row { display: flex; gap: 6px; align-items: center; margin: 3px 0; }
+  .prop-row label { width: 48px; color: var(--dim); font-size: 12px; }
+  .prop-row input, .prop-row select {
+    flex: 1; min-width: 0; background: var(--panel2); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 5px; padding: 4px 8px;
+    font-size: 12.5px; }
+  .var-row { display: flex; gap: 4px; margin: 3px 0; }
+  .var-row input { flex: 1; min-width: 0; background: var(--panel2);
+    color: var(--ink); border: 1px solid var(--line); border-radius: 5px;
+    padding: 4px 8px; font-size: 12.5px; }
+  .var-row button { background: none; border: none; color: var(--dim);
+    cursor: pointer; }
+  .addbtn { width: 100%; background: none; border: 1px dashed var(--line);
+    color: var(--dim); border-radius: 6px; padding: 4px; cursor: pointer; }
+  #watchbody { font: 12.5px monospace; color: var(--good);
+    white-space: pre-wrap; user-select: text; }
+  .treeitem { padding: 5px 8px; cursor: pointer; font-size: 13px;
+              border-radius: 5px; white-space: nowrap; overflow: hidden;
               text-overflow: ellipsis; }
   .treeitem:hover { background: var(--panel2); }
   .treeitem.sel { background: var(--panel2);
                   border-left: 3px solid var(--accent); }
 
-  /* flow canvas */
-  #flowwrap { flex: 1; position: relative; overflow: hidden;
-              background:
-                radial-gradient(circle, #22222f 1px, transparent 1px);
-              background-size: 26px 26px; cursor: grab; }
-  #flowwrap.panning { cursor: grabbing; }
-  #flowsvg { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .flowtitle { position: absolute; top: 18px; right: 16px;
-               color: var(--dim); font-size: 13px; pointer-events: none; }
-  .flowbar { position: absolute; top: 10px; left: 14px;
-             display: flex; gap: 5px; background: var(--panel);
-             border: 1px solid var(--line); border-radius: 9px;
-             padding: 6px 8px; align-items: center; }
-  .flowbar button { background: var(--panel2); color: var(--ink);
-                    border: 1px solid var(--line); border-radius: 6px;
-                    padding: 5px 10px; cursor: pointer; font-size: 12.5px; }
-  .flowbar button:hover { border-color: var(--accent); }
-  .flowbar .runbtn { background: var(--good); color: #10131c;
-                     font-weight: 700; border: none; }
-  .flowbar .sep { width: 1px; align-self: stretch;
-                  background: var(--line); margin: 0 4px; }
-  .flowbar #wirebtn.arming { background: var(--accent2); color: #10131c; }
-  #runconsole { position: absolute; left: 14px; right: 14px; bottom: 60px;
-                max-height: 40%; background: var(--panel);
-                border: 1px solid var(--line); border-radius: 10px;
-                display: flex; flex-direction: column; z-index: 6; }
-  #runconsole .rc-head { display: flex; justify-content: space-between;
-                         align-items: center; padding: 6px 12px;
-                         color: var(--accent2); font-size: 13px;
-                         border-bottom: 1px solid var(--line); }
-  #runconsole .rc-head button { background: none; border: none;
-                                color: var(--dim); cursor: pointer; }
-  #runconsole pre { margin: 0; padding: 10px 14px; overflow: auto;
-                    font: 13px/1.5 monospace; color: var(--ink);
-                    user-select: text; }
-  .sym-hit { cursor: move; }
-  .sym-sel { stroke: #fff !important; stroke-width: 2.5 !important; }
-  .zoomctl { position: absolute; right: 14px; bottom: 14px;
-             display: flex; gap: 6px; }
-  .zoomctl button { width: 34px; height: 34px; border-radius: 8px;
-                    background: var(--panel2); color: var(--ink);
-                    border: 1px solid var(--line); cursor: pointer;
-                    font-size: 16px; }
+  .centercol { flex: 1; display: flex; flex-direction: column;
+               min-width: 0; }
+  .canvaswrap { flex: 1; position: relative; overflow: hidden;
+     background: radial-gradient(circle, #22222f 1px, transparent 1px);
+     background-size: 26px 26px; cursor: grab; }
+  .canvaswrap.panning { cursor: grabbing; }
+  .canvaswrap svg { position: absolute; inset: 0;
+                    width: 100%; height: 100%; }
+  .cname { position: absolute; top: 10px; left: 14px; color: var(--dim);
+           font-size: 13px; pointer-events: none; z-index: 3; }
+  .zoomctl { position: absolute; right: 12px; bottom: 12px;
+             display: flex; gap: 5px; z-index: 3; }
+  .zoomctl button { width: 32px; height: 32px; border-radius: 8px;
+    background: var(--panel2); color: var(--ink);
+    border: 1px solid var(--line); cursor: pointer; font-size: 15px; }
+  .hints { padding: 4px 14px; color: var(--dim); font-size: 12px;
+           border-top: 1px solid var(--line); background: var(--panel);
+           white-space: nowrap; overflow: hidden;
+           text-overflow: ellipsis; }
+  .outpane { height: 150px; min-height: 60px;
+             border-top: 1px solid var(--line); background: var(--panel);
+             display: flex; flex-direction: column; }
+  .outpane .ophead { display: flex; gap: 10px; align-items: center;
+    padding: 4px 12px; color: var(--accent2); font-size: 12.5px;
+    border-bottom: 1px solid var(--line); }
+  .outpane .ophead button { background: var(--panel2); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 5px; padding: 2px 10px;
+    cursor: pointer; font-size: 12px; }
+  .outpane pre { flex: 1; margin: 0; padding: 8px 14px; overflow: auto;
+    font: 12.5px/1.5 monospace; color: var(--ink); user-select: text; }
+
   .sym-label { fill: #eef0f6; font: 600 13px system-ui, sans-serif;
                text-anchor: middle; dominant-baseline: middle;
                pointer-events: none; }
   .edge-label { fill: var(--accent2); font: 11.5px system-ui, sans-serif;
                 text-anchor: middle; paint-order: stroke;
                 stroke: var(--bg); stroke-width: 4px; }
+  .sym-hit { cursor: move; }
+  .sym-sel { stroke: #fff !important; stroke-width: 2.5 !important; }
 
   /* sheet */
-  .sheetbar { display: flex; gap: 8px; padding: 10px 14px;
+  .sheetbar { display: flex; gap: 8px; padding: 8px 14px;
               border-bottom: 1px solid var(--line); align-items: center;
               background: var(--panel); }
   .sheetbar select, .sheetbar button { background: var(--panel2);
       color: var(--ink); border: 1px solid var(--line);
       border-radius: 6px; padding: 6px 10px; cursor: pointer; }
-  .sheetbar #fxbar { flex: 1; background: var(--panel2); color: var(--accent2);
-      border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px;
-      font-family: monospace; }
+  .sheetbar #fxbar { flex: 1; background: var(--panel2);
+      color: var(--accent2); border: 1px solid var(--line);
+      border-radius: 6px; padding: 7px 12px; font-family: monospace; }
   #gridwrap { flex: 1; overflow: auto; }
   #grid { border-collapse: collapse; }
-  #grid th { background: var(--panel); color: var(--dim); font-weight: 500;
-             font-size: 12px; border: 1px solid var(--line);
-             min-width: 42px; padding: 3px 8px; position: sticky; }
+  #grid th { background: var(--panel); color: var(--dim);
+             font-weight: 500; font-size: 12px;
+             border: 1px solid var(--line); min-width: 42px;
+             padding: 3px 8px; position: sticky; }
   #grid thead th { top: 0; z-index: 2; }
   #grid tbody th { left: 0; z-index: 1; }
   #grid td { border: 1px solid var(--line); padding: 0; min-width: 96px; }
@@ -124,54 +144,70 @@
   #grid td.err input { color: #ef8080; }
   #grid td input:focus { background: var(--panel2); }
 
-  /* placeholders for tabs awaiting their engines */
-  .await { margin: auto; text-align: center; color: var(--dim); }
-  .await h2 { color: var(--accent2); font-weight: 600; }
-  .await code { background: var(--code-bg); padding: 2px 8px;
-                border-radius: 6px; }
+  /* gui canvas: widgets are real HTML */
+  #guicanvas { position: absolute; inset: 0; }
+  .gw { position: absolute; border: 1px solid var(--line);
+        border-radius: 6px; background: var(--panel2); cursor: move;
+        overflow: hidden; user-select: none; font-size: 13px; }
+  .gw.sel { outline: 2px solid var(--accent); }
+  .gw .ttl { background: var(--panel); color: var(--dim);
+             font-size: 11px; padding: 2px 8px;
+             border-bottom: 1px solid var(--line); pointer-events: none; }
+  .gw-gui_button { background: var(--accent); color: #10131c;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 600; border-radius: 7px; }
+  .gw-gui_label { background: none; border-color: transparent;
+      display: flex; align-items: center; padding-left: 6px; }
+  .gw-gui_entry { background: var(--bg); display: flex;
+      align-items: center; padding-left: 8px; color: var(--dim);
+      font-style: italic; }
+  .gw-gui_checkbox { background: none; border-color: transparent;
+      display: flex; align-items: center; padding-left: 6px; }
+  .gw-gui_statusbar, .gw-gui_menubar, .gw-gui_toolbar,
+  .gw-gui_headerbar, .gw-gui_actionbar {
+      background: var(--panel); display: flex; align-items: center;
+      padding-left: 8px; color: var(--dim); font-size: 11.5px; }
 
   /* author */
   #author { flex-direction: column; overflow-y: auto;
-            padding: 20px 30px; display: flex; }
+            padding: 18px 28px; display: flex; }
   .toolbar { display: flex; flex-wrap: wrap; gap: 4px;
-             background: var(--bg); padding: 6px 0 10px;
-             border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+             padding: 4px 0 8px; border-bottom: 1px solid var(--line);
+             margin-bottom: 10px; }
   .toolbar button { background: var(--panel2); color: var(--ink);
                     border: 1px solid var(--line); border-radius: 6px;
-                    min-width: 34px; height: 32px; cursor: pointer;
-                    font-size: 14px; }
+                    min-width: 34px; height: 32px; cursor: pointer; }
   .toolbar button:hover { border-color: var(--accent); }
   .toolbar .sep { width: 1px; background: var(--line); margin: 2px 6px; }
-  .fields { display: flex; gap: 8px; margin-bottom: 10px; }
+  .fields { display: flex; gap: 8px; margin-bottom: 8px; }
   .fields input { flex: 1; background: var(--panel2);
                   border: 1px solid var(--line); color: var(--ink);
-                  border-radius: 7px; padding: 9px 12px; font-size: 14px; }
-  #docbody { min-height: 300px; background: var(--panel);
-             padding: 18px 22px; border: 1px solid var(--line);
+                  border-radius: 7px; padding: 8px 12px; }
+  #docbody { min-height: 280px; background: var(--panel);
+             padding: 16px 22px; border: 1px solid var(--line);
              border-radius: 9px; outline: none; flex: 1; }
   #docbody:focus { border-color: var(--accent); }
-  .doc h1 { font-size: 26px; margin: .4em 0; color: var(--accent2); }
-  .doc h2 { font-size: 21px; margin: .5em 0; color: var(--accent2); }
+  .doc h1 { font-size: 25px; margin: .4em 0; color: var(--accent2); }
+  .doc h2 { font-size: 20px; margin: .5em 0; color: var(--accent2); }
   .doc h3 { font-size: 17px; margin: .5em 0; color: var(--accent2); }
   .doc code { background: var(--code-bg); padding: 1px 6px;
               border-radius: 5px; color: var(--accent2);
-              font-family: monospace; font-size: 13.5px; }
+              font-family: monospace; font-size: 13px; }
   .doc pre { background: var(--code-bg); padding: 12px 16px;
              border-radius: 9px; overflow-x: auto; }
   .doc a { color: var(--accent); }
-  .actions { display: flex; gap: 8px; margin-top: 12px; align-items: center;
-             flex-wrap: wrap; }
+  .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
   .actions .primary { background: var(--accent); color: #10131c;
-                      font-weight: 700; border: none; padding: 10px 20px;
+                      font-weight: 700; border: none; padding: 9px 18px;
                       border-radius: 8px; cursor: pointer; }
   .actions button { background: var(--panel2); color: var(--ink);
-                    border: 1px solid var(--line); padding: 9px 15px;
+                    border: 1px solid var(--line); padding: 8px 14px;
                     border-radius: 8px; cursor: pointer; }
-  #toast { position: fixed; bottom: 22px; right: 26px;
+  #toast { position: fixed; bottom: 20px; right: 24px;
            background: var(--panel2); border: 1px solid var(--good);
-           color: var(--good); padding: 11px 18px; border-radius: 9px;
+           color: var(--good); padding: 10px 16px; border-radius: 9px;
            opacity: 0; transition: opacity .3s; pointer-events: none;
-           font-size: 13.5px; z-index: 50; }
+           z-index: 50; }
 </style>
 </head>
 <body>
@@ -181,25 +217,63 @@
     <button class="navbtn active" data-tab="flow">Flow</button>
     <button class="navbtn" data-tab="gui">GUI</button>
     <button class="navbtn" data-tab="sheet">Sheet</button>
-    <button class="navbtn" data-tab="connectors">Connectors</button>
+    <button class="navbtn" data-tab="conn">Connectors</button>
     <button class="navbtn" data-tab="author">Author</button>
   </nav>
-  <span class="sub" id="statusline" style="margin-left:auto">on TernOO</span>
+  <span class="sub" id="statusline">on TernOO</span>
 </header>
 <main>
-  <!-- FLOW -->
-  <section id="tab-flow">
-    <aside>
-      <div class="treehead open" onclick="toggleTree(this)">
-        <span class="chev">▶</span> Flows
-      </div>
-      <div class="treeitems" id="flowtree"></div>
-    </aside>
-    <div id="flowwrap">
+
+<!-- ════════ FLOW — desktop spec: tools | canvas+output | props ════════ -->
+<section id="tab-flow">
+  <div class="lpanel">
+    <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> FLOWS</div>
+    <div class="pbody" id="flowtree"></div>
+    <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> TOOLS</div>
+    <div class="pbody">
+      <button class="tool arm" id="t-select" onclick="setTool('select')">
+        <span class="glyph">↖</span> Select</button>
+      <button class="tool" id="t-delete" onclick="setTool('delete')">
+        <span class="glyph">✕</span> Delete</button>
+    </div>
+    <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> SYMBOLS</div>
+    <div class="pbody">
+      <button class="tool" onclick="addSym('flow_terminator')">
+        <span class="glyph">⬭</span> Terminator</button>
+      <button class="tool" onclick="addSym('flow_process')">
+        <span class="glyph">▭</span> Process</button>
+      <button class="tool" onclick="addSym('flow_decision')">
+        <span class="glyph">◇</span> Decision</button>
+      <button class="tool" onclick="addSym('flow_loop')">
+        <span class="glyph">⬡</span> Loop</button>
+      <button class="tool" onclick="addSym('flow_io')">
+        <span class="glyph">▱</span> I/O</button>
+    </div>
+    <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> CONNECT</div>
+    <div class="pbody">
+      <button class="tool" id="t-wire" onclick="setTool('wire')">
+        <span class="glyph">↦</span> Edge</button>
+    </div>
+    <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> ACTIONS</div>
+    <div class="pbody">
+      <button class="tool" onclick="runFlow()">
+        <span class="glyph">▶</span> Run</button>
+      <button class="tool" onclick="saveFlow()">
+        <span class="glyph">💾</span> Save</button>
+    </div>
+  </div>
+  <div class="centercol">
+    <div class="canvaswrap" id="flowwrap">
       <svg id="flowsvg" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
-                  markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  markerWidth="7" markerHeight="7"
+                  orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" fill="#8fa8d0"/>
           </marker>
           <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
@@ -218,504 +292,195 @@
           <linearGradient id="g-term" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stop-color="#bd7ce0"/>
             <stop offset="1" stop-color="#9354b8"/></linearGradient>
+          <linearGradient id="g-loop" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#b9c95e"/>
+            <stop offset="1" stop-color="#8fa03c"/></linearGradient>
+          <linearGradient id="g-cmd" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#57b8c9"/>
+            <stop offset="1" stop-color="#3a8f9e"/></linearGradient>
         </defs>
         <g id="world"></g>
       </svg>
-      <div class="flowtitle" id="flowtitle">pick a flow from the tree</div>
-      <div class="flowbar">
-        <button onclick="addSym('flow_process')" title="Add process">▭ Process</button>
-        <button onclick="addSym('flow_decision')" title="Add decision">◇ Decision</button>
-        <button onclick="addSym('flow_io')" title="Add I/O">▱ I/O</button>
-        <button onclick="addSym('flow_terminator')" title="Add terminator">⬭ Term</button>
-        <span class="sep"></span>
-        <button id="wirebtn" onclick="startWire()" title="Connect two symbols">↦ Wire</button>
-        <button onclick="delSel()" title="Delete selected (Del)">✕ Delete</button>
-        <span class="sep"></span>
-        <button class="runbtn" onclick="runFlow()">▶ Run</button>
-        <button onclick="saveFlow()">💾 Save</button>
-      </div>
-      <div id="runconsole" class="hidden"><div class="rc-head">
-        <span>Run output</span>
-        <button onclick="$('runconsole').classList.add('hidden')">✕</button>
-      </div><pre id="runlines"></pre></div>
+      <div class="cname" id="flowtitle">pick a flow from the tree</div>
       <div class="zoomctl">
         <button onclick="zoomBy(1.2)">+</button>
         <button onclick="zoomBy(1/1.2)">−</button>
-        <button onclick="fitView()" title="fit">⛶</button>
+        <button onclick="fitView()">⛶</button>
       </div>
     </div>
-  </section>
+    <div class="hints">tool: <b id="toolname">Select</b> — click selects ·
+      drag moves · dbl-click renames · Edge: click source then target ·
+      Del key or Delete tool removes</div>
+    <div class="outpane">
+      <div class="ophead"><span>Output</span>
+        <button onclick="$('runlines').textContent=''">clear output</button>
+      </div>
+      <pre id="runlines">execution output appears here — ▶ Run walks the design-graph runtime</pre>
+    </div>
+  </div>
+  <div class="rpanel">
+    <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> PROPERTIES</div>
+    <div class="pbody" id="propbody">
+      <div class="hint">select a symbol or an edge</div>
+    </div>
+    <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> VARIABLES</div>
+    <div class="pbody">
+      <div class="hint">declare state here — walks start from it</div>
+      <div id="varrows"></div>
+      <button class="addbtn" onclick="addVarRow('','')">＋ variable</button>
+    </div>
+    <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> WATCH</div>
+    <div class="pbody">
+      <div class="hint">names appear when the walk touches them</div>
+      <div id="watchbody"></div>
+    </div>
+  </div>
+</section>
 
-  <!-- GUI / SHEET / CONNECTORS — awaiting their engine APIs, honestly -->
-  <section id="tab-gui" class="hidden">
-    <div class="await"><h2>GUI</h2>
-      <p>The widget canvas renders here when the <code>widget_lib</code>
-      word-stream API is wired to the web engine.<br>
-      No mockups on this ship — this tab lights up with the real thing.</p>
+<!-- ════════ GUI — the widget canvas; widgets are real HTML ════════ -->
+<section id="tab-gui" class="hidden">
+  <div class="lpanel">
+    <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> DESIGNS</div>
+    <div class="pbody" id="guitree">
+      <div class="hint">.gui designs aboard appear here</div></div>
+    <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> CONTAINERS</div>
+    <div class="pbody" id="guipal-containers"></div>
+    <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> WIDGETS</div>
+    <div class="pbody" id="guipal-widgets"></div>
+    <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> ACTIONS</div>
+    <div class="pbody">
+      <button class="tool" onclick="guiDelete()">
+        <span class="glyph">✕</span> Delete selected</button>
+      <button class="tool" onclick="guiSave()">
+        <span class="glyph">💾</span> Save .gui</button>
+      <button class="tool" onclick="guiNew()">
+        <span class="glyph">✧</span> New design</button>
     </div>
-  </section>
-  <section id="tab-sheet" class="hidden" style="flex-direction:column">
-    <div class="sheetbar">
-      <select id="sheetpick" onchange="openSheet(this.value)">
-        <option value="">— sheets aboard —</option>
-      </select>
-      <button onclick="newSheet()">New</button>
-      <button onclick="saveSheet()">💾 Save</button>
-      <input id="fxbar" placeholder="formula bar — =A1+B1, =SUM(A1:A5)…"
-             onkeydown="if(event.key==='Enter')fxCommit()">
-      <span id="sheetstatus" class="sub"></span>
+  </div>
+  <div class="centercol">
+    <div class="canvaswrap" id="guiwrap" style="cursor:default">
+      <div id="guicanvas"></div>
+      <div class="cname" id="guititle">place a window, then widgets — Tk-schema .gui round-trip</div>
     </div>
-    <div id="gridwrap"><table id="grid"></table></div>
-  </section>
-  <section id="tab-connectors" class="hidden">
-    <div class="await"><h2>Connectors</h2>
-      <p>The connector canvas follows the Flow tab's pattern —
-      same renderer, different word family.</p>
-    </div>
-  </section>
+    <div class="hints">click a palette entry to place · drag to move ·
+      click selects · edit properties on the right</div>
+  </div>
+  <div class="rpanel">
+    <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> PROPERTIES</div>
+    <div class="pbody" id="guiprops">
+      <div class="hint">select a widget</div></div>
+  </div>
+</section>
 
-  <!-- AUTHOR: one surface, two exits (mail / file) -->
-  <section id="tab-author" class="hidden">
-    <div id="author">
-      <div class="fields">
-        <input id="to" placeholder="To — CC, CF5, CAI, Stevo, crew">
-        <input id="subject" placeholder="Subject / document title">
-      </div>
-      <div class="toolbar">
-        <button title="Bold (Ctrl+B)" onclick="cmd('bold')"><b>B</b></button>
-        <button title="Italic (Ctrl+I)" onclick="cmd('italic')"><i>I</i></button>
-        <button title="Inline code" onclick="inlineCode()">&lt;/&gt;</button>
-        <button title="Link" onclick="makeLink()">&#128279;</button>
-        <span class="sep"></span>
-        <button onclick="blockFmt('h1')">H1</button>
-        <button onclick="blockFmt('h2')">H2</button>
-        <button onclick="blockFmt('h3')">H3</button>
-        <button onclick="blockFmt('p')">¶</button>
-        <button title="Bulleted list" onclick="cmd('insertUnorderedList')">•≡</button>
-        <button title="Numbered list" onclick="cmd('insertOrderedList')">1≡</button>
-        <button title="Code block" onclick="blockFmt('pre')">{ }</button>
-      </div>
-      <div id="docbody" class="doc" contenteditable="true" spellcheck="true">
-        <h1>One surface, two exits</h1>
-        <p>Write once. <b>Send</b> it as a letter, or <b>save</b> it as a
-        document — same engine, markdown canonical underneath.</p>
-      </div>
-      <div class="actions">
-        <button class="primary" onclick="sendMail()">Send as mail</button>
-        <button onclick="saveMd()">Save .md</button>
-        <button onclick="saveHtml()">Save .html</button>
-        <button onclick="loadMd()">Open .md</button>
-        <button onclick="previewMd()">View as Markdown</button>
-      </div>
-      <input type="file" id="filepick" accept=".md" class="hidden">
+<!-- ════════ SHEET ════════ -->
+<section id="tab-sheet" class="hidden" style="flex-direction:column">
+  <div class="sheetbar">
+    <select id="sheetpick" onchange="openSheet(this.value)">
+      <option value="">— sheets aboard —</option>
+    </select>
+    <button onclick="newSheet()">New</button>
+    <button onclick="saveSheet()">💾 Save</button>
+    <input id="fxbar" placeholder="formula bar — =A1+B1, =SUM(A1:A5)…"
+           onkeydown="if(event.key==='Enter')fxCommit()">
+    <span id="sheetstatus" class="sub"></span>
+  </div>
+  <div id="gridwrap"><table id="grid"></table></div>
+</section>
+
+<!-- ════════ CONNECTORS — command chips off the live registry ════════ -->
+<section id="tab-conn" class="hidden">
+  <div class="lpanel">
+    <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> COMMANDS</div>
+    <div class="hint" style="padding:0 12px 4px">the live registry —
+      click to place</div>
+    <div id="cmdpal"></div>
+    <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> TOOLS</div>
+    <div class="pbody">
+      <button class="tool" id="c-select" onclick="connTool('select')">
+        <span class="glyph">↖</span> Select</button>
+      <button class="tool" id="c-wire" onclick="connTool('wire')">
+        <span class="glyph">↦</span> Wire</button>
+      <button class="tool" id="c-delete" onclick="connTool('delete')">
+        <span class="glyph">✕</span> Delete</button>
     </div>
-  </section>
+    <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> ACTIONS</div>
+    <div class="pbody">
+      <button class="tool" onclick="connSave()">
+        <span class="glyph">💾</span> Save .fc</button>
+    </div>
+  </div>
+  <div class="centercol">
+    <div class="canvaswrap" id="connwrap">
+      <svg id="connsvg" xmlns="http://www.w3.org/2000/svg">
+        <g id="cworld"></g>
+      </svg>
+      <div class="cname" id="conntitle">place commands, wire them into a
+        pipeline — the same 32 commands GHOST routes to</div>
+      <div class="zoomctl">
+        <button onclick="czoomBy(1.2)">+</button>
+        <button onclick="czoomBy(1/1.2)">−</button>
+      </div>
+    </div>
+    <div class="hints">click a command to place · drag to move · Wire:
+      source then target · Delete tool removes</div>
+  </div>
+  <div class="rpanel">
+    <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> PROPERTIES</div>
+    <div class="pbody" id="connprops">
+      <div class="hint">select a command node</div></div>
+  </div>
+</section>
+
+<!-- ════════ AUTHOR ════════ -->
+<section id="tab-author" class="hidden">
+  <div id="author">
+    <div class="fields">
+      <input id="to" placeholder="To — CC, CF5, CAI, Stevo, crew">
+      <input id="subject" placeholder="Subject / document title">
+    </div>
+    <div class="toolbar">
+      <button title="Bold (Ctrl+B)" onclick="cmd('bold')"><b>B</b></button>
+      <button title="Italic (Ctrl+I)" onclick="cmd('italic')"><i>I</i></button>
+      <button title="Inline code" onclick="inlineCode()">&lt;/&gt;</button>
+      <button title="Link" onclick="makeLink()">&#128279;</button>
+      <span class="sep"></span>
+      <button onclick="blockFmt('h1')">H1</button>
+      <button onclick="blockFmt('h2')">H2</button>
+      <button onclick="blockFmt('h3')">H3</button>
+      <button onclick="blockFmt('p')">¶</button>
+      <button onclick="cmd('insertUnorderedList')">•≡</button>
+      <button onclick="cmd('insertOrderedList')">1≡</button>
+      <button onclick="blockFmt('pre')">{ }</button>
+    </div>
+    <div id="docbody" class="doc" contenteditable="true" spellcheck="true">
+      <h1>One surface, two exits</h1>
+      <p>Write once. <b>Send</b> as a letter, or <b>save</b> as a document
+      — markdown canonical underneath.</p>
+    </div>
+    <div class="actions">
+      <button class="primary" onclick="sendMail()">Send as mail</button>
+      <button onclick="saveMd()">Save .md</button>
+      <button onclick="saveHtml()">Save .html</button>
+      <button onclick="loadMd()">Open .md</button>
+      <button onclick="previewMd()">View as Markdown</button>
+    </div>
+    <input type="file" id="filepick" accept=".md" class="hidden">
+  </div>
+</section>
 </main>
 <div id="toast"></div>
-<script>
-"use strict";
-const $ = id => document.getElementById(id);
-const toast = m => { const t = $("toast"); t.textContent = m;
-  t.style.opacity = 1; setTimeout(() => t.style.opacity = 0, 2600); };
-async function api(path, body) {
-  const r = await fetch(path, body ?
-    {method: "POST", body: JSON.stringify(body)} : {});
-  return r.json();
-}
-
-/* — tabs — */
-document.querySelectorAll(".navbtn").forEach(b => b.onclick = () => {
-  document.querySelectorAll(".navbtn").forEach(x =>
-    x.classList.toggle("active", x === b));
-  for (const t of ["flow", "gui", "sheet", "connectors", "author"])
-    $("tab-" + t).classList.toggle("hidden", t !== b.dataset.tab);
-});
-function toggleTree(h) {
-  h.classList.toggle("open");
-  h.nextElementSibling.style.display =
-    h.classList.contains("open") ? "" : "none";
-}
-
-/* — flow canvas: build + run — */
-const SVGNS = "http://www.w3.org/2000/svg";
-let view = {x: 0, y: 0, k: 1}, flowBounds = null;
-let FLOW = null, SEL = null, WIRE = null, drag = null;
-
-function applyView() {
-  $("world").setAttribute("transform",
-    `translate(${view.x},${view.y}) scale(${view.k})`);
-}
-function zoomBy(f) { view.k = Math.max(.2, Math.min(3, view.k * f));
-  applyView(); }
-function fitView() {
-  if (!flowBounds) return;
-  const w = $("flowwrap").clientWidth, h = $("flowwrap").clientHeight;
-  const bw = flowBounds.x1 - flowBounds.x0 + 120,
-        bh = flowBounds.y1 - flowBounds.y0 + 120;
-  view.k = Math.min(w / bw, h / bh, 1.6);
-  view.x = (w - (flowBounds.x0 + flowBounds.x1) * view.k) / 2;
-  view.y = (h - (flowBounds.y0 + flowBounds.y1) * view.k) / 2;
-  applyView();
-}
-(() => {
-  let pan = null;
-  $("flowwrap").addEventListener("mousedown", e => {
-    if (e.target.closest(".flowbar, #runconsole, .zoomctl")) return;
-    pan = {mx: e.clientX, my: e.clientY, vx: view.x, vy: view.y};
-    $("flowwrap").classList.add("panning");
-  });
-  window.addEventListener("mousemove", e => {
-    if (drag) {
-      const s = FLOW.syms.get(drag.id);
-      s.x = Math.round(drag.sx + (e.clientX - drag.mx) / view.k);
-      s.y = Math.round(drag.sy + (e.clientY - drag.my) / view.k);
-      render();
-      return;
-    }
-    if (!pan) return;
-    view.x = pan.vx + e.clientX - pan.mx;
-    view.y = pan.vy + e.clientY - pan.my; applyView();
-  });
-  window.addEventListener("mouseup", () => { pan = null; drag = null;
-    $("flowwrap").classList.remove("panning"); });
-  $("flowwrap").addEventListener("wheel", e => {
-    e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.12 : 1 / 1.12);
-  }, {passive: false});
-})();
-
-function el(tag, attrs, parent) {
-  const n = document.createElementNS(SVGNS, tag);
-  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
-  (parent || $("world")).appendChild(n);
-  return n;
-}
-function symbolShape(s) {
-  const {x, y, w, h, kind} = s;
-  const common = {filter: "url(#shadow)", stroke: "#0d0d14",
-                  "stroke-width": 1.5, class: "sym-hit"};
-  let node;
-  if (kind === "flow_decision") {
-    const cx = x + w / 2, cy = y + h / 2;
-    node = el("polygon", {...common,
-      points: `${cx},${y - 6} ${x + w + 10},${cy} ${cx},${y + h + 6} ${x - 10},${cy}`,
-      fill: "url(#g-dec)"});
-  } else if (kind === "flow_io") {
-    node = el("polygon", {...common,
-      points: `${x + 14},${y} ${x + w},${y} ${x + w - 14},${y + h} ${x},${y + h}`,
-      fill: "url(#g-io)"});
-  } else if (kind === "flow_terminator") {
-    node = el("rect", {...common, x, y, width: w, height: h,
-      rx: h / 2, fill: "url(#g-term)"});
-  } else {
-    node = el("rect", {...common, x, y, width: w, height: h, rx: 7,
-      fill: "url(#g-proc)"});
-  }
-  if (SEL === s.id) node.classList.add("sym-sel");
-  node.addEventListener("mousedown", e => {
-    e.stopPropagation();
-    if (WIRE) { wireClick(s.id); return; }
-    SEL = s.id;
-    drag = {id: s.id, mx: e.clientX, my: e.clientY, sx: s.x, sy: s.y};
-    render();
-  });
-  node.addEventListener("dblclick", e => {
-    e.stopPropagation();
-    const nl = prompt("Label:", s.label || "");
-    if (nl !== null) { s.label = nl; render(); }
-  });
-  return node;
-}
-function centerOf(s) { return [s.x + s.w / 2, s.y + s.h / 2]; }
-function edgePath(a, b, waypoints) {
-  const [ax, ay] = centerOf(a), [bx, by] = centerOf(b);
-  const pts = [[ax, ay],
-    ...(waypoints || []).map(p => [p.x ?? p[0], p.y ?? p[1]]), [bx, by]];
-  if (pts.length === 2) {
-    const mx = (ax + bx) / 2, my = (ay + by) / 2;
-    const dy = Math.abs(by - ay) > Math.abs(bx - ax);
-    return dy ? `M ${ax} ${ay} C ${ax} ${my}, ${bx} ${my}, ${bx} ${by}`
-              : `M ${ax} ${ay} C ${mx} ${ay}, ${mx} ${by}, ${bx} ${by}`;
-  }
-  return "M " + pts.map(p => p.join(" ")).join(" L ");
-}
-function render() {
-  const world = $("world"); world.innerHTML = "";
-  if (!FLOW) return;
-  for (const e of FLOW.edges) {
-    const a = FLOW.syms.get(e.src), b = FLOW.syms.get(e.dst);
-    if (!a || !b) continue;
-    el("path", {d: edgePath(a, b, e.waypoints), fill: "none",
-                stroke: "#8fa8d0", "stroke-width": 2.2,
-                "marker-end": "url(#arrow)"});
-    if (e.condition) {
-      const [ax, ay] = centerOf(a), [bx, by] = centerOf(b);
-      const t = el("text", {x: (ax + bx) / 2, y: (ay + by) / 2 - 8,
-                            class: "edge-label"});
-      t.textContent = e.condition;
-    }
-  }
-  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-  for (const s of FLOW.syms.values()) {
-    symbolShape(s);
-    const lbl = el("text", {x: s.x + s.w / 2, y: s.y + s.h / 2,
-                            class: "sym-label"});
-    lbl.textContent = s.label || s.kind.replace("flow_", "");
-    x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y);
-    x1 = Math.max(x1, s.x + s.w); y1 = Math.max(y1, s.y + s.h);
-  }
-  flowBounds = FLOW.syms.size ? {x0, y0, x1, y1} : null;
-  $("flowtitle").textContent = FLOW.name +
-    ` — ${FLOW.syms.size} symbols, ${FLOW.edges.length} edges` +
-    (WIRE ? "  ·  WIRE: click source, then target" : "");
-}
-async function loadFlowList() {
-  const flows = await api("/api/flows");
-  const tree = $("flowtree"); tree.innerHTML = "";
-  for (const f of flows) {
-    const d = document.createElement("div");
-    d.className = "treeitem"; d.textContent = f.replace(/\.fc$/, "");
-    d.onclick = () => { document.querySelectorAll(".treeitem.sel")
-        .forEach(e => e.classList.remove("sel"));
-      d.classList.add("sel"); openFlow(f); };
-    tree.appendChild(d);
-  }
-  $("statusline").textContent = `${flows.length} flows aboard`;
-}
-async function openFlow(name) {
-  const raw = await api("/api/flow/" + encodeURIComponent(name));
-  const syms = new Map();
-  for (const s of raw.flow_symbols || []) syms.set(s.id, s);
-  FLOW = {name, raw, syms,
-          edges: raw.flow_edges || raw.edges || [],
-          edgeKey: raw.flow_edges ? "flow_edges" : "edges"};
-  SEL = null; WIRE = null;
-  render(); fitView();
-}
-function addSym(kind) {
-  if (!FLOW) { toast("open a flow first (or Save-as a new name)"); return; }
-  const id = Math.max(0, ...FLOW.syms.keys()) + 1;
-  const w = $("flowwrap").clientWidth, h = $("flowwrap").clientHeight;
-  const cx = (w / 2 - view.x) / view.k, cy = (h / 2 - view.y) / view.k;
-  const s = {id, kind, x: Math.round(cx - 60), y: Math.round(cy - 30),
-             w: 120, h: 60, label: kind.replace("flow_", "").toUpperCase(),
-             properties: []};
-  FLOW.syms.set(id, s); SEL = id; render();
-}
-function delSel() {
-  if (!FLOW || SEL === null) return;
-  FLOW.syms.delete(SEL);
-  FLOW.edges = FLOW.edges.filter(e => e.src !== SEL && e.dst !== SEL);
-  SEL = null; render();
-}
-function startWire() {
-  if (!FLOW) return;
-  WIRE = WIRE ? null : {src: null};
-  $("wirebtn").classList.toggle("arming", !!WIRE);
-  render();
-}
-function wireClick(id) {
-  if (!WIRE.src) { WIRE.src = id;
-    $("flowtitle").textContent += "  ·  source set, click target"; return; }
-  if (WIRE.src === id) { WIRE = null;
-    $("wirebtn").classList.remove("arming"); render(); return; }
-  const srcSym = FLOW.syms.get(WIRE.src);
-  let condition = "";
-  if (srcSym.kind === "flow_decision")
-    condition = prompt("Condition for this branch (blank = dunno door):",
-                       "") || "";
-  FLOW.edges.push({src: WIRE.src, dst: id, privilege: 0, call_style: 0,
-                   return_type: 1, seg_idx: 0, offset: 0,
-                   waypoints: [], condition});
-  WIRE = null; $("wirebtn").classList.remove("arming"); render();
-}
-async function runFlow() {
-  if (!FLOW) return;
-  // run WHAT YOU SEE: save to a scratch name? No — run the in-memory graph
-  // via save-to-original only on explicit Save. The run endpoint reads the
-  // FILE, so unsaved edits need a save first; be honest about it:
-  const rep = await api("/api/flow/" + encodeURIComponent(FLOW.name) + "/run", {});
-  $("runlines").textContent = rep.lines.join("\n") +
-    (Object.keys(rep.vars || {}).length
-      ? "\n\nvars: " + JSON.stringify(rep.vars) : "");
-  $("runconsole").classList.remove("hidden");
-}
-async function saveFlow() {
-  if (!FLOW) return;
-  const name = prompt("Save as (.fc):", FLOW.name);
-  if (!name) return;
-  const doc = {...FLOW.raw};
-  doc.flow_symbols = [...FLOW.syms.values()];
-  doc[FLOW.edgeKey] = FLOW.edges;
-  const res = await api("/api/flow/" + encodeURIComponent(name) + "/save",
-                        {flow: doc});
-  if (res.saved) { toast(`saved ${res.saved}`); FLOW.name = res.saved;
-    loadFlowList(); }
-  else toast(res.error || "save failed");
-}
-document.addEventListener("keydown", ev => {
-  if (ev.key === "Delete" && !$("tab-flow").classList.contains("hidden")
-      && !ev.target.closest("input, [contenteditable]")) delSel();
-});
-
-/* — author — */
-function cmd(c) { document.execCommand(c, false, null); $("docbody").focus(); }
-function blockFmt(t) { document.execCommand("formatBlock", false, t);
-  $("docbody").focus(); }
-function makeLink() { const u = prompt("Link target (https://…):");
-  if (u) document.execCommand("createLink", false, u); }
-function inlineCode() {
-  const sel = window.getSelection();
-  if (!sel.rangeCount || sel.isCollapsed) return;
-  try { const c = document.createElement("code");
-        sel.getRangeAt(0).surroundContents(c); }
-  catch (e) { document.execCommand("insertHTML", false,
-    "<code>" + sel.toString().replace(/[<>&]/g,
-      m => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[m])) + "</code>"); }
-}
-async function sendMail() {
-  const res = await api("/api/send", {to: $("to").value,
-    subject: $("subject").value, html: $("docbody").innerHTML});
-  if (res.dropped) toast(`dropped ${res.dropped} — the watcher has it`);
-  else toast(res.error || "send failed");
-}
-async function mdOfBody() {
-  return (await api("/api/convert", {html: $("docbody").innerHTML})).md;
-}
-async function previewMd() { alert(await mdOfBody()); }
-async function saveMd() {
-  download(($("subject").value || "terndoc") + ".md",
-           await mdOfBody(), "text/markdown");
-  toast("markdown saved — the canonical form");
-}
-async function saveHtml() {
-  const md = await mdOfBody();
-  const r = await api("/api/render", {md});
-  download(($("subject").value || "terndoc") + ".html",
-    "<!DOCTYPE html><html><head><meta charset='utf-8'></head><body>" +
-    r.html + "</body></html>", "text/html");
-}
-function download(name, text, type) {
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([text], {type}));
-  a.download = name; a.click(); URL.revokeObjectURL(a.href);
-}
-function loadMd() { $("filepick").click(); }
-$("filepick").addEventListener("change", async ev => {
-  const f = ev.target.files[0]; if (!f) return;
-  const r = await api("/api/render", {md: await f.text()});
-  $("docbody").innerHTML = r.html; toast(`opened ${f.name}`);
-});
-document.addEventListener("keydown", ev => {
-  if (!(ev.ctrlKey || ev.metaKey)) return;
-  const k = ev.key.toLowerCase();
-  if (k === "b") { ev.preventDefault(); cmd("bold"); }
-  if (k === "i") { ev.preventDefault(); cmd("italic"); }
-});
-
-/* — sheet: the Stage-8 engine, in the browser — */
-const NROWS = 24, NCOLS = 10;
-let SHEET = {name: null, raw: new Map()};   // "r,c" -> text
-let FOCUS = null;
-function colName(c) { return String.fromCharCode(65 + c); }
-function buildGrid() {
-  const g = $("grid"); g.innerHTML = "";
-  const thead = document.createElement("thead");
-  let hr = "<tr><th></th>";
-  for (let c = 0; c < NCOLS; c++) hr += `<th>${colName(c)}</th>`;
-  thead.innerHTML = hr + "</tr>"; g.appendChild(thead);
-  const tb = document.createElement("tbody");
-  for (let r = 0; r < NROWS; r++) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<th>${r + 1}</th>`;
-    for (let c = 0; c < NCOLS; c++) {
-      const td = document.createElement("td");
-      const inp = document.createElement("input");
-      inp.dataset.rc = `${r},${c}`;
-      inp.addEventListener("focus", () => { FOCUS = inp.dataset.rc;
-        inp.value = SHEET.raw.get(FOCUS) || "";
-        $("fxbar").value = inp.value; });
-      inp.addEventListener("blur", () => commitCell(inp));
-      inp.addEventListener("keydown", ev => {
-        if (ev.key === "Enter") { commitCell(inp);
-          const [r2, c2] = inp.dataset.rc.split(",").map(Number);
-          document.querySelector(
-            `input[data-rc="${Math.min(r2 + 1, NROWS - 1)},${c2}"]`)?.focus();
-        }});
-      td.appendChild(inp); tr.appendChild(td);
-    }
-    tb.appendChild(tr);
-  }
-  g.appendChild(tb);
-}
-function commitCell(inp) {
-  const rc = inp.dataset.rc, text = inp.value.trim();
-  if (text) SHEET.raw.set(rc, text); else SHEET.raw.delete(rc);
-  evalSheet();
-}
-function fxCommit() {
-  if (!FOCUS) return;
-  const inp = document.querySelector(`input[data-rc="${FOCUS}"]`);
-  inp.value = $("fxbar").value; commitCell(inp);
-}
-async function evalSheet() {
-  const cells = [...SHEET.raw.entries()].map(([rc, value]) => {
-    const [row, col] = rc.split(",").map(Number);
-    return {row, col, value};
-  });
-  const rep = await api("/api/sheet/eval", {cells});
-  document.querySelectorAll("#grid td").forEach(td => {
-    td.classList.remove("fx", "err"); });
-  for (const inp of document.querySelectorAll("#grid td input")) {
-    const rc = inp.dataset.rc;
-    if (rc === FOCUS && document.activeElement === inp) continue;
-    const raw = SHEET.raw.get(rc);
-    if (!raw) { inp.value = ""; continue; }
-    const isFx = raw.startsWith("=");
-    if (isFx) inp.parentElement.classList.add("fx");
-    if (rep.errors[rc] !== undefined) {
-      inp.parentElement.classList.add("err");
-      inp.value = rep.errors[rc];
-    } else if (isFx) {
-      inp.value = rep.values[rc] !== undefined ? rep.values[rc] : raw;
-    } else inp.value = raw;
-  }
-  $("sheetstatus").textContent =
-    `${SHEET.raw.size} cells · engine: sheet_formula (live)`;
-}
-async function loadSheetList() {
-  const names = await api("/api/sheets");
-  const pick = $("sheetpick");
-  pick.innerHTML = '<option value="">— sheets aboard —</option>' +
-    names.map(n => `<option>${n}</option>`).join("");
-}
-function newSheet() { SHEET = {name: null, raw: new Map()}; buildGrid();
-  $("sheetstatus").textContent = "new sheet"; }
-async function openSheet(name) {
-  if (!name) return;
-  const d = await api("/api/sheet/" + encodeURIComponent(name));
-  SHEET = {name, raw: new Map()};
-  for (const c of d.c || [])
-    SHEET.raw.set(`${c.row},${c.col}`, String(c.value ?? ""));
-  buildGrid(); evalSheet();
-}
-async function saveSheet() {
-  const name = prompt("Save as (.sheet):", SHEET.name || "untitled.sheet");
-  if (!name) return;
-  const c = [...SHEET.raw.entries()].map(([rc, value], i) => {
-    const [row, col] = rc.split(",").map(Number);
-    return {id: i + 1, row, col, value,
-            kind: value.startsWith("=") ? "cell_formula" : "cell_value",
-            label: colName(col) + (row + 1), properties: []};
-  });
-  const res = await api("/api/sheet/" + encodeURIComponent(name) + "/save",
-                        {sheet: {c, r: [], f: [], n: c.length + 1}});
-  if (res.saved) { toast(`saved ${res.saved}`); SHEET.name = res.saved;
-    loadSheetList(); }
-  else toast(res.error || "save failed");
-}
-buildGrid(); loadSheetList();
-
-loadFlowList();
-</script>
+<script src="/app.js"></script>
 </body>
 </html>
