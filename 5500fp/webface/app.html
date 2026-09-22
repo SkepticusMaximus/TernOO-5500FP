@@ -251,8 +251,20 @@
 <section id="tab-flow">
   <div class="lpanel">
     <div class="phead open" onclick="togglePanel(this)">
-      <span class="chev">▶</span> FLOWS</div>
-    <div class="pbody" id="flowtree"></div>
+      <span class="chev">▶</span> FILE</div>
+    <div class="pbody">
+      <select id="designpick" style="width:100%;background:var(--panel2);
+        color:var(--ink);border:1px solid var(--line);border-radius:6px;
+        padding:6px 8px;margin:2px 0 4px">
+        <option value="">— designs aboard —</option>
+      </select>
+      <button class="tool" onclick="openDesign($('designpick').value)">
+        <span class="glyph">📂</span> Open</button>
+      <button class="tool" onclick="closeDesign()">
+        <span class="glyph">✖</span> Close (all tabs)</button>
+      <button class="tool" onclick="saveDesign()">
+        <span class="glyph">💾</span> Save</button>
+    </div>
     <div class="phead open" onclick="togglePanel(this)">
       <span class="chev">▶</span> TOOLS</div>
     <div class="pbody">

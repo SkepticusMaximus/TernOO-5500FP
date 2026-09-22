@@ -229,18 +229,87 @@ function collectVars() {
   }
   return out;
 }
+let DOC = null;   // the unified open document — one file, all tabs
 async function loadFlowList() {
-  const flows = await api("/api/flows");
-  const tree = $("flowtree"); tree.innerHTML = "";
-  for (const f of flows) {
-    const d = document.createElement("div");
-    d.className = "treeitem"; d.textContent = f.replace(/\.fc$/, "");
-    d.onclick = () => { tree.querySelectorAll(".sel")
-        .forEach(e => e.classList.remove("sel"));
-      d.classList.add("sel"); openFlow(f); };
-    tree.appendChild(d);
+  const designs = await api("/api/designs");
+  const pick = $("designpick");
+  pick.innerHTML = '<option value="">— designs aboard —</option>' +
+    designs.map(n => `<option>${n}</option>`).join("");
+  $("statusline").textContent =
+    `on TernOO · ${designs.length} designs aboard`;
+}
+async function openDesign(name) {
+  if (!name) { toast("pick a design first"); return; }
+  const raw = await api("/api/design/" + encodeURIComponent(name));
+  if (raw.error) { toast(raw.error); return; }
+  DOC = {name, raw};
+  const syms = new Map();
+  for (const s of raw.flow_symbols || []) syms.set(s.id, s);
+  FLOW = {name, raw, syms,
+          edges: raw.flow_edges || raw.edges || [],
+          edgeKey: raw.flow_edges ? "flow_edges" : "edges"};
+  SEL = null; SELEDGE = null; render(); fitView(); showProps();
+  GUI.widgets = new Map(); let maxid = 0;
+  for (const s of raw.symbols || []) {
+    if ((s.kind || "").startsWith("gui_")) {
+      GUI.widgets.set(s.id, s); maxid = Math.max(maxid, s.id);
+    }
   }
-  $("statusline").textContent = `on TernOO · ${flows.length} flows aboard`;
+  GUI.next = maxid + 1; GUI.name = name; GUI.raw = raw;
+  GSEL = null; guiRender(); guiProps();
+  SHEET = {name, raw: new Map()};
+  for (const c of raw.cell_symbols || raw.c || [])
+    SHEET.raw.set(`${c.row},${c.col}`, String(c.value ?? ""));
+  buildGrid(); if (SHEET.raw.size) evalSheet();
+  CONN = {name, syms: new Map(), edges: raw.cmd_edges || [], next: 1};
+  for (const s of raw.cmd_symbols || []) {
+    CONN.syms.set(s.id, s);
+    CONN.next = Math.max(CONN.next, s.id + 1);
+  }
+  connRender(); connProps();
+  toast(`opened ${name} — families distributed to every tab`);
+}
+function closeDesign() {
+  DOC = null;
+  FLOW = null; SEL = null; SELEDGE = null;
+  $("world").innerHTML = "";
+  $("flowtitle").textContent = "no design open — File ▸ Open";
+  showProps();
+  GUI.widgets.clear(); GUI.name = null; GSEL = null;
+  guiRender(); guiProps();
+  SHEET = {name: null, raw: new Map()}; buildGrid();
+  CONN = {name: "pipeline.fc", syms: new Map(), edges: [], next: 1};
+  connRender(); connProps();
+  $("runlines").textContent = "";
+  $("watchbody").textContent = "";
+  toast("closed across all tabs");
+}
+async function saveDesign() {
+  const name = prompt("Save design as (.fc / .flow / .gui / .sheet):",
+                      (DOC && DOC.name) || "untitled.fc");
+  if (!name) return;
+  const doc = Object.assign({ternoo_version: "0.3",
+    source_type: "ternoo_design", word_stream: [], symbols: [],
+    edges: [], flow_symbols: [], flow_edges: [], cmd_symbols: [],
+    cmd_edges: [], cell_symbols: [], sheet_regions: [], free_cells: [],
+    sequence: [], groups: {}}, (DOC && DOC.raw) || {});
+  doc.source_file = name;
+  if (FLOW) { doc.flow_symbols = [...FLOW.syms.values()];
+              doc[FLOW.edgeKey || "flow_edges"] = FLOW.edges; }
+  doc.symbols = [...GUI.widgets.values()];
+  doc.cell_symbols = [...SHEET.raw.entries()].map(([rc, value], i) => {
+    const [row, col] = rc.split(",").map(Number);
+    return {id: i + 1, row, col, value,
+            kind: value.startsWith("=") ? "cell_formula" : "cell_value",
+            label: colName(col) + (row + 1), properties: []};
+  });
+  doc.cmd_symbols = [...CONN.syms.values()];
+  doc.cmd_edges = CONN.edges;
+  const res = await api("/api/design/" + encodeURIComponent(name) +
+                        "/save", {design: doc});
+  if (res.saved) { toast(`saved ${res.saved}`);
+    DOC = {name: res.saved, raw: doc}; loadFlowList(); }
+  else toast(res.error || "save failed");
 }
 async function openFlow(name) {
   const raw = await api("/api/flow/" + encodeURIComponent(name));
@@ -292,10 +361,28 @@ function wireClick(id) {
   }
   WIRE = {src: null}; render();
 }
+function propOf(s, name, dflt) {
+  for (const p of s.properties || [])
+    if (p.name === name) return p.value;
+  return dflt;
+}
 async function runFlow() {
   if (!FLOW) { toast("open a flow first"); return; }
+  const vars = collectVars();
+  for (const s of FLOW.syms.values()) {
+    if (s.kind !== "flow_io") continue;
+    if (propOf(s, "direction", "in") === "out") continue;
+    if (propOf(s, "channel", "variable") !== "variable") continue;
+    const addr = String(propOf(s, "address", "") || "").trim();
+    if (!addr || vars[addr] !== undefined) continue;
+    const v = prompt(`${s.label || "input"} — value for "${addr}":`, "");
+    if (v !== null && v !== "") {
+      vars[addr] = isNaN(Number(v)) ? v : Number(v);
+      addVarRow(addr, v);
+    }
+  }
   const rep = await api("/api/flow/" + encodeURIComponent(FLOW.name) +
-                        "/run", {variables: collectVars()});
+                        "/run", {variables: vars});
   $("runlines").textContent = rep.lines.join("\n");
   const w = $("watchbody");
   w.textContent = Object.entries(rep.vars || {})

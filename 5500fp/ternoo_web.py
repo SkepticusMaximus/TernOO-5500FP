@@ -120,6 +120,22 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"engine": "terndoc",
                              "flows": len([f for f in os.listdir(FLOWDIR)
                                            if f.endswith(".fc")])})
+        elif self.path == "/api/designs":
+            exts = (".fc", ".flow", ".gui", ".sheet", ".ternoo")
+            out = sorted(f for f in os.listdir(FLOWDIR)
+                         if f.endswith(exts))
+            self._send(200, out)
+        elif self.path.startswith("/api/design/"):
+            from urllib.parse import unquote
+            name = os.path.basename(
+                unquote(self.path[len("/api/design/"):]))
+            p = os.path.join(FLOWDIR, name)
+            exts = (".fc", ".flow", ".gui", ".sheet", ".ternoo")
+            if not (name.endswith(exts) and os.path.isfile(p)):
+                self._send(404, {"error": "no such design"})
+                return
+            with open(p, encoding="utf-8") as f:
+                self._send(200, f.read().encode(), "application/json")
         elif self.path == "/api/commands":
             names = []
             if FCMD is not None:
@@ -211,6 +227,24 @@ class Handler(BaseHTTPRequestHandler):
             with open(os.path.join(FLOWDIR, name), "w",
                       encoding="utf-8") as f:
                 json.dump(doc, f, indent=2)
+            self._send(200, {"saved": name})
+            return
+        if self.path.startswith("/api/design/") and self.path.endswith("/save"):
+            name = os.path.basename(
+                unquote(self.path[len("/api/design/"):-len("/save")]))
+            exts = (".fc", ".flow", ".gui", ".sheet")
+            if not name.endswith(exts):
+                self._send(400, {"error": f"save as one of {exts} "
+                                 "(.ternoo is deprecated — auto-converts "
+                                 "to .fc)"})
+                return
+            doc = req.get("design")
+            if not isinstance(doc, dict):
+                self._send(400, {"error": "malformed design document"})
+                return
+            with open(os.path.join(FLOWDIR, name), "w",
+                      encoding="utf-8") as f:
+                json.dump(doc, f, indent=1)
             self._send(200, {"saved": name})
             return
         if self.path.startswith("/api/gui/") and self.path.endswith("/save"):
