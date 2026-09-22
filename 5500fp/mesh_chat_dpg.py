@@ -804,6 +804,27 @@ def raw_transcript(*_):
                        callback=lambda: clip_set(text))
 
 
+def rich_view(*_):
+    """TernDoc S3: the conversation RENDERED — headings, bold, code slabs,
+    links — through the same shared engine as the editor and the mail tab.
+    Read-only companion to raw_transcript (which keeps native selection)."""
+    import terndoc as _TD
+    import terndoc_mail as _TM
+    tag = "richview"
+    if dpg.does_item_exist(tag):
+        dpg.delete_item(tag)
+    md = "\n\n".join(
+        f"### {USER_NAME if role == 'user' else 'Professor'}\n\n{t}"
+        for role, t in HISTORY) or "*empty chat*"
+    doc = _TD.from_markdown(md)
+    with dpg.window(label="Rich view — the letterpress edition", tag=tag,
+                    width=860, height=560, pos=(140, 80)):
+        dpg.bind_item_theme(tag, "dialogwin")
+        with dpg.child_window(height=-8, width=-1):
+            dpg.add_drawlist(tag="richcanvas", width=1600, height=100)
+    _TM.render_doc_into("richcanvas", doc, 780)
+
+
 def chat_menu(*_):
     """Rename / Export / Delete — the management trio from the tk client."""
     tag = "chatmgr"
@@ -816,6 +837,8 @@ def chat_menu(*_):
         dpg.bind_item_theme(tag, "dialogwin")
         dpg.add_button(label="Raw transcript (selectable text)",
                        callback=raw_transcript)
+        dpg.add_button(label="Rich view (styled, TernDoc)",
+                       callback=rich_view)
         dpg.add_spacer(height=4)
         if not rec:
             dpg.add_text("No saved chat yet — ask something first, or pick "
