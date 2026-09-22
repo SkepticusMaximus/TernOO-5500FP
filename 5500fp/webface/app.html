@@ -22,11 +22,19 @@
   header h1 { font-size: 16px; margin: 0; letter-spacing: .07em; }
   header .sub { color: var(--dim); font-size: 12px; margin-left: auto; }
   header nav { display: flex; gap: 5px; margin-left: 16px; }
-  .navbtn { background: none; border: 1px solid var(--line);
-            color: var(--ink); padding: 5px 14px; border-radius: 7px;
-            cursor: pointer; font-size: 13.5px; }
-  .navbtn.active { background: var(--accent); color: #10131c;
-                   border-color: var(--accent); font-weight: 600; }
+  header { padding-bottom: 0; }
+  header nav { align-self: flex-end; }
+  .navbtn { background: linear-gradient(#252533, #1d1d28);
+            border: 1px solid var(--line); border-bottom: none;
+            color: var(--dim); padding: 7px 18px 8px;
+            border-radius: 9px 9px 0 0; cursor: pointer;
+            font-size: 13.5px; position: relative; top: 1px; }
+  .navbtn:hover { color: var(--ink);
+                  background: linear-gradient(#2b2b3c, #22222f); }
+  .navbtn.active { background: linear-gradient(#39496a, #2a3350);
+                   color: #fff; font-weight: 600;
+                   border-color: var(--accent);
+                   box-shadow: 0 -2px 8px rgba(110,168,254,.25); }
   main { flex: 1; display: flex; min-height: 0; }
   section { flex: 1; overflow: hidden; display: flex; min-width: 0; }
   .hidden { display: none !important; }
@@ -41,19 +49,31 @@
   .phead { display: flex; align-items: center; gap: 6px;
            padding: 6px 12px; cursor: pointer; user-select: none;
            color: var(--accent2); font-weight: 600; font-size: 12.5px;
-           letter-spacing: .05em; }
+           letter-spacing: .05em;
+           background: linear-gradient(rgba(255,255,255,.03), transparent);
+           border-top: 1px solid rgba(255,255,255,.04);
+           border-bottom: 1px solid rgba(0,0,0,.25); }
   .phead .chev { transition: transform .15s; font-size: 10px; }
   .phead.open .chev { transform: rotate(90deg); }
   .pbody { padding: 2px 10px 8px; }
   .pbody .hint, .hint { color: var(--dim); font-size: 11.5px;
                         padding: 0 4px 6px; }
   .tool { display: flex; align-items: center; gap: 8px; width: 100%;
-          background: var(--panel2); color: var(--ink); text-align: left;
-          border: 1px solid var(--line); border-radius: 6px;
+          background: linear-gradient(#2b2b3a, #222230);
+          color: var(--ink); text-align: left;
+          border: 1px solid #3a3a54; border-radius: 7px;
           padding: 6px 10px; margin: 3px 0; cursor: pointer;
-          font-size: 13px; }
-  .tool:hover { border-color: var(--accent); }
-  .tool.arm { background: var(--accent); color: #10131c; font-weight: 600; }
+          font-size: 13px;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.06),
+                      0 1px 2px rgba(0,0,0,.35); }
+  .tool:hover { border-color: var(--accent);
+                background: linear-gradient(#323244, #262636); }
+  .tool:active { box-shadow: inset 0 2px 4px rgba(0,0,0,.45);
+                 transform: translateY(1px); }
+  .tool.arm { background: linear-gradient(#7cb1ff, #5e94e6);
+              color: #10131c; font-weight: 600;
+              border-color: var(--accent);
+              box-shadow: inset 0 1px 0 rgba(255,255,255,.35); }
   .tool .glyph { width: 20px; text-align: center; }
   .prop-row { display: flex; gap: 6px; align-items: center; margin: 3px 0; }
   .prop-row label { width: 48px; color: var(--dim); font-size: 12px; }
@@ -91,8 +111,11 @@
   .zoomctl { position: absolute; right: 12px; bottom: 12px;
              display: flex; gap: 5px; z-index: 3; }
   .zoomctl button { width: 32px; height: 32px; border-radius: 8px;
-    background: var(--panel2); color: var(--ink);
-    border: 1px solid var(--line); cursor: pointer; font-size: 15px; }
+    background: linear-gradient(#2b2b3a, #222230); color: var(--ink);
+    border: 1px solid #3a3a54; cursor: pointer; font-size: 15px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.06),
+                0 1px 3px rgba(0,0,0,.4); }
+  .zoomctl button:active { transform: translateY(1px); }
   .hints { padding: 4px 14px; color: var(--dim); font-size: 12px;
            border-top: 1px solid var(--line); background: var(--panel);
            white-space: nowrap; overflow: hidden;
