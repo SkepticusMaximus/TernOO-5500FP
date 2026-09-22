@@ -4,21 +4,38 @@
    organs (walker, sheet_formula, command registry, TernDoc). */
 
 const $ = id => document.getElementById(id);
+function fatal(msg) {
+  let b = $("fatalbar");
+  if (!b) {
+    b = document.createElement("div");
+    b.id = "fatalbar";
+    b.onclick = () => b.remove();
+    document.body.appendChild(b);
+  }
+  b.textContent = "✗ " + msg + "   (click to dismiss)";
+}
+window.addEventListener("error", e =>
+  fatal(e.message + " @ " + (e.filename || "").split("/").pop() + ":" +
+        e.lineno));
+window.addEventListener("unhandledrejection", e =>
+  fatal(String((e.reason && (e.reason.message || e.reason)) ||
+               "promise rejected")));
 const toast = m => { const t = $("toast"); t.textContent = m;
   t.style.opacity = 1; setTimeout(() => t.style.opacity = 0, 2600); };
 async function api(path, body) {
-  try {
-    const r = await fetch(path, body ?
-      {method: "POST", body: JSON.stringify(body)} : {});
-    return await r.json();
-  } catch (e) {
-    toast("engine unreachable — retrying…");
-    await new Promise(res => setTimeout(res, 1200));
+  const opts = body === undefined ? {} :
+    {method: "POST", headers: {"Content-Type": "application/json"},
+     body: JSON.stringify(body)};
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const r = await fetch(path, body ?
-        {method: "POST", body: JSON.stringify(body)} : {});
+      const r = await fetch(path, opts);
       return await r.json();
-    } catch (e2) { return {error: "engine unreachable"}; }
+    } catch (e) {
+      if (attempt) throw new Error(
+        `the engine did not answer ${path} — is the server aboard? (` +
+        (e.message || e) + ")");
+      await new Promise(res => setTimeout(res, 400));
+    }
   }
 }
 document.querySelectorAll(".navbtn").forEach(b => b.onclick = () => {
@@ -335,7 +352,8 @@ async function loadFlowList() {
     if (kept) pick.value = kept;
   }
   $("statusline").textContent =
-    `on TernOO · ${designs.length} designs aboard`;
+    `on TernOO · ${designs.length} designs aboard` +
+    (window.__BUILD ? ` · build ${window.__BUILD}` : "");
 }
 async function openDesign(name) {
   if (!name) {
@@ -344,8 +362,6 @@ async function openDesign(name) {
     if (pick.options.length <= 1) await loadFlowList();
     if (pick.showPicker) { try { pick.showPicker(); } catch (e) {} }
     pick.focus();
-    pick.onchange = () => { openDesign(pick.value); pick.onchange =
-      () => {}; };
     return;
   }
   const raw = await api("/api/design/" + encodeURIComponent(name));
@@ -1240,6 +1256,13 @@ document.addEventListener("keydown", ev => {
 });
 
 /* boot */
+for (const pick of document.querySelectorAll("select.designpick"))
+  pick.addEventListener("change", () => {
+    if (pick.value) openDesign(pick.value);   // pick IS open, every tab
+  });
 loadFlowList(); buildGrid(); loadSheetList();
 buildGuiPalettes(); guiLoadList(); guiRender();
+api("/api/status").then(st => { window.__BUILD = st.build || "";
+  $("statusline").textContent += st.build ? ` · build ${st.build}` : "";
+}).catch(() => {});
 buildCmdPalette(); connRender();

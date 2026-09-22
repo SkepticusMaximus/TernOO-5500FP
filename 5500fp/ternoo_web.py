@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import re
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -235,7 +236,14 @@ class Handler(BaseHTTPRequestHandler):
             except FileNotFoundError:
                 self._send(404, {"error": "app.js missing"})
         elif self.path == "/api/status":
-            self._send(200, {"engine": "terndoc",
+            try:
+                mt = os.path.getmtime(
+                    os.path.join(os.path.dirname(APP_PATH), "app.js"))
+                build = time.strftime("%d-%m %H:%M:%S",
+                                      time.localtime(mt))
+            except OSError:
+                build = "?"
+            self._send(200, {"engine": "terndoc", "build": build,
                              "flows": len([f for f in os.listdir(FLOWDIR)
                                            if f.endswith(".fc")])})
         elif self.path == "/api/designs":
