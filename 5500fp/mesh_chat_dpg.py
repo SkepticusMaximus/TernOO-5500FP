@@ -2030,6 +2030,11 @@ def build():
                             dpg.add_spacer(height=6)
                     # (the "FlowCode taste" node-editor demo retired 10-09 —
                     #  candidate successor: a live Mesh/colony status tab)
+                    with dpg.tab(label=" Mail "):
+                        # TernDoc S4 twin pattern: same module as the
+                        # standalone mail client — one surface, two homes
+                        import terndoc_mail as _MAILTAB
+                        _MAILTAB.build_mail_tab(prefix="mcmail")
                     with dpg.tab(label=" Model "):
                         with dpg.group(horizontal=True):
                             dpg.add_text("Professor seat:", color=DIM)
