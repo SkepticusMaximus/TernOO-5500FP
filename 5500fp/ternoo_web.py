@@ -46,6 +46,12 @@ import terndoc as TD
 import terndoc_html as TH
 import pobox_store as TM
 
+import importlib.util as _ilu
+_wkspec = _ilu.spec_from_file_location(
+    "flowcode_walker", os.path.join(_HERE, "flowcode_walker.py"))
+WALKER = _ilu.module_from_spec(_wkspec)
+_wkspec.loader.exec_module(WALKER)
+
 HOST, PORT = "127.0.0.1", 8610
 APP_PATH = os.path.join(_HERE, "webface", "app.html")
 FLOWDIR = os.path.join(os.path.dirname(_HERE), "FlowCode")
@@ -115,7 +121,46 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "no such route"})
 
     def do_POST(self):
+        from urllib.parse import unquote
         req = self._body_json()
+        if self.path.startswith("/api/flow/") and self.path.endswith("/run"):
+            name = os.path.basename(
+                unquote(self.path[len("/api/flow/"):-len("/run")]))
+            p = os.path.join(FLOWDIR, name)
+            if not (name.endswith(".fc") and os.path.isfile(p)):
+                self._send(404, {"error": "no such flow"})
+                return
+            with open(p, encoding="utf-8") as f:
+                d = json.load(f)
+            syms = {s["id"]: s for s in d.get("flow_symbols", [])}
+            edges = d.get("flow_edges", d.get("edges", []))
+            try:
+                rep = WALKER.walk(syms, edges, resolver=None,
+                                  variables=req.get("variables") or {})
+                self._send(200, {"steps": rep["steps"],
+                                 "lines": rep["lines"],
+                                 "vars": rep["vars"]})
+            except Exception as e:              # noqa: BLE001
+                self._send(200, {"steps": 0, "vars": {},
+                                 "lines": [f"run failed: {e}"]})
+            return
+        if self.path.startswith("/api/flow/") and self.path.endswith("/save"):
+            name = os.path.basename(
+                unquote(self.path[len("/api/flow/"):-len("/save")]))
+            if not name.endswith(".fc"):
+                self._send(400, {"error": "flows are .fc files"})
+                return
+            doc = req.get("flow")
+            if not (isinstance(doc, dict)
+                    and isinstance(doc.get("flow_symbols"), list)):
+                self._send(400, {"error": "malformed flow document"})
+                return
+            with open(os.path.join(FLOWDIR, name), "w",
+                      encoding="utf-8") as f:
+                json.dump(doc, f, indent=2)
+            self._send(200, {"saved": name,
+                             "note": "git is the safety net"})
+            return
         if self.path == "/api/render":
             doc = TD.from_markdown(req.get("md", ""))
             self._send(200, {"html": html_body(doc)})

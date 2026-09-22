@@ -58,6 +58,34 @@
   #flowsvg { position: absolute; inset: 0; width: 100%; height: 100%; }
   .flowtitle { position: absolute; top: 12px; left: 16px;
                color: var(--dim); font-size: 13px; pointer-events: none; }
+  .flowbar { position: absolute; top: 10px; right: 14px;
+             display: flex; gap: 5px; background: var(--panel);
+             border: 1px solid var(--line); border-radius: 9px;
+             padding: 6px 8px; align-items: center; }
+  .flowbar button { background: var(--panel2); color: var(--ink);
+                    border: 1px solid var(--line); border-radius: 6px;
+                    padding: 5px 10px; cursor: pointer; font-size: 12.5px; }
+  .flowbar button:hover { border-color: var(--accent); }
+  .flowbar .runbtn { background: var(--good); color: #10131c;
+                     font-weight: 700; border: none; }
+  .flowbar .sep { width: 1px; align-self: stretch;
+                  background: var(--line); margin: 0 4px; }
+  .flowbar #wirebtn.arming { background: var(--accent2); color: #10131c; }
+  #runconsole { position: absolute; left: 14px; right: 14px; bottom: 60px;
+                max-height: 40%; background: var(--panel);
+                border: 1px solid var(--line); border-radius: 10px;
+                display: flex; flex-direction: column; z-index: 6; }
+  #runconsole .rc-head { display: flex; justify-content: space-between;
+                         align-items: center; padding: 6px 12px;
+                         color: var(--accent2); font-size: 13px;
+                         border-bottom: 1px solid var(--line); }
+  #runconsole .rc-head button { background: none; border: none;
+                                color: var(--dim); cursor: pointer; }
+  #runconsole pre { margin: 0; padding: 10px 14px; overflow: auto;
+                    font: 13px/1.5 monospace; color: var(--ink);
+                    user-select: text; }
+  .sym-hit { cursor: move; }
+  .sym-sel { stroke: #fff !important; stroke-width: 2.5 !important; }
   .zoomctl { position: absolute; right: 14px; bottom: 14px;
              display: flex; gap: 6px; }
   .zoomctl button { width: 34px; height: 34px; border-radius: 8px;
@@ -169,6 +197,22 @@
         <g id="world"></g>
       </svg>
       <div class="flowtitle" id="flowtitle">pick a flow from the tree</div>
+      <div class="flowbar">
+        <button onclick="addSym('flow_process')" title="Add process">▭ Process</button>
+        <button onclick="addSym('flow_decision')" title="Add decision">◇ Decision</button>
+        <button onclick="addSym('flow_io')" title="Add I/O">▱ I/O</button>
+        <button onclick="addSym('flow_terminator')" title="Add terminator">⬭ Term</button>
+        <span class="sep"></span>
+        <button id="wirebtn" onclick="startWire()" title="Connect two symbols">↦ Wire</button>
+        <button onclick="delSel()" title="Delete selected (Del)">✕ Delete</button>
+        <span class="sep"></span>
+        <button class="runbtn" onclick="runFlow()">▶ Run</button>
+        <button onclick="saveFlow()">💾 Save</button>
+      </div>
+      <div id="runconsole" class="hidden"><div class="rc-head">
+        <span>Run output</span>
+        <button onclick="$('runconsole').classList.add('hidden')">✕</button>
+      </div><pre id="runlines"></pre></div>
       <div class="zoomctl">
         <button onclick="zoomBy(1.2)">+</button>
         <button onclick="zoomBy(1/1.2)">−</button>
@@ -260,9 +304,11 @@ function toggleTree(h) {
     h.classList.contains("open") ? "" : "none";
 }
 
-/* — flow canvas — */
+/* — flow canvas: build + run — */
 const SVGNS = "http://www.w3.org/2000/svg";
 let view = {x: 0, y: 0, k: 1}, flowBounds = null;
+let FLOW = null, SEL = null, WIRE = null, drag = null;
+
 function applyView() {
   $("world").setAttribute("transform",
     `translate(${view.x},${view.y}) scale(${view.k})`);
@@ -279,17 +325,26 @@ function fitView() {
   view.y = (h - (flowBounds.y0 + flowBounds.y1) * view.k) / 2;
   applyView();
 }
-(() => {  // pan + wheel-zoom
-  const wrap = document.body;
+(() => {
   let pan = null;
   $("flowwrap").addEventListener("mousedown", e => {
+    if (e.target.closest(".flowbar, #runconsole, .zoomctl")) return;
     pan = {mx: e.clientX, my: e.clientY, vx: view.x, vy: view.y};
     $("flowwrap").classList.add("panning");
   });
-  window.addEventListener("mousemove", e => { if (!pan) return;
+  window.addEventListener("mousemove", e => {
+    if (drag) {
+      const s = FLOW.syms.get(drag.id);
+      s.x = Math.round(drag.sx + (e.clientX - drag.mx) / view.k);
+      s.y = Math.round(drag.sy + (e.clientY - drag.my) / view.k);
+      render();
+      return;
+    }
+    if (!pan) return;
     view.x = pan.vx + e.clientX - pan.mx;
-    view.y = pan.vy + e.clientY - pan.my; applyView(); });
-  window.addEventListener("mouseup", () => { pan = null;
+    view.y = pan.vy + e.clientY - pan.my; applyView();
+  });
+  window.addEventListener("mouseup", () => { pan = null; drag = null;
     $("flowwrap").classList.remove("panning"); });
   $("flowwrap").addEventListener("wheel", e => {
     e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.12 : 1 / 1.12);
@@ -305,28 +360,44 @@ function el(tag, attrs, parent) {
 function symbolShape(s) {
   const {x, y, w, h, kind} = s;
   const common = {filter: "url(#shadow)", stroke: "#0d0d14",
-                  "stroke-width": 1.5};
+                  "stroke-width": 1.5, class: "sym-hit"};
+  let node;
   if (kind === "flow_decision") {
     const cx = x + w / 2, cy = y + h / 2;
-    return el("polygon", {...common,
+    node = el("polygon", {...common,
       points: `${cx},${y - 6} ${x + w + 10},${cy} ${cx},${y + h + 6} ${x - 10},${cy}`,
       fill: "url(#g-dec)"});
-  }
-  if (kind === "flow_io")
-    return el("polygon", {...common,
+  } else if (kind === "flow_io") {
+    node = el("polygon", {...common,
       points: `${x + 14},${y} ${x + w},${y} ${x + w - 14},${y + h} ${x},${y + h}`,
       fill: "url(#g-io)"});
-  if (kind === "flow_terminator")
-    return el("rect", {...common, x, y, width: w, height: h,
+  } else if (kind === "flow_terminator") {
+    node = el("rect", {...common, x, y, width: w, height: h,
       rx: h / 2, fill: "url(#g-term)"});
-  return el("rect", {...common, x, y, width: w, height: h, rx: 7,
-    fill: "url(#g-proc)"});
+  } else {
+    node = el("rect", {...common, x, y, width: w, height: h, rx: 7,
+      fill: "url(#g-proc)"});
+  }
+  if (SEL === s.id) node.classList.add("sym-sel");
+  node.addEventListener("mousedown", e => {
+    e.stopPropagation();
+    if (WIRE) { wireClick(s.id); return; }
+    SEL = s.id;
+    drag = {id: s.id, mx: e.clientX, my: e.clientY, sx: s.x, sy: s.y};
+    render();
+  });
+  node.addEventListener("dblclick", e => {
+    e.stopPropagation();
+    const nl = prompt("Label:", s.label || "");
+    if (nl !== null) { s.label = nl; render(); }
+  });
+  return node;
 }
 function centerOf(s) { return [s.x + s.w / 2, s.y + s.h / 2]; }
 function edgePath(a, b, waypoints) {
   const [ax, ay] = centerOf(a), [bx, by] = centerOf(b);
-  const pts = [[ax, ay], ...(waypoints || []).map(p => [p.x ?? p[0], p.y ?? p[1]]),
-               [bx, by]];
+  const pts = [[ax, ay],
+    ...(waypoints || []).map(p => [p.x ?? p[0], p.y ?? p[1]]), [bx, by]];
   if (pts.length === 2) {
     const mx = (ax + bx) / 2, my = (ay + by) / 2;
     const dy = Math.abs(by - ay) > Math.abs(bx - ax);
@@ -334,6 +405,36 @@ function edgePath(a, b, waypoints) {
               : `M ${ax} ${ay} C ${mx} ${ay}, ${mx} ${by}, ${bx} ${by}`;
   }
   return "M " + pts.map(p => p.join(" ")).join(" L ");
+}
+function render() {
+  const world = $("world"); world.innerHTML = "";
+  if (!FLOW) return;
+  for (const e of FLOW.edges) {
+    const a = FLOW.syms.get(e.src), b = FLOW.syms.get(e.dst);
+    if (!a || !b) continue;
+    el("path", {d: edgePath(a, b, e.waypoints), fill: "none",
+                stroke: "#8fa8d0", "stroke-width": 2.2,
+                "marker-end": "url(#arrow)"});
+    if (e.condition) {
+      const [ax, ay] = centerOf(a), [bx, by] = centerOf(b);
+      const t = el("text", {x: (ax + bx) / 2, y: (ay + by) / 2 - 8,
+                            class: "edge-label"});
+      t.textContent = e.condition;
+    }
+  }
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const s of FLOW.syms.values()) {
+    symbolShape(s);
+    const lbl = el("text", {x: s.x + s.w / 2, y: s.y + s.h / 2,
+                            class: "sym-label"});
+    lbl.textContent = s.label || s.kind.replace("flow_", "");
+    x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y);
+    x1 = Math.max(x1, s.x + s.w); y1 = Math.max(y1, s.y + s.h);
+  }
+  flowBounds = FLOW.syms.size ? {x0, y0, x1, y1} : null;
+  $("flowtitle").textContent = FLOW.name +
+    ` — ${FLOW.syms.size} symbols, ${FLOW.edges.length} edges` +
+    (WIRE ? "  ·  WIRE: click source, then target" : "");
 }
 async function loadFlowList() {
   const flows = await api("/api/flows");
@@ -349,39 +450,80 @@ async function loadFlowList() {
   $("statusline").textContent = `${flows.length} flows aboard`;
 }
 async function openFlow(name) {
-  const flow = await api("/api/flow/" + encodeURIComponent(name));
-  const world = $("world"); world.innerHTML = "";
-  const syms = {};
-  const symbols = flow.flow_symbols || [];
-  for (const s of symbols) syms[s.id] = s;
-  const edges = flow.flow_edges || flow.edges || [];
-  for (const e of edges) {
-    const a = syms[e.src], b = syms[e.dst];
-    if (!a || !b) continue;
-    el("path", {d: edgePath(a, b, e.waypoints), fill: "none",
-                stroke: "#8fa8d0", "stroke-width": 2.2,
-                "marker-end": "url(#arrow)"});
-    if (e.condition) {
-      const [ax, ay] = centerOf(a), [bx, by] = centerOf(b);
-      const t = el("text", {x: (ax + bx) / 2, y: (ay + by) / 2 - 8,
-                            class: "edge-label"});
-      t.textContent = e.condition;
-    }
-  }
-  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-  for (const s of symbols) {
-    symbolShape(s);
-    const lbl = el("text", {x: s.x + s.w / 2, y: s.y + s.h / 2,
-                            class: "sym-label"});
-    lbl.textContent = s.label || s.kind.replace("flow_", "");
-    x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y);
-    x1 = Math.max(x1, s.x + s.w); y1 = Math.max(y1, s.y + s.h);
-  }
-  flowBounds = symbols.length ? {x0, y0, x1, y1} : null;
-  $("flowtitle").textContent =
-    `${name} — ${symbols.length} symbols, ${edges.length} edges (read-only)`;
-  fitView();
+  const raw = await api("/api/flow/" + encodeURIComponent(name));
+  const syms = new Map();
+  for (const s of raw.flow_symbols || []) syms.set(s.id, s);
+  FLOW = {name, raw, syms,
+          edges: raw.flow_edges || raw.edges || [],
+          edgeKey: raw.flow_edges ? "flow_edges" : "edges"};
+  SEL = null; WIRE = null;
+  render(); fitView();
 }
+function addSym(kind) {
+  if (!FLOW) { toast("open a flow first (or Save-as a new name)"); return; }
+  const id = Math.max(0, ...FLOW.syms.keys()) + 1;
+  const w = $("flowwrap").clientWidth, h = $("flowwrap").clientHeight;
+  const cx = (w / 2 - view.x) / view.k, cy = (h / 2 - view.y) / view.k;
+  const s = {id, kind, x: Math.round(cx - 60), y: Math.round(cy - 30),
+             w: 120, h: 60, label: kind.replace("flow_", "").toUpperCase(),
+             properties: []};
+  FLOW.syms.set(id, s); SEL = id; render();
+}
+function delSel() {
+  if (!FLOW || SEL === null) return;
+  FLOW.syms.delete(SEL);
+  FLOW.edges = FLOW.edges.filter(e => e.src !== SEL && e.dst !== SEL);
+  SEL = null; render();
+}
+function startWire() {
+  if (!FLOW) return;
+  WIRE = WIRE ? null : {src: null};
+  $("wirebtn").classList.toggle("arming", !!WIRE);
+  render();
+}
+function wireClick(id) {
+  if (!WIRE.src) { WIRE.src = id;
+    $("flowtitle").textContent += "  ·  source set, click target"; return; }
+  if (WIRE.src === id) { WIRE = null;
+    $("wirebtn").classList.remove("arming"); render(); return; }
+  const srcSym = FLOW.syms.get(WIRE.src);
+  let condition = "";
+  if (srcSym.kind === "flow_decision")
+    condition = prompt("Condition for this branch (blank = dunno door):",
+                       "") || "";
+  FLOW.edges.push({src: WIRE.src, dst: id, privilege: 0, call_style: 0,
+                   return_type: 1, seg_idx: 0, offset: 0,
+                   waypoints: [], condition});
+  WIRE = null; $("wirebtn").classList.remove("arming"); render();
+}
+async function runFlow() {
+  if (!FLOW) return;
+  // run WHAT YOU SEE: save to a scratch name? No — run the in-memory graph
+  // via save-to-original only on explicit Save. The run endpoint reads the
+  // FILE, so unsaved edits need a save first; be honest about it:
+  const rep = await api("/api/flow/" + encodeURIComponent(FLOW.name) + "/run", {});
+  $("runlines").textContent = rep.lines.join("\n") +
+    (Object.keys(rep.vars || {}).length
+      ? "\n\nvars: " + JSON.stringify(rep.vars) : "");
+  $("runconsole").classList.remove("hidden");
+}
+async function saveFlow() {
+  if (!FLOW) return;
+  const name = prompt("Save as (.fc):", FLOW.name);
+  if (!name) return;
+  const doc = {...FLOW.raw};
+  doc.flow_symbols = [...FLOW.syms.values()];
+  doc[FLOW.edgeKey] = FLOW.edges;
+  const res = await api("/api/flow/" + encodeURIComponent(name) + "/save",
+                        {flow: doc});
+  if (res.saved) { toast(`saved ${res.saved}`); FLOW.name = res.saved;
+    loadFlowList(); }
+  else toast(res.error || "save failed");
+}
+document.addEventListener("keydown", ev => {
+  if (ev.key === "Delete" && !$("tab-flow").classList.contains("hidden")
+      && !ev.target.closest("input, [contenteditable]")) delSel();
+});
 
 /* — author — */
 function cmd(c) { document.execCommand(c, false, null); $("docbody").focus(); }
