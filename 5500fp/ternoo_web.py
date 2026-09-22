@@ -18,8 +18,10 @@ core behind the same endpoints and nothing above the API notices.
 API:
   GET  /                 the app
   GET  /api/status       engine + box info
-  GET  /api/mail         letters, newest first (parsed headers)
-  GET  /api/mail/<name>  one letter: {md, html}
+  GET  /api/flows        .fc flow files
+  GET  /api/flow/<name>  one flow (JSON) — code is readable, MAIL IS NOT
+                         (captain's privacy ruling: send-only until
+                         per-seat identity exists)
   POST /api/send         {to, subject, html|md} -> Outbox drop-is-send
   POST /api/render       {md} -> {html}
   POST /api/convert      {html} -> {md}
@@ -46,6 +48,7 @@ import pobox_store as TM
 
 HOST, PORT = "127.0.0.1", 8610
 APP_PATH = os.path.join(_HERE, "webface", "app.html")
+FLOWDIR = os.path.join(os.path.dirname(_HERE), "FlowCode")
 
 
 def html_body(doc):
@@ -89,30 +92,25 @@ class Handler(BaseHTTPRequestHandler):
             except FileNotFoundError:
                 self._send(500, {"error": "webface/app.html missing"})
         elif self.path == "/api/status":
-            self._send(200, {"engine": "terndoc", "mailbox": TM.POBOX,
-                             "letters": len(TM.list_mail())})
-        elif self.path == "/api/mail":
-            out = []
-            for f in TM.list_mail():
-                try:
-                    with open(os.path.join(TM.POBOX, f),
-                              encoding="utf-8") as fh:
-                        h = TM.parse_headers(fh.read(2000))
-                except Exception:
-                    h = {"from": "?", "to": "?", "subject": ""}
-                out.append({"file": f, **h})
+            self._send(200, {"engine": "terndoc",
+                             "flows": len([f for f in os.listdir(FLOWDIR)
+                                           if f.endswith(".fc")])})
+        elif self.path == "/api/flows":
+            # captain's privacy ruling 22-09: the web face may SEND letters
+            # but never READ the box until per-seat identity exists. Flow
+            # files are code, not correspondence — those it may read.
+            out = sorted(f for f in os.listdir(FLOWDIR)
+                         if f.endswith(".fc"))
             self._send(200, out)
-        elif self.path.startswith("/api/mail/"):
+        elif self.path.startswith("/api/flow/"):
             from urllib.parse import unquote
-            name = os.path.basename(unquote(self.path[len("/api/mail/"):]))
-            p = os.path.join(TM.POBOX, name)
-            if not os.path.isfile(p):
-                self._send(404, {"error": "no such letter"})
+            name = os.path.basename(unquote(self.path[len("/api/flow/"):]))
+            p = os.path.join(FLOWDIR, name)
+            if not (name.endswith(".fc") and os.path.isfile(p)):
+                self._send(404, {"error": "no such flow"})
                 return
             with open(p, encoding="utf-8") as f:
-                md = f.read()
-            self._send(200, {"file": name, "md": md,
-                             "html": html_body(TD.from_markdown(md))})
+                self._send(200, f.read().encode(), "application/json")
         else:
             self._send(404, {"error": "no such route"})
 
