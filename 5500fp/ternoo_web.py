@@ -55,6 +55,14 @@ _sfspec = _ilu.spec_from_file_location(
     "sheet_formula", os.path.join(_HERE, "sheet_formula.py"))
 SHEETF = _ilu.module_from_spec(_sfspec)
 _sfspec.loader.exec_module(SHEETF)
+_FCDIR = FLOWDIR if 'FLOWDIR' in dir() else None
+try:
+    _fcspec = _ilu.spec_from_file_location(
+        "flowcode_commands", os.path.join(_HERE, "flowcode_commands.py"))
+    FCMD = _ilu.module_from_spec(_fcspec)
+    _fcspec.loader.exec_module(FCMD)
+except Exception:                               # noqa: BLE001
+    FCMD = None
 
 HOST, PORT = "127.0.0.1", 8610
 APP_PATH = os.path.join(_HERE, "webface", "app.html")
@@ -101,10 +109,38 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, f.read(), "text/html")
             except FileNotFoundError:
                 self._send(500, {"error": "webface/app.html missing"})
+        elif self.path == "/app.js":
+            try:
+                with open(os.path.join(os.path.dirname(APP_PATH),
+                                       "app.js"), "rb") as f:
+                    self._send(200, f.read(), "text/javascript")
+            except FileNotFoundError:
+                self._send(404, {"error": "app.js missing"})
         elif self.path == "/api/status":
             self._send(200, {"engine": "terndoc",
                              "flows": len([f for f in os.listdir(FLOWDIR)
                                            if f.endswith(".fc")])})
+        elif self.path == "/api/commands":
+            names = []
+            if FCMD is not None:
+                try:
+                    names = list(FCMD.command_names())
+                except Exception:               # noqa: BLE001
+                    names = []
+            self._send(200, names)
+        elif self.path == "/api/guis":
+            out = sorted(f for f in os.listdir(FLOWDIR)
+                         if f.endswith(".gui"))
+            self._send(200, out)
+        elif self.path.startswith("/api/gui/"):
+            from urllib.parse import unquote
+            name = os.path.basename(unquote(self.path[len("/api/gui/"):]))
+            p = os.path.join(FLOWDIR, name)
+            if not (name.endswith(".gui") and os.path.isfile(p)):
+                self._send(404, {"error": "no such gui design"})
+                return
+            with open(p, encoding="utf-8") as f:
+                self._send(200, f.read().encode(), "application/json")
         elif self.path == "/api/sheets":
             out = sorted(f for f in os.listdir(FLOWDIR)
                          if f.endswith(".sheet"))
@@ -175,6 +211,22 @@ class Handler(BaseHTTPRequestHandler):
             with open(os.path.join(FLOWDIR, name), "w",
                       encoding="utf-8") as f:
                 json.dump(doc, f, indent=2)
+            self._send(200, {"saved": name})
+            return
+        if self.path.startswith("/api/gui/") and self.path.endswith("/save"):
+            name = os.path.basename(
+                unquote(self.path[len("/api/gui/"):-len("/save")]))
+            if not name.endswith(".gui"):
+                self._send(400, {"error": "gui designs are .gui files"})
+                return
+            doc = req.get("design")
+            if not (isinstance(doc, dict)
+                    and isinstance(doc.get("symbols"), list)):
+                self._send(400, {"error": "malformed design document"})
+                return
+            with open(os.path.join(FLOWDIR, name), "w",
+                      encoding="utf-8") as f:
+                json.dump(doc, f, indent=1)
             self._send(200, {"saved": name})
             return
         if self.path.startswith("/api/flow/") and self.path.endswith("/run"):
