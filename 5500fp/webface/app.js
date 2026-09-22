@@ -685,12 +685,18 @@ function adopt(id) {
   w.parent_id = best;
 }
 function buildGuiPalettes() {
+  const GLYPH = {gui_window: "▣", gui_dialog: "◳", gui_box: "▢",
+    gui_frame: "⬚", gui_notebook: "⧉", gui_toolbar: "▬",
+    gui_statusbar: "▁", gui_menubar: "☰", gui_headerbar: "▀",
+    gui_button: "▮", gui_label: "𝖠", gui_entry: "⌨",
+    gui_checkbox: "☑"};
   const mk = (kinds, host) => {
     const box = $(host); box.innerHTML = "";
     for (const k of kinds) {
       const b = document.createElement("button");
       b.className = "tool";
-      b.innerHTML = `<span class="glyph">▢</span> ${k.replace("gui_", "")}`;
+      b.innerHTML = `<span class="glyph">${GLYPH[k] || "▢"}</span> ` +
+        k.replace("gui_", "");
       b.onclick = () => guiPlace(k);
       box.appendChild(b);
     }
@@ -1054,8 +1060,11 @@ function connRender() {
       if (CTOOL === "delete") { CONN.edges.splice(i, 1); connRender(); }});
   });
   for (const s of CONN.syms.values()) {
+    const famRaw = (s.kind || "").split("_")[1];
+    const fam = ["text", "math", "list"].includes(famRaw) ? famRaw
+              : "misc";
     const r = cel("rect", {x: s.x, y: s.y, width: s.w, height: s.h,
-      rx: 12, fill: "url(#g-cmd)", stroke: "#0d0d14",
+      rx: 12, fill: `url(#g-cmd-${fam})`, stroke: "#0d0d14",
       "stroke-width": 1.5, filter: "url(#shadow)", class: "sym-hit" +
         (CSEL === s.id ? " sym-sel" : "")});
     r.addEventListener("mousedown", e => {
@@ -1072,9 +1081,19 @@ function connRender() {
                sx: s.x, sy: s.y};
       connRender(); connProps();
     });
-    const t = cel("text", {x: s.x + s.w / 2, y: s.y + s.h / 2,
+    const t = cel("text", {x: s.x + s.w / 2, y: s.y + s.h / 2 - 3,
                            class: "sym-label"});
     t.textContent = s.label;
+    const ot = (CMDSPECS[s.kind] || {}).output;
+    if (ot) {
+      const t2 = cel("text", {x: s.x + s.w / 2, y: s.y + s.h - 7,
+                              class: "sym-sub"});
+      t2.textContent = "→ " + ot;
+    }
+    cel("circle", {cx: s.x, cy: s.y + s.h / 2, r: 3.5,
+      fill: "#8fa8d0", stroke: "#0d0d14", "stroke-width": 1});
+    cel("circle", {cx: s.x + s.w, cy: s.y + s.h / 2, r: 3.5,
+      fill: "#8fa8d0", stroke: "#0d0d14", "stroke-width": 1});
   }
   $("conntitle").textContent =
     `${CONN.name} — ${CONN.syms.size} commands, ${CONN.edges.length} pipes`;
