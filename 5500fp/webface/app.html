@@ -6,288 +6,431 @@
 <title>TernOO</title>
 <style>
   :root {
-    --bg: #16161d; --panel: #1e1e28; --panel2: #232330;
-    --ink: #e6e6ec; --dim: #9a9aac; --line: #34344a;
+    --bg: #14141b; --panel: #1c1c26; --panel2: #22222f;
+    --ink: #e6e6ec; --dim: #9a9aac; --line: #32324a;
     --accent: #6ea8fe; --accent2: #e8c890; --good: #7dd3a0;
-    --code-bg: #2a2a38;
+    --code-bg: #2a2a38; --io: #4f8fd9; --proc: #5fae8a;
+    --dec: #d9a44f; --term: #b06ad9;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
          font: 15px/1.55 system-ui, "Segoe UI", Roboto, sans-serif;
-         height: 100vh; display: flex; flex-direction: column; }
+         height: 100vh; display: flex; flex-direction: column;
+         overflow: hidden; }
   header { display: flex; align-items: center; gap: 14px;
-           padding: 10px 18px; background: var(--panel);
-           border-bottom: 1px solid var(--line); }
-  header h1 { font-size: 16px; margin: 0; letter-spacing: .06em; }
-  header .sub { color: var(--dim); font-size: 12.5px; }
-  header nav { margin-left: auto; display: flex; gap: 6px; }
+           padding: 8px 18px; background: var(--panel);
+           border-bottom: 1px solid var(--line); flex-shrink: 0; }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: .07em; }
+  header .sub { color: var(--dim); font-size: 12px; }
+  header nav { margin-left: auto; display: flex; gap: 5px; }
   .navbtn { background: none; border: 1px solid var(--line);
-            color: var(--ink); padding: 6px 14px; border-radius: 7px;
+            color: var(--ink); padding: 6px 15px; border-radius: 7px;
             cursor: pointer; font-size: 13.5px; }
   .navbtn.active { background: var(--accent); color: #10131c;
                    border-color: var(--accent); font-weight: 600; }
   main { flex: 1; display: flex; min-height: 0; }
-  aside { width: 330px; min-width: 240px; background: var(--panel);
-          border-right: 1px solid var(--line); overflow-y: auto; }
-  aside .letter { padding: 10px 14px; border-bottom: 1px solid var(--line);
-                  cursor: pointer; }
-  aside .letter:hover { background: var(--panel2); }
-  aside .letter.sel { background: var(--panel2);
-                      border-left: 3px solid var(--accent); }
-  .lfrom { font-weight: 600; font-size: 13.5px; }
-  .lsub  { font-size: 13px; color: var(--ink); overflow: hidden;
-           text-overflow: ellipsis; white-space: nowrap; }
-  .ldate { font-size: 11.5px; color: var(--dim); }
-  section { flex: 1; overflow-y: auto; padding: 22px 30px; min-width: 0; }
+  section { flex: 1; overflow: hidden; display: flex; min-width: 0; }
   .hidden { display: none !important; }
 
-  /* toolbar — the captain's reference, in the flesh */
-  .toolbar { display: flex; flex-wrap: wrap; gap: 4px; position: sticky;
-             top: -22px; background: var(--bg); padding: 8px 0;
-             border-bottom: 1px solid var(--line); margin-bottom: 14px;
-             z-index: 5; }
+  /* sidebar tree */
+  aside { width: 260px; min-width: 200px; background: var(--panel);
+          border-right: 1px solid var(--line); overflow-y: auto;
+          padding: 8px 0; }
+  .treehead { display: flex; align-items: center; gap: 6px;
+              padding: 7px 14px; cursor: pointer; user-select: none;
+              color: var(--accent2); font-weight: 600; font-size: 13px; }
+  .treehead .chev { transition: transform .15s; font-size: 11px; }
+  .treehead.open .chev { transform: rotate(90deg); }
+  .treeitems { overflow: hidden; }
+  .treeitem { padding: 6px 14px 6px 34px; cursor: pointer;
+              font-size: 13.5px; white-space: nowrap; overflow: hidden;
+              text-overflow: ellipsis; }
+  .treeitem:hover { background: var(--panel2); }
+  .treeitem.sel { background: var(--panel2);
+                  border-left: 3px solid var(--accent); }
+
+  /* flow canvas */
+  #flowwrap { flex: 1; position: relative; overflow: hidden;
+              background:
+                radial-gradient(circle, #22222f 1px, transparent 1px);
+              background-size: 26px 26px; cursor: grab; }
+  #flowwrap.panning { cursor: grabbing; }
+  #flowsvg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .flowtitle { position: absolute; top: 12px; left: 16px;
+               color: var(--dim); font-size: 13px; pointer-events: none; }
+  .zoomctl { position: absolute; right: 14px; bottom: 14px;
+             display: flex; gap: 6px; }
+  .zoomctl button { width: 34px; height: 34px; border-radius: 8px;
+                    background: var(--panel2); color: var(--ink);
+                    border: 1px solid var(--line); cursor: pointer;
+                    font-size: 16px; }
+  .sym-label { fill: #eef0f6; font: 600 13px system-ui, sans-serif;
+               text-anchor: middle; dominant-baseline: middle;
+               pointer-events: none; }
+  .edge-label { fill: var(--accent2); font: 11.5px system-ui, sans-serif;
+                text-anchor: middle; paint-order: stroke;
+                stroke: var(--bg); stroke-width: 4px; }
+
+  /* placeholders for tabs awaiting their engines */
+  .await { margin: auto; text-align: center; color: var(--dim); }
+  .await h2 { color: var(--accent2); font-weight: 600; }
+  .await code { background: var(--code-bg); padding: 2px 8px;
+                border-radius: 6px; }
+
+  /* author */
+  #author { flex-direction: column; overflow-y: auto;
+            padding: 20px 30px; display: flex; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 4px;
+             background: var(--bg); padding: 6px 0 10px;
+             border-bottom: 1px solid var(--line); margin-bottom: 12px; }
   .toolbar button { background: var(--panel2); color: var(--ink);
                     border: 1px solid var(--line); border-radius: 6px;
                     min-width: 34px; height: 32px; cursor: pointer;
                     font-size: 14px; }
   .toolbar button:hover { border-color: var(--accent); }
   .toolbar .sep { width: 1px; background: var(--line); margin: 2px 6px; }
-
-  .fields input { width: 100%; background: var(--panel2);
+  .fields { display: flex; gap: 8px; margin-bottom: 10px; }
+  .fields input { flex: 1; background: var(--panel2);
                   border: 1px solid var(--line); color: var(--ink);
-                  border-radius: 7px; padding: 9px 12px; font-size: 14px;
-                  margin-bottom: 8px; }
-  #editor, #composer-body {
-    min-height: 320px; background: var(--panel); padding: 18px 22px;
-    border: 1px solid var(--line); border-radius: 9px; outline: none; }
-  #editor:focus, #composer-body:focus { border-color: var(--accent); }
-
-  /* rendered content — the letterpress */
+                  border-radius: 7px; padding: 9px 12px; font-size: 14px; }
+  #docbody { min-height: 300px; background: var(--panel);
+             padding: 18px 22px; border: 1px solid var(--line);
+             border-radius: 9px; outline: none; flex: 1; }
+  #docbody:focus { border-color: var(--accent); }
   .doc h1 { font-size: 26px; margin: .4em 0; color: var(--accent2); }
   .doc h2 { font-size: 21px; margin: .5em 0; color: var(--accent2); }
   .doc h3 { font-size: 17px; margin: .5em 0; color: var(--accent2); }
-  .doc p  { margin: .55em 0; }
-  .doc ul, .doc ol { margin: .4em 0 .4em 1.4em; }
   .doc code { background: var(--code-bg); padding: 1px 6px;
               border-radius: 5px; color: var(--accent2);
-              font-family: "JetBrains Mono", "Fira Code", monospace;
-              font-size: 13.5px; }
+              font-family: monospace; font-size: 13.5px; }
   .doc pre { background: var(--code-bg); padding: 12px 16px;
              border-radius: 9px; overflow-x: auto; }
-  .doc pre code { background: none; padding: 0; }
   .doc a { color: var(--accent); }
-  #reader .rfrom { color: var(--dim); font-size: 13px;
-                   border-bottom: 1px solid var(--line);
-                   padding-bottom: 10px; margin-bottom: 14px; }
-  .actions { display: flex; gap: 8px; margin-top: 14px; align-items: center; }
+  .actions { display: flex; gap: 8px; margin-top: 12px; align-items: center;
+             flex-wrap: wrap; }
   .actions .primary { background: var(--accent); color: #10131c;
-                      font-weight: 700; border: none; padding: 10px 22px;
-                      border-radius: 8px; cursor: pointer; font-size: 14px; }
+                      font-weight: 700; border: none; padding: 10px 20px;
+                      border-radius: 8px; cursor: pointer; }
   .actions button { background: var(--panel2); color: var(--ink);
-                    border: 1px solid var(--line); padding: 9px 16px;
+                    border: 1px solid var(--line); padding: 9px 15px;
                     border-radius: 8px; cursor: pointer; }
   #toast { position: fixed; bottom: 22px; right: 26px;
            background: var(--panel2); border: 1px solid var(--good);
            color: var(--good); padding: 11px 18px; border-radius: 9px;
            opacity: 0; transition: opacity .3s; pointer-events: none;
-           font-size: 13.5px; }
+           font-size: 13.5px; z-index: 50; }
 </style>
 </head>
 <body>
 <header>
   <h1>TernOO</h1>
-  <span class="sub" id="statusline">connecting to the engine…</span>
+  <span class="sub" id="statusline">…</span>
   <nav>
-    <button class="navbtn active" id="nav-mail" onclick="show('mail')">Mail</button>
-    <button class="navbtn" id="nav-compose" onclick="show('compose')">Compose</button>
-    <button class="navbtn" id="nav-editor" onclick="show('editor-view')">Editor</button>
+    <button class="navbtn active" data-tab="flow">Flow</button>
+    <button class="navbtn" data-tab="gui">GUI</button>
+    <button class="navbtn" data-tab="sheet">Sheet</button>
+    <button class="navbtn" data-tab="connectors">Connectors</button>
+    <button class="navbtn" data-tab="author">Author</button>
   </nav>
 </header>
 <main>
-  <aside id="mailbox"></aside>
-  <section id="mail">
-    <div id="reader"><p style="color:var(--dim)">Pick a letter from the box.</p></div>
+  <!-- FLOW -->
+  <section id="tab-flow">
+    <aside>
+      <div class="treehead open" onclick="toggleTree(this)">
+        <span class="chev">▶</span> Flows
+      </div>
+      <div class="treeitems" id="flowtree"></div>
+    </aside>
+    <div id="flowwrap">
+      <svg id="flowsvg" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#8fa8d0"/>
+          </marker>
+          <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow dx="0" dy="2.5" stdDeviation="3"
+                          flood-color="#000" flood-opacity="0.45"/>
+          </filter>
+          <linearGradient id="g-io" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#5d9de6"/>
+            <stop offset="1" stop-color="#3f7cc0"/></linearGradient>
+          <linearGradient id="g-proc" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#6cbd97"/>
+            <stop offset="1" stop-color="#4c9573"/></linearGradient>
+          <linearGradient id="g-dec" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#e6b45d"/>
+            <stop offset="1" stop-color="#c08f3c"/></linearGradient>
+          <linearGradient id="g-term" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#bd7ce0"/>
+            <stop offset="1" stop-color="#9354b8"/></linearGradient>
+        </defs>
+        <g id="world"></g>
+      </svg>
+      <div class="flowtitle" id="flowtitle">pick a flow from the tree</div>
+      <div class="zoomctl">
+        <button onclick="zoomBy(1.2)">+</button>
+        <button onclick="zoomBy(1/1.2)">−</button>
+        <button onclick="fitView()" title="fit">⛶</button>
+      </div>
+    </div>
   </section>
 
-  <section id="compose" class="hidden">
-    <div class="fields">
-      <input id="to" placeholder="To — CC, CF5, CAI, Stevo, crew (commas for several)">
-      <input id="subject" placeholder="Subject">
+  <!-- GUI / SHEET / CONNECTORS — awaiting their engine APIs, honestly -->
+  <section id="tab-gui" class="hidden">
+    <div class="await"><h2>GUI</h2>
+      <p>The widget canvas renders here when the <code>widget_lib</code>
+      word-stream API is wired to the web engine.<br>
+      No mockups on this ship — this tab lights up with the real thing.</p>
     </div>
-    <div class="toolbar">
-      <button title="Bold (Ctrl+B)" onclick="cmd('bold')"><b>B</b></button>
-      <button title="Italic (Ctrl+I)" onclick="cmd('italic')"><i>I</i></button>
-      <button title="Inline code" onclick="inlineCode()">&lt;/&gt;</button>
-      <button title="Link" onclick="makeLink()">&#128279;</button>
-      <span class="sep"></span>
-      <button onclick="blockFmt('h1')">H1</button>
-      <button onclick="blockFmt('h2')">H2</button>
-      <button onclick="blockFmt('h3')">H3</button>
-      <button onclick="blockFmt('p')">¶</button>
-      <button title="Bulleted list" onclick="cmd('insertUnorderedList')">•≡</button>
-      <button title="Numbered list" onclick="cmd('insertOrderedList')">1≡</button>
-      <button title="Code block" onclick="blockFmt('pre')">{ }</button>
+  </section>
+  <section id="tab-sheet" class="hidden">
+    <div class="await"><h2>Sheet</h2>
+      <p>Stage-8 sheets land here once the <code>.sheet</code> engine
+      speaks JSON over the ship's API.</p>
     </div>
-    <div id="composer-body" class="doc" contenteditable="true"
-         spellcheck="true" data-ph="Write the letter — the browser spellchecks, the engine keeps markdown canonical."></div>
-    <div class="actions">
-      <button class="primary" onclick="sendMail()">Send — the drop is the send</button>
-      <button onclick="previewMd('composer-body')">View as Markdown</button>
+  </section>
+  <section id="tab-connectors" class="hidden">
+    <div class="await"><h2>Connectors</h2>
+      <p>The connector canvas follows the Flow tab's pattern —
+      same renderer, different word family.</p>
     </div>
   </section>
 
-  <section id="editor-view" class="hidden">
-    <div class="toolbar">
-      <button title="Bold" onclick="cmd('bold')"><b>B</b></button>
-      <button title="Italic" onclick="cmd('italic')"><i>I</i></button>
-      <button title="Inline code" onclick="inlineCode()">&lt;/&gt;</button>
-      <button title="Link" onclick="makeLink()">&#128279;</button>
-      <span class="sep"></span>
-      <button onclick="blockFmt('h1')">H1</button>
-      <button onclick="blockFmt('h2')">H2</button>
-      <button onclick="blockFmt('h3')">H3</button>
-      <button onclick="blockFmt('p')">¶</button>
-      <button onclick="cmd('insertUnorderedList')">•≡</button>
-      <button onclick="cmd('insertOrderedList')">1≡</button>
-      <button onclick="blockFmt('pre')">{ }</button>
-      <span class="sep"></span>
-      <button title="Load .md" onclick="loadMd()">Open</button>
-      <button title="Download .md" onclick="saveMd()">Save .md</button>
-      <button title="Download .html" onclick="saveHtml()">Save .html</button>
+  <!-- AUTHOR: one surface, two exits (mail / file) -->
+  <section id="tab-author" class="hidden">
+    <div id="author">
+      <div class="fields">
+        <input id="to" placeholder="To — CC, CF5, CAI, Stevo, crew">
+        <input id="subject" placeholder="Subject / document title">
+      </div>
+      <div class="toolbar">
+        <button title="Bold (Ctrl+B)" onclick="cmd('bold')"><b>B</b></button>
+        <button title="Italic (Ctrl+I)" onclick="cmd('italic')"><i>I</i></button>
+        <button title="Inline code" onclick="inlineCode()">&lt;/&gt;</button>
+        <button title="Link" onclick="makeLink()">&#128279;</button>
+        <span class="sep"></span>
+        <button onclick="blockFmt('h1')">H1</button>
+        <button onclick="blockFmt('h2')">H2</button>
+        <button onclick="blockFmt('h3')">H3</button>
+        <button onclick="blockFmt('p')">¶</button>
+        <button title="Bulleted list" onclick="cmd('insertUnorderedList')">•≡</button>
+        <button title="Numbered list" onclick="cmd('insertOrderedList')">1≡</button>
+        <button title="Code block" onclick="blockFmt('pre')">{ }</button>
+      </div>
+      <div id="docbody" class="doc" contenteditable="true" spellcheck="true">
+        <h1>One surface, two exits</h1>
+        <p>Write once. <b>Send</b> it as a letter, or <b>save</b> it as a
+        document — same engine, markdown canonical underneath.</p>
+      </div>
+      <div class="actions">
+        <button class="primary" onclick="sendMail()">Send as mail</button>
+        <button onclick="saveMd()">Save .md</button>
+        <button onclick="saveHtml()">Save .html</button>
+        <button onclick="loadMd()">Open .md</button>
+        <button onclick="previewMd()">View as Markdown</button>
+      </div>
+      <input type="file" id="filepick" accept=".md" class="hidden">
     </div>
-    <div id="editor" class="doc" contenteditable="true" spellcheck="true">
-      <h1>TernDoc, in a real face</h1>
-      <p>Everything here is <b>native</b>: selection, spellcheck, IME,
-      typography. The engine keeps <i>markdown canonical</i> underneath —
-      hit <code>Save .md</code> and see.</p>
-    </div>
-    <input type="file" id="filepick" accept=".md" class="hidden">
   </section>
 </main>
 <div id="toast"></div>
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
-let letters = [], current = null;
-
-function toast(msg) {
-  const t = $("toast"); t.textContent = msg; t.style.opacity = 1;
-  setTimeout(() => t.style.opacity = 0, 2600);
-}
+const toast = m => { const t = $("toast"); t.textContent = m;
+  t.style.opacity = 1; setTimeout(() => t.style.opacity = 0, 2600); };
 async function api(path, body) {
-  const opt = body ? {method: "POST", body: JSON.stringify(body)} : {};
-  const r = await fetch(path, opt);
+  const r = await fetch(path, body ?
+    {method: "POST", body: JSON.stringify(body)} : {});
   return r.json();
 }
-function show(id) {
-  for (const s of ["mail", "compose", "editor-view"])
-    $(s).classList.toggle("hidden", s !== id);
-  for (const b of ["nav-mail", "nav-compose", "nav-editor"])
-    b && $(b).classList.remove("active");
-  $({"mail": "nav-mail", "compose": "nav-compose",
-     "editor-view": "nav-editor"}[id]).classList.add("active");
-  $("mailbox").style.display = (id === "mail") ? "" : "none";
+
+/* — tabs — */
+document.querySelectorAll(".navbtn").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".navbtn").forEach(x =>
+    x.classList.toggle("active", x === b));
+  for (const t of ["flow", "gui", "sheet", "connectors", "author"])
+    $("tab-" + t).classList.toggle("hidden", t !== b.dataset.tab);
+});
+function toggleTree(h) {
+  h.classList.toggle("open");
+  h.nextElementSibling.style.display =
+    h.classList.contains("open") ? "" : "none";
 }
 
-// — mail —
-async function loadBox() {
-  letters = await api("/api/mail");
-  const box = $("mailbox"); box.innerHTML = "";
-  for (const L of letters) {
-    const d = document.createElement("div");
-    d.className = "letter";
-    d.innerHTML = `<div class="lfrom"></div><div class="lsub"></div>
-                   <div class="ldate"></div>`;
-    d.children[0].textContent = `${L.from} → ${L.to}`;
-    d.children[1].textContent = L.subject || L.file;
-    d.children[2].textContent = L.file.slice(0, 15);
-    d.onclick = () => openLetter(L.file, d);
-    box.appendChild(d);
+/* — flow canvas — */
+const SVGNS = "http://www.w3.org/2000/svg";
+let view = {x: 0, y: 0, k: 1}, flowBounds = null;
+function applyView() {
+  $("world").setAttribute("transform",
+    `translate(${view.x},${view.y}) scale(${view.k})`);
+}
+function zoomBy(f) { view.k = Math.max(.2, Math.min(3, view.k * f));
+  applyView(); }
+function fitView() {
+  if (!flowBounds) return;
+  const w = $("flowwrap").clientWidth, h = $("flowwrap").clientHeight;
+  const bw = flowBounds.x1 - flowBounds.x0 + 120,
+        bh = flowBounds.y1 - flowBounds.y0 + 120;
+  view.k = Math.min(w / bw, h / bh, 1.6);
+  view.x = (w - (flowBounds.x0 + flowBounds.x1) * view.k) / 2;
+  view.y = (h - (flowBounds.y0 + flowBounds.y1) * view.k) / 2;
+  applyView();
+}
+(() => {  // pan + wheel-zoom
+  const wrap = document.body;
+  let pan = null;
+  $("flowwrap").addEventListener("mousedown", e => {
+    pan = {mx: e.clientX, my: e.clientY, vx: view.x, vy: view.y};
+    $("flowwrap").classList.add("panning");
+  });
+  window.addEventListener("mousemove", e => { if (!pan) return;
+    view.x = pan.vx + e.clientX - pan.mx;
+    view.y = pan.vy + e.clientY - pan.my; applyView(); });
+  window.addEventListener("mouseup", () => { pan = null;
+    $("flowwrap").classList.remove("panning"); });
+  $("flowwrap").addEventListener("wheel", e => {
+    e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.12 : 1 / 1.12);
+  }, {passive: false});
+})();
+
+function el(tag, attrs, parent) {
+  const n = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  (parent || $("world")).appendChild(n);
+  return n;
+}
+function symbolShape(s) {
+  const {x, y, w, h, kind} = s;
+  const common = {filter: "url(#shadow)", stroke: "#0d0d14",
+                  "stroke-width": 1.5};
+  if (kind === "flow_decision") {
+    const cx = x + w / 2, cy = y + h / 2;
+    return el("polygon", {...common,
+      points: `${cx},${y - 6} ${x + w + 10},${cy} ${cx},${y + h + 6} ${x - 10},${cy}`,
+      fill: "url(#g-dec)"});
   }
-  $("statusline").textContent = `${letters.length} letters in the box`;
+  if (kind === "flow_io")
+    return el("polygon", {...common,
+      points: `${x + 14},${y} ${x + w},${y} ${x + w - 14},${y + h} ${x},${y + h}`,
+      fill: "url(#g-io)"});
+  if (kind === "flow_terminator")
+    return el("rect", {...common, x, y, width: w, height: h,
+      rx: h / 2, fill: "url(#g-term)"});
+  return el("rect", {...common, x, y, width: w, height: h, rx: 7,
+    fill: "url(#g-proc)"});
 }
-async function openLetter(file, el) {
-  document.querySelectorAll(".letter.sel")
-          .forEach(e => e.classList.remove("sel"));
-  if (el) el.classList.add("sel");
-  const L = await api("/api/mail/" + encodeURIComponent(file));
-  current = L;
-  $("reader").innerHTML =
-    `<div class="rfrom"></div><div class="doc"></div>`;
-  $("reader").children[0].textContent = file;
-  $("reader").children[1].innerHTML = L.html;   // engine-rendered, selectable
-  show("mail");
+function centerOf(s) { return [s.x + s.w / 2, s.y + s.h / 2]; }
+function edgePath(a, b, waypoints) {
+  const [ax, ay] = centerOf(a), [bx, by] = centerOf(b);
+  const pts = [[ax, ay], ...(waypoints || []).map(p => [p.x ?? p[0], p.y ?? p[1]]),
+               [bx, by]];
+  if (pts.length === 2) {
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+    const dy = Math.abs(by - ay) > Math.abs(bx - ax);
+    return dy ? `M ${ax} ${ay} C ${ax} ${my}, ${bx} ${my}, ${bx} ${by}`
+              : `M ${ax} ${ay} C ${mx} ${ay}, ${mx} ${by}, ${bx} ${by}`;
+  }
+  return "M " + pts.map(p => p.join(" ")).join(" L ");
+}
+async function loadFlowList() {
+  const flows = await api("/api/flows");
+  const tree = $("flowtree"); tree.innerHTML = "";
+  for (const f of flows) {
+    const d = document.createElement("div");
+    d.className = "treeitem"; d.textContent = f.replace(/\.fc$/, "");
+    d.onclick = () => { document.querySelectorAll(".treeitem.sel")
+        .forEach(e => e.classList.remove("sel"));
+      d.classList.add("sel"); openFlow(f); };
+    tree.appendChild(d);
+  }
+  $("statusline").textContent = `${flows.length} flows aboard`;
+}
+async function openFlow(name) {
+  const flow = await api("/api/flow/" + encodeURIComponent(name));
+  const world = $("world"); world.innerHTML = "";
+  const syms = {};
+  const symbols = flow.flow_symbols || [];
+  for (const s of symbols) syms[s.id] = s;
+  const edges = flow.flow_edges || flow.edges || [];
+  for (const e of edges) {
+    const a = syms[e.src], b = syms[e.dst];
+    if (!a || !b) continue;
+    el("path", {d: edgePath(a, b, e.waypoints), fill: "none",
+                stroke: "#8fa8d0", "stroke-width": 2.2,
+                "marker-end": "url(#arrow)"});
+    if (e.condition) {
+      const [ax, ay] = centerOf(a), [bx, by] = centerOf(b);
+      const t = el("text", {x: (ax + bx) / 2, y: (ay + by) / 2 - 8,
+                            class: "edge-label"});
+      t.textContent = e.condition;
+    }
+  }
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const s of symbols) {
+    symbolShape(s);
+    const lbl = el("text", {x: s.x + s.w / 2, y: s.y + s.h / 2,
+                            class: "sym-label"});
+    lbl.textContent = s.label || s.kind.replace("flow_", "");
+    x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y);
+    x1 = Math.max(x1, s.x + s.w); y1 = Math.max(y1, s.y + s.h);
+  }
+  flowBounds = symbols.length ? {x0, y0, x1, y1} : null;
+  $("flowtitle").textContent =
+    `${name} — ${symbols.length} symbols, ${edges.length} edges (read-only)`;
+  fitView();
 }
 
-// — editing commands (both surfaces) —
-function cmd(c) { document.execCommand(c, false, null); refocus(); }
-function blockFmt(tag) { document.execCommand("formatBlock", false, tag); refocus(); }
-function makeLink() {
-  const url = prompt("Link target (https://…):");
-  if (url) document.execCommand("createLink", false, url);
-  refocus();
-}
+/* — author — */
+function cmd(c) { document.execCommand(c, false, null); $("docbody").focus(); }
+function blockFmt(t) { document.execCommand("formatBlock", false, t);
+  $("docbody").focus(); }
+function makeLink() { const u = prompt("Link target (https://…):");
+  if (u) document.execCommand("createLink", false, u); }
 function inlineCode() {
   const sel = window.getSelection();
   if (!sel.rangeCount || sel.isCollapsed) return;
-  const range = sel.getRangeAt(0);
-  const code = document.createElement("code");
-  try { range.surroundContents(code); } catch (e) {
-    document.execCommand("insertHTML", false,
-      "<code>" + sel.toString().replace(/[<>&]/g,
-        m => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[m])) + "</code>");
-  }
-  refocus();
+  try { const c = document.createElement("code");
+        sel.getRangeAt(0).surroundContents(c); }
+  catch (e) { document.execCommand("insertHTML", false,
+    "<code>" + sel.toString().replace(/[<>&]/g,
+      m => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[m])) + "</code>"); }
 }
-let lastEditable = "editor";
-function refocus() { $(lastEditable) && $(lastEditable).focus(); }
-for (const id of ["editor", "composer-body"])
-  $(id).addEventListener("focus", () => lastEditable = id);
-
-// — mail send / md round trips —
 async function sendMail() {
-  const html = $("composer-body").innerHTML;
-  const res = await api("/api/send", {
-    to: $("to").value, subject: $("subject").value, html: html });
-  if (res.dropped) {
-    toast(`dropped ${res.dropped} — the watcher takes it from here`);
-    $("composer-body").innerHTML = ""; $("subject").value = "";
-    setTimeout(loadBox, 4000);
-  } else { toast(res.error || "send failed"); }
+  const res = await api("/api/send", {to: $("to").value,
+    subject: $("subject").value, html: $("docbody").innerHTML});
+  if (res.dropped) toast(`dropped ${res.dropped} — the watcher has it`);
+  else toast(res.error || "send failed");
 }
-async function previewMd(srcId) {
-  const res = await api("/api/convert", {html: $(srcId).innerHTML});
-  alert(res.md);
+async function mdOfBody() {
+  return (await api("/api/convert", {html: $("docbody").innerHTML})).md;
 }
+async function previewMd() { alert(await mdOfBody()); }
 async function saveMd() {
-  const res = await api("/api/convert", {html: $("editor").innerHTML});
-  download("terndoc.md", res.md, "text/markdown");
+  download(($("subject").value || "terndoc") + ".md",
+           await mdOfBody(), "text/markdown");
   toast("markdown saved — the canonical form");
 }
 async function saveHtml() {
-  const res = await api("/api/convert", {html: $("editor").innerHTML});
-  const r2 = await api("/api/render", {md: res.md});
-  download("terndoc.html",
+  const md = await mdOfBody();
+  const r = await api("/api/render", {md});
+  download(($("subject").value || "terndoc") + ".html",
     "<!DOCTYPE html><html><head><meta charset='utf-8'></head><body>" +
-    r2.html + "</body></html>", "text/html");
+    r.html + "</body></html>", "text/html");
 }
 function download(name, text, type) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([text], {type}));
-  a.download = name; a.click();
-  URL.revokeObjectURL(a.href);
+  a.download = name; a.click(); URL.revokeObjectURL(a.href);
 }
 function loadMd() { $("filepick").click(); }
 $("filepick").addEventListener("change", async ev => {
-  const f = ev.target.files[0];
-  if (!f) return;
-  const md = await f.text();
-  const res = await api("/api/render", {md});
-  $("editor").innerHTML = res.html;
-  toast(`opened ${f.name}`);
+  const f = ev.target.files[0]; if (!f) return;
+  const r = await api("/api/render", {md: await f.text()});
+  $("docbody").innerHTML = r.html; toast(`opened ${f.name}`);
 });
-
-// — keyboard basics —
 document.addEventListener("keydown", ev => {
   if (!(ev.ctrlKey || ev.metaKey)) return;
   const k = ev.key.toLowerCase();
@@ -295,7 +438,7 @@ document.addEventListener("keydown", ev => {
   if (k === "i") { ev.preventDefault(); cmd("italic"); }
 });
 
-loadBox();
+loadFlowList();
 </script>
 </body>
 </html>
