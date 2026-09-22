@@ -37,6 +37,20 @@ function togglePanel(h) {
 const SVGNS = "http://www.w3.org/2000/svg";
 let view = {x: 0, y: 0, k: 1}, flowBounds = null;
 let FLOW = null, SEL = null, SELEDGE = null, WIRE = null, drag = null;
+let wpdrag = null;
+function worldXY(e) {
+  const r = $("flowwrap").getBoundingClientRect();
+  return [(e.clientX - r.left - view.x) / view.k,
+          (e.clientY - r.top - view.y) / view.k];
+}
+function distToSeg(p, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const L2 = dx * dx + dy * dy;
+  const t = L2 ? Math.max(0, Math.min(1,
+    ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)) : 0;
+  const qx = a[0] + t * dx - p[0], qy = a[1] + t * dy - p[1];
+  return Math.hypot(qx, qy);
+}
 let TOOL = "select";
 
 function setTool(t) {
@@ -70,6 +84,15 @@ function fitView() {
     $("flowwrap").classList.add("panning");
   });
   window.addEventListener("mousemove", e => {
+    if (wpdrag && FLOW) {
+      const wp = (FLOW.edges[wpdrag.ei].waypoints || [])[wpdrag.wi];
+      if (wp) {
+        wp.x = Math.round(wpdrag.sx + (e.clientX - wpdrag.mx) / view.k);
+        wp.y = Math.round(wpdrag.sy + (e.clientY - wpdrag.my) / view.k);
+        render();
+      }
+      return;
+    }
     if (drag && FLOW) {
       const s = FLOW.syms.get(drag.id);
       s.x = Math.round(drag.sx + (e.clientX - drag.mx) / view.k);
@@ -82,6 +105,7 @@ function fitView() {
     view.y = pan.vy + e.clientY - pan.my; applyView();
   });
   window.addEventListener("mouseup", () => { pan = null; drag = null;
+    wpdrag = null;
     $("flowwrap").classList.remove("panning"); });
   $("flowwrap").addEventListener("wheel", e => {
     e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.12 : 1 / 1.12);
@@ -162,6 +186,32 @@ function render() {
     p.addEventListener("mousedown", ev => { ev.stopPropagation();
       if (TOOL === "delete") { FLOW.edges.splice(i, 1); render(); return; }
       SELEDGE = i; SEL = null; render(); showProps(); });
+    p.addEventListener("dblclick", ev => {
+      ev.stopPropagation();               // dbl-click bends the edge here
+      const [wx, wy] = worldXY(ev);
+      e.waypoints = e.waypoints || [];
+      const pts = [centerOf(a),
+        ...e.waypoints.map(w => [w.x ?? w[0], w.y ?? w[1]]), centerOf(b)];
+      let best = 0, bestD = Infinity;
+      for (let k = 0; k < pts.length - 1; k++) {
+        const dd = distToSeg([wx, wy], pts[k], pts[k + 1]);
+        if (dd < bestD) { bestD = dd; best = k; }
+      }
+      e.waypoints.splice(best, 0, {x: Math.round(wx), y: Math.round(wy)});
+      SELEDGE = i; SEL = null; render(); showProps();
+    });
+    if (SELEDGE === i) (e.waypoints || []).forEach((wp, wi) => {
+      const h = el("circle", {cx: wp.x ?? wp[0], cy: wp.y ?? wp[1], r: 6,
+        fill: "#ffffff", stroke: "#0d0d14", "stroke-width": 1.5,
+        style: "cursor:move"});
+      h.addEventListener("mousedown", ev => {
+        ev.stopPropagation();
+        if (TOOL === "delete") { e.waypoints.splice(wi, 1); render();
+          return; }
+        wpdrag = {ei: i, wi, mx: ev.clientX, my: ev.clientY,
+                  sx: wp.x ?? wp[0], sy: wp.y ?? wp[1]};
+      });
+    });
     if (e.condition) {
       const [ax, ay] = centerOf(a), [bx, by] = centerOf(b);
       const t = el("text", {x: (ax + bx) / 2, y: (ay + by) / 2 - 8,
@@ -191,6 +241,9 @@ function showProps() {
     pb.appendChild(propRow("kind", "edge", null, true));
     pb.appendChild(propRow("cond", e.condition || "", v => {
       e.condition = v; render(); }));
+    pb.appendChild(propRow("bends",
+      `${(e.waypoints || []).length} — dbl-click edge adds · drag` +
+      ` moves · Delete tool on a handle removes`, null, true));
     return;
   }
   if (!FLOW || SEL === null || !FLOW.syms.has(SEL)) {
@@ -207,6 +260,35 @@ function showProps() {
     pb.appendChild(propRow(f, s[f], v => {
       const n = parseInt(v, 10);
       if (!isNaN(n)) { s[f] = n; render(); } }));
+  propListEditor(pb, s, () => { render(); showProps(); });
+}
+function propListEditor(pb, holder, refresh) {
+  // the symbol's own property words (direction / channel / address …)
+  const props = holder.properties = holder.properties || [];
+  props.forEach((pr, pi) => {
+    const d = document.createElement("div");
+    d.className = "prop-row";
+    const l = document.createElement("label");
+    l.textContent = "· " + pr.name;
+    const i2 = document.createElement("input");
+    i2.value = pr.value ?? "";
+    i2.addEventListener("change", () => { pr.value = i2.value; });
+    const x = document.createElement("button");
+    x.textContent = "✕"; x.title = "remove property";
+    x.className = "prop-del";
+    x.onclick = () => { props.splice(pi, 1); refresh(); };
+    d.appendChild(l); d.appendChild(i2); d.appendChild(x);
+    pb.appendChild(d);
+  });
+  const add = document.createElement("button");
+  add.className = "tool"; add.textContent = "＋ property";
+  add.onclick = () => {
+    const n = prompt("Property name (e.g. direction, channel, address):");
+    if (!n || !n.trim()) return;
+    props.push({name: n.trim(), value: ""});
+    refresh();
+  };
+  pb.appendChild(add);
 }
 function propRow(label, value, onchange, ro) {
   const d = document.createElement("div");
@@ -246,11 +328,12 @@ async function loadFlowList() {
     setTimeout(loadFlowList, 1500);       // server booting — keep trying
     return;
   }
-  const pick = $("designpick");
-  const kept = pick.value;
-  pick.innerHTML = '<option value="">— designs aboard —</option>' +
-    designs.map(n => `<option>${n}</option>`).join("");
-  if (kept) pick.value = kept;
+  for (const pick of document.querySelectorAll("select.designpick")) {
+    const kept = pick.value;
+    pick.innerHTML = '<option value="">— designs aboard —</option>' +
+      designs.map(n => `<option>${n}</option>`).join("");
+    if (kept) pick.value = kept;
+  }
   $("statusline").textContent =
     `on TernOO · ${designs.length} designs aboard`;
 }
@@ -296,6 +379,8 @@ async function openDesign(name) {
     CONN.next = Math.max(CONN.next, s.id + 1);
   }
   connRender(); connProps();
+  for (const pick of document.querySelectorAll("select.designpick"))
+    pick.value = name;
   toast(`opened ${name} — families distributed to every tab`);
 }
 function closeDesign() {
@@ -312,6 +397,8 @@ function closeDesign() {
   $("runlines").textContent = "";
   WATCHVALS = {}; $("watchbody").textContent = "";
   $("connlines").textContent = "";
+  for (const pick of document.querySelectorAll("select.designpick"))
+    pick.value = "";
   toast("closed across all tabs");
 }
 async function saveDesign() {
@@ -701,6 +788,7 @@ function guiProps() {
   const par = GUI.widgets.get(w.parent_id);
   pb.appendChild(propRow("parent",
     par ? (par.name || par.label) : "(top level)", null, true));
+  propListEditor(pb, w, () => { guiRender(); guiProps(); });
 }
 function guiDelete() {
   if (GSEL === null) return;
