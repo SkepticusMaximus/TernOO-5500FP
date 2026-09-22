@@ -108,6 +108,14 @@
                     width: 100%; height: 100%; }
   .cname { position: absolute; top: 10px; left: 14px; color: var(--dim);
            font-size: 13px; pointer-events: none; z-index: 3; }
+  .prop-del { background: none; border: none; color: var(--dim);
+              cursor: pointer; padding: 0 4px; }
+  .prop-del:hover { color: #ef8080; }
+  select.designpick { background: var(--panel2); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 6px 8px; margin: 2px 0 4px; }
+  .pbody select.designpick { width: 100%; }
+  .sheetbar select.designpick { max-width: 220px; }
   .zoomctl { position: absolute; right: 12px; bottom: 12px;
              display: flex; gap: 5px; z-index: 3; }
   .zoomctl button { width: 32px; height: 32px; border-radius: 8px;
@@ -259,7 +267,7 @@
     <div class="phead open" onclick="togglePanel(this)">
       <span class="chev">▶</span> FILE</div>
     <div class="pbody">
-      <select id="designpick" style="width:100%;background:var(--panel2);
+      <select id="designpick" class="designpick" style="width:100%;background:var(--panel2);
         color:var(--ink);border:1px solid var(--line);border-radius:6px;
         padding:6px 8px;margin:2px 0 4px">
         <option value="">— designs aboard —</option>
@@ -385,6 +393,17 @@
 <section id="tab-gui" class="hidden">
   <div class="lpanel">
     <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> FILE</div>
+    <div class="pbody">
+      <select id="designpick_gui" class="designpick"></select>
+      <button class="tool" onclick="openDesign($('designpick_gui').value)">
+        <span class="glyph">📂</span> Open</button>
+      <button class="tool" onclick="closeDesign()">
+        <span class="glyph">✖</span> Close (all tabs)</button>
+      <button class="tool" onclick="saveDesign()">
+        <span class="glyph">💾</span> Save</button>
+    </div>
+    <div class="phead" onclick="togglePanel(this)">
       <span class="chev">▶</span> DESIGNS</div>
     <div class="pbody" id="guitree">
       <div class="hint">.gui designs aboard appear here</div></div>
@@ -405,11 +424,11 @@
         <span class="glyph">✧</span> New design</button>
     </div>
   </div>
-  <div class="centercol">
+  <div class="centercol" style="position:relative">
     <div class="canvaswrap" id="guiwrap" style="cursor:default">
       <div id="guicanvas"></div>
-      <div class="cname" id="guititle">place a window, then widgets — Tk-schema .gui round-trip</div>
     </div>
+    <div class="cname" id="guititle">place a window, then widgets — Tk-schema .gui round-trip</div>
     <div class="hints">click a palette entry to place · drag to move ·
       click selects · edit properties on the right</div>
   </div>
@@ -424,6 +443,11 @@
 <!-- ════════ SHEET ════════ -->
 <section id="tab-sheet" class="hidden" style="flex-direction:column">
   <div class="sheetbar">
+    <select id="designpick_sheet" class="designpick"></select>
+    <button onclick="openDesign($('designpick_sheet').value)">Open</button>
+    <button onclick="closeDesign()">Close</button>
+    <button onclick="saveDesign()">💾 Save design</button>
+    <span class="sub" style="margin:0 6px">·</span>
     <select id="sheetpick" onchange="openSheet(this.value)">
       <option value="">— sheets aboard —</option>
     </select>
@@ -439,6 +463,17 @@
 <!-- ════════ CONNECTORS — command chips off the live registry ════════ -->
 <section id="tab-conn" class="hidden">
   <div class="lpanel">
+    <div class="phead open" onclick="togglePanel(this)">
+      <span class="chev">▶</span> FILE</div>
+    <div class="pbody">
+      <select id="designpick_conn" class="designpick"></select>
+      <button class="tool" onclick="openDesign($('designpick_conn').value)">
+        <span class="glyph">📂</span> Open</button>
+      <button class="tool" onclick="closeDesign()">
+        <span class="glyph">✖</span> Close (all tabs)</button>
+      <button class="tool" onclick="saveDesign()">
+        <span class="glyph">💾</span> Save</button>
+    </div>
     <div class="phead open" onclick="togglePanel(this)">
       <span class="chev">▶</span> COMMANDS</div>
     <div class="hint" style="padding:0 12px 4px">the live registry —
