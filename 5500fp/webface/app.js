@@ -7,9 +7,19 @@ const $ = id => document.getElementById(id);
 const toast = m => { const t = $("toast"); t.textContent = m;
   t.style.opacity = 1; setTimeout(() => t.style.opacity = 0, 2600); };
 async function api(path, body) {
-  const r = await fetch(path, body ?
-    {method: "POST", body: JSON.stringify(body)} : {});
-  return r.json();
+  try {
+    const r = await fetch(path, body ?
+      {method: "POST", body: JSON.stringify(body)} : {});
+    return await r.json();
+  } catch (e) {
+    toast("engine unreachable — retrying…");
+    await new Promise(res => setTimeout(res, 1200));
+    try {
+      const r = await fetch(path, body ?
+        {method: "POST", body: JSON.stringify(body)} : {});
+      return await r.json();
+    } catch (e2) { return {error: "engine unreachable"}; }
+  }
 }
 document.querySelectorAll(".navbtn").forEach(b => b.onclick = () => {
   document.querySelectorAll(".navbtn").forEach(x =>
@@ -232,14 +242,29 @@ function collectVars() {
 let DOC = null;   // the unified open document — one file, all tabs
 async function loadFlowList() {
   const designs = await api("/api/designs");
+  if (!Array.isArray(designs) || !designs.length) {
+    setTimeout(loadFlowList, 1500);       // server booting — keep trying
+    return;
+  }
   const pick = $("designpick");
+  const kept = pick.value;
   pick.innerHTML = '<option value="">— designs aboard —</option>' +
     designs.map(n => `<option>${n}</option>`).join("");
+  if (kept) pick.value = kept;
   $("statusline").textContent =
     `on TernOO · ${designs.length} designs aboard`;
 }
 async function openDesign(name) {
-  if (!name) { toast("pick a design first"); return; }
+  if (!name) {
+    // no scolding: Open with nothing picked PRESENTS the choices
+    const pick = $("designpick");
+    if (pick.options.length <= 1) await loadFlowList();
+    if (pick.showPicker) { try { pick.showPicker(); } catch (e) {} }
+    pick.focus();
+    pick.onchange = () => { openDesign(pick.value); pick.onchange =
+      () => {}; };
+    return;
+  }
   const raw = await api("/api/design/" + encodeURIComponent(name));
   if (raw.error) { toast(raw.error); return; }
   DOC = {name, raw};
