@@ -51,6 +51,10 @@ _wkspec = _ilu.spec_from_file_location(
     "flowcode_walker", os.path.join(_HERE, "flowcode_walker.py"))
 WALKER = _ilu.module_from_spec(_wkspec)
 _wkspec.loader.exec_module(WALKER)
+_sfspec = _ilu.spec_from_file_location(
+    "sheet_formula", os.path.join(_HERE, "sheet_formula.py"))
+SHEETF = _ilu.module_from_spec(_sfspec)
+_sfspec.loader.exec_module(SHEETF)
 
 HOST, PORT = "127.0.0.1", 8610
 APP_PATH = os.path.join(_HERE, "webface", "app.html")
@@ -101,6 +105,20 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"engine": "terndoc",
                              "flows": len([f for f in os.listdir(FLOWDIR)
                                            if f.endswith(".fc")])})
+        elif self.path == "/api/sheets":
+            out = sorted(f for f in os.listdir(FLOWDIR)
+                         if f.endswith(".sheet"))
+            self._send(200, out)
+        elif self.path.startswith("/api/sheet/") and not \
+                self.path.endswith("/eval"):
+            from urllib.parse import unquote
+            name = os.path.basename(unquote(self.path[len("/api/sheet/"):]))
+            p = os.path.join(FLOWDIR, name)
+            if not (name.endswith(".sheet") and os.path.isfile(p)):
+                self._send(404, {"error": "no such sheet"})
+                return
+            with open(p, encoding="utf-8") as f:
+                self._send(200, f.read().encode(), "application/json")
         elif self.path == "/api/flows":
             # captain's privacy ruling 22-09: the web face may SEND letters
             # but never READ the box until per-seat identity exists. Flow
@@ -123,6 +141,42 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         from urllib.parse import unquote
         req = self._body_json()
+        if self.path == "/api/sheet/eval":
+            cells = {}
+            for c in req.get("cells", []):
+                text = str(c.get("value", ""))
+                kind = "cell_formula" if text.startswith("=") else "cell_value"
+                cells[(int(c["row"]), int(c["col"]))] = {
+                    "kind": kind, "value": text,
+                    "row": int(c["row"]), "col": int(c["col"])}
+            try:
+                results, errors = SHEETF.evaluate_sheet(cells)
+            except Exception as e:              # noqa: BLE001
+                self._send(200, {"values": {}, "errors":
+                                 {"0,0": f"eval failed: {e}"}})
+                return
+            self._send(200, {
+                "values": {f"{r},{c}": ("" if v is None else v)
+                           for (r, c), v in results.items()},
+                "errors": {f"{r},{c}": e for (r, c), e in errors.items()}})
+            return
+        if self.path.startswith("/api/sheet/") and self.path.endswith("/save"):
+            name = os.path.basename(
+                unquote(self.path[len("/api/sheet/"):-len("/save")]))
+            if not name.endswith(".sheet"):
+                self._send(400, {"error": "sheets are .sheet files"})
+                return
+            doc = req.get("sheet")
+            if not (isinstance(doc, dict) and isinstance(doc.get("c"), list)):
+                self._send(400, {"error": "malformed sheet document"})
+                return
+            doc.setdefault("r", []); doc.setdefault("f", [])
+            doc.setdefault("n", len(doc["c"]) + 1)
+            with open(os.path.join(FLOWDIR, name), "w",
+                      encoding="utf-8") as f:
+                json.dump(doc, f, indent=2)
+            self._send(200, {"saved": name})
+            return
         if self.path.startswith("/api/flow/") and self.path.endswith("/run"):
             name = os.path.basename(
                 unquote(self.path[len("/api/flow/"):-len("/run")]))

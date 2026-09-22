@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TernOO</title>
+<title>FlowCode — TernOO</title>
 <style>
   :root {
     --bg: #14141b; --panel: #1c1c26; --panel2: #22222f;
@@ -22,7 +22,7 @@
            border-bottom: 1px solid var(--line); flex-shrink: 0; }
   header h1 { font-size: 16px; margin: 0; letter-spacing: .07em; }
   header .sub { color: var(--dim); font-size: 12px; }
-  header nav { margin-left: auto; display: flex; gap: 5px; }
+  header nav { display: flex; gap: 5px; margin-left: 18px; }
   .navbtn { background: none; border: 1px solid var(--line);
             color: var(--ink); padding: 6px 15px; border-radius: 7px;
             cursor: pointer; font-size: 13.5px; }
@@ -56,9 +56,9 @@
               background-size: 26px 26px; cursor: grab; }
   #flowwrap.panning { cursor: grabbing; }
   #flowsvg { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .flowtitle { position: absolute; top: 12px; left: 16px;
+  .flowtitle { position: absolute; top: 18px; right: 16px;
                color: var(--dim); font-size: 13px; pointer-events: none; }
-  .flowbar { position: absolute; top: 10px; right: 14px;
+  .flowbar { position: absolute; top: 10px; left: 14px;
              display: flex; gap: 5px; background: var(--panel);
              border: 1px solid var(--line); border-radius: 9px;
              padding: 6px 8px; align-items: center; }
@@ -98,6 +98,31 @@
   .edge-label { fill: var(--accent2); font: 11.5px system-ui, sans-serif;
                 text-anchor: middle; paint-order: stroke;
                 stroke: var(--bg); stroke-width: 4px; }
+
+  /* sheet */
+  .sheetbar { display: flex; gap: 8px; padding: 10px 14px;
+              border-bottom: 1px solid var(--line); align-items: center;
+              background: var(--panel); }
+  .sheetbar select, .sheetbar button { background: var(--panel2);
+      color: var(--ink); border: 1px solid var(--line);
+      border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  .sheetbar #fxbar { flex: 1; background: var(--panel2); color: var(--accent2);
+      border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px;
+      font-family: monospace; }
+  #gridwrap { flex: 1; overflow: auto; }
+  #grid { border-collapse: collapse; }
+  #grid th { background: var(--panel); color: var(--dim); font-weight: 500;
+             font-size: 12px; border: 1px solid var(--line);
+             min-width: 42px; padding: 3px 8px; position: sticky; }
+  #grid thead th { top: 0; z-index: 2; }
+  #grid tbody th { left: 0; z-index: 1; }
+  #grid td { border: 1px solid var(--line); padding: 0; min-width: 96px; }
+  #grid td input { width: 100%; border: none; background: transparent;
+                   color: var(--ink); padding: 6px 8px; font-size: 13.5px;
+                   outline: none; font-family: inherit; }
+  #grid td.fx input { color: var(--accent); }
+  #grid td.err input { color: #ef8080; }
+  #grid td input:focus { background: var(--panel2); }
 
   /* placeholders for tabs awaiting their engines */
   .await { margin: auto; text-align: center; color: var(--dim); }
@@ -151,8 +176,7 @@
 </head>
 <body>
 <header>
-  <h1>TernOO</h1>
-  <span class="sub" id="statusline">…</span>
+  <h1>FlowCode</h1>
   <nav>
     <button class="navbtn active" data-tab="flow">Flow</button>
     <button class="navbtn" data-tab="gui">GUI</button>
@@ -160,6 +184,7 @@
     <button class="navbtn" data-tab="connectors">Connectors</button>
     <button class="navbtn" data-tab="author">Author</button>
   </nav>
+  <span class="sub" id="statusline" style="margin-left:auto">on TernOO</span>
 </header>
 <main>
   <!-- FLOW -->
@@ -229,11 +254,18 @@
       No mockups on this ship — this tab lights up with the real thing.</p>
     </div>
   </section>
-  <section id="tab-sheet" class="hidden">
-    <div class="await"><h2>Sheet</h2>
-      <p>Stage-8 sheets land here once the <code>.sheet</code> engine
-      speaks JSON over the ship's API.</p>
+  <section id="tab-sheet" class="hidden" style="flex-direction:column">
+    <div class="sheetbar">
+      <select id="sheetpick" onchange="openSheet(this.value)">
+        <option value="">— sheets aboard —</option>
+      </select>
+      <button onclick="newSheet()">New</button>
+      <button onclick="saveSheet()">💾 Save</button>
+      <input id="fxbar" placeholder="formula bar — =A1+B1, =SUM(A1:A5)…"
+             onkeydown="if(event.key==='Enter')fxCommit()">
+      <span id="sheetstatus" class="sub"></span>
     </div>
+    <div id="gridwrap"><table id="grid"></table></div>
   </section>
   <section id="tab-connectors" class="hidden">
     <div class="await"><h2>Connectors</h2>
@@ -579,6 +611,109 @@ document.addEventListener("keydown", ev => {
   if (k === "b") { ev.preventDefault(); cmd("bold"); }
   if (k === "i") { ev.preventDefault(); cmd("italic"); }
 });
+
+/* — sheet: the Stage-8 engine, in the browser — */
+const NROWS = 24, NCOLS = 10;
+let SHEET = {name: null, raw: new Map()};   // "r,c" -> text
+let FOCUS = null;
+function colName(c) { return String.fromCharCode(65 + c); }
+function buildGrid() {
+  const g = $("grid"); g.innerHTML = "";
+  const thead = document.createElement("thead");
+  let hr = "<tr><th></th>";
+  for (let c = 0; c < NCOLS; c++) hr += `<th>${colName(c)}</th>`;
+  thead.innerHTML = hr + "</tr>"; g.appendChild(thead);
+  const tb = document.createElement("tbody");
+  for (let r = 0; r < NROWS; r++) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<th>${r + 1}</th>`;
+    for (let c = 0; c < NCOLS; c++) {
+      const td = document.createElement("td");
+      const inp = document.createElement("input");
+      inp.dataset.rc = `${r},${c}`;
+      inp.addEventListener("focus", () => { FOCUS = inp.dataset.rc;
+        inp.value = SHEET.raw.get(FOCUS) || "";
+        $("fxbar").value = inp.value; });
+      inp.addEventListener("blur", () => commitCell(inp));
+      inp.addEventListener("keydown", ev => {
+        if (ev.key === "Enter") { commitCell(inp);
+          const [r2, c2] = inp.dataset.rc.split(",").map(Number);
+          document.querySelector(
+            `input[data-rc="${Math.min(r2 + 1, NROWS - 1)},${c2}"]`)?.focus();
+        }});
+      td.appendChild(inp); tr.appendChild(td);
+    }
+    tb.appendChild(tr);
+  }
+  g.appendChild(tb);
+}
+function commitCell(inp) {
+  const rc = inp.dataset.rc, text = inp.value.trim();
+  if (text) SHEET.raw.set(rc, text); else SHEET.raw.delete(rc);
+  evalSheet();
+}
+function fxCommit() {
+  if (!FOCUS) return;
+  const inp = document.querySelector(`input[data-rc="${FOCUS}"]`);
+  inp.value = $("fxbar").value; commitCell(inp);
+}
+async function evalSheet() {
+  const cells = [...SHEET.raw.entries()].map(([rc, value]) => {
+    const [row, col] = rc.split(",").map(Number);
+    return {row, col, value};
+  });
+  const rep = await api("/api/sheet/eval", {cells});
+  document.querySelectorAll("#grid td").forEach(td => {
+    td.classList.remove("fx", "err"); });
+  for (const inp of document.querySelectorAll("#grid td input")) {
+    const rc = inp.dataset.rc;
+    if (rc === FOCUS && document.activeElement === inp) continue;
+    const raw = SHEET.raw.get(rc);
+    if (!raw) { inp.value = ""; continue; }
+    const isFx = raw.startsWith("=");
+    if (isFx) inp.parentElement.classList.add("fx");
+    if (rep.errors[rc] !== undefined) {
+      inp.parentElement.classList.add("err");
+      inp.value = rep.errors[rc];
+    } else if (isFx) {
+      inp.value = rep.values[rc] !== undefined ? rep.values[rc] : raw;
+    } else inp.value = raw;
+  }
+  $("sheetstatus").textContent =
+    `${SHEET.raw.size} cells · engine: sheet_formula (live)`;
+}
+async function loadSheetList() {
+  const names = await api("/api/sheets");
+  const pick = $("sheetpick");
+  pick.innerHTML = '<option value="">— sheets aboard —</option>' +
+    names.map(n => `<option>${n}</option>`).join("");
+}
+function newSheet() { SHEET = {name: null, raw: new Map()}; buildGrid();
+  $("sheetstatus").textContent = "new sheet"; }
+async function openSheet(name) {
+  if (!name) return;
+  const d = await api("/api/sheet/" + encodeURIComponent(name));
+  SHEET = {name, raw: new Map()};
+  for (const c of d.c || [])
+    SHEET.raw.set(`${c.row},${c.col}`, String(c.value ?? ""));
+  buildGrid(); evalSheet();
+}
+async function saveSheet() {
+  const name = prompt("Save as (.sheet):", SHEET.name || "untitled.sheet");
+  if (!name) return;
+  const c = [...SHEET.raw.entries()].map(([rc, value], i) => {
+    const [row, col] = rc.split(",").map(Number);
+    return {id: i + 1, row, col, value,
+            kind: value.startsWith("=") ? "cell_formula" : "cell_value",
+            label: colName(col) + (row + 1), properties: []};
+  });
+  const res = await api("/api/sheet/" + encodeURIComponent(name) + "/save",
+                        {sheet: {c, r: [], f: [], n: c.length + 1}});
+  if (res.saved) { toast(`saved ${res.saved}`); SHEET.name = res.saved;
+    loadSheetList(); }
+  else toast(res.error || "save failed");
+}
+buildGrid(); loadSheetList();
 
 loadFlowList();
 </script>
