@@ -76,6 +76,48 @@ def html_body(doc):
     return m.group(1) if m else full
 
 
+def _design_resolver(d):
+    """Cross-tab namespace from the design's own families — the same
+    tongue the DPG face speaks: A1/named cells resolve through the sheet
+    family (evaluated), `name.prop` and bare names through the GUI
+    family. Unknown → None → the walker says #NAME? — the dunno door."""
+    cells = {}
+    for cell in d.get("cell_symbols", []):
+        cells[(cell.get("row", 0), cell.get("col", 0))] = cell
+    vals = {}
+    if cells:
+        try:
+            vals, _errs = SHEETF.evaluate_sheet(cells)
+        except Exception:                       # noqa: BLE001
+            vals = {}
+    widgets = d.get("symbols", [])
+
+    def widget_prop(wname, pname):
+        for w in widgets:
+            if w.get("name") == wname:
+                if pname in ("x", "y", "w", "h", "label", "name"):
+                    return w.get(pname)
+                for pr in w.get("properties", []):
+                    if pr.get("name") == pname:
+                        return pr.get("value")
+                return None
+        return None
+
+    def resolver(name):
+        name = str(name)
+        if "." in name:
+            wname, _, pname = name.partition(".")
+            return widget_prop(wname, pname)
+        try:
+            rc = SHEETF.a1_to_rc(name)
+            if rc in vals:
+                return vals[rc]
+        except Exception:                       # noqa: BLE001
+            pass
+        return widget_prop(name, "label")
+    return resolver
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "TernOOWeb/0.1"
 
@@ -267,7 +309,8 @@ class Handler(BaseHTTPRequestHandler):
             name = os.path.basename(
                 unquote(self.path[len("/api/flow/"):-len("/run")]))
             p = os.path.join(FLOWDIR, name)
-            if not (name.endswith(".fc") and os.path.isfile(p)):
+            runnable = (".fc", ".flow", ".ternoo")   # anything with flow_symbols
+            if not (name.endswith(runnable) and os.path.isfile(p)):
                 self._send(404, {"error": "no such flow"})
                 return
             with open(p, encoding="utf-8") as f:
@@ -275,7 +318,8 @@ class Handler(BaseHTTPRequestHandler):
             syms = {s["id"]: s for s in d.get("flow_symbols", [])}
             edges = d.get("flow_edges", d.get("edges", []))
             try:
-                rep = WALKER.walk(syms, edges, resolver=None,
+                rep = WALKER.walk(syms, edges,
+                                  resolver=_design_resolver(d),
                                   variables=req.get("variables") or {})
                 self._send(200, {"steps": rep["steps"],
                                  "lines": rep["lines"],

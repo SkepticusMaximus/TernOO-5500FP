@@ -408,6 +408,11 @@ async function runFlow() {
   }
   const rep = await api("/api/flow/" + encodeURIComponent(FLOW.name) +
                         "/run", {variables: vars});
+  if (rep.error || !rep.lines) {
+    $("runlines").textContent = "✗ run failed: " +
+      (rep.error || "no report from the engine");
+    return;
+  }
   $("runlines").textContent = rep.lines.join("\n");
   const w = $("watchbody");
   w.textContent = Object.entries(rep.vars || {})
