@@ -384,7 +384,7 @@ async function openDesign(name) {
     .filter(i => GUI.widgets.has(i));
   zorderSeq();
   GUI.next = maxid + 1; GUI.name = name; GUI.raw = raw;
-  GSEL = null; guiRender(); guiProps();
+  GSEL = null; guiRender(); guiProps(); guiScrollHome();
   SHEET = {name, raw: new Map()};
   for (const c of raw.cell_symbols || raw.c || [])
     SHEET.raw.set(`${c.row},${c.col}`, String(c.value ?? ""));
@@ -526,6 +526,45 @@ function cellSymbolsOut() {
             label: colName(col) + (row + 1), properties: []};
   });
 }
+function showAppPreview() {
+  // run = the app appears: the designed GUI, rendered clean, live values
+  const old = $("apppreview");
+  if (old) old.remove();
+  if (!GUI.widgets.size) return;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const w of GUI.widgets.values()) {
+    x0 = Math.min(x0, w.x); y0 = Math.min(y0, w.y);
+    x1 = Math.max(x1, w.x + w.w); y1 = Math.max(y1, w.y + w.h);
+  }
+  const ov = document.createElement("div");
+  ov.id = "apppreview";
+  ov.addEventListener("mousedown", e => {
+    if (e.target === ov) ov.remove(); });
+  const stage = document.createElement("div");
+  stage.className = "appstage";
+  const bar = document.createElement("div");
+  bar.className = "appbar";
+  const ttl = document.createElement("span");
+  ttl.textContent = `▶ ${GUI.name || "app"} — running on TernOO`;
+  const x = document.createElement("button");
+  x.textContent = "✕ close";
+  x.onclick = () => ov.remove();
+  bar.appendChild(ttl); bar.appendChild(x);
+  const cv = document.createElement("div");
+  cv.className = "appcanvas";
+  cv.style.width = (x1 - x0 + 40) + "px";
+  cv.style.height = (y1 - y0 + 40) + "px";
+  for (const src of $("guicanvas").children) {
+    const c = src.cloneNode(true);
+    c.classList.remove("sel");
+    c.style.left = (parseInt(c.style.left, 10) - x0 + 20) + "px";
+    c.style.top = (parseInt(c.style.top, 10) - y0 + 20) + "px";
+    cv.appendChild(c);
+  }
+  stage.appendChild(bar); stage.appendChild(cv);
+  ov.appendChild(stage);
+  document.body.appendChild(ov);
+}
 function applyWidgetWrite(name, value) {
   // walk write-back parity with the DPG face: a watch write whose name
   // matches a widget's name lands on that widget's label, live
@@ -569,7 +608,7 @@ async function runFlow() {
       if (applyWidgetWrite(ev[1], ev[2])) painted++;
     }
   }
-  if (painted) { guiRender(); guiProps(); }
+  if (painted) { guiRender(); guiProps(); showAppPreview(); }
   watchRefresh();
   $("runlines").textContent = rep.lines.join("\n") +
     `\n■ RUN complete — ${rep.steps} step(s) · ${painted} ` +
@@ -734,6 +773,15 @@ function guiPlace(kind) {
   adopt(id);
   GSEL = id; guiRender(); guiProps();
 }
+function guiScrollHome() {
+  let mx = Infinity, my = Infinity;
+  for (const w of GUI.widgets.values()) {
+    mx = Math.min(mx, w.x); my = Math.min(my, w.y);
+  }
+  if (mx < Infinity)
+    $("guiwrap").scrollTo({left: Math.max(0, mx - 40),
+                           top: Math.max(0, my - 40)});
+}
 function guiRender() {
   const c = $("guicanvas"); c.innerHTML = "";
   let maxx = 900, maxy = 600;
@@ -848,7 +896,7 @@ async function guiOpen(name) {
     .filter(i => GUI.widgets.has(i));
   zorderSeq();
   GUI.next = maxid + 1; GSEL = null;
-  guiRender(); guiProps();
+  guiRender(); guiProps(); guiScrollHome();
 }
 async function guiSave() {
   const name = prompt("Save as (.gui):", GUI.name || "untitled.gui");

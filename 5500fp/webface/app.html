@@ -191,7 +191,7 @@
         border-radius: 6px; background: var(--panel2); cursor: move;
         overflow: hidden; user-select: none; font-size: 13px;
         box-shadow: 0 2px 6px rgba(0,0,0,.35); }
-  .gw.sel { outline: 2px solid var(--accent); z-index: 5; }
+  .gw.sel { outline: 2px solid var(--accent); }
   .gw.sel::after { content: ""; position: absolute; right: -1px;
         bottom: -1px; width: 10px; height: 10px;
         background: var(--accent); border-radius: 2px 0 6px 0; }
@@ -270,6 +270,23 @@
   .actions button { background: var(--panel2); color: var(--ink);
                     border: 1px solid var(--line); padding: 8px 14px;
                     border-radius: 8px; cursor: pointer; }
+  #apppreview { position: fixed; inset: 0; z-index: 80;
+    background: rgba(8, 8, 14, .82); display: flex;
+    align-items: center; justify-content: center; }
+  #apppreview .appstage { position: relative; overflow: auto;
+    max-width: 92vw; max-height: 88vh; border-radius: 12px;
+    box-shadow: 0 24px 80px rgba(0,0,0,.7); background: #101018;
+    border: 1px solid #34344a; }
+  #apppreview .appbar { position: sticky; top: 0; z-index: 6;
+    display: flex; justify-content: space-between; align-items: center;
+    background: linear-gradient(#2b2b3d, #232331); color: var(--dim);
+    font-size: 12.5px; padding: 6px 12px;
+    border-bottom: 1px solid var(--line); }
+  #apppreview .appbar button { background: var(--panel2);
+    color: var(--ink); border: 1px solid var(--line); border-radius: 6px;
+    padding: 3px 12px; cursor: pointer; }
+  #apppreview .appcanvas { position: relative; }
+  #apppreview .gw { cursor: default; }
   #fatalbar { position: fixed; top: 0; left: 0; right: 0; z-index: 99;
     background: #5d1a1a; color: #ffb3b3; border-bottom: 1px solid #a33;
     font: 13px monospace; padding: 8px 14px; cursor: pointer;
@@ -462,6 +479,8 @@
     <div class="phead open" onclick="togglePanel(this)">
       <span class="chev">▶</span> ACTIONS</div>
     <div class="pbody">
+      <button class="tool" onclick="showAppPreview()">
+        <span class="glyph">▶</span> Preview app</button>
       <button class="tool" onclick="guiDelete()">
         <span class="glyph">✕</span> Delete selected</button>
       <button class="tool" onclick="guiSave()">
