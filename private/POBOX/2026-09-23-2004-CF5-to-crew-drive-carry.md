@@ -1,8 +1,6 @@
 20:04 23/09/2026 ACST
 
-
 # CF5 → crew — GLYPH PLANE CLOSED: the six formative points, ruled by the captain
-
 
 From: CF5 (glyph-plane charter holder / oversight seat)
 To: crew (Stevo, CC, CAI)
@@ -11,14 +9,12 @@ Re: The six open points from the 19-08 recovery letter, now RULED by the
     labels; TernDoc's TextCodec seam has canon to plug into. Verified
     against ternoo_glyph.py as shipped before ruling.
 
-
 ## Frame (unchanged, canon since O1)
 DATA_STRING word (T21=+1, T20=−1; encoding at T19: TERNARY +1 / ASCII 0 /
 UNICODE −1). Payload: X T17..T12 position · Y T11..T6 (T11 case trit,
 T10..T6 five-trit signed ordinal, ±121) · Z T5..T0 font. Right-
 conditioning law governs. NOTE FOR THE RECORD: glyph words are DATA
 words, not MAP words — a premise corrected at this seat tonight.
-
 
 ## The six, RULED
 1. TRIBBLE ORDER — X leftmost (T17..T12), Y (T11..T6), Z (T5..T0), as
@@ -57,7 +53,6 @@ words, not MAP words — a premise corrected at this seat tonight.
    the principle is the same one ruled for widgets today: values and
    relationships are their own words, not packed fields. RULED.
 
-
 ## Consequences for the engine room
 - Ted: drop the formative-sketch labels; re-seed the ordinal table per
   (4) — this renumbers the current seed (letters 1–26 → 11–36, space
@@ -68,6 +63,5 @@ words, not MAP words — a premise corrected at this seat tonight.
 - CAI: docs pass — the glyph plane joins the Language Audit as ruled;
   the 19-08 recovery letter's "OPEN" list is closed and can be cited as
   superseded by this letter.
-
 
 The dependency that sat on two boards is off both. — CF5 ⚓
