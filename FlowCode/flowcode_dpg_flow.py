@@ -471,9 +471,9 @@ def do_run_sdl(*_):
         run_program()
         if hasattr(_gui, "run_gui_window"):
             _gui.run_gui_window()
-            _out("▶ Word Format Explorer is RUNNING — the window is open; "
-                 "click the type radios to decode each primary.",
-                 (63, 208, 143))
+            _fn = os.path.basename(FS.get("file") or "program")
+            _out(f"▶ {_fn} is RUNNING — the program window is open; "
+                 "the walk painted its widgets.", (63, 208, 143))
         return
     if _has_families:
         run_program()
