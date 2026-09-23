@@ -108,7 +108,8 @@ def _design_resolver(d):
     def widget_prop(wname, pname):
         for w in widgets:
             if w.get("name") == wname:
-                if pname in ("x", "y", "w", "h", "label", "name"):
+                if pname in ("x", "y", "w", "h", "label", "name",
+                             "value"):
                     return w.get(pname)
                 for pr in w.get("properties", []):
                     if pr.get("name") == pname:

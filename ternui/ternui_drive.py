@@ -146,7 +146,15 @@ def main():
                 w = by_name.get(name)
                 if w and w.get("kind") == "gui_radio":
                     retune_a1(doc, w.get("label", ""))
+                if w and str(w.get("kind", "")).startswith("gui_tri"):
+                    w["value"] = ((w.get("value", 0) + 2) % 3) - 1
+                    print(f"  {name}.value -> {w['value']:+d}")
             seen = len(lines)
+            by_id = {s.get("id"): s for s in doc.get("symbols", [])}
+            for wd in widgets.values():          # live state -> resolver
+                tgt = by_id.get(wd.get("id"))
+                if tgt is not None and "value" in wd:
+                    tgt["value"] = wd["value"]
             try:
                 rep = TW.WALKER.walk(syms, edges,
                                      resolver=TW._design_resolver(doc),
@@ -157,8 +165,24 @@ def main():
                 continue
             painted = 0
             for ev in rep.get("events", []):
-                if ev[0] == "watch" and ev[1] in by_name:
-                    by_name[ev[1]]["label"] = str(ev[2])
+                if ev[0] != "watch":
+                    continue
+                nm = str(ev[1])
+                if "." in nm:                    # ledger #1: prop write
+                    wn, _, pn = nm.partition(".")
+                    w2 = by_name.get(wn)
+                    if w2 is not None:
+                        props = w2.setdefault("properties", [])
+                        for pr in props:
+                            if pr.get("name") == pn:
+                                pr["value"] = str(ev[2])
+                                break
+                        else:
+                            props.append({"name": pn,
+                                          "value": str(ev[2])})
+                        painted += 1
+                elif nm in by_name:
+                    by_name[nm]["label"] = str(ev[2])
                     painted += 1
             emit(widgets, out)
             print(f"  walk complete: {rep['steps']} steps, {painted} "
