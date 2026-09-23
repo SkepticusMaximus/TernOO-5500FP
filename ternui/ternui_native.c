@@ -31,6 +31,8 @@ typedef struct {
     long x, y, w, h;
     int value;                        /* MVALUE (tri-state), default 0 */
     long colour;                      /* MPROP colour=, ternary cube */
+    char items[768];                  /* MPROP items= (\n-joined) */
+    int sel;                          /* selected row, -1 none */
 } Node;
 static Node NS[MAXN];
 static int NN = 0;
@@ -164,6 +166,22 @@ static void decode_stream(void)
         } else if (family == 1 && NN > 0) {
             Node *nd = &NS[NN - 1];
             char *dst = NULL; size_t cap = 0;
+            if (op == 11) {                      /* peek for items= */
+                char kv0[80] = "";
+                decode_strings(ops, (int)n > 3 ? 3 : (int)n,
+                               kv0, sizeof kv0);
+                if (!strncmp(kv0, "items=", 6)) {
+                    nd->items[0] = 0;
+                    decode_strings(ops, (int)n, nd->items,
+                                   sizeof nd->items);
+                    memmove(nd->items, nd->items + 6,
+                            strlen(nd->items + 6) + 1);
+                    last_attr = nd->items;
+                    last_cap = sizeof nd->items;
+                    i += n;
+                    continue;
+                }
+            }
             if (op == 0)      { dst = nd->kind;  cap = sizeof nd->kind; }
             else if (op == 1) { dst = nd->name;  cap = sizeof nd->name; }
             else if (op == 6) { dst = nd->scope; cap = sizeof nd->scope; }
@@ -179,6 +197,8 @@ static void decode_stream(void)
                 } else {
                     if (op == 11 && !strncmp(kv, "colour=", 7))
                         nd->colour = atol(kv + 7);
+                    if (op == 11 && !strncmp(kv, "selected=", 9))
+                        nd->sel = -2;            /* engine confirmed */
                     last_attr = NULL;        /* never a stale target */
                 }
             } else if (op == 13 && n >= 1) {     /* MVALUE: DATA word */
@@ -459,8 +479,23 @@ static void render(SDL_Surface *s, TTF_Font *f, TTF_Font *fs)
         } else if (is_kind(w, "gui_label")) {
             text(s, f, x + 4, y + 2, w->label,
                  cube_colour(w->colour, INK));
+        } else if (is_kind(w, "gui_listbox") && w->items[0]) {
+            fill(s, x, y, w->w, w->h, BG);
+            frame(s, x, y, w->w, w->h, LINE);
+            char tmp[768];
+            snprintf(tmp, sizeof tmp, "%s", w->items);
+            int row = 0;
+            for (char *ln = strtok(tmp, "\n"); ln && row * 22 + 26
+                 < w->h; ln = strtok(NULL, "\n"), row++) {
+                if (row == w->sel)
+                    fill(s, x + 2, y + 4 + row * 22, w->w - 4, 20,
+                         ACCENT);
+                text(s, NULL, x + 8, y + 6 + row * 22, ln,
+                     row == w->sel ? INK : DIM);
+            }
         } else if (is_container(w)) {
-            fill(s, x, y, w->w, w->h, PANEL2);
+            fill(s, x, y, w->w, w->h,
+                 w->colour ? cube_colour(w->colour, PANEL2) : PANEL2);
             frame(s, x, y, w->w, w->h, LINE);
             text(s, fs, x + 8, y + 3, w->label, DIM);
         } else {
@@ -540,15 +575,24 @@ int main(int argc, char **argv)
                 int mx = ev.button.x + OX, my = ev.button.y + OY;
                 for (int i = NN - 1; i >= 0; i--) {   /* topmost first */
                     Node *n = &NS[i];
-                    if (is_container(n)) continue;
+                    int isl = is_kind(n, "gui_listbox") && n->items[0];
+                    if (is_container(n) && !isl) continue;
                     if (mx >= n->x && mx <= n->x + n->w &&
                         my >= n->y && my <= n->y + n->h) {
                         if (is_kind(n, "gui_radio"))
                             snprintf(SELECTED, sizeof SELECTED, "%s",
                                      n->name);
                         FILE *sf = fopen(sig, "a");
-                        if (sf) { fprintf(sf, "%s\tclicked\n", n->name);
-                                  fclose(sf); }
+                        if (sf) {
+                            if (isl) {
+                                int row = (int)((my - n->y - 4) / 22);
+                                n->sel = row;
+                                fprintf(sf, "%s\tclicked\t%d\n",
+                                        n->name, row);
+                            } else
+                                fprintf(sf, "%s\tclicked\n", n->name);
+                            fclose(sf);
+                        }
                         dirty = 1;
                         break;
                     }

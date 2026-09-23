@@ -1,0 +1,165 @@
+{
+ "ternoo_version": "0.3",
+ "source_type": "ternoo_design",
+ "source_file": "File-Dialog.fc",
+ "word_stream": [],
+ "symbols": [
+  {
+   "id": 0,
+   "kind": "gui_window",
+   "x": 40,
+   "y": 20,
+   "w": 620,
+   "h": 460,
+   "label": "Open File",
+   "name": "win",
+   "parent_id": null,
+   "layout_mode": null,
+   "properties": [],
+   "signal_ids": {}
+  },
+  {
+   "id": 1,
+   "kind": "gui_label",
+   "x": -270,
+   "y": -190,
+   "w": 200,
+   "h": 24,
+   "label": "/usr/share/fonts",
+   "name": "path",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [],
+   "signal_ids": {}
+  },
+  {
+   "id": 2,
+   "kind": "gui_listbox",
+   "x": -40,
+   "y": -20,
+   "w": 520,
+   "h": 300,
+   "label": "files",
+   "name": "files",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [
+    {
+     "name": "query",
+     "value": "dir:/usr/share/fonts/truetype/dejavu;pat:*"
+    }
+   ],
+   "signal_ids": {}
+  },
+  {
+   "id": 3,
+   "kind": "gui_label",
+   "x": -150,
+   "y": 185,
+   "w": 420,
+   "h": 26,
+   "label": "chosen: (click a file)",
+   "name": "chosen",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [],
+   "signal_ids": {}
+  }
+ ],
+ "edges": [],
+ "flow_symbols": [
+  {
+   "id": 1,
+   "kind": "flow_terminator",
+   "x": 60,
+   "y": 40,
+   "w": 140,
+   "h": 46,
+   "label": "OPEN",
+   "name": "entry",
+   "properties": [
+    {
+     "name": "is_entry",
+     "value": true
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "kind": "flow_io",
+   "x": 60,
+   "y": 120,
+   "w": 200,
+   "h": 44,
+   "label": "chosen file",
+   "name": "pick",
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "widget"
+    },
+    {
+     "name": "address",
+     "value": "chosen"
+    },
+    {
+     "name": "expression",
+     "value": "files.selected"
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "kind": "flow_terminator",
+   "x": 60,
+   "y": 200,
+   "w": 140,
+   "h": 46,
+   "label": "done",
+   "name": "done",
+   "properties": []
+  }
+ ],
+ "flow_edges": [
+  {
+   "src": 1,
+   "dst": 2,
+   "privilege": 0,
+   "call_style": 0,
+   "return_type": 1,
+   "seg_idx": 0,
+   "offset": 0,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 2,
+   "dst": 3,
+   "privilege": 0,
+   "call_style": 0,
+   "return_type": 1,
+   "seg_idx": 0,
+   "offset": 0,
+   "waypoints": [],
+   "condition": ""
+  }
+ ],
+ "cmd_symbols": [],
+ "cmd_edges": [],
+ "cell_symbols": [],
+ "sheet_regions": [],
+ "free_cells": [],
+ "sequence": [
+  0,
+  1,
+  2,
+  3
+ ],
+ "groups": {},
+ "flow_variables": [],
+ "tgui_meta": {}
+}

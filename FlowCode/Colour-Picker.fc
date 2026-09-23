@@ -152,12 +152,12 @@
   },
   {
    "id": 10,
-   "kind": "gui_label",
+   "kind": "gui_box",
    "x": 150,
    "y": -110,
    "w": 180,
    "h": 40,
-   "label": "cube: 0",
+   "label": "swatch",
    "name": "swatch",
    "parent_id": 0,
    "layout_mode": null,
@@ -178,6 +178,20 @@
    "h": 26,
    "label": "click toggles, then Run",
    "name": "hint",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [],
+   "signal_ids": {}
+  },
+  {
+   "id": 20,
+   "kind": "gui_label",
+   "x": 150,
+   "y": -7,
+   "w": 180,
+   "h": 26,
+   "label": "cube: ?",
+   "name": "cubeval",
    "parent_id": 0,
    "layout_mode": null,
    "properties": [],
@@ -225,7 +239,7 @@
      "value": "swatch.colour"
     },
     {
-     "name": "var",
+     "name": "expression",
      "value": "cube"
     }
    ]
@@ -250,10 +264,10 @@
     },
     {
      "name": "address",
-     "value": "swatch"
+     "value": "cubeval"
     },
     {
-     "name": "var",
+     "name": "expression",
      "value": "cube"
     }
    ]
@@ -292,7 +306,7 @@
      "value": "r"
     },
     {
-     "name": "var",
+     "name": "expression",
      "value": "3*rh.value+rl.value"
     }
    ]
@@ -320,7 +334,7 @@
      "value": "g"
     },
     {
-     "name": "var",
+     "name": "expression",
      "value": "3*gh.value+gl.value"
     }
    ]
@@ -348,7 +362,7 @@
      "value": "b"
     },
     {
-     "name": "var",
+     "name": "expression",
      "value": "3*bh.value+bl.value"
     }
    ]
@@ -376,7 +390,7 @@
      "value": "cube"
     },
     {
-     "name": "var",
+     "name": "expression",
      "value": "r*81+g*9+b"
     }
    ]
@@ -478,7 +492,8 @@
   8,
   9,
   10,
-  11
+  11,
+  20
  ],
  "groups": {},
  "flow_variables": [],

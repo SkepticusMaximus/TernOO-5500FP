@@ -121,6 +121,71 @@ def retune_a1(doc, radio_label):
             return
 
 
+def _prop(w, name, dflt=None):
+    for p in w.get("properties") or []:
+        if p.get("name") == name:
+            return p.get("value")
+    return dflt
+
+
+def _setprop(w, name, value):
+    props = w.setdefault("properties", [])
+    for p in props:
+        if p.get("name") == name:
+            p["value"] = value
+            return
+    props.append({"name": name, "value": value})
+
+
+def run_queries(widgets):
+    """Ledger #4 made real: a listbox with query='dir:<path>;pat:<glob>'
+    populates its items FROM the system — the query is data on the
+    widget, the answer becomes words."""
+    import fnmatch
+    for w in widgets.values():
+        q = str(_prop(w, "query") or "")
+        if not q.startswith("dir:"):
+            continue
+        parts = dict(p.split(":", 1) for p in q.split(";") if ":" in p)
+        root, pat = parts.get("dir", "."), parts.get("pat", "*")
+        names = []
+        if "recurse" in q:
+            for dp, _dn, fn in os.walk(root):
+                names += [os.path.join(dp, f) for f in fn
+                          if fnmatch.fnmatch(f, pat)]
+        else:
+            try:
+                names = [os.path.join(root, f)
+                         for f in sorted(os.listdir(root))
+                         if fnmatch.fnmatch(f, pat)]
+            except OSError:
+                names = []
+        names = sorted(names)[:28]
+        _setprop(w, "items", "\n".join(
+            os.path.basename(n) for n in names))
+        w["_paths"] = names
+        print(f"  query {w.get('name')}: {len(names)} item(s)")
+
+
+def on_select(w, row):
+    paths = w.get("_paths") or []
+    if not 0 <= row < len(paths):
+        return
+    path = paths[row]
+    _setprop(w, "selected", os.path.basename(path))
+    print(f"  {w.get('name')}.selected = {os.path.basename(path)}")
+    if path.endswith((".ttf", ".otf")):          # font browser inherits
+        import subprocess
+        r = subprocess.run(
+            [os.path.expanduser("~/.venvs/p2pcp/bin/python"),
+             os.path.join(_HERE, "ternui_font_ttf.py"),
+             path, "/tmp/preview.thf"],
+            capture_output=True, text=True)
+        print("  " + (r.stdout.strip() or r.stderr.strip().splitlines()[-1]))
+        print("  preview: TERNUI_FONT=/tmp/preview.thf "
+              "/tmp/ternui_native <stream.tuw>")
+
+
 def main():
     design, out = sys.argv[1], sys.argv[2]
     sig = out + ".sig"
@@ -129,6 +194,7 @@ def main():
     edges = doc.get("flow_edges", doc.get("edges", []))
     widgets = load_widgets(design)               # bridge shape, labels capped
     by_name = {w.get("name"): w for w in widgets.values()}
+    run_queries(widgets)
     n = emit(widgets, out)
     print(f"stream up: {len(widgets)} widgets, {n} words -> {out}")
     print(f"listening on {sig} — click the native window")
@@ -143,7 +209,11 @@ def main():
             for ln in lines[seen:]:
                 name = ln.split("\t")[0].strip()
                 print(f"⚡ {name} clicked — walking the design")
+                fields = ln.strip().split("\t")
                 w = by_name.get(name)
+                if w and len(fields) >= 3 and fields[2].lstrip(
+                        "-").isdigit():
+                    on_select(w, int(fields[2]))
                 if w and w.get("kind") == "gui_radio":
                     retune_a1(doc, w.get("label", ""))
                 if w and str(w.get("kind", "")).startswith("gui_tri"):
@@ -153,8 +223,12 @@ def main():
             by_id = {s.get("id"): s for s in doc.get("symbols", [])}
             for wd in widgets.values():          # live state -> resolver
                 tgt = by_id.get(wd.get("id"))
-                if tgt is not None and "value" in wd:
+                if tgt is None:
+                    continue
+                if "value" in wd:
                     tgt["value"] = wd["value"]
+                if wd.get("properties"):
+                    tgt["properties"] = wd["properties"]
             try:
                 rep = TW.WALKER.walk(syms, edges,
                                      resolver=TW._design_resolver(doc),

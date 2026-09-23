@@ -1,0 +1,165 @@
+{
+ "ternoo_version": "0.3",
+ "source_type": "ternoo_design",
+ "source_file": "Font-Browser.fc",
+ "word_stream": [],
+ "symbols": [
+  {
+   "id": 0,
+   "kind": "gui_window",
+   "x": 30,
+   "y": 20,
+   "w": 680,
+   "h": 520,
+   "label": "Font Browser",
+   "name": "win",
+   "parent_id": null,
+   "layout_mode": null,
+   "properties": [],
+   "signal_ids": {}
+  },
+  {
+   "id": 1,
+   "kind": "gui_label",
+   "x": -220,
+   "y": -225,
+   "w": 380,
+   "h": 24,
+   "label": "click a font - it converts to THF",
+   "name": "hint",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [],
+   "signal_ids": {}
+  },
+  {
+   "id": 2,
+   "kind": "gui_listbox",
+   "x": -60,
+   "y": -10,
+   "w": 540,
+   "h": 360,
+   "label": "fonts",
+   "name": "fonts",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [
+    {
+     "name": "query",
+     "value": "dir:/usr/share/fonts;pat:*.ttf;recurse"
+    }
+   ],
+   "signal_ids": {}
+  },
+  {
+   "id": 3,
+   "kind": "gui_label",
+   "x": -160,
+   "y": 215,
+   "w": 460,
+   "h": 26,
+   "label": "picked: (none)",
+   "name": "picked",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [],
+   "signal_ids": {}
+  }
+ ],
+ "edges": [],
+ "flow_symbols": [
+  {
+   "id": 1,
+   "kind": "flow_terminator",
+   "x": 60,
+   "y": 40,
+   "w": 140,
+   "h": 46,
+   "label": "BROWSE",
+   "name": "entry",
+   "properties": [
+    {
+     "name": "is_entry",
+     "value": true
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "kind": "flow_io",
+   "x": 60,
+   "y": 120,
+   "w": 200,
+   "h": 44,
+   "label": "picked font",
+   "name": "pick",
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "widget"
+    },
+    {
+     "name": "address",
+     "value": "picked"
+    },
+    {
+     "name": "expression",
+     "value": "fonts.selected"
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "kind": "flow_terminator",
+   "x": 60,
+   "y": 200,
+   "w": 140,
+   "h": 46,
+   "label": "done",
+   "name": "done",
+   "properties": []
+  }
+ ],
+ "flow_edges": [
+  {
+   "src": 1,
+   "dst": 2,
+   "privilege": 0,
+   "call_style": 0,
+   "return_type": 1,
+   "seg_idx": 0,
+   "offset": 0,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 2,
+   "dst": 3,
+   "privilege": 0,
+   "call_style": 0,
+   "return_type": 1,
+   "seg_idx": 0,
+   "offset": 0,
+   "waypoints": [],
+   "condition": ""
+  }
+ ],
+ "cmd_symbols": [],
+ "cmd_edges": [],
+ "cell_symbols": [],
+ "sheet_regions": [],
+ "free_cells": [],
+ "sequence": [
+  0,
+  1,
+  2,
+  3
+ ],
+ "groups": {},
+ "flow_variables": [],
+ "tgui_meta": {}
+}
