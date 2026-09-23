@@ -197,6 +197,72 @@ def run_queries(widgets):
 _OUT = {"path": "/tmp/stream.tuw"}
 
 
+def host_dialog(mode, filt, start):
+    """Caravan: call the host file dialog (zenity, then kdialog). Returns
+    the chosen path or None. Bought off when the TernUI dialog lands."""
+    import shutil
+    import subprocess
+    z = shutil.which("zenity")
+    if z:
+        cmd = [z, "--file-selection"]
+        if mode == "browse-dir":
+            cmd.append("--directory")
+        if start:
+            cmd += ["--filename", start + "/"]
+        if filt and mode != "browse-dir":
+            cmd += ["--file-filter", filt]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True,
+                               timeout=120)
+            out = r.stdout.strip()
+            return out or None
+        except Exception:                        # noqa: BLE001
+            return None
+    k = shutil.which("kdialog")
+    if k:
+        cmd = [k, "--getexistingdirectory" if mode == "browse-dir"
+               else "--getopenfilename", start or os.path.expanduser("~")]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True,
+                               timeout=120)
+            return r.stdout.strip() or None
+        except Exception:                        # noqa: BLE001
+            return None
+    print("  (no host file dialog found — install zenity or kdialog)")
+    return None
+
+
+def do_browse(w, widgets):
+    """A button whose properties say action=browse-dir|pickfile,
+    filter=<glob>, into=<listbox name>. Runs the host dialog, then
+    refills the target listbox's query from the picked location — the
+    result flows back into the WORDS (run_queries re-runs)."""
+    action = _prop(w, "action")
+    if not action or not str(action).startswith(("browse", "pickfile")):
+        return False
+    filt = str(_prop(w, "filter") or "*.ttf *.otf")
+    into = str(_prop(w, "into") or "")
+    start = str(_prop(w, "start") or os.path.expanduser("~"))
+    picked = host_dialog(action, filt, start)
+    if not picked:
+        print("  browse cancelled")
+        return True
+    target = None
+    for x in widgets.values():
+        if x.get("name") == into:
+            target = x
+            break
+    if target is None:
+        print(f"  picked {picked} (no 'into' target)")
+        return True
+    root = picked if os.path.isdir(picked) else os.path.dirname(picked)
+    pat = str(_prop(w, "filter") or "*.ttf").split()[0]
+    _setprop(target, "query", f"dir:{root};pat:{pat}")
+    run_queries({target["id"]: target})          # refill from the words
+    print(f"  browsed -> {root}; {into} refilled")
+    return True
+
+
 def on_select(w, row):
     paths = w.get("_paths") or []
     if not 0 <= row < len(paths):
@@ -245,6 +311,8 @@ def main():
                 print(f"⚡ {name} clicked — walking the design")
                 fields = ln.strip().split("\t")
                 w = by_name.get(name)
+                if w and do_browse(w, widgets):
+                    continue                     # caravan file dialog
                 if w and len(fields) >= 3 and fields[2].lstrip(
                         "-").isdigit():
                     on_select(w, int(fields[2]))
