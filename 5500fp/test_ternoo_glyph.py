@@ -49,7 +49,7 @@ class TestTextWords(unittest.TestCase):
         words = G.text_to_words('HELLO')
         for i, w in enumerate(words):
             self.assertEqual(G.get_font(w), 0)       # Z == 0 (house font)
-            self.assertEqual(G.get_position(w), i)   # X == produce-order
+            self.assertEqual(G.get_colour(w), 0)     # C inherits by default
 
 
 class TestConversion(unittest.TestCase):
@@ -146,6 +146,42 @@ class TestHouseNormalization(unittest.TestCase):
         s = 'A “quote” — é'
         self.assertEqual(G.to_house_words(s, record=False),
                          G.text_to_words(G.normalize_for_house(s), strict=False))
+
+
+
+class TestColourCube(unittest.TestCase):
+    """Q6 ruled pins: channel order, LED-subset law, inherit-at-zero."""
+
+    def test_rgb_round_trip(self):
+        for rgb in ((0, 0, 0), (4, -4, 1), (-2, 3, -4), (4, 4, 4)):
+            self.assertEqual(G.colour_channels(G.colour_rgb(*rgb)), rgb)
+
+    def test_zero_is_inherit(self):
+        w = G.make_glyph(G.ORDINAL['A'], +1)
+        self.assertEqual(G.get_colour(w), 0)
+
+    def test_led_is_exact_subset_of_cube(self):
+        # coarse palette = higher trit of each pair (ruled pin b)
+        for r in (-1, 0, 1):
+            for g in (-1, 0, 1):
+                for b in (-1, 0, 1):
+                    led = G.led_colour(r, g, b)
+                    self.assertEqual(G.colour_channels(led),
+                                     (r * 3, g * 3, b * 3))
+
+    def test_colour_rides_the_word(self):
+        red = G.led_colour(1, -1, -1)
+        w = G.make_glyph(G.ORDINAL['A'], +1, colour=red)
+        self.assertEqual(G.get_colour(w), red)
+        self.assertEqual(G.parse_glyph(w), (G.ORDINAL['A'], +1))
+        w2 = G.set_colour(w, 0)
+        self.assertTrue(G.same_identity(w, w2))   # colour never identity
+
+    def test_channel_range_enforced(self):
+        with self.assertRaises(G.GlyphError):
+            G.colour_rgb(5, 0, 0)
+        with self.assertRaises(G.GlyphError):
+            G.led_colour(2, 0, 0)
 
 
 if __name__ == '__main__':
