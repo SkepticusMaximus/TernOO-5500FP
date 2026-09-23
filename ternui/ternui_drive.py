@@ -81,6 +81,15 @@ def emit(widgets, out):
             for w in ins:
                 f.write(struct.pack("<q", w))
         print(f"  Δ replace @{pos}: -{ndel} +{len(ins)} words on the wire")
+        # compaction: when the journal outweighs the baseline, rewrite
+        # the baseline and truncate — the native side sees the mtime
+        # tick, reloads, and resets its journal offset (already built)
+        if os.path.getsize(out + ".tud") > 8 * len(words):
+            _LAST["words"] = None
+            n = emit(widgets, out)
+            print(f"  ⌁ journal compacted into a fresh baseline "
+                  f"({n} words)")
+            return n
     _LAST["words"] = words
     return len(words)
 

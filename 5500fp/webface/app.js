@@ -401,6 +401,7 @@ async function openDesign(name) {
       if (!w) continue;
       w.kind = d.kind || w.kind;
       w.label = d.label;
+      if (d.value !== undefined) w.value = d.value;
       w.x = d.x; w.y = d.y; w.w = d.w; w.h = d.h;
       const par = byName.get(d.scope);
       w.parent_id = par ? par.id : null;
@@ -860,6 +861,12 @@ function guiRender() {
       const nl = prompt("Label:", w.label);
       if (nl !== null) { w.label = nl; guiRender(); guiProps(); }
     });
+    if (w.kind === "gui_tritoggle" || w.kind === "gui_trifilter")
+      d.addEventListener("click", () => {
+        // cycle − → 0 → + → − ; the value is a WORD (MVALUE) on save
+        w.value = ((w.value ?? 0) + 2) % 3 - 1;
+        guiRender(); guiProps();
+      });
     c.appendChild(d);
   }
   c.style.width = maxx + "px"; c.style.height = maxy + "px";
