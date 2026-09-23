@@ -77,6 +77,12 @@ static void decode_strings(int64_t *ops, int n, char *dst, size_t cap)
     }
 }
 
+static int64_t *SW = NULL;            /* the live word stream */
+static uint32_t SWN = 0;
+static long TUD_OFF = 4;              /* consumed bytes of the .tud */
+
+static void decode_stream(void);
+
 static int load_stream(const char *path)
 {
     FILE *f = fopen(path, "rb");
@@ -84,11 +90,53 @@ static int load_stream(const char *path)
     char magic[4]; uint32_t count;
     if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "TUW0", 4) ||
         fread(&count, 4, 1, f) != 1) { fclose(f); return 0; }
-    int64_t *W = malloc(sizeof(int64_t) * count);
-    if (fread(W, sizeof(int64_t), count, f) != count) {
-        free(W); fclose(f); return 0;
+    free(SW);
+    SW = malloc(sizeof(int64_t) * count);
+    if (fread(SW, sizeof(int64_t), count, f) != count) {
+        fclose(f); return 0;
     }
     fclose(f);
+    SWN = count;
+    decode_stream();
+    return NN;
+}
+
+/* Q3: apply appended TUD0 replace-records (pos, ndel, nins, words) —
+ * WordStreamEdit on the wire, integer ops, deterministic. */
+static int apply_tud(const char *tud)
+{
+    FILE *f = fopen(tud, "rb");
+    if (!f) return 0;
+    fseek(f, TUD_OFF, SEEK_SET);
+    int applied = 0;
+    uint32_t rec[3];
+    while (fread(rec, 4, 3, f) == 3) {
+        uint32_t pos = rec[0], ndel = rec[1], nins = rec[2];
+        int64_t *ins = malloc(sizeof(int64_t) * (nins ? nins : 1));
+        if (fread(ins, sizeof(int64_t), nins, f) != nins) {
+            free(ins); break;                    /* partial write: retry */
+        }
+        if (pos + ndel > SWN) { free(ins); break; }
+        uint32_t nn = SWN - ndel + nins;
+        int64_t *nw = malloc(sizeof(int64_t) * nn);
+        memcpy(nw, SW, sizeof(int64_t) * pos);
+        memcpy(nw + pos, ins, sizeof(int64_t) * nins);
+        memcpy(nw + pos + nins, SW + pos + ndel,
+               sizeof(int64_t) * (SWN - pos - ndel));
+        free(SW); free(ins);
+        SW = nw; SWN = nn;
+        TUD_OFF = ftell(f);
+        applied++;
+    }
+    fclose(f);
+    if (applied) decode_stream();
+    return applied;
+}
+
+static void decode_stream(void)
+{
+    int64_t *W = SW;
+    uint32_t count = SWN;
     NN = 0;
     char *last_attr = NULL; size_t last_cap = 0;
     for (uint32_t i = 0; i < count; i++) {
@@ -139,8 +187,6 @@ static int load_stream(const char *path)
         }
         i += n;
     }
-    free(W);
-    return NN;
 }
 
 /* ── render (FlowCode dark palette, spike lineage) ──────────────────── */
@@ -299,9 +345,13 @@ int main(int argc, char **argv)
                 }
             }
         }
+        char tud[520];
+        snprintf(tud, sizeof tud, "%s.tud", tuw);
+        if (apply_tud(tud)) dirty = 1;           /* Q3 deltas */
         if (stat(tuw, &st) == 0 && st.st_mtime != last_m) {
-            last_m = st.st_mtime;      /* the engine rewrote the words */
-            SDL_Delay(30);             /* let the write finish */
+            last_m = st.st_mtime;      /* baseline rewritten */
+            SDL_Delay(30);
+            TUD_OFF = 4;
             if (load_stream(tuw)) dirty = 1;
         }
         if (dirty) {

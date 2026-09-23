@@ -33,17 +33,55 @@ _ASCII = str.maketrans({"−": "-", "·": ".", "—": "-",
                         "–": "-", "⇐": "<=", "⇒": "=>"})
 
 
-def emit(widgets, out):
+_LAST = {"words": None}
+
+
+def _build(widgets, out):
     for w in widgets.values():
         w["label"] = str(w.get("label", "")).translate(_ASCII)
     prog = GM.ghost_to_meccano(widgets, [], name=os.path.basename(out))
-    words = list(prog.words)
-    tmp = out + ".tmp"
-    with open(tmp, "wb") as f:
-        f.write(b"TUW0" + struct.pack("<I", len(words)))
-        for w in words:
-            f.write(struct.pack("<q", w))
-    os.replace(tmp, out)                         # atomic: one mtime tick
+    return list(prog.words)
+
+
+def word_delta(old, new):
+    """Minimal WordStreamEdit replace-record between two streams:
+    (position, n_deleted, inserted_words). Q3 constraints: container-
+    position addressing, applied atomically, pure integer ops."""
+    a, b = 0, 0
+    while a < len(old) and a < len(new) and old[a] == new[a]:
+        a += 1
+    while (b < len(old) - a and b < len(new) - a
+           and old[-1 - b] == new[-1 - b]):
+        b += 1
+    return a, len(old) - a - b, new[a:len(new) - b]
+
+
+def apply_delta(words, pos, ndel, ins):
+    """The receiver's side of the wire — deterministic by construction."""
+    return words[:pos] + list(ins) + words[pos + ndel:]
+
+
+def emit(widgets, out):
+    """First call writes the TUW0 baseline; every later call appends a
+    TUD0 delta record — the Q3 wire format (WordStreamEdit 'replace')."""
+    words = _build(widgets, out)
+    if _LAST["words"] is None:
+        tmp = out + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(b"TUW0" + struct.pack("<I", len(words)))
+            for w in words:
+                f.write(struct.pack("<q", w))
+        os.replace(tmp, out)                     # atomic: one mtime tick
+        open(out + ".tud", "wb").write(b"TUD0")
+    else:
+        pos, ndel, ins = word_delta(_LAST["words"], words)
+        assert apply_delta(_LAST["words"], pos, ndel, ins) == words
+        with open(out + ".tud", "ab") as f:
+            f.write(struct.pack("<III", pos, ndel, len(ins)))
+            for w in ins:
+                f.write(struct.pack("<q", w))
+        print(f"  Δ replace @{pos}: -{ndel} +{len(ins)} words on the wire")
+    _LAST["words"] = words
     return len(words)
 
 
