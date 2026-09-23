@@ -19,12 +19,15 @@ Word layout (ratified trit map, R4 2026-07-08):
               housekeeping correction, see widget_lib.py:620]
     T19     : encoding plane      +1 native (== STRING_TERNARY)
     T18     : mode                0 text | +1/−1 signed numeric literal
-    --- payload, TEXT mode ---
-    T17..T12 : X   assigned place in the containing list (produce-order in v1)
-    T11..T6  : Y   T11 case (+1 up / −1 low / 0 caseless); T10..T6 signed
-                   ordinal (0 = null/no-character); Y is also the index into
-                   the font's ordered glyph array (O1)
-    T5..T0   : Z   font registry index (0 = house font in v1)
+    --- payload, TEXT mode (RULED relayout 23-09, Q5+Q6) ---
+    T17..T12 : Y   identity — T17 case (+1 up / −1 low / 0 caseless);
+                   T16..T12 signed ordinal (0 = null/no-character)
+    T11..T6  : Z   font registry index (0 = inherit house font)
+    T5..T0   : C   colour cube — R T5..T4, G T3..T2, B T1..T0
+                   (0 = inherit ink; LED palette = higher trit of each
+                   pair, an exact subset of the fine cube)
+    Position is NOT in the word: it belongs to the container (order in
+    the stream/span) — the King X deposition, chair's ruling.
     --- payload, LITERAL mode ---
     T17..T0  : magnitude (sign = T18); range ±193,710,244
 
@@ -55,16 +58,25 @@ PRIMARY_DATA = V.PRIMARY_DATA
 NATIVE_PLANE = V.STRING_TERNARY          # +1 — the native glyph plane
 GLYPH_T21, GLYPH_T20 = +1, -1            # STRING subtype, ratified working canon
 
-# absolute trit positions (T-index)
+# absolute trit positions (T-index) — RULED layout, 23-09 (Q5+Q6):
+# X vacated (position is the container's — King X deposed); identity
+# leftmost so the null check greets the reader first; colour takes the
+# freed tribble. Reads identity → font → colour.
 POS_MODE = 18                            # T18 (in the qualifier field)
-Z_LSB, Z_WIDTH = 0, 6                    # T0..T5   font index
-ORD_LSB, ORD_WIDTH = 6, 5               # T6..T10  signed ordinal
-POS_CASE = 11                            # T11      case trit
-X_LSB, X_WIDTH = 12, 6                   # T12..T17 position
+POS_CASE = 17                            # T17      case trit
+ORD_LSB, ORD_WIDTH = 12, 5               # T12..T16 signed ordinal
+Z_LSB, Z_WIDTH = 6, 6                    # T6..T11  font index (0 = inherit)
+COL_LSB, COL_WIDTH = 0, 6                # T0..T5   colour cube (0 = inherit)
 PAY_LSB, PAY_WIDTH = 0, 18               # T0..T17  literal magnitude
 
+# colour cube pins (ruled): R = T5..T4, G = T3..T2, B = T1..T0; the
+# 27-colour LED palette reads the HIGHER trit of each pair (T5,T3,T1)
+# so coarse is an EXACT SUBSET of fine.
+COL_R_LSB, COL_G_LSB, COL_B_LSB = 4, 2, 0
+CHAN_MAX = 4                             # 2 trits/channel: ±4, 9 levels
+
 ORD_MAX = (3 ** ORD_WIDTH - 1) // 2      # 121
-X_MAX = (3 ** X_WIDTH - 1) // 2          # 364
+COL_MAX = (3 ** COL_WIDTH - 1) // 2      # 364 (full-cube field value)
 LIT_MAX = (3 ** PAY_WIDTH - 1) // 2      # 193,710,244
 
 
@@ -103,25 +115,26 @@ def _require_text(word: int):
 # Text-character words
 # ═══════════════════════════════════════════════════════════════════════════
 
-def make_glyph(ordinal: int, case: int = 0, position: int = 0,
-               font: int = 0) -> int:
-    """A text character. ordinal 0 is null/no-character and is rejected; case
-    is +1 upper / −1 lower / 0 caseless. X (position) and Z (font) default to
-    their v1-trivial values and are meaningful fields, not padding (O1)."""
+def make_glyph(ordinal: int, case: int = 0, font: int = 0,
+               colour: int = 0) -> int:
+    """A text character. ordinal 0 is null/no-character and is rejected;
+    case is +1 upper / −1 lower / 0 caseless. Z (font) and C (colour)
+    default to 0 = inherit. Position is NOT here — it belongs to the
+    container (Q5, King X deposed)."""
     if ordinal == 0:
         raise GlyphError('ordinal 0 is null/no-character — not a glyph')
     if not -ORD_MAX <= ordinal <= ORD_MAX:
         raise GlyphError(f'ordinal {ordinal} out of range ±{ORD_MAX}')
     if case not in (-1, 0, 1):
         raise GlyphError(f'case {case} must be +1 / 0 / −1')
-    if not -X_MAX <= position <= X_MAX:
-        raise GlyphError(f'position {position} out of range ±{X_MAX} (O2)')
+    if not -COL_MAX <= colour <= COL_MAX:
+        raise GlyphError(f'colour {colour} out of range ±{COL_MAX}')
     qual = V._data_qualifier(GLYPH_T21, GLYPH_T20, NATIVE_PLANE, 0)  # text mode
     w = V._make_word(PRIMARY_DATA, qual, 0)
     w = V.set_field(w, ORD_LSB, ORD_WIDTH, ordinal)
     w = V.set_trit(w, POS_CASE, case)
-    w = V.set_field(w, X_LSB, X_WIDTH, position)
     w = V.set_field(w, Z_LSB, Z_WIDTH, font)
+    w = V.set_field(w, COL_LSB, COL_WIDTH, colour)
     return w
 
 
@@ -141,21 +154,47 @@ def get_case(word: int) -> int:
     return V.get_trit(word, POS_CASE)
 
 
-def get_position(word: int) -> int:
-    _require_text(word)
-    return V.get_field(word, X_LSB, X_WIDTH)
-
-
 def get_font(word: int) -> int:
     _require_text(word)
     return V.get_field(word, Z_LSB, Z_WIDTH)
 
 
-def set_position(word: int, position: int) -> int:
+def get_colour(word: int) -> int:
     _require_text(word)
-    if not -X_MAX <= position <= X_MAX:
-        raise GlyphError(f'position {position} out of range ±{X_MAX} (O2)')
-    return V.set_field(word, X_LSB, X_WIDTH, position)
+    return V.get_field(word, COL_LSB, COL_WIDTH)
+
+
+def set_colour(word: int, colour: int) -> int:
+    _require_text(word)
+    if not -COL_MAX <= colour <= COL_MAX:
+        raise GlyphError(f'colour {colour} out of range ±{COL_MAX}')
+    return V.set_field(word, COL_LSB, COL_WIDTH, colour)
+
+
+def colour_rgb(r: int, g: int, b: int) -> int:
+    """Cube field value from per-channel levels (each ±4, 9 levels)."""
+    for ch, nm in ((r, 'R'), (g, 'G'), (b, 'B')):
+        if not -CHAN_MAX <= ch <= CHAN_MAX:
+            raise GlyphError(f'{nm} {ch} out of range ±{CHAN_MAX}')
+    return r * 3 ** COL_R_LSB + g * 3 ** COL_G_LSB + b * 3 ** COL_B_LSB
+
+
+def colour_channels(colour: int):
+    """(r, g, b) per-channel levels of a cube field value."""
+    t = V.to_trits(colour, COL_WIDTH)
+    return (t[COL_R_LSB] + 3 * t[COL_R_LSB + 1],
+            t[COL_G_LSB] + 3 * t[COL_G_LSB + 1],
+            t[COL_B_LSB] + 3 * t[COL_B_LSB + 1])
+
+
+def led_colour(r: int, g: int, b: int) -> int:
+    """The 27-colour traffic-light palette: one trit per channel
+    (−/0/+ = off/half/full), written to the HIGHER trit of each pair —
+    an EXACT SUBSET of the fine cube (ruled pin b)."""
+    for ch, nm in ((r, 'R'), (g, 'G'), (b, 'B')):
+        if ch not in (-1, 0, 1):
+            raise GlyphError(f'LED {nm} {ch} must be +1 / 0 / −1')
+    return colour_rgb(r * 3, g * 3, b * 3)
 
 
 # ── case ops as trit WRITES (never arithmetic — S-law) ──────────────────────
@@ -181,7 +220,7 @@ def same_identity(a: int, b: int) -> bool:
     """Compare Y only (case + ordinal). Names its masking (X/Z ignored)."""
     _require_text(a); _require_text(b)
     return V.get_field(a, ORD_LSB, ORD_WIDTH + 1) == \
-        V.get_field(b, ORD_LSB, ORD_WIDTH + 1)
+        V.get_field(b, ORD_LSB, ORD_WIDTH + 1)   # T12..T17: ordinal+case
 
 
 def same_folded(a: int, b: int) -> bool:
@@ -265,7 +304,9 @@ _FROM_ORDINAL[IDEA_ORD] = '⸮?'
 
 
 def _assign_positions(words: list) -> list:
-    return [set_position(w, i) for i, w in enumerate(words)]
+    """Q5: position belongs to the container — order IS the string.
+    Kept as identity for call-site compatibility."""
+    return list(words)
 
 
 def text_to_words(text: str, strict: bool = True) -> list:
@@ -315,7 +356,7 @@ def describe(word: int) -> dict:
     except GlyphError:
         char = None
     return {'mode': 'text', 'ordinal': ordinal, 'case': case,
-            'position': get_position(word), 'font': get_font(word),
+            'font': get_font(word), 'colour': get_colour(word),
             'char': char}
 
 
