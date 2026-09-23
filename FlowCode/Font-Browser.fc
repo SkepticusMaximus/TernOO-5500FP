@@ -26,7 +26,7 @@
    "y": -280,
    "w": 420,
    "h": 30,
-   "label": "click a font - it converts to THF",
+   "label": "click a font - the window BECOMES it",
    "name": "hint",
    "parent_id": 0,
    "layout_mode": null,
