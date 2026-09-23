@@ -20,10 +20,11 @@ Word layout (ratified trit map, R4 2026-07-08):
     T19     : encoding plane      +1 native (== STRING_TERNARY)
     T18     : mode                0 text | +1/−1 signed numeric literal
     --- payload, TEXT mode (RULED relayout 23-09, Q5+Q6) ---
-    T17..T12 : Y   identity — T17 case (+1 up / −1 low / 0 caseless);
+    The tribbles keep their residence names; their contents moved:
+    T17..T12 : X   identity — T17 case (+1 up / −1 low / 0 caseless);
                    T16..T12 signed ordinal (0 = null/no-character)
-    T11..T6  : Z   font registry index (0 = inherit house font)
-    T5..T0   : C   colour cube — R T5..T4, G T3..T2, B T1..T0
+    T11..T6  : Y   font registry index (0 = inherit house font)
+    T5..T0   : Z   colour cube — R T5..T4, G T3..T2, B T1..T0
                    (0 = inherit ink; LED palette = higher trit of each
                    pair, an exact subset of the fine cube)
     Position is NOT in the word: it belongs to the container (order in
@@ -63,20 +64,24 @@ GLYPH_T21, GLYPH_T20 = +1, -1            # STRING subtype, ratified working cano
 # leftmost so the null check greets the reader first; colour takes the
 # freed tribble. Reads identity → font → colour.
 POS_MODE = 18                            # T18 (in the qualifier field)
-POS_CASE = 17                            # T17      case trit
-ORD_LSB, ORD_WIDTH = 12, 5               # T12..T16 signed ordinal
-Z_LSB, Z_WIDTH = 6, 6                    # T6..T11  font index (0 = inherit)
-COL_LSB, COL_WIDTH = 0, 6                # T0..T5   colour cube (0 = inherit)
+# The three payload tribbles keep their RESIDENCE names X, Y, Z
+# (captain's convention) — it is their CONTENTS that moved (Q5+Q6):
+#   X (T17..T12) identity · Y (T11..T6) font · Z (T5..T0) colour
+POS_CASE = 17                            # T17      case trit (in X)
+ORD_LSB, ORD_WIDTH = 12, 5               # T12..T16 signed ordinal (in X)
+X_LSB, X_WIDTH = 12, 6                   # X tribble: identity (case+ordinal)
+Y_LSB, Y_WIDTH = 6, 6                    # Y tribble: font index (0 = inherit)
+Z_LSB, Z_WIDTH = 0, 6                    # Z tribble: colour cube (0 = inherit)
 PAY_LSB, PAY_WIDTH = 0, 18               # T0..T17  literal magnitude
 
 # colour cube pins (ruled): R = T5..T4, G = T3..T2, B = T1..T0; the
 # 27-colour LED palette reads the HIGHER trit of each pair (T5,T3,T1)
 # so coarse is an EXACT SUBSET of fine.
-COL_R_LSB, COL_G_LSB, COL_B_LSB = 4, 2, 0
+COL_R_LSB, COL_G_LSB, COL_B_LSB = 4, 2, 0   # within Z
 CHAN_MAX = 4                             # 2 trits/channel: ±4, 9 levels
 
 ORD_MAX = (3 ** ORD_WIDTH - 1) // 2      # 121
-COL_MAX = (3 ** COL_WIDTH - 1) // 2      # 364 (full-cube field value)
+COL_MAX = (3 ** Z_WIDTH - 1) // 2        # 364 (full-cube field value)
 LIT_MAX = (3 ** PAY_WIDTH - 1) // 2      # 193,710,244
 
 
@@ -133,8 +138,8 @@ def make_glyph(ordinal: int, case: int = 0, font: int = 0,
     w = V._make_word(PRIMARY_DATA, qual, 0)
     w = V.set_field(w, ORD_LSB, ORD_WIDTH, ordinal)
     w = V.set_trit(w, POS_CASE, case)
-    w = V.set_field(w, Z_LSB, Z_WIDTH, font)
-    w = V.set_field(w, COL_LSB, COL_WIDTH, colour)
+    w = V.set_field(w, Y_LSB, Y_WIDTH, font)
+    w = V.set_field(w, Z_LSB, Z_WIDTH, colour)
     return w
 
 
@@ -156,19 +161,19 @@ def get_case(word: int) -> int:
 
 def get_font(word: int) -> int:
     _require_text(word)
-    return V.get_field(word, Z_LSB, Z_WIDTH)
+    return V.get_field(word, Y_LSB, Y_WIDTH)
 
 
 def get_colour(word: int) -> int:
     _require_text(word)
-    return V.get_field(word, COL_LSB, COL_WIDTH)
+    return V.get_field(word, Z_LSB, Z_WIDTH)
 
 
 def set_colour(word: int, colour: int) -> int:
     _require_text(word)
     if not -COL_MAX <= colour <= COL_MAX:
         raise GlyphError(f'colour {colour} out of range ±{COL_MAX}')
-    return V.set_field(word, COL_LSB, COL_WIDTH, colour)
+    return V.set_field(word, Z_LSB, Z_WIDTH, colour)
 
 
 def colour_rgb(r: int, g: int, b: int) -> int:
@@ -181,7 +186,7 @@ def colour_rgb(r: int, g: int, b: int) -> int:
 
 def colour_channels(colour: int):
     """(r, g, b) per-channel levels of a cube field value."""
-    t = V.to_trits(colour, COL_WIDTH)
+    t = V.to_trits(colour, Z_WIDTH)
     return (t[COL_R_LSB] + 3 * t[COL_R_LSB + 1],
             t[COL_G_LSB] + 3 * t[COL_G_LSB + 1],
             t[COL_B_LSB] + 3 * t[COL_B_LSB + 1])
