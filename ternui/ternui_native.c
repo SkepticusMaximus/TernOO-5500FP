@@ -207,6 +207,132 @@ static const SDL_Color DIM    = {139, 139, 160, 255};
 static const SDL_Color ACCENT = { 61, 110, 168, 255};
 static const SDL_Color ACC_HI = { 90, 150, 220, 255};
 
+/* ── the HOUSE STROKE FONT (THF0, exported from the ruled tables) ──
+ * one font, every size, no atlas: polylines on a 0..4 x -2..6 grid,
+ * monospace advance 6, lowercase = small-caps at 2/3 (case is DATA). */
+typedef struct { signed char x, y; } SPt;
+typedef struct { unsigned char npts; SPt pts[24]; } SPoly;
+typedef struct { unsigned char npolys; SPoly polys[10]; } SGlyph;
+static SGlyph *THF[244];              /* ordinal + 121 */
+static int THF_OK = 0;
+
+static void load_thf(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return;
+    char magic[4];
+    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "THF0", 4)) {
+        fclose(f); return;
+    }
+    int32_t o; unsigned char np;
+    while (fread(&o, 4, 1, f) == 1 && fread(&np, 1, 1, f) == 1) {
+        SGlyph *g = calloc(1, sizeof *g);
+        g->npolys = np > 10 ? 10 : np;
+        for (int p = 0; p < np; p++) {
+            unsigned char n2;
+            if (fread(&n2, 1, 1, f) != 1) break;
+            SPoly *pl = p < 10 ? &g->polys[p] : NULL;
+            if (pl) pl->npts = n2 > 24 ? 24 : n2;
+            for (int k = 0; k < n2; k++) {
+                signed char xy[2];
+                if (fread(xy, 1, 2, f) != 2) break;
+                if (pl && k < 24) { pl->pts[k].x = xy[0];
+                                    pl->pts[k].y = xy[1]; }
+            }
+        }
+        if (o >= -121 && o <= 121) THF[o + 121] = g; else free(g);
+    }
+    fclose(f);
+    THF_OK = 1;
+}
+
+/* the RULED seed table (23-09): digits 1-10, letters 11-36, space 37,
+ * punctuation 38+, math band 52+ — mirrored from ternoo_glyph.py */
+static int char_ordinal(unsigned char ch, int *small)
+{
+    *small = 0;
+    if (ch >= '0' && ch <= '9') return 1 + ch - '0';
+    if (ch >= 'A' && ch <= 'Z') return 11 + ch - 'A';
+    if (ch >= 'a' && ch <= 'z') { *small = 1; return 11 + ch - 'a'; }
+    switch (ch) {
+    case ' ': return 37;  case '.': return 38;  case ',': return 39;
+    case ':': return 40;  case ';': return 41;  case '!': return 42;
+    case '?': return 43;  case '~': return 46;  case '-': return 47;
+    case '\'': return 48; case '"': return 49;  case '(': return 50;
+    case ')': return 51;  case '+': return 52;  case '=': return 56;
+    case '<': return 58;  case '>': return 59;  case '/': return 63;
+    case '\\': return 64; case '*': return 65;  case '^': return 66;
+    case '%': return 67;  case '_': return 69;  case '|': return 70;
+    case '#': return 71;  case '[': return 72;  case ']': return 73;
+    case '{': return 74;  case '}': return 75;
+    }
+    return 46;                                   /* unknown -> ~ (R1) */
+}
+
+static void putpx2(SDL_Surface *s, int x, int y, Uint32 col)
+{
+    for (int dy = 0; dy < 2; dy++)
+        for (int dx = 0; dx < 2; dx++) {
+            int px = x + dx, py = y + dy;
+            if (px >= 0 && px < s->w && py >= 0 && py < s->h)
+                ((Uint32 *)((Uint8 *)s->pixels + py * s->pitch))[px] = col;
+        }
+}
+
+static void bres(SDL_Surface *s, int x0, int y0, int x1, int y1,
+                 Uint32 col)
+{
+    int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    for (;;) {
+        putpx2(s, x0, y0, col);
+        if (x0 == x1 && y0 == y1) break;
+        int e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+}
+
+/* draw text with the house strokes. px = cap height in pixels;
+ * (x, y) = top-left of the line box (box spans cap..descender). */
+static void stroke_text(SDL_Surface *s, int x, int y, int px,
+                        const char *txt, SDL_Color c)
+{
+    Uint32 col = SDL_MapRGB(s->format, c.r, c.g, c.b);
+    int cx = x;
+    for (const unsigned char *p = (const unsigned char *)txt; *p; p++) {
+        unsigned char ch = *p;
+        if (ch >= 0x80) {                        /* utf-8: ~ once */
+            if ((ch & 0xC0) == 0x80) continue;
+            ch = '~';
+        }
+        int small = 0;
+        int o = char_ordinal(ch, &small);
+        if (o == 37) { cx += px; continue; }     /* space: pure advance */
+        SGlyph *g = THF[o + 121];
+        if (!g) g = THF[46 + 121];
+        int h = small ? px * 2 / 3 : px;         /* small-caps interim */
+        int base = y + px;                       /* baseline row */
+        if (g)
+            for (int pi = 0; pi < g->npolys; pi++) {
+                SPoly *pl = &g->polys[pi];
+                if (pl->npts == 1) {
+                    putpx2(s, cx + pl->pts[0].x * h / 6,
+                           base - pl->pts[0].y * h / 6, col);
+                    continue;
+                }
+                for (int k = 0; k + 1 < pl->npts; k++)
+                    bres(s,
+                         cx + pl->pts[k].x * h / 6,
+                         base - pl->pts[k].y * h / 6,
+                         cx + pl->pts[k + 1].x * h / 6,
+                         base - pl->pts[k + 1].y * h / 6, col);
+            }
+        cx += px;                                /* monospace advance */
+    }
+}
+
 static const char *FONTS[] = {
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/TTF/DejaVuSans.ttf", NULL};
@@ -240,7 +366,12 @@ static void frame(SDL_Surface *s, int x, int y, int w, int h, SDL_Color c)
 static void text(SDL_Surface *s, TTF_Font *f, int x, int y,
                  const char *t, SDL_Color c)
 {
-    if (!t || !*t || !f) return;
+    if (!t || !*t) return;
+    if (THF_OK) {                     /* OUR strokes, any size, no atlas */
+        stroke_text(s, x, y, f ? 10 : 8, t, c);
+        return;
+    }
+    if (!f) return;
     SDL_Surface *ts = TTF_RenderUTF8_Blended(f, t, c);
     if (!ts) return;
     SDL_Rect d = {x, y, ts->w, ts->h};
@@ -292,7 +423,7 @@ static void render(SDL_Surface *s, TTF_Font *f, TTF_Font *fs)
                 fill(s, sx, y, 20, w->h > 26 ? 26 : (int)w->h,
                      on ? ACCENT : PANEL2);
                 frame(s, sx, y, 20, w->h > 26 ? 26 : (int)w->h, LINE);
-                text(s, fs, sx + 6, y + 4, segs[k], on ? INK : DIM);
+                text(s, NULL, sx + 6, y + 4, segs[k], on ? INK : DIM);
             }
             text(s, f, x + 72, y + 2, w->label,
                  cube_colour(w->colour, INK));
@@ -340,7 +471,16 @@ int main(int argc, char **argv)
     const char *tuw = argv[1];
     char sig[512];
     snprintf(sig, sizeof sig, "%s.sig", tuw);
+    const char *bmp = (argc >= 4 && !strcmp(argv[2], "--bmp"))
+                      ? argv[3] : NULL;
     if (!load_stream(tuw)) { fprintf(stderr, "no widgets\n"); return 2; }
+    {   /* the house font travels beside the binary or in the repo */
+        const char *cand[] = {"ternui/house_font.thf",
+                              "/tmp/house_font.thf", "house_font.thf",
+                              NULL};
+        for (int i = 0; cand[i] && !THF_OK; i++) load_thf(cand[i]);
+    }
+    if (bmp) SDL_setenv("SDL_VIDEODRIVER", "dummy", 1);
     if (SDL_Init(SDL_INIT_VIDEO) || TTF_Init()) {
         fprintf(stderr, "init: %s\n", SDL_GetError()); return 1;
     }
@@ -350,6 +490,15 @@ int main(int argc, char **argv)
         fs = TTF_OpenFont(FONTS[i], 12);
     }
     int W, H; bounds(&W, &H);
+    if (bmp) {
+        SDL_Surface *bs = SDL_CreateRGBSurfaceWithFormat(
+            0, W, H, 32, SDL_PIXELFORMAT_ARGB8888);
+        render(bs, THF_OK ? (TTF_Font *)1 : NULL, NULL); /* size token */
+        SDL_SaveBMP(bs, bmp);
+        printf("TernUI native (house strokes%s): %d widgets -> %s\n",
+               THF_OK ? "" : " UNAVAILABLE", NN, bmp);
+        return 0;
+    }
     SDL_Window *win = SDL_CreateWindow(
         "TernUI - live on the word stream",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
