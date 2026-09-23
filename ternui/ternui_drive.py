@@ -179,8 +179,11 @@ def run_queries(widgets):
             for n in names:
                 if not n.lower().endswith((".ttf", ".otf")):
                     rowfonts.append(""); continue
-                dst = os.path.join(cache,
-                                   os.path.basename(n) + ".thf")
+                base = os.path.basename(n) + ".thf"
+                seed = os.path.join(_HERE, "fontcache", base)
+                if os.path.exists(seed):         # repo seed: no fontTools
+                    rowfonts.append(seed); done += 1; continue
+                dst = os.path.join(cache, base)
                 if not os.path.exists(dst):
                     r = subprocess.run(
                         [os.path.expanduser(
