@@ -219,38 +219,43 @@ def literal_to_digit_words(value: int) -> list:
     if value < 0:
         words.append(make_glyph(ORDINAL['-']))
     for ch in str(abs(value)):
-        words.append(make_glyph(ORDINAL[ch]))     # digit chars, ordinals 28..37
+        words.append(make_glyph(ORDINAL[ch]))     # digit chars, ordinals 1..10
     return _assign_positions(words)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Provisional ordinal table (house DEFAULT font/map convention — NOT a decree;
-# revisable under open item O4. Data, not architecture.)
+# THE SEED ORDINAL TABLE — RULED by the captain, 23-09-2026 (glyph-plane
+# closure, carried as CF5-Submit-2026-09-23_200400). Digits-first, null
+# preserved at 0; the NEGATIVE half of the ordinal (−1..−121) is RESERVED
+# UNUSED — a free second class if ever needed, no trits carved. The table
+# grows in the positive band above 38 (a SEED, not stone). 120 = unknown.
 # ═══════════════════════════════════════════════════════════════════════════
 
 ORDINAL = {}
-for _i, _ch in enumerate('ABCDEFGHIJKLMNOPQRSTUVWXYZ', start=1):
-    ORDINAL[_ch] = _i                     # A=1 .. Z=26 (case via the case trit)
-ORDINAL[' '] = 27
 for _d in range(10):
-    ORDINAL[str(_d)] = 28 + _d            # digit characters '0'..'9' = 28..37
-ORDINAL.update({                          # negative band: punctuation & marks
-    '.': -1, ',': -2, ':': -3, ';': -4, '!': -5, '?': -6,
-    '⸮': -7,                              # answer mark
-    # -8 idea mark (⸮?) — founding resident by captain's history
-    '~': -9,                              # placeholder mark — founding resident
-    '-': -10, "'": -11, '"': -12, '(': -13, ')': -14,
+    ORDINAL[str(_d)] = 1 + _d             # digits '0'..'9' = 1..10 (value = Y−1)
+for _i, _ch in enumerate('ABCDEFGHIJKLMNOPQRSTUVWXYZ', start=11):
+    ORDINAL[_ch] = _i                     # letters = 11..36 (a=11; case via T11)
+ORDINAL[' '] = 37                         # space — its own nonzero ordinal
+# Punctuation — the growing positive seed (38+), per the ruling
+ORDINAL.update({
+    '.': 38, ',': 39, ':': 40, ';': 41, '!': 42, '?': 43,
+    '⸮': 44,                              # answer mark
+    # 45 idea mark (⸮?) — founding resident by captain's history
+    '~': 46,                              # placeholder mark — founding resident
+    '-': 47, "'": 48, '"': 49, '(': 50, ')': 51,
 })
-# Technical / MATH band (38+). House-DEFAULT convention, revisable under O4 —
-# this is CF5's char-map charter's raw material, not a decree. So much of the
+# Technical / MATH band continues the positive seed. So much of the
 # curriculum is arithmetic that a well-appointed operator set earns its keep.
 ORDINAL.update({
-    '+': 38, '−': 39, '×': 40, '÷': 41, '=': 42, '≠': 43, '<': 44, '>': 45,
-    '≤': 46, '≥': 47, '±': 48, '/': 49, '\\': 50, '*': 51, '^': 52, '%': 53,
-    '·': 54, '_': 55, '|': 56, '#': 57, '[': 58, ']': 59, '{': 60, '}': 61,
-    '→': 62, 'π': 63, '√': 64, 'Δ': 65, '°': 66, '∑': 67, '∫': 68, '∞': 69,
+    '+': 52, '−': 53, '×': 54, '÷': 55, '=': 56, '≠': 57, '<': 58, '>': 59,
+    '≤': 60, '≥': 61, '±': 62, '/': 63, '\\': 64, '*': 65, '^': 66, '%': 67,
+    '·': 68, '_': 69, '|': 70, '#': 71, '[': 72, ']': 73, '{': 74, '}': 75,
+    '→': 76, 'π': 77, '√': 78, 'Δ': 79, '°': 80, '∑': 81, '∫': 82, '∞': 83,
 })
-ANSWER_ORD, IDEA_ORD, PLACEHOLDER_ORD = -7, -8, -9
+ANSWER_ORD, IDEA_ORD, PLACEHOLDER_ORD = 44, 45, 46
+UNKNOWN_ORD = 120     # ruled: the ceiling marker for an unknown character
+                      # (projection still renders ~ per R1 screen-truth)
 
 # reverse: ordinal → representative character (upper-case for letters)
 _FROM_ORDINAL = {}

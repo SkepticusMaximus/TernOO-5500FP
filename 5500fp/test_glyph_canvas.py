@@ -34,8 +34,9 @@ class TestResolve(unittest.TestCase):
         self.assertTrue(len(strokes) >= 1)
 
     def test_missing_glyph_falls_to_placeholder(self):
-        # ordinal 80 is a valid text word but unassigned in the house font
-        _o, _c, strokes, ph = GC.resolve_glyph(G.make_glyph(80))
+        # ordinal 100 is a valid text word but unassigned in the house
+        # font (seed-growth space under the 23-09 ruled table)
+        _o, _c, strokes, ph = GC.resolve_glyph(G.make_glyph(100))
         self.assertTrue(ph)
         self.assertEqual(strokes, S.strokes_for_ordinal(G.PLACEHOLDER_ORD))
 
