@@ -36,6 +36,7 @@ typedef struct {
     int tsize;                        /* MPROP size=, 0 = default */
     int rowh;                         /* listbox row height (render) */
     char itemfonts[4096];             /* MPROP itemfonts=, \n per row */
+    char facefont[520];               /* MPROP facefont=, this widget's face */
 } Node;
 static Node NS[MAXN];
 static int NN = 0;
@@ -190,6 +191,16 @@ static void decode_stream(void)
                             strlen(nd->itemfonts + 10) + 1);
                     last_attr = nd->itemfonts;
                     last_cap = sizeof nd->itemfonts;
+                    i += n; continue;
+                }
+                if (!strncmp(kv0, "facefont=", 9)) {
+                    nd->facefont[0] = 0;
+                    decode_strings(ops, (int)n, nd->facefont,
+                                   sizeof nd->facefont);
+                    memmove(nd->facefont, nd->facefont + 9,
+                            strlen(nd->facefont + 9) + 1);
+                    last_attr = nd->facefont;
+                    last_cap = sizeof nd->facefont;
                     i += n; continue;
                 }
             }
@@ -607,8 +618,13 @@ static void render(SDL_Surface *s, TTF_Font *f, TTF_Font *fs)
                  : "\xE2\x98\x90", on ? ACC_HI : DIM);
             text(s, f, x + 22, y + 2, w->label, on ? ACC_HI : INK);
         } else if (is_kind(w, "gui_label")) {
-            wtext(s, x + 4, y + 2, w->tsize ? w->tsize : 14,
-                  w->label, cube_colour(w->colour, INK));
+            int lp = w->tsize ? w->tsize : 14;
+            if (w->facefont[0])              /* preview: this label's face */
+                draw_in_font(s, x + 4, y + 2, lp, w->label,
+                             cube_colour(w->colour, INK), w->facefont);
+            else
+                wtext(s, x + 4, y + 2, lp, w->label,
+                      cube_colour(w->colour, INK));
         } else if (is_kind(w, "gui_listbox") && w->items[0]) {
             int px = w->tsize ? w->tsize : 14;
             int rh = px * 2 + 4;
