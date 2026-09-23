@@ -242,6 +242,8 @@ static int THF_OK = 0;
 static int THF_V1 = 0;                /* outline font: FILL the glyphs */
 static char THF_PATH[512];
 static time_t THF_MTIME = 0;
+static char FONT_WATCH[520];          /* <stream>.font.thf — click swaps */
+static time_t FONT_WATCH_MTIME = 0;
 
 static void thf_reset(void)
 {
@@ -613,6 +615,7 @@ int main(int argc, char **argv)
     const char *tuw = argv[1];
     char sig[512];
     snprintf(sig, sizeof sig, "%s.sig", tuw);
+    snprintf(FONT_WATCH, sizeof FONT_WATCH, "%s.font.thf", tuw);
     const char *bmp = (argc >= 4 && !strcmp(argv[2], "--bmp"))
                       ? argv[3] : NULL;
     if (!load_stream(tuw)) { fprintf(stderr, "no widgets\n"); return 2; }
@@ -623,6 +626,11 @@ int main(int argc, char **argv)
                               NULL};
         for (int i = 0; i < 4 && !THF_OK; i++)
             if (cand[i]) load_thf(cand[i]);
+        struct stat fw;
+        if (stat(FONT_WATCH, &fw) == 0) {        /* a click already chose */
+            thf_reset(); load_thf(FONT_WATCH);
+            FONT_WATCH_MTIME = fw.st_mtime;
+        }
     }
     if (bmp) SDL_setenv("SDL_VIDEODRIVER", "dummy", 1);
     if (SDL_Init(SDL_INIT_VIDEO) || TTF_Init()) {
@@ -693,14 +701,13 @@ int main(int argc, char **argv)
         char tud[520];
         snprintf(tud, sizeof tud, "%s.tud", tuw);
         if (apply_tud(tud)) dirty = 1;           /* Q3 deltas */
-        {   struct stat fst;                     /* live font swap */
-            if (THF_PATH[0] && stat(THF_PATH, &fst) == 0
-                && fst.st_mtime != THF_MTIME) {
-                char keep[512];
-                snprintf(keep, sizeof keep, "%s", THF_PATH);
-                SDL_Delay(50);
+        {   struct stat fst;                     /* click -> font swap */
+            if (stat(FONT_WATCH, &fst) == 0
+                && fst.st_mtime != FONT_WATCH_MTIME) {
+                FONT_WATCH_MTIME = fst.st_mtime;
+                SDL_Delay(60);                   /* let the write finish */
                 thf_reset();
-                load_thf(keep);
+                load_thf(FONT_WATCH);
                 dirty = 1;
             }
         }
