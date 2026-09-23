@@ -52,7 +52,7 @@
    "properties": [
     {
      "name": "query",
-     "value": "dir:/usr/share/fonts;pat:*.ttf;recurse"
+     "value": "dir:/usr/share/fonts/truetype;pat:*.ttf;recurse"
     },
     {
      "name": "size",

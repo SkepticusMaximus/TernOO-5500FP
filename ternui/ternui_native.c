@@ -35,6 +35,7 @@ typedef struct {
     int sel;                          /* selected row, -1 none */
     int tsize;                        /* MPROP size=, 0 = default */
     int rowh;                         /* listbox row height (render) */
+    char itemfonts[4096];             /* MPROP itemfonts=, \n per row */
 } Node;
 static Node NS[MAXN];
 static int NN = 0;
@@ -168,9 +169,9 @@ static void decode_stream(void)
         } else if (family == 1 && NN > 0) {
             Node *nd = &NS[NN - 1];
             char *dst = NULL; size_t cap = 0;
-            if (op == 11) {                      /* peek for items= */
+            if (op == 11) {                      /* peek long MPROPs */
                 char kv0[80] = "";
-                decode_strings(ops, (int)n > 3 ? 3 : (int)n,
+                decode_strings(ops, (int)n > 4 ? 4 : (int)n,
                                kv0, sizeof kv0);
                 if (!strncmp(kv0, "items=", 6)) {
                     nd->items[0] = 0;
@@ -178,10 +179,18 @@ static void decode_stream(void)
                                    sizeof nd->items);
                     memmove(nd->items, nd->items + 6,
                             strlen(nd->items + 6) + 1);
-                    last_attr = nd->items;
-                    last_cap = sizeof nd->items;
-                    i += n;
-                    continue;
+                    last_attr = nd->items; last_cap = sizeof nd->items;
+                    i += n; continue;
+                }
+                if (!strncmp(kv0, "itemfonts=", 10)) {
+                    nd->itemfonts[0] = 0;
+                    decode_strings(ops, (int)n, nd->itemfonts,
+                                   sizeof nd->itemfonts);
+                    memmove(nd->itemfonts, nd->itemfonts + 10,
+                            strlen(nd->itemfonts + 10) + 1);
+                    last_attr = nd->itemfonts;
+                    last_cap = sizeof nd->itemfonts;
+                    i += n; continue;
                 }
             }
             if (op == 0)      { dst = nd->kind;  cap = sizeof nd->kind; }
@@ -245,30 +254,25 @@ static time_t THF_MTIME = 0;
 static char FONT_WATCH[520];          /* <stream>.font.thf — click swaps */
 static time_t FONT_WATCH_MTIME = 0;
 
-static void thf_reset(void)
+static void free_map(SGlyph *m[3][244])
 {
     for (int cs = 0; cs < 3; cs++)
-        for (int o = 0; o < 244; o++) {
-            free(THF[cs][o]);
-            THF[cs][o] = NULL;
-        }
-    THF_OK = 0;
+        for (int o = 0; o < 244; o++) { free(m[cs][o]); m[cs][o] = NULL; }
 }
 
-static void load_thf(const char *path)
+static void thf_reset(void) { free_map(THF); THF_OK = 0; }
+
+/* fill an arbitrary font map from a THF file; *v1out = outline flag. */
+static int load_thf_into(SGlyph *M[3][244], int *v1out, const char *path)
 {
     FILE *f = fopen(path, "rb");
-    if (!f) return;
+    if (!f) return 0;
     char magic[4];
     if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "THF", 3)) {
-        fclose(f); return;
+        fclose(f); return 0;
     }
     int v1 = magic[3] == '1';
-    THF_V1 = v1;
-    {   struct stat fst;
-        if (stat(path, &fst) == 0) THF_MTIME = fst.st_mtime;
-        snprintf(THF_PATH, sizeof THF_PATH, "%s", path);
-    }
+    if (v1out) *v1out = v1;
     for (;;) {
         int32_t o; signed char cs = 0;
         unsigned char adv = 24, np;
@@ -295,10 +299,19 @@ static void load_thf(const char *path)
             }
         }
         if (o >= -121 && o <= 121 && cs >= -1 && cs <= 1)
-            THF[cs + 1][o + 121] = g;
+            M[cs + 1][o + 121] = g;
         else free(g);
     }
     fclose(f);
+    return 1;
+}
+
+static void load_thf(const char *path)
+{
+    if (!load_thf_into(THF, &THF_V1, path)) return;
+    struct stat fst;
+    if (stat(path, &fst) == 0) THF_MTIME = fst.st_mtime;
+    snprintf(THF_PATH, sizeof THF_PATH, "%s", path);
     THF_OK = 1;
 }
 
@@ -398,8 +411,9 @@ static void fill_glyph(SDL_Surface *s, SGlyph *g, int cx, int base,
 
 /* draw text with the house strokes. px = cap height in pixels;
  * (x, y) = top-left of the line box (box spans cap..descender). */
-static void stroke_text(SDL_Surface *s, int x, int y, int px,
-                        const char *txt, SDL_Color c)
+static void stroke_text_m(SDL_Surface *s, int x, int y, int px,
+                          const char *txt, SDL_Color c,
+                          SGlyph *M[3][244], int v1)
 {
     Uint32 col = SDL_MapRGB(s->format, c.r, c.g, c.b);
     int cx = x;
@@ -412,18 +426,18 @@ static void stroke_text(SDL_Surface *s, int x, int y, int px,
         int small = 0;
         int o = char_ordinal(ch, &small);
         int cs = (ch >= 'A' && ch <= 'Z') ? 2 : small ? 0 : 1;
-        SGlyph *g = THF[cs][o + 121];            /* exact case first */
+        SGlyph *g = M[cs][o + 121];              /* exact case first */
         int h = px;
         if (!g) {                                /* fall through cases */
-            g = THF[1][o + 121];
-            if (!g && cs != 2) g = THF[2][o + 121];
+            g = M[1][o + 121];
+            if (!g && cs != 2) g = M[2][o + 121];
             if (g && small) h = px * 2 / 3;      /* small-caps interim */
-            if (!g) { g = THF[1][46 + 121];
-                      if (!g) g = THF[2][46 + 121]; }
+            if (!g) { g = M[1][46 + 121];
+                      if (!g) g = M[2][46 + 121]; }
         }
         if (o == 37 || !g) { cx += px * 2 / 3; continue; }
         int base = y + px;                       /* baseline row */
-        if (THF_V1) {
+        if (v1) {
             fill_glyph(s, g, cx, base, h, col);  /* SOLID letterforms */
         } else
             for (int pi = 0; pi < g->npolys; pi++) {
@@ -442,6 +456,33 @@ static void stroke_text(SDL_Surface *s, int x, int y, int px,
             }
         cx += g->advance4 * px / 24 + px / 4;    /* proportional + air */
     }
+}
+
+static void stroke_text(SDL_Surface *s, int x, int y, int px,
+                        const char *txt, SDL_Color c)
+{
+    stroke_text_m(s, x, y, px, txt, c, THF, THF_V1);
+}
+
+/* per-row scratch font: load a THF path (cached by path), draw one
+ * string in it — the GNOME-Fonts showpiece, each row in its own face. */
+static SGlyph *ROWMAP[3][244];
+static int ROW_V1 = 0;
+static char ROW_PATH[520];
+
+static void draw_in_font(SDL_Surface *s, int x, int y, int px,
+                         const char *txt, SDL_Color c, const char *path)
+{
+    if (!path || !*path) { stroke_text(s, x, y, px, txt, c); return; }
+    if (strcmp(path, ROW_PATH)) {                /* swap scratch font */
+        free_map(ROWMAP);
+        ROW_V1 = 0;
+        if (load_thf_into(ROWMAP, &ROW_V1, path))
+            snprintf(ROW_PATH, sizeof ROW_PATH, "%s", path);
+        else { ROW_PATH[0] = 0;
+               stroke_text(s, x, y, px, txt, c); return; }
+    }
+    stroke_text_m(s, x, y, px, txt, c, ROWMAP, ROW_V1);
 }
 
 static const char *FONTS[] = {
@@ -574,15 +615,24 @@ static void render(SDL_Surface *s, TTF_Font *f, TTF_Font *fs)
             w->rowh = rh;
             fill(s, x, y, w->w, w->h, BG);
             frame(s, x, y, w->w, w->h, LINE);
-            char tmp[768];
+            char tmp[768], fnt[4096];
             snprintf(tmp, sizeof tmp, "%s", w->items);
+            snprintf(fnt, sizeof fnt, "%s", w->itemfonts);
+            char *fsave = NULL;
+            char *fl = w->itemfonts[0] ? strtok_r(fnt, "\n", &fsave)
+                                       : NULL;
             int row = 0;
             for (char *ln = strtok(tmp, "\n"); ln && row * rh + rh
                  < w->h; ln = strtok(NULL, "\n"), row++) {
                 if (row == w->sel)
                     fill(s, x + 2, y + 4 + row * rh, w->w - 4, rh - 2,
                          ACCENT);
-                wtext(s, x + 10, y + 6 + row * rh, px, ln, INK);
+                if (fl && *fl)                   /* row in its OWN face */
+                    draw_in_font(s, x + 10, y + 6 + row * rh, px, ln,
+                                 INK, fl);
+                else
+                    wtext(s, x + 10, y + 6 + row * rh, px, ln, INK);
+                if (fl) fl = strtok_r(NULL, "\n", &fsave);
             }
         } else if (is_container(w)) {
             fill(s, x, y, w->w, w->h,
