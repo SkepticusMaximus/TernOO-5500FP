@@ -239,6 +239,19 @@ typedef struct { unsigned char npts; SPt pts[60]; } SPoly;
 typedef struct { unsigned char npolys, advance4; SPoly polys[12]; } SGlyph;
 static SGlyph *THF[3][244];           /* [case+1][ordinal+121] */
 static int THF_OK = 0;
+static int THF_V1 = 0;                /* outline font: FILL the glyphs */
+static char THF_PATH[512];
+static time_t THF_MTIME = 0;
+
+static void thf_reset(void)
+{
+    for (int cs = 0; cs < 3; cs++)
+        for (int o = 0; o < 244; o++) {
+            free(THF[cs][o]);
+            THF[cs][o] = NULL;
+        }
+    THF_OK = 0;
+}
 
 static void load_thf(const char *path)
 {
@@ -249,6 +262,11 @@ static void load_thf(const char *path)
         fclose(f); return;
     }
     int v1 = magic[3] == '1';
+    THF_V1 = v1;
+    {   struct stat fst;
+        if (stat(path, &fst) == 0) THF_MTIME = fst.st_mtime;
+        snprintf(THF_PATH, sizeof THF_PATH, "%s", path);
+    }
     for (;;) {
         int32_t o; signed char cs = 0;
         unsigned char adv = 24, np;
@@ -330,6 +348,52 @@ static void bres(SDL_Surface *s, int x0, int y0, int x1, int y1,
     }
 }
 
+static void fill_glyph(SDL_Surface *s, SGlyph *g, int cx, int base,
+                       int h, Uint32 col)
+{
+    float ex[128][2]; int ne = 0;
+    float miny = 1e9f, maxy = -1e9f;
+    for (int pi = 0; pi < g->npolys; pi++) {
+        SPoly *pl = &g->polys[pi];
+        for (int k = 0; k + 1 < pl->npts && ne < 126; k++) {
+            float x1 = cx + pl->pts[k].x * (float)h / 24.0f;
+            float y1 = base - pl->pts[k].y * (float)h / 24.0f;
+            float x2 = cx + pl->pts[k + 1].x * (float)h / 24.0f;
+            float y2 = base - pl->pts[k + 1].y * (float)h / 24.0f;
+            if (y1 == y2) continue;
+            ex[ne][0] = x1; ex[ne][1] = y1; ne++;
+            ex[ne][0] = x2; ex[ne][1] = y2; ne++;
+            if (y1 < miny) miny = y1; if (y2 < miny) miny = y2;
+            if (y1 > maxy) maxy = y1; if (y2 > maxy) maxy = y2;
+        }
+    }
+    for (int y = (int)miny; y <= (int)maxy + 1; y++) {
+        float yc = y + 0.5f, xs[64]; int nx = 0;
+        for (int e = 0; e + 1 < ne; e += 2) {
+            float y1 = ex[e][1], y2 = ex[e + 1][1];
+            if ((yc >= y1 && yc < y2) || (yc >= y2 && yc < y1)) {
+                float t = (yc - y1) / (y2 - y1);
+                if (nx < 64)
+                    xs[nx++] = ex[e][0] + t * (ex[e + 1][0] - ex[e][0]);
+            }
+        }
+        for (int a = 0; a < nx; a++)            /* insertion sort */
+            for (int b = a + 1; b < nx; b++)
+                if (xs[b] < xs[a]) { float t2 = xs[a]; xs[a] = xs[b];
+                                     xs[b] = t2; }
+        for (int p = 0; p + 1 < nx; p += 2) {
+            int xa = (int)xs[p], xb = (int)(xs[p + 1] + 0.5f);
+            if (xb > xa && y >= 0 && y < s->h) {
+                if (xa < 0) xa = 0;
+                if (xb > s->w) xb = s->w;
+                Uint32 *rowp = (Uint32 *)((Uint8 *)s->pixels
+                                          + y * s->pitch);
+                for (int xx = xa; xx < xb; xx++) rowp[xx] = col;
+            }
+        }
+    }
+}
+
 /* draw text with the house strokes. px = cap height in pixels;
  * (x, y) = top-left of the line box (box spans cap..descender). */
 static void stroke_text(SDL_Surface *s, int x, int y, int px,
@@ -357,21 +421,24 @@ static void stroke_text(SDL_Surface *s, int x, int y, int px,
         }
         if (o == 37 || !g) { cx += px * 2 / 3; continue; }
         int base = y + px;                       /* baseline row */
-        for (int pi = 0; pi < g->npolys; pi++) {
-            SPoly *pl = &g->polys[pi];
-            if (pl->npts == 1) {
-                putpx2(s, cx + pl->pts[0].x * h / 24,
-                       base - pl->pts[0].y * h / 24, col);
-                continue;
+        if (THF_V1) {
+            fill_glyph(s, g, cx, base, h, col);  /* SOLID letterforms */
+        } else
+            for (int pi = 0; pi < g->npolys; pi++) {
+                SPoly *pl = &g->polys[pi];
+                if (pl->npts == 1) {
+                    putpx2(s, cx + pl->pts[0].x * h / 24,
+                           base - pl->pts[0].y * h / 24, col);
+                    continue;
+                }
+                for (int k = 0; k + 1 < pl->npts; k++)
+                    bres(s,
+                         cx + pl->pts[k].x * h / 24,
+                         base - pl->pts[k].y * h / 24,
+                         cx + pl->pts[k + 1].x * h / 24,
+                         base - pl->pts[k + 1].y * h / 24, col);
             }
-            for (int k = 0; k + 1 < pl->npts; k++)
-                bres(s,
-                     cx + pl->pts[k].x * h / 24,
-                     base - pl->pts[k].y * h / 24,
-                     cx + pl->pts[k + 1].x * h / 24,
-                     base - pl->pts[k + 1].y * h / 24, col);
-        }
-        cx += g->advance4 * px / 24 + px / 8;    /* proportional */
+        cx += g->advance4 * px / 24 + px / 4;    /* proportional + air */
     }
 }
 
@@ -513,8 +580,7 @@ static void render(SDL_Surface *s, TTF_Font *f, TTF_Font *fs)
                 if (row == w->sel)
                     fill(s, x + 2, y + 4 + row * rh, w->w - 4, rh - 2,
                          ACCENT);
-                wtext(s, x + 10, y + 6 + row * rh, px, ln,
-                      row == w->sel ? INK : DIM);
+                wtext(s, x + 10, y + 6 + row * rh, px, ln, INK);
             }
         } else if (is_container(w)) {
             fill(s, x, y, w->w, w->h,
@@ -627,6 +693,17 @@ int main(int argc, char **argv)
         char tud[520];
         snprintf(tud, sizeof tud, "%s.tud", tuw);
         if (apply_tud(tud)) dirty = 1;           /* Q3 deltas */
+        {   struct stat fst;                     /* live font swap */
+            if (THF_PATH[0] && stat(THF_PATH, &fst) == 0
+                && fst.st_mtime != THF_MTIME) {
+                char keep[512];
+                snprintf(keep, sizeof keep, "%s", THF_PATH);
+                SDL_Delay(50);
+                thf_reset();
+                load_thf(keep);
+                dirty = 1;
+            }
+        }
         if (stat(tuw, &st) == 0 && st.st_mtime != last_m) {
             last_m = st.st_mtime;      /* baseline rewritten */
             SDL_Delay(30);

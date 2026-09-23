@@ -174,16 +174,18 @@ def on_select(w, row):
     path = paths[row]
     _setprop(w, "selected", os.path.basename(path))
     print(f"  {w.get('name')}.selected = {os.path.basename(path)}")
-    if path.endswith((".ttf", ".otf")):          # font browser inherits
+    if path.endswith((".ttf", ".otf", ".TTF", ".OTF")):
         import subprocess
         r = subprocess.run(
             [os.path.expanduser("~/.venvs/p2pcp/bin/python"),
              os.path.join(_HERE, "ternui_font_ttf.py"),
              path, "/tmp/preview.thf"],
             capture_output=True, text=True)
-        print("  " + (r.stdout.strip() or r.stderr.strip().splitlines()[-1]))
-        print("  preview: TERNUI_FONT=/tmp/preview.thf "
-              "/tmp/ternui_native <stream.tuw>")
+        out2 = r.stdout.strip() or (r.stderr.strip().splitlines() or
+                                     ["convert failed"])[-1]
+        print("  " + out2)
+        print("  -> the native window re-renders ITSELF in this font "
+              "(run it with TERNUI_FONT=/tmp/preview.thf)")
 
 
 def main():
