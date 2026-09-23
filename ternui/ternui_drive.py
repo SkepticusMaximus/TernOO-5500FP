@@ -170,7 +170,7 @@ def run_queries(widgets):
         # items so the renderer draws every name in the font it names.
         fonts = [n for n in names
                  if n.lower().endswith((".ttf", ".otf"))]
-        if fonts:
+        if fonts and str(_prop(w, "ownface") or "") == "1":
             import subprocess
             cache = os.environ.get("TERNUI_FONTCACHE") or \
                 os.path.expanduser("~/.ternui/fontcache")
@@ -246,9 +246,13 @@ def do_browse(w, widgets):
     filt = str(_prop(w, "filter") or "*.ttf *.otf")
     into = str(_prop(w, "into") or "")
     start = str(_prop(w, "start") or os.path.expanduser("~"))
+    on_select._widgets = widgets
     picked = host_dialog(action, filt, start)
     if not picked:
         print("  browse cancelled")
+        return True
+    if action.startswith("pickfile"):
+        preview_font(picked, widgets)
         return True
     target = None
     for x in widgets.values():
@@ -266,26 +270,48 @@ def do_browse(w, widgets):
     return True
 
 
+PANGRAM = "Aa Bb Cc  0123456789  the quick brown fox"
+
+
+def font_to_thf(path):
+    """TTF/OTF -> a THF the renderer draws. Repo seed cache first (no
+    fontTools needed), else a temp convert."""
+    import subprocess
+    base = os.path.basename(path) + ".thf"
+    seed = os.path.join(_HERE, "fontcache", base)
+    if os.path.exists(seed):
+        return seed
+    dst = os.path.join("/tmp", "ternui_preview_" + base)
+    r = subprocess.run(
+        [os.path.expanduser("~/.venvs/p2pcp/bin/python"),
+         os.path.join(_HERE, "ternui_font_ttf.py"), path, dst],
+        capture_output=True, text=True)
+    return dst if (r.returncode == 0 and os.path.exists(dst)) else None
+
+
+def preview_font(path, widgets):
+    """The chosen font as a big legible preview in ITS OWN face; the
+    rest of the UI stays house font."""
+    thf = font_to_thf(path)
+    for x in widgets.values():
+        if x.get("name") == "preview":
+            x["label"] = os.path.basename(path) + "  " + PANGRAM
+            if thf:
+                _setprop(x, "facefont", thf)
+        if x.get("name") == "picked":
+            x["label"] = "picked: " + os.path.basename(path)
+    print(f"  preview -> {os.path.basename(path)}"
+          + ("" if thf else "  (convert failed; house font)"))
+
+
 def on_select(w, row):
     paths = w.get("_paths") or []
     if not 0 <= row < len(paths):
         return
     path = paths[row]
     _setprop(w, "selected", os.path.basename(path))
-    print(f"  {w.get('name')}.selected = {os.path.basename(path)}")
-    if path.endswith((".ttf", ".otf", ".TTF", ".OTF")):
-        import subprocess
-        watch = _OUT["path"] + ".font.thf"
-        r = subprocess.run(
-            [os.path.expanduser("~/.venvs/p2pcp/bin/python"),
-             os.path.join(_HERE, "ternui_font_ttf.py"),
-             path, watch],
-            capture_output=True, text=True)
-        out2 = r.stdout.strip() or (r.stderr.strip().splitlines() or
-                                     ["convert failed"])[-1]
-        print("  " + out2)
-        print("  -> the native window is re-rendering ITSELF in this "
-              "font right now (no restart, no env var)")
+    if path.lower().endswith((".ttf", ".otf")):
+        preview_font(path, getattr(on_select, "_widgets", {}))
 
 
 def main():
@@ -297,6 +323,7 @@ def main():
     edges = doc.get("flow_edges", doc.get("edges", []))
     widgets = load_widgets(design)               # bridge shape, labels capped
     by_name = {w.get("name"): w for w in widgets.values()}
+    on_select._widgets = widgets
     run_queries(widgets)
     n = emit(widgets, out)
     print(f"stream up: {len(widgets)} widgets, {n} words -> {out}")

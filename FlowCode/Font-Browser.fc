@@ -9,83 +9,21 @@
    "kind": "gui_window",
    "x": 20,
    "y": 10,
-   "w": 860,
+   "w": 900,
    "h": 640,
    "label": "Font Browser",
    "name": "win",
    "parent_id": null,
    "layout_mode": null,
    "properties": [],
-   "signal_ids": {},
-   "w_": null
+   "signal_ids": {}
   },
   {
    "id": 1,
-   "kind": "gui_label",
-   "x": -70,
-   "y": -280,
-   "w": 420,
-   "h": 30,
-   "label": "Browse a folder - each font shows in its own face",
-   "name": "hint",
-   "parent_id": 0,
-   "layout_mode": null,
-   "properties": [
-    {
-     "name": "size",
-     "value": "16"
-    }
-   ],
-   "signal_ids": {}
-  },
-  {
-   "id": 2,
-   "kind": "gui_listbox",
-   "x": -30,
-   "y": -10,
-   "w": 720,
-   "h": 470,
-   "label": "fonts",
-   "name": "fonts",
-   "parent_id": 0,
-   "layout_mode": null,
-   "properties": [
-    {
-     "name": "query",
-     "value": "dir:/usr/share/fonts/truetype;pat:*.ttf;recurse"
-    },
-    {
-     "name": "size",
-     "value": "15"
-    }
-   ],
-   "signal_ids": {}
-  },
-  {
-   "id": 3,
-   "kind": "gui_label",
-   "x": -120,
-   "y": 275,
-   "w": 560,
-   "h": 32,
-   "label": "picked: (none)",
-   "name": "picked",
-   "parent_id": 0,
-   "layout_mode": null,
-   "properties": [
-    {
-     "name": "size",
-     "value": "17"
-    }
-   ],
-   "signal_ids": {}
-  },
-  {
-   "id": 4,
    "kind": "gui_button",
-   "x": -300,
-   "y": -280,
-   "w": 150,
+   "x": -340,
+   "y": -253,
+   "w": 160,
    "h": 34,
    "label": "Browse folder...",
    "name": "browse",
@@ -110,6 +48,113 @@
     }
    ],
    "signal_ids": {}
+  },
+  {
+   "id": 2,
+   "kind": "gui_button",
+   "x": -160,
+   "y": -253,
+   "w": 170,
+   "h": 34,
+   "label": "Pick font file...",
+   "name": "pick",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [
+    {
+     "name": "action",
+     "value": "pickfile"
+    },
+    {
+     "name": "filter",
+     "value": "*.ttf *.otf"
+    },
+    {
+     "name": "start",
+     "value": "/usr/share/fonts"
+    }
+   ],
+   "signal_ids": {}
+  },
+  {
+   "id": 3,
+   "kind": "gui_label",
+   "x": 90,
+   "y": -252,
+   "w": 300,
+   "h": 24,
+   "label": "select a font to preview it",
+   "name": "hint",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [
+    {
+     "name": "size",
+     "value": "14"
+    }
+   ],
+   "signal_ids": {}
+  },
+  {
+   "id": 4,
+   "kind": "gui_listbox",
+   "x": -230,
+   "y": 15,
+   "w": 380,
+   "h": 470,
+   "label": "fonts",
+   "name": "fonts",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [
+    {
+     "name": "query",
+     "value": "dir:/usr/share/fonts/truetype;pat:*.ttf;recurse"
+    },
+    {
+     "name": "size",
+     "value": "15"
+    }
+   ],
+   "signal_ids": {}
+  },
+  {
+   "id": 5,
+   "kind": "gui_label",
+   "x": 200,
+   "y": -197,
+   "w": 420,
+   "h": 26,
+   "label": "picked: (none)",
+   "name": "picked",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [
+    {
+     "name": "size",
+     "value": "16"
+    }
+   ],
+   "signal_ids": {}
+  },
+  {
+   "id": 6,
+   "kind": "gui_label",
+   "x": 200,
+   "y": -50,
+   "w": 420,
+   "h": 200,
+   "label": "(pick a font to see it here)",
+   "name": "preview",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [
+    {
+     "name": "size",
+     "value": "30"
+    }
+   ],
+   "signal_ids": {}
   }
  ],
  "edges": [],
@@ -119,8 +164,8 @@
    "kind": "flow_terminator",
    "x": 60,
    "y": 40,
-   "w": 140,
-   "h": 46,
+   "w": 130,
+   "h": 44,
    "label": "BROWSE",
    "name": "entry",
    "properties": [
@@ -132,40 +177,12 @@
   },
   {
    "id": 2,
-   "kind": "flow_io",
-   "x": 60,
-   "y": 120,
-   "w": 200,
-   "h": 44,
-   "label": "picked font",
-   "name": "pick",
-   "properties": [
-    {
-     "name": "direction",
-     "value": "out"
-    },
-    {
-     "name": "channel",
-     "value": "widget"
-    },
-    {
-     "name": "address",
-     "value": "picked"
-    },
-    {
-     "name": "expression",
-     "value": "fonts.selected"
-    }
-   ]
-  },
-  {
-   "id": 3,
    "kind": "flow_terminator",
    "x": 60,
-   "y": 200,
-   "w": 140,
-   "h": 46,
-   "label": "done",
+   "y": 130,
+   "w": 130,
+   "h": 44,
+   "label": "ready",
    "name": "done",
    "properties": []
   }
@@ -174,17 +191,6 @@
   {
    "src": 1,
    "dst": 2,
-   "privilege": 0,
-   "call_style": 0,
-   "return_type": 1,
-   "seg_idx": 0,
-   "offset": 0,
-   "waypoints": [],
-   "condition": ""
-  },
-  {
-   "src": 2,
-   "dst": 3,
    "privilege": 0,
    "call_style": 0,
    "return_type": 1,
@@ -204,7 +210,9 @@
   1,
   2,
   3,
-  4
+  4,
+  5,
+  6
  ],
  "groups": {},
  "flow_variables": [],
