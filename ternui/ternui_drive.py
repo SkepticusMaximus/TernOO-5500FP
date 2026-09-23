@@ -165,6 +165,33 @@ def run_queries(widgets):
             os.path.basename(n) for n in names))
         w["_paths"] = names
         print(f"  query {w.get('name')}: {len(names)} item(s)")
+        # showpiece: each font row rendered IN ITS OWN FACE. Pre-convert
+        # the listed fonts to a THF cache; itemfonts rides parallel to
+        # items so the renderer draws every name in the font it names.
+        fonts = [n for n in names
+                 if n.lower().endswith((".ttf", ".otf"))]
+        if fonts:
+            import subprocess
+            cache = os.environ.get("TERNUI_FONTCACHE") or \
+                os.path.expanduser("~/.ternui/fontcache")
+            os.makedirs(cache, exist_ok=True)
+            rowfonts, done = [], 0
+            for n in names:
+                if not n.lower().endswith((".ttf", ".otf")):
+                    rowfonts.append(""); continue
+                dst = os.path.join(cache,
+                                   os.path.basename(n) + ".thf")
+                if not os.path.exists(dst):
+                    r = subprocess.run(
+                        [os.path.expanduser(
+                            "~/.venvs/p2pcp/bin/python"),
+                         os.path.join(_HERE, "ternui_font_ttf.py"),
+                         n, dst], capture_output=True, text=True)
+                    if r.returncode != 0 or not os.path.exists(dst):
+                        rowfonts.append(""); continue
+                rowfonts.append(dst); done += 1
+            _setprop(w, "itemfonts", "\n".join(rowfonts))
+            print(f"  converted {done} font(s) to own-face THF cache")
 
 
 _OUT = {"path": "/tmp/stream.tuw"}
