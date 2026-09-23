@@ -42,6 +42,9 @@ build_model_scope                 = _wl.build_model_scope
 build_model_port                  = _wl.build_model_port
 build_model_edge                  = _wl.build_model_edge
 build_model_flag                  = _wl.build_model_flag
+build_model_prop                  = _wl.build_model_prop
+build_model_bind                  = _wl.build_model_bind
+build_model_value                 = _wl.build_model_value
 build_model_note                  = _wl.build_model_note
 OPF_PIGART                        = _wl.OPF_PIGART
 OP_RENDER                         = _wl.OP_RENDER
@@ -145,6 +148,16 @@ def ghost_to_meccano(widgets: dict, edges: list,
             words.extend(build_model_scope(_pname))
         if _full_label != _label:
             words.extend(build_model_flag('label', _full_label))
+        # Q1: properties + name-keyed signal bindings ride the stream
+        for _pr in (w.get('properties') or []):
+            if _pr.get('name'):
+                words.extend(build_model_prop(_pr['name'],
+                                              _pr.get('value', '')))
+        for _sig, _tgt in (w.get('bindings') or {}).items():
+            words.extend(build_model_bind(str(_sig), str(_tgt)))
+        # Q2: a tri-state control's value is a DATA word in its span
+        if 'value' in w and str(w.get('kind', '')).startswith('gui_tri'):
+            words.extend(build_model_value(int(w['value'])))
         word_map[wid] = (_start, len(words))
         sym_centres[wid] = (tl_x + mw // 2, tl_y + mh)  # south midpoint
 
@@ -461,6 +474,31 @@ def meccano_to_ghost(words) -> tuple:
             notes.append({'index': len(nodes) + len(cmds),
                           'text': _label_from_words(ops)})
             _last_model = ('note', notes[-1]); continue
+        if mn == 'MPROP' and nodes:
+            _finalize_pending()
+            kv = _label_from_words(ops)
+            k, _, vv = kv.partition('=')
+            try:
+                vv = int(vv)
+            except ValueError:
+                pass
+            nodes[-1].setdefault('properties', []).append(
+                {'name': k, 'value': vv})
+            _last_model = ('prop', nodes[-1]['properties'][-1])
+            continue
+        if mn == 'MBIND' and nodes:
+            _finalize_pending()
+            kv = _label_from_words(ops)
+            k, _, vv = kv.partition('=')
+            nodes[-1].setdefault('bindings', {})[k] = vv
+            _last_model = None
+            continue
+        if mn == 'MVALUE' and nodes and len(ops) >= 1:
+            _finalize_pending()
+            d = _wl.decode_word(ops[0])
+            nodes[-1]['value'] = int(d.get('value', 0))
+            _last_model = None
+            continue
         if mn == 'MFLAG' and nodes:
             _finalize_pending()
             kv = _label_from_words(ops)
@@ -512,6 +550,8 @@ def meccano_to_ghost(words) -> tuple:
             elif tag == 'flag':
                 _nd, _k = ref
                 _nd[_k] += extra
+            elif tag == 'prop':
+                ref['value'] = str(ref['value']) + extra
             elif tag == 'cell':  cells[ref]['value'] += extra
             elif tag == 'note':  ref['text'] += extra
             elif tag == 'cmd':   ref['kind'] += extra

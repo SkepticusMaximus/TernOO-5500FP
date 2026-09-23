@@ -126,6 +126,8 @@ int main(int argc, char **argv)
                 } else {
                     last_attr = NULL;        /* never a stale target */
                 }
+            } else if (op != 7) {
+                last_attr = NULL;            /* unknown op: no bleed */
             }
             if (dst) {
                 decode_strings(ops, (int)n, dst, cap);

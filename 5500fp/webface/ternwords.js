@@ -78,8 +78,23 @@ function twDecode(words, GRID = 10) {
           nd.label = txt.slice(6);
           last = [nd, "label"];
         } else last = null;
+      } else if (op === 11) {                   /* MPROP name=value */
+        const eq = txt.indexOf("=");
+        (nd.properties = nd.properties || []).push(
+          {name: txt.slice(0, eq), value: txt.slice(eq + 1)});
+        last = null;
+      } else if (op === 12) {                   /* MBIND signal=target */
+        const eq = txt.indexOf("=");
+        (nd.bindings = nd.bindings || {})[txt.slice(0, eq)] =
+          txt.slice(eq + 1);
+        last = null;
+      } else if (op === 13 && n >= 1) {         /* MVALUE: DATA word */
+        nd.value = twField(twTrits(words[i + 1]), 0, 18);
+        last = null;
       } else if (op === 7 && last) {            /* MMORE continues */
         last[0][last[1]] += txt;
+      } else if (op !== 7) {
+        last = null;                            /* unknown op: no bleed */
       }
     }
     i += n;

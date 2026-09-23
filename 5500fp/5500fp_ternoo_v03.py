@@ -692,6 +692,8 @@ OPCODE_MNEMONICS: dict = {
     (OPF_MODEL, 6): 'MSCOPE', (OPF_MODEL, 7): 'MMORE',
     (OPF_MODEL, 8): 'MEDGE',  (OPF_MODEL, 9): 'MFLAG',
     (OPF_MODEL, 10): 'MNOTE',
+    (OPF_MODEL, 11): 'MPROP',  (OPF_MODEL, 12): 'MBIND',
+    (OPF_MODEL, 13): 'MVALUE',
 }
 
 # ── Reverse lookup: mnemonic string → (family, op_index) ─────────────────────

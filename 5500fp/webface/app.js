@@ -672,13 +672,14 @@ const GUI_CONTAINERS = ["gui_window", "gui_dialog", "gui_box",
   "gui_frame", "gui_notebook", "gui_toolbar", "gui_statusbar",
   "gui_menubar", "gui_headerbar"];
 const GUI_WIDGETS = ["gui_button", "gui_label", "gui_entry",
-  "gui_checkbox"];
+  "gui_checkbox", "gui_tritoggle", "gui_trifilter", "gui_tritstrip"];
 const GUI_SIZE = {gui_window: [220, 170], gui_dialog: [200, 160],
   gui_box: [200, 120], gui_frame: [200, 120], gui_notebook: [200, 120],
   gui_toolbar: [240, 34], gui_statusbar: [240, 26],
   gui_menubar: [240, 26], gui_headerbar: [240, 44],
   gui_button: [96, 34], gui_label: [110, 26], gui_entry: [150, 30],
-  gui_checkbox: [120, 26]};
+  gui_checkbox: [120, 26], gui_tritoggle: [96, 30],
+  gui_trifilter: [120, 30], gui_tritstrip: [260, 34]};
 let GUI = {name: null,
            raw: {ternoo_version: "0.3", source_type: "ternoo_design",
                  word_stream: [], symbols: [], edges: [],
@@ -777,12 +778,15 @@ function buildGuiPalettes() {
     gui_frame: "⬚", gui_notebook: "⧉", gui_toolbar: "▬",
     gui_statusbar: "▁", gui_menubar: "☰", gui_headerbar: "▀",
     gui_button: "▮", gui_label: "𝖠", gui_entry: "⌨",
-    gui_checkbox: "☑"};
+    gui_checkbox: "☑", gui_tritoggle: "±", gui_trifilter: "⫷",
+    gui_tritstrip: "▤"};
   const mk = (kinds, host) => {
     const box = $(host); box.innerHTML = "";
     for (const k of kinds) {
       const b = document.createElement("button");
       b.className = "tool";
+        GLYPH.gui_tritoggle = "\u00b1"; GLYPH.gui_trifilter = "\u2af7";
+      GLYPH.gui_tritstrip = "\u25a4";
       b.innerHTML = `<span class="glyph">${GLYPH[k] || "▢"}</span> ` +
         k.replace("gui_", "");
       b.onclick = () => guiPlace(k);
@@ -831,6 +835,11 @@ function guiRender() {
     if (["gui_window", "gui_dialog", "gui_frame", "gui_notebook",
          "gui_box"].includes(w.kind)) {
       d.innerHTML = `<div class="ttl">${esc(w.label)}</div>`;
+    } else if (w.kind === "gui_tritoggle" || w.kind === "gui_trifilter") {
+      const v = w.value ?? 0;
+      d.innerHTML = ["\u2212", "0", "+"].map((g, k) =>
+        `<span class="tseg${k - 1 === v ? " on" : ""}">${g}</span>`)
+        .join("") + "&nbsp;" + esc(w.label);
     } else if (w.kind === "gui_radio" || w.kind === "gui_checkbox") {
       d.innerHTML = `<span class="mark">` +
         (w.kind === "gui_radio" ? "◉" : "☐") + `</span>&nbsp;` +

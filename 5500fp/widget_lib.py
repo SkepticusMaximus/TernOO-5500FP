@@ -513,6 +513,10 @@ def decode_label_words(string_operands: List[int]) -> str:
 
 MOP_KIND, MOP_NAME, MOP_CELL, MOP_CMDW, MOP_PARM, MOP_MORE = 0, 1, 2, 3, 4, 7
 MOP_PORT, MOP_SCOPE, MOP_EDGE, MOP_FLAG, MOP_NOTE = 5, 6, 8, 9, 10
+# Q1+Q2 ruled (CF5 23-09): properties + signal bindings get DEDICATED
+# ops (siblings of MPARM, targets by NAME); a control's VALUE is a DATA
+# word in its span, never walk-only.
+MOP_PROP, MOP_BIND, MOP_VALUE = 11, 12, 13
 MPORT_ENTRY, MPORT_EXIT = 0, 1
 MODEL_SEP = '\x1f'   # field separator inside MODEL strings (base-128 safe)
 
@@ -577,6 +581,27 @@ def build_model_edge(kind: str, src: str, dst: str, extra: str = '') -> List[int
     dst_param)."""
     parts = [kind, src, dst] + ([extra] if extra else [])
     return _model_string_ops(MOP_EDGE, MODEL_SEP.join(parts))
+
+
+def build_model_prop(name: str, value) -> List[int]:
+    """MPROP — one property word ("name=value") on the preceding node.
+    The ruled Q1 vehicle: a dedicated op, sibling of MPARM — properties
+    stop travelling JSON-side."""
+    return _model_string_ops(MOP_PROP, f"{name}={value}")
+
+
+def build_model_bind(signal_name: str, target_name: str) -> List[int]:
+    """MBIND — one signal binding ("signal=target") on the preceding
+    node.  Targets by NAME, consistent with MSCOPE (Q1 ruling)."""
+    return _model_string_ops(MOP_BIND, f"{signal_name}={target_name}")
+
+
+def build_model_value(value: int) -> List[int]:
+    """MVALUE — the control's VALUE as a DATA word in its span (Q2
+    ruling: never walk-only; the stream stays self-describing and the
+    value can travel as a Q3 delta)."""
+    return [build_opcode_word(OPF_MODEL, arity=1, op_index=MOP_VALUE),
+            build_int_word(int(value))]
 
 
 def build_model_flag(key: str, value) -> List[int]:
