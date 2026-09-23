@@ -167,6 +167,9 @@ def run_queries(widgets):
         print(f"  query {w.get('name')}: {len(names)} item(s)")
 
 
+_OUT = {"path": "/tmp/stream.tuw"}
+
+
 def on_select(w, row):
     paths = w.get("_paths") or []
     if not 0 <= row < len(paths):
@@ -176,20 +179,22 @@ def on_select(w, row):
     print(f"  {w.get('name')}.selected = {os.path.basename(path)}")
     if path.endswith((".ttf", ".otf", ".TTF", ".OTF")):
         import subprocess
+        watch = _OUT["path"] + ".font.thf"
         r = subprocess.run(
             [os.path.expanduser("~/.venvs/p2pcp/bin/python"),
              os.path.join(_HERE, "ternui_font_ttf.py"),
-             path, "/tmp/preview.thf"],
+             path, watch],
             capture_output=True, text=True)
         out2 = r.stdout.strip() or (r.stderr.strip().splitlines() or
                                      ["convert failed"])[-1]
         print("  " + out2)
-        print("  -> the native window re-renders ITSELF in this font "
-              "(run it with TERNUI_FONT=/tmp/preview.thf)")
+        print("  -> the native window is re-rendering ITSELF in this "
+              "font right now (no restart, no env var)")
 
 
 def main():
     design, out = sys.argv[1], sys.argv[2]
+    _OUT["path"] = out
     sig = out + ".sig"
     doc = json.load(open(design, encoding="utf-8"))
     syms = {s["id"]: s for s in doc.get("flow_symbols", [])}
