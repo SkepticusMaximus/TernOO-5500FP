@@ -29,6 +29,8 @@
 typedef struct {
     char kind[64], name[64], scope[64], label[64];
     long x, y, w, h;
+    int value;                        /* MVALUE (tri-state), default 0 */
+    long colour;                      /* MPROP colour=, ternary cube */
 } Node;
 static Node NS[MAXN];
 static int NN = 0;
@@ -166,17 +168,23 @@ static void decode_stream(void)
             else if (op == 1) { dst = nd->name;  cap = sizeof nd->name; }
             else if (op == 6) { dst = nd->scope; cap = sizeof nd->scope; }
             else if (op == 7) { dst = last_attr; cap = last_cap; }
-            else if (op == 9) {                  /* MFLAG key=value */
+            else if (op == 9 || op == 11) {      /* MFLAG / MPROP k=v */
                 char kv[160] = "";
                 decode_strings(ops, (int)n, kv, sizeof kv);
-                if (!strncmp(kv, "label=", 6)) {
+                if (op == 9 && !strncmp(kv, "label=", 6)) {
                     snprintf(nd->label, sizeof nd->label, "%.63s",
                              kv + 6);
                     last_attr = nd->label;   /* MMORE continues the flag */
                     last_cap = sizeof nd->label;
                 } else {
+                    if (op == 11 && !strncmp(kv, "colour=", 7))
+                        nd->colour = atol(kv + 7);
                     last_attr = NULL;        /* never a stale target */
                 }
+            } else if (op == 13 && n >= 1) {     /* MVALUE: DATA word */
+                int tv[24]; trits(ops[0], tv);
+                nd->value = (int)fieldv(tv, 0, 18);
+                last_attr = NULL;
             } else if (op != 7) {
                 last_attr = NULL;            /* unknown op: no bleed */
             }
@@ -240,6 +248,17 @@ static void text(SDL_Surface *s, TTF_Font *f, int x, int y,
     SDL_FreeSurface(ts);
 }
 
+static SDL_Color cube_colour(long cube, SDL_Color dflt)
+{
+    if (cube == 0) return dflt;              /* 0 = inherit ink */
+    int t[24]; trits(cube, t);
+    int r = t[4] + 3 * t[5], g = t[2] + 3 * t[3], b = t[0] + 3 * t[1];
+    SDL_Color c = { (Uint8)((r + 4) * 255 / 8),
+                    (Uint8)((g + 4) * 255 / 8),
+                    (Uint8)((b + 4) * 255 / 8), 255 };
+    return c;
+}
+
 static int OX, OY;                    /* stream-origin offset */
 
 static void render(SDL_Surface *s, TTF_Font *f, TTF_Font *fs)
@@ -264,6 +283,24 @@ static void render(SDL_Surface *s, TTF_Font *f, TTF_Font *fs)
             fill(s, x, y, w->w, w->h, BG);
             frame(s, x, y, w->w, w->h, LINE);
             text(s, f, x + 8, y + (w->h - 18) / 2, w->label, DIM);
+        } else if (is_kind(w, "gui_tritoggle") ||
+                   is_kind(w, "gui_trifilter")) {
+            const char *segs[3] = {"\xE2\x88\x92", "0", "+"};
+            for (int k = 0; k < 3; k++) {
+                int sx = x + k * 22;
+                int on = (w->value == k - 1);
+                fill(s, sx, y, 20, w->h > 26 ? 26 : (int)w->h,
+                     on ? ACCENT : PANEL2);
+                frame(s, sx, y, 20, w->h > 26 ? 26 : (int)w->h, LINE);
+                text(s, fs, sx + 6, y + 4, segs[k], on ? INK : DIM);
+            }
+            text(s, f, x + 72, y + 2, w->label,
+                 cube_colour(w->colour, INK));
+        } else if (is_kind(w, "gui_tritstrip")) {
+            fill(s, x, y, w->w, w->h, PANEL2);
+            frame(s, x, y, w->w, w->h, LINE);
+            text(s, f, x + 8, y + (w->h - 18) / 2, w->label,
+                 cube_colour(w->colour, INK));
         } else if (is_kind(w, "gui_radio") || is_kind(w, "gui_checkbox")) {
             int on = SELECTED[0] && !strcmp(w->name, SELECTED);
             text(s, f, x, y + 2, is_kind(w, "gui_radio")
@@ -271,7 +308,8 @@ static void render(SDL_Surface *s, TTF_Font *f, TTF_Font *fs)
                  : "\xE2\x98\x90", on ? ACC_HI : DIM);
             text(s, f, x + 22, y + 2, w->label, on ? ACC_HI : INK);
         } else if (is_kind(w, "gui_label")) {
-            text(s, f, x + 4, y + 2, w->label, INK);
+            text(s, f, x + 4, y + 2, w->label,
+                 cube_colour(w->colour, INK));
         } else if (is_container(w)) {
             fill(s, x, y, w->w, w->h, PANEL2);
             frame(s, x, y, w->w, w->h, LINE);
