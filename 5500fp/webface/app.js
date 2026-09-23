@@ -367,6 +367,14 @@ async function openDesign(name) {
   const raw = await api("/api/design/" + encodeURIComponent(name));
   if (raw.error) { toast(raw.error); return; }
   DOC = {name, raw};
+  // THE STREAM IS THE INTERFACE (CF5 23-09): fetch the canonical
+  // words; what the GUI tab SHOWS derives from decoding them — any
+  // private-model drift loses to the stream.
+  let wordWidgets = null;
+  try {
+    const ws = await api("/api/words/" + encodeURIComponent(name));
+    if (ws.words && ws.words.length) wordWidgets = twDecode(ws.words);
+  } catch (e) { wordWidgets = null; }
   const syms = new Map();
   for (const s of raw.flow_symbols || []) syms.set(s.id, s);
   FLOW = {name, raw, syms,
@@ -380,8 +388,33 @@ async function openDesign(name) {
     }
   }
   relToAbs();
-  GUI.zorder = (raw.sequence || []).map(Number)
-    .filter(i => GUI.widgets.has(i));
+  if (wordWidgets && wordWidgets.length) {
+    // marry the decoded stream onto the edit model BY NAME: geometry,
+    // label, kind and containment come from the WORDS (properties /
+    // signal_ids stay JSON-side until the vocabulary carries them —
+    // flagged); stream order becomes the stacking sequence.
+    const byName = new Map(
+      [...GUI.widgets.values()].map(w => [w.name, w]));
+    const order = [];
+    for (const d of wordWidgets) {
+      const w = byName.get(d.name);
+      if (!w) continue;
+      w.kind = d.kind || w.kind;
+      w.label = d.label;
+      w.x = d.x; w.y = d.y; w.w = d.w; w.h = d.h;
+      const par = byName.get(d.scope);
+      w.parent_id = par ? par.id : null;
+      order.push(w.id);
+    }
+    if (order.length === GUI.widgets.size) GUI.zorder = order;
+    else GUI.zorder = (raw.sequence || []).map(Number)
+      .filter(i => GUI.widgets.has(i));
+    $("guititle").dataset.source = "words";
+  } else {
+    GUI.zorder = (raw.sequence || []).map(Number)
+      .filter(i => GUI.widgets.has(i));
+    $("guititle").dataset.source = "json";
+  }
   zorderSeq();
   GUI.next = maxid + 1; GUI.name = name; GUI.raw = raw;
   GSEL = null; guiRender(); guiProps(); guiScrollHome();
@@ -822,7 +855,9 @@ function guiRender() {
   }
   c.style.width = maxx + "px"; c.style.height = maxy + "px";
   $("guititle").textContent = (GUI.name || "new design") +
-    ` — ${GUI.widgets.size} widget(s)`;
+    ` — ${GUI.widgets.size} widget(s)` +
+    ($("guititle").dataset.source === "words"
+      ? " · rendered from the word stream" : "");
 }
 window.addEventListener("mousemove", e => {
   if (!gdrag) return;

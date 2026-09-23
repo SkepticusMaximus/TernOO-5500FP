@@ -65,6 +65,18 @@ try:
 except Exception:                               # noqa: BLE001
     FCMD = None
 
+_TUIDIR = os.path.join(os.path.dirname(_HERE), "ternui")
+sys.path.insert(0, _TUIDIR)
+try:
+    from ternui_words import load_widgets as _tuw_load_widgets
+    _gmspec = _ilu.spec_from_file_location(
+        "ghost_meccano", os.path.join(_HERE, "ghost_meccano.py"))
+    GMEC = _ilu.module_from_spec(_gmspec)
+    _gmspec.loader.exec_module(GMEC)
+except Exception:                               # noqa: BLE001
+    _tuw_load_widgets = None
+    GMEC = None
+
 HOST, PORT = "127.0.0.1", 8610
 APP_PATH = os.path.join(_HERE, "webface", "app.html")
 FLOWDIR = os.path.join(os.path.dirname(_HERE), "FlowCode")
@@ -228,6 +240,10 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, f.read(), "text/html")
             except FileNotFoundError:
                 self._send(500, {"error": "webface/app.html missing"})
+        elif self.path == "/ternwords.js":
+            with open(os.path.join(os.path.dirname(APP_PATH),
+                                   "ternwords.js"), "rb") as f:
+                self._send(200, f.read(), "text/javascript")
         elif self.path == "/app.js":
             try:
                 with open(os.path.join(os.path.dirname(APP_PATH),
@@ -262,6 +278,25 @@ class Handler(BaseHTTPRequestHandler):
                 return
             with open(p, encoding="utf-8") as f:
                 self._send(200, f.read().encode(), "application/json")
+        elif self.path.startswith("/api/words/"):
+            # THE STREAM IS THE INTERFACE (CF5 23-09): the design's GUI
+            # family as canonical words — the client decodes and renders
+            # FROM these, keeping no display model of its own.
+            from urllib.parse import unquote as _uq
+            name = os.path.basename(_uq(self.path[len("/api/words/"):]))
+            p = os.path.join(FLOWDIR, name)
+            if GMEC is None or _tuw_load_widgets is None \
+                    or not os.path.isfile(p):
+                self._send(404, {"error": "no words for that name"})
+                return
+            try:
+                ws = _tuw_load_widgets(p)
+                prog = GMEC.ghost_to_meccano(ws, [], name=name)
+                self._send(200, {"words": list(prog.words),
+                                 "count": len(prog.words)})
+            except Exception as e:              # noqa: BLE001
+                self._send(200, {"error": f"stream build failed: {e}"})
+            return
         elif self.path == "/api/commands":
             specs = []
             if FCMD is not None:
