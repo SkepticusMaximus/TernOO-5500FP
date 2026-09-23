@@ -115,6 +115,18 @@ int main(int argc, char **argv)
             else if (op == 1) { dst = nd->name;  cap = sizeof nd->name; }
             else if (op == 6) { dst = nd->scope; cap = sizeof nd->scope; }
             else if (op == 7) { dst = last_attr; cap = last_cap; }
+            else if (op == 9) {                  /* MFLAG key=value */
+                char kv[160] = "";
+                decode_strings(ops, (int)n, kv, sizeof kv);
+                if (!strncmp(kv, "label=", 6)) {
+                    snprintf(nd->label, sizeof nd->label, "%.63s",
+                             kv + 6);
+                    last_attr = nd->label;   /* MMORE continues the flag */
+                    last_cap = sizeof nd->label;
+                } else {
+                    last_attr = NULL;        /* never a stale target */
+                }
+            }
             if (dst) {
                 decode_strings(ops, (int)n, dst, cap);
                 if (op != 7) { last_attr = dst; last_cap = cap; }
