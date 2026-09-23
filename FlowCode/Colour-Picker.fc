@@ -1,0 +1,486 @@
+{
+ "ternoo_version": "0.3",
+ "source_type": "ternoo_design",
+ "source_file": "Colour-Picker.fc",
+ "word_stream": [],
+ "symbols": [
+  {
+   "id": 0,
+   "kind": "gui_window",
+   "x": 60,
+   "y": 40,
+   "w": 560,
+   "h": 380,
+   "label": "Colour Picker",
+   "name": "win",
+   "parent_id": null,
+   "layout_mode": null,
+   "properties": [],
+   "signal_ids": {}
+  },
+  {
+   "id": 1,
+   "kind": "gui_label",
+   "x": -230,
+   "y": -117,
+   "w": 40,
+   "h": 26,
+   "label": "R",
+   "name": "lab_r",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [],
+   "signal_ids": {}
+  },
+  {
+   "id": 2,
+   "kind": "gui_tritoggle",
+   "x": -142,
+   "y": -115,
+   "w": 96,
+   "h": 30,
+   "label": "hi",
+   "name": "rh",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [],
+   "signal_ids": {},
+   "value": 0
+  },
+  {
+   "id": 3,
+   "kind": "gui_tritoggle",
+   "x": -22,
+   "y": -115,
+   "w": 96,
+   "h": 30,
+   "label": "lo",
+   "name": "rl",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [],
+   "signal_ids": {},
+   "value": 0
+  },
+  {
+   "id": 4,
+   "kind": "gui_label",
+   "x": -230,
+   "y": -47,
+   "w": 40,
+   "h": 26,
+   "label": "G",
+   "name": "lab_g",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [],
+   "signal_ids": {}
+  },
+  {
+   "id": 5,
+   "kind": "gui_tritoggle",
+   "x": -142,
+   "y": -45,
+   "w": 96,
+   "h": 30,
+   "label": "hi",
+   "name": "gh",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [],
+   "signal_ids": {},
+   "value": 0
+  },
+  {
+   "id": 6,
+   "kind": "gui_tritoggle",
+   "x": -22,
+   "y": -45,
+   "w": 96,
+   "h": 30,
+   "label": "lo",
+   "name": "gl",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [],
+   "signal_ids": {},
+   "value": 0
+  },
+  {
+   "id": 7,
+   "kind": "gui_label",
+   "x": -230,
+   "y": 23,
+   "w": 40,
+   "h": 26,
+   "label": "B",
+   "name": "lab_b",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [],
+   "signal_ids": {}
+  },
+  {
+   "id": 8,
+   "kind": "gui_tritoggle",
+   "x": -142,
+   "y": 25,
+   "w": 96,
+   "h": 30,
+   "label": "hi",
+   "name": "bh",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [],
+   "signal_ids": {},
+   "value": 0
+  },
+  {
+   "id": 9,
+   "kind": "gui_tritoggle",
+   "x": -22,
+   "y": 25,
+   "w": 96,
+   "h": 30,
+   "label": "lo",
+   "name": "bl",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [],
+   "signal_ids": {},
+   "value": 0
+  },
+  {
+   "id": 10,
+   "kind": "gui_label",
+   "x": 150,
+   "y": -110,
+   "w": 180,
+   "h": 40,
+   "label": "cube: 0",
+   "name": "swatch",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [
+    {
+     "name": "colour",
+     "value": "0"
+    }
+   ],
+   "signal_ids": {}
+  },
+  {
+   "id": 11,
+   "kind": "gui_label",
+   "x": 150,
+   "y": -47,
+   "w": 180,
+   "h": 26,
+   "label": "click toggles, then Run",
+   "name": "hint",
+   "parent_id": 0,
+   "layout_mode": null,
+   "properties": [],
+   "signal_ids": {}
+  }
+ ],
+ "edges": [],
+ "flow_symbols": [
+  {
+   "id": 1,
+   "kind": "flow_terminator",
+   "x": 60,
+   "y": 40,
+   "w": 150,
+   "h": 50,
+   "label": "PICK",
+   "name": "entry",
+   "properties": [
+    {
+     "name": "is_entry",
+     "value": true
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "kind": "flow_io",
+   "x": 60,
+   "y": 200,
+   "w": 210,
+   "h": 44,
+   "label": "paint swatch",
+   "name": "paint",
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "widget"
+    },
+    {
+     "name": "address",
+     "value": "swatch.colour"
+    },
+    {
+     "name": "var",
+     "value": "cube"
+    }
+   ]
+  },
+  {
+   "id": 4,
+   "kind": "flow_io",
+   "x": 60,
+   "y": 280,
+   "w": 210,
+   "h": 44,
+   "label": "show number",
+   "name": "shownum",
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "widget"
+    },
+    {
+     "name": "address",
+     "value": "swatch"
+    },
+    {
+     "name": "var",
+     "value": "cube"
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "kind": "flow_terminator",
+   "x": 60,
+   "y": 360,
+   "w": 150,
+   "h": 50,
+   "label": "picked",
+   "name": "done",
+   "properties": []
+  },
+  {
+   "id": 10,
+   "kind": "flow_io",
+   "x": 60,
+   "y": 100,
+   "w": 210,
+   "h": 44,
+   "label": "r channel",
+   "name": "c_r",
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "r"
+    },
+    {
+     "name": "var",
+     "value": "3*rh.value+rl.value"
+    }
+   ]
+  },
+  {
+   "id": 11,
+   "kind": "flow_io",
+   "x": 60,
+   "y": 130,
+   "w": 210,
+   "h": 44,
+   "label": "g channel",
+   "name": "c_g",
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "g"
+    },
+    {
+     "name": "var",
+     "value": "3*gh.value+gl.value"
+    }
+   ]
+  },
+  {
+   "id": 12,
+   "kind": "flow_io",
+   "x": 60,
+   "y": 160,
+   "w": 210,
+   "h": 44,
+   "label": "b channel",
+   "name": "c_b",
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "b"
+    },
+    {
+     "name": "var",
+     "value": "3*bh.value+bl.value"
+    }
+   ]
+  },
+  {
+   "id": 13,
+   "kind": "flow_io",
+   "x": 60,
+   "y": 190,
+   "w": 210,
+   "h": 44,
+   "label": "cube",
+   "name": "c_cube",
+   "properties": [
+    {
+     "name": "direction",
+     "value": "out"
+    },
+    {
+     "name": "channel",
+     "value": "variable"
+    },
+    {
+     "name": "address",
+     "value": "cube"
+    },
+    {
+     "name": "var",
+     "value": "r*81+g*9+b"
+    }
+   ]
+  }
+ ],
+ "flow_edges": [
+  {
+   "src": 3,
+   "dst": 4,
+   "privilege": 0,
+   "call_style": 0,
+   "return_type": 1,
+   "seg_idx": 0,
+   "offset": 0,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 4,
+   "dst": 5,
+   "privilege": 0,
+   "call_style": 0,
+   "return_type": 1,
+   "seg_idx": 0,
+   "offset": 0,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 1,
+   "dst": 10,
+   "privilege": 0,
+   "call_style": 0,
+   "return_type": 1,
+   "seg_idx": 0,
+   "offset": 0,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 10,
+   "dst": 11,
+   "privilege": 0,
+   "call_style": 0,
+   "return_type": 1,
+   "seg_idx": 0,
+   "offset": 0,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 11,
+   "dst": 12,
+   "privilege": 0,
+   "call_style": 0,
+   "return_type": 1,
+   "seg_idx": 0,
+   "offset": 0,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 12,
+   "dst": 13,
+   "privilege": 0,
+   "call_style": 0,
+   "return_type": 1,
+   "seg_idx": 0,
+   "offset": 0,
+   "waypoints": [],
+   "condition": ""
+  },
+  {
+   "src": 13,
+   "dst": 3,
+   "privilege": 0,
+   "call_style": 0,
+   "return_type": 1,
+   "seg_idx": 0,
+   "offset": 0,
+   "waypoints": [],
+   "condition": ""
+  }
+ ],
+ "cmd_symbols": [],
+ "cmd_edges": [],
+ "cell_symbols": [],
+ "sheet_regions": [],
+ "free_cells": [],
+ "sequence": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11
+ ],
+ "groups": {},
+ "flow_variables": [],
+ "tgui_meta": {}
+}

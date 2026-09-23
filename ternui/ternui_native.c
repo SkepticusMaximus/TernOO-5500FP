@@ -511,6 +511,9 @@ int main(int argc, char **argv)
     }
     int W, H; bounds(&W, &H);
     if (bmp) {
+        char tud0[520];
+        snprintf(tud0, sizeof tud0, "%s.tud", tuw);
+        apply_tud(tud0);                 /* candy shows the LIVE state */
         SDL_Surface *bs = SDL_CreateRGBSurfaceWithFormat(
             0, W, H, 32, SDL_PIXELFORMAT_ARGB8888);
         render(bs, THF_OK ? (TTF_Font *)1 : NULL, NULL); /* size token */
