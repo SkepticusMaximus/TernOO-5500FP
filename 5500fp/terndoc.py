@@ -62,6 +62,49 @@ class UnicodeCodec:
         return s.encode("utf-8")
 
 
+class GlyphPlaneCodec:
+    """Codec #2: the ruled ternary glyph plane (captain's 23-09 closure,
+    carried as CF5-Submit-2026-09-23_200400). Text at the surface stays
+    python str — faces never notice — while normalization folds to the
+    house forms and canonical identity IS the glyph words: one 24-trit
+    word per character (ordinals from the ruled seed table, case in
+    T11), lines separated by the null word (ordinal 0 = no character).
+    Plugs the seam exactly as designed; no surface changes."""
+
+    name = "glyph-plane"
+
+    def __init__(self):
+        import importlib.util as _ilu
+        _p = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "ternoo_glyph.py")
+        _spec = _ilu.spec_from_file_location("ternoo_glyph", _p)
+        self._G = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(self._G)
+
+    def normalize(self, s: str) -> str:
+        s = s.replace("\r\n", "\n").replace("\r", "\n")
+        return self._G.normalize_for_house(s)
+
+    def units(self, s: str) -> int:
+        return len(s)
+
+    def slice(self, s: str, a: int, b: int) -> str:
+        return s[a:b]
+
+    def words(self, s: str):
+        for m in re.finditer(r"[A-Za-z][A-Za-z']*", s):
+            yield m.start(), m.end(), m.group(0)
+
+    def canonical_bytes(self, s: str) -> bytes:
+        out = bytearray()
+        for i, line in enumerate(s.split("\n")):
+            if i:
+                out += (0).to_bytes(8, "little", signed=True)  # null word
+            for w in self._G.to_house_words(line, record=False):
+                out += int(w).to_bytes(8, "little", signed=True)
+        return bytes(out)
+
+
 # ── spans and blocks ─────────────────────────────────────────────────────────
 STYLES = ("b", "i", "c")            # bold, italic, inline-code
 BLOCK_KINDS = ("p", "h1", "h2", "h3", "ul", "ol", "code")
