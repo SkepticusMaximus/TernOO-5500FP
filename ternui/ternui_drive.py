@@ -47,6 +47,33 @@ def emit(widgets, out):
     return len(words)
 
 
+_PRIMARY = {"--": (-1, -1), "-0": (-1, 0), "-+": (-1, 1),
+            "0-": (0, -1), "00": (0, 0), "0+": (0, 1),
+            "+-": (1, -1), "+0": (1, 0), "++": (1, 1)}
+
+
+def retune_a1(doc, radio_label):
+    """A radio names a primary; retune cell A1's word to it — same
+    payload, new top trits — so the walk decodes the chosen primary."""
+    glyphs = str(radio_label).translate(_ASCII).split()[0]
+    tt = _PRIMARY.get(glyphs)
+    if tt is None:
+        return
+    for c in doc.get("cell_symbols", []):
+        if c.get("row") == 0 and c.get("col") == 0:
+            try:
+                v = int(str(c.get("value", "0")))
+            except ValueError:
+                return
+            body = v % (3 ** 22)                 # strip T23,T22 (balanced)
+            if body > (3 ** 22 - 1) // 2:
+                body -= 3 ** 22
+            nv = tt[0] * 3 ** 23 + tt[1] * 3 ** 22 + body
+            c["value"] = str(nv)
+            print(f"  A1 retuned to primary {glyphs}: {nv}")
+            return
+
+
 def main():
     design, out = sys.argv[1], sys.argv[2]
     sig = out + ".sig"
@@ -69,6 +96,9 @@ def main():
             for ln in lines[seen:]:
                 name = ln.split("\t")[0].strip()
                 print(f"⚡ {name} clicked — walking the design")
+                w = by_name.get(name)
+                if w and w.get("kind") == "gui_radio":
+                    retune_a1(doc, w.get("label", ""))
             seen = len(lines)
             try:
                 rep = TW.WALKER.walk(syms, edges,
@@ -81,9 +111,7 @@ def main():
             painted = 0
             for ev in rep.get("events", []):
                 if ev[0] == "watch" and ev[1] in by_name:
-                    cap = 12 if by_name[ev[1]].get("layout_mode") \
-                        is not None else 15
-                    by_name[ev[1]]["label"] = str(ev[2])[:cap]
+                    by_name[ev[1]]["label"] = str(ev[2])
                     painted += 1
             emit(widgets, out)
             print(f"  walk complete: {rep['steps']} steps, {painted} "

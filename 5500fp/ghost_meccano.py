@@ -115,8 +115,11 @@ def ghost_to_meccano(widgets: dict, edges: list,
         mw   = max(1, ww // FC_GRID_TO_MECCANO)
         mh   = max(1, wh // FC_GRID_TO_MECCANO)
         _start = len(words)
-        _label = w.get('label', w.get('kind', ''))
+        _full_label = str(w.get('label', w.get('kind', '')))
         _layout_mode = w.get('layout_mode')   # Phase 6B: may be set on containers
+        # RNODE label arity ceiling (12 chars with layout word, 15 bare);
+        # the FULL text rides an MFLAG('label') so nothing is lost (23-09)
+        _label = _full_label[:12 if _layout_mode is not None else 15]
         if _layout_mode is not None:
             _layout_id = LAYOUT_MODE_MAP.get(_layout_mode, LAYOUT_ABSOLUTE)
             words.extend(
@@ -140,6 +143,8 @@ def ghost_to_meccano(widgets: dict, edges: list,
         if _pid is not None and _pid in widgets:
             _pname = widgets[_pid].get('name') or str(_pid)
             words.extend(build_model_scope(_pname))
+        if _full_label != _label:
+            words.extend(build_model_flag('label', _full_label))
         word_map[wid] = (_start, len(words))
         sym_centres[wid] = (tl_x + mw // 2, tl_y + mh)  # south midpoint
 
@@ -465,7 +470,10 @@ def meccano_to_ghost(words) -> tuple:
             except ValueError:
                 pass
             nodes[-1][k] = vv
-            _last_model = None; continue
+            # string flags may be MMORE-chunked (e.g. long labels, 23-09)
+            _last_model = (('flag', (nodes[-1], k))
+                           if isinstance(vv, str) else None)
+            continue
         if mn == 'MCELL' and len(ops) >= 2:
             _finalize_pending()
             col, row = _xy_from_map(ops[0])
@@ -501,6 +509,9 @@ def meccano_to_ghost(words) -> tuple:
             extra = _label_from_words(ops)
             if tag == 'nkind':   ref['kind'] += extra
             elif tag == 'nname': ref['name'] += extra
+            elif tag == 'flag':
+                _nd, _k = ref
+                _nd[_k] += extra
             elif tag == 'cell':  cells[ref]['value'] += extra
             elif tag == 'note':  ref['text'] += extra
             elif tag == 'cmd':   ref['kind'] += extra
