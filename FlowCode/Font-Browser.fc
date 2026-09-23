@@ -7,38 +7,44 @@
   {
    "id": 0,
    "kind": "gui_window",
-   "x": 30,
-   "y": 20,
-   "w": 680,
-   "h": 520,
+   "x": 20,
+   "y": 10,
+   "w": 860,
+   "h": 640,
    "label": "Font Browser",
    "name": "win",
    "parent_id": null,
    "layout_mode": null,
    "properties": [],
-   "signal_ids": {}
+   "signal_ids": {},
+   "w_": null
   },
   {
    "id": 1,
    "kind": "gui_label",
-   "x": -220,
-   "y": -225,
-   "w": 380,
-   "h": 24,
+   "x": -190,
+   "y": -280,
+   "w": 420,
+   "h": 30,
    "label": "click a font - it converts to THF",
    "name": "hint",
    "parent_id": 0,
    "layout_mode": null,
-   "properties": [],
+   "properties": [
+    {
+     "name": "size",
+     "value": "16"
+    }
+   ],
    "signal_ids": {}
   },
   {
    "id": 2,
    "kind": "gui_listbox",
-   "x": -60,
+   "x": -30,
    "y": -10,
-   "w": 540,
-   "h": 360,
+   "w": 720,
+   "h": 470,
    "label": "fonts",
    "name": "fonts",
    "parent_id": 0,
@@ -47,6 +53,10 @@
     {
      "name": "query",
      "value": "dir:/usr/share/fonts;pat:*.ttf;recurse"
+    },
+    {
+     "name": "size",
+     "value": "15"
     }
    ],
    "signal_ids": {}
@@ -54,15 +64,20 @@
   {
    "id": 3,
    "kind": "gui_label",
-   "x": -160,
-   "y": 215,
-   "w": 460,
-   "h": 26,
+   "x": -120,
+   "y": 275,
+   "w": 560,
+   "h": 32,
    "label": "picked: (none)",
    "name": "picked",
    "parent_id": 0,
    "layout_mode": null,
-   "properties": [],
+   "properties": [
+    {
+     "name": "size",
+     "value": "17"
+    }
+   ],
    "signal_ids": {}
   }
  ],

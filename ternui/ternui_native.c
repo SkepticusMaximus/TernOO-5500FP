@@ -33,6 +33,8 @@ typedef struct {
     long colour;                      /* MPROP colour=, ternary cube */
     char items[768];                  /* MPROP items= (\n-joined) */
     int sel;                          /* selected row, -1 none */
+    int tsize;                        /* MPROP size=, 0 = default */
+    int rowh;                         /* listbox row height (render) */
 } Node;
 static Node NS[MAXN];
 static int NN = 0;
@@ -199,6 +201,8 @@ static void decode_stream(void)
                         nd->colour = atol(kv + 7);
                     if (op == 11 && !strncmp(kv, "selected=", 9))
                         nd->sel = -2;            /* engine confirmed */
+                    if (op == 11 && !strncmp(kv, "size=", 5))
+                        nd->tsize = (int)atol(kv + 5);
                     last_attr = NULL;        /* never a stale target */
                 }
             } else if (op == 13 && n >= 1) {     /* MVALUE: DATA word */
@@ -428,6 +432,21 @@ static SDL_Color cube_colour(long cube, SDL_Color dflt)
     return c;
 }
 
+static TTF_Font *G_F = NULL;          /* ttf fallback handle */
+
+static void wtext(SDL_Surface *s, int x, int y, int px,
+                  const char *t, SDL_Color c)
+{
+    if (!t || !*t) return;
+    if (THF_OK) { stroke_text(s, x, y, px, t, c); return; }
+    if (!G_F) return;
+    SDL_Surface *ts = TTF_RenderUTF8_Blended(G_F, t, c);
+    if (!ts) return;
+    SDL_Rect d = {x, y, ts->w, ts->h};
+    SDL_BlitSurface(ts, NULL, s, &d);
+    SDL_FreeSurface(ts);
+}
+
 static int OX, OY;                    /* stream-origin offset */
 
 static void render(SDL_Surface *s, TTF_Font *f, TTF_Font *fs)
@@ -442,12 +461,13 @@ static void render(SDL_Surface *s, TTF_Font *f, TTF_Font *fs)
             fill(s, x + 1, y + 1, w->w - 2, 24, PANEL2);
             text(s, fs, x + 10, y + 5,
                  "\xE2\x97\x8F \xE2\x97\x8F \xE2\x97\x8F", DIM);
-            text(s, fs, x + 52, y + 4, w->label, INK);
+            wtext(s, x + 52, y + 4, 12, w->label, INK);
         } else if (is_kind(w, "gui_button")) {
             fill(s, x, y, w->w, w->h, ACCENT);
             fill(s, x, y, w->w, 2, ACC_HI);
             frame(s, x, y, w->w, w->h, LINE);
-            text(s, f, x + 10, y + (w->h - 18) / 2, w->label, INK);
+            wtext(s, x + 10, y + (w->h - 18) / 2,
+                  w->tsize ? w->tsize : 13, w->label, INK);
         } else if (is_kind(w, "gui_entry")) {
             fill(s, x, y, w->w, w->h, BG);
             frame(s, x, y, w->w, w->h, LINE);
@@ -477,21 +497,24 @@ static void render(SDL_Surface *s, TTF_Font *f, TTF_Font *fs)
                  : "\xE2\x98\x90", on ? ACC_HI : DIM);
             text(s, f, x + 22, y + 2, w->label, on ? ACC_HI : INK);
         } else if (is_kind(w, "gui_label")) {
-            text(s, f, x + 4, y + 2, w->label,
-                 cube_colour(w->colour, INK));
+            wtext(s, x + 4, y + 2, w->tsize ? w->tsize : 14,
+                  w->label, cube_colour(w->colour, INK));
         } else if (is_kind(w, "gui_listbox") && w->items[0]) {
+            int px = w->tsize ? w->tsize : 14;
+            int rh = px * 2 + 4;
+            w->rowh = rh;
             fill(s, x, y, w->w, w->h, BG);
             frame(s, x, y, w->w, w->h, LINE);
             char tmp[768];
             snprintf(tmp, sizeof tmp, "%s", w->items);
             int row = 0;
-            for (char *ln = strtok(tmp, "\n"); ln && row * 22 + 26
+            for (char *ln = strtok(tmp, "\n"); ln && row * rh + rh
                  < w->h; ln = strtok(NULL, "\n"), row++) {
                 if (row == w->sel)
-                    fill(s, x + 2, y + 4 + row * 22, w->w - 4, 20,
+                    fill(s, x + 2, y + 4 + row * rh, w->w - 4, rh - 2,
                          ACCENT);
-                text(s, NULL, x + 8, y + 6 + row * 22, ln,
-                     row == w->sel ? INK : DIM);
+                wtext(s, x + 10, y + 6 + row * rh, px, ln,
+                      row == w->sel ? INK : DIM);
             }
         } else if (is_container(w)) {
             fill(s, x, y, w->w, w->h,
@@ -544,6 +567,7 @@ int main(int argc, char **argv)
         f = TTF_OpenFont(FONTS[i], 15);
         fs = TTF_OpenFont(FONTS[i], 12);
     }
+    G_F = f;
     int W, H; bounds(&W, &H);
     if (bmp) {
         char tud0[520];
@@ -585,7 +609,8 @@ int main(int argc, char **argv)
                         FILE *sf = fopen(sig, "a");
                         if (sf) {
                             if (isl) {
-                                int row = (int)((my - n->y - 4) / 22);
+                                int rh2 = n->rowh ? n->rowh : 22;
+                                int row = (int)((my - n->y - 4) / rh2);
                                 n->sel = row;
                                 fprintf(sf, "%s\tclicked\t%d\n",
                                         n->name, row);
