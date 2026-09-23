@@ -47,9 +47,12 @@ def load_widgets(path):
         w["x"] = int(w["x"] + w.get("w", 0) / 2)
         w["y"] = int(w["y"] + w.get("h", 0) / 2)
         w.setdefault("name", f"{w.get('kind', 'widget')}_{w['id']}")
+        # ASCII seam (until STRING_UNICODE lands in the label path)
+        _t = str.maketrans({"\u2212": "-", "\u00b7": ".",
+                            "\u2014": "-", "\u2013": "-"})
         # RNODE label arity ceiling: 12 chars with layout word, 15 bare
         cap = 12 if w.get("layout_mode") is not None else 15
-        w["label"] = str(w.get("label", ""))[:cap]
+        w["label"] = str(w.get("label", "")).translate(_t)[:cap]
     return ws
 
 
