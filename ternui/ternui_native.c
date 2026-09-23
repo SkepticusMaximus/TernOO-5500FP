@@ -210,10 +210,10 @@ static const SDL_Color ACC_HI = { 90, 150, 220, 255};
 /* ── the HOUSE STROKE FONT (THF0, exported from the ruled tables) ──
  * one font, every size, no atlas: polylines on a 0..4 x -2..6 grid,
  * monospace advance 6, lowercase = small-caps at 2/3 (case is DATA). */
-typedef struct { signed char x, y; } SPt;
-typedef struct { unsigned char npts; SPt pts[24]; } SPoly;
-typedef struct { unsigned char npolys; SPoly polys[10]; } SGlyph;
-static SGlyph *THF[244];              /* ordinal + 121 */
+typedef struct { signed char x, y; } SPt;    /* quarter-grid units */
+typedef struct { unsigned char npts; SPt pts[60]; } SPoly;
+typedef struct { unsigned char npolys, advance4; SPoly polys[12]; } SGlyph;
+static SGlyph *THF[3][244];           /* [case+1][ordinal+121] */
 static int THF_OK = 0;
 
 static void load_thf(const char *path)
@@ -221,26 +221,38 @@ static void load_thf(const char *path)
     FILE *f = fopen(path, "rb");
     if (!f) return;
     char magic[4];
-    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "THF0", 4)) {
+    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "THF", 3)) {
         fclose(f); return;
     }
-    int32_t o; unsigned char np;
-    while (fread(&o, 4, 1, f) == 1 && fread(&np, 1, 1, f) == 1) {
+    int v1 = magic[3] == '1';
+    for (;;) {
+        int32_t o; signed char cs = 0;
+        unsigned char adv = 24, np;
+        if (fread(&o, 4, 1, f) != 1) break;
+        if (v1 && (fread(&cs, 1, 1, f) != 1 ||
+                   fread(&adv, 1, 1, f) != 1)) break;
+        if (fread(&np, 1, 1, f) != 1) break;
         SGlyph *g = calloc(1, sizeof *g);
-        g->npolys = np > 10 ? 10 : np;
+        g->npolys = np > 12 ? 12 : np;
+        g->advance4 = adv;
         for (int p = 0; p < np; p++) {
             unsigned char n2;
             if (fread(&n2, 1, 1, f) != 1) break;
-            SPoly *pl = p < 10 ? &g->polys[p] : NULL;
-            if (pl) pl->npts = n2 > 24 ? 24 : n2;
+            SPoly *pl = p < 12 ? &g->polys[p] : NULL;
+            if (pl) pl->npts = n2 > 60 ? 60 : n2;
             for (int k = 0; k < n2; k++) {
                 signed char xy[2];
                 if (fread(xy, 1, 2, f) != 2) break;
-                if (pl && k < 24) { pl->pts[k].x = xy[0];
-                                    pl->pts[k].y = xy[1]; }
+                if (pl && k < 60) {
+                    /* THF0 stores whole-grid; scale to quarter-grid */
+                    pl->pts[k].x = v1 ? xy[0] : (signed char)(xy[0] * 4);
+                    pl->pts[k].y = v1 ? xy[1] : (signed char)(xy[1] * 4);
+                }
             }
         }
-        if (o >= -121 && o <= 121) THF[o + 121] = g; else free(g);
+        if (o >= -121 && o <= 121 && cs >= -1 && cs <= 1)
+            THF[cs + 1][o + 121] = g;
+        else free(g);
     }
     fclose(f);
     THF_OK = 1;
@@ -309,27 +321,33 @@ static void stroke_text(SDL_Surface *s, int x, int y, int px,
         }
         int small = 0;
         int o = char_ordinal(ch, &small);
-        if (o == 37) { cx += px; continue; }     /* space: pure advance */
-        SGlyph *g = THF[o + 121];
-        if (!g) g = THF[46 + 121];
-        int h = small ? px * 2 / 3 : px;         /* small-caps interim */
+        int cs = (ch >= 'A' && ch <= 'Z') ? 2 : small ? 0 : 1;
+        SGlyph *g = THF[cs][o + 121];            /* exact case first */
+        int h = px;
+        if (!g) {                                /* fall through cases */
+            g = THF[1][o + 121];
+            if (!g && cs != 2) g = THF[2][o + 121];
+            if (g && small) h = px * 2 / 3;      /* small-caps interim */
+            if (!g) { g = THF[1][46 + 121];
+                      if (!g) g = THF[2][46 + 121]; }
+        }
+        if (o == 37 || !g) { cx += px * 2 / 3; continue; }
         int base = y + px;                       /* baseline row */
-        if (g)
-            for (int pi = 0; pi < g->npolys; pi++) {
-                SPoly *pl = &g->polys[pi];
-                if (pl->npts == 1) {
-                    putpx2(s, cx + pl->pts[0].x * h / 6,
-                           base - pl->pts[0].y * h / 6, col);
-                    continue;
-                }
-                for (int k = 0; k + 1 < pl->npts; k++)
-                    bres(s,
-                         cx + pl->pts[k].x * h / 6,
-                         base - pl->pts[k].y * h / 6,
-                         cx + pl->pts[k + 1].x * h / 6,
-                         base - pl->pts[k + 1].y * h / 6, col);
+        for (int pi = 0; pi < g->npolys; pi++) {
+            SPoly *pl = &g->polys[pi];
+            if (pl->npts == 1) {
+                putpx2(s, cx + pl->pts[0].x * h / 24,
+                       base - pl->pts[0].y * h / 24, col);
+                continue;
             }
-        cx += px;                                /* monospace advance */
+            for (int k = 0; k + 1 < pl->npts; k++)
+                bres(s,
+                     cx + pl->pts[k].x * h / 24,
+                     base - pl->pts[k].y * h / 24,
+                     cx + pl->pts[k + 1].x * h / 24,
+                     base - pl->pts[k + 1].y * h / 24, col);
+        }
+        cx += g->advance4 * px / 24 + px / 8;    /* proportional */
     }
 }
 
@@ -475,10 +493,12 @@ int main(int argc, char **argv)
                       ? argv[3] : NULL;
     if (!load_stream(tuw)) { fprintf(stderr, "no widgets\n"); return 2; }
     {   /* the house font travels beside the binary or in the repo */
-        const char *cand[] = {"ternui/house_font.thf",
+        const char *env = getenv("TERNUI_FONT");
+        const char *cand[] = {env, "ternui/house_font.thf",
                               "/tmp/house_font.thf", "house_font.thf",
                               NULL};
-        for (int i = 0; cand[i] && !THF_OK; i++) load_thf(cand[i]);
+        for (int i = 0; i < 4 && !THF_OK; i++)
+            if (cand[i]) load_thf(cand[i]);
     }
     if (bmp) SDL_setenv("SDL_VIDEODRIVER", "dummy", 1);
     if (SDL_Init(SDL_INIT_VIDEO) || TTF_Init()) {
