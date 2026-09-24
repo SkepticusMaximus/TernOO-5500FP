@@ -122,8 +122,11 @@ class MeshTabView:
                                      activeforeground=C["text"])
         self._attachbtn.pack(side="right", padx=(0, 6))
         self._attachlbl = tk.Label(askrow, text="", bg=C["bg"], fg=C["dim"],
-                                   font=("Monospace", 8))
+                                   font=("Monospace", 8), cursor="hand2")
         self._attachlbl.pack(side="right", padx=(0, 4))
+        self._attachlbl.bind(          # click the chip to drop the file
+            "<Button-1>", lambda _e: (self._clear_attachment(),
+                                      self._status("Attachment cleared.")))
 
         # the chat — a running TRANSCRIPT (accumulates; read-only but selectable)
         af = tk.Frame(self._main, bg=C["bg"])
@@ -336,6 +339,7 @@ class MeshTabView:
     def _show_ask(self, where, ans, err):
         self._askbtn.config(state="normal", text="  Ask  ▶  ")
         self._end_pending()
+        self._clear_attachment()   # the ride is over whatever the outcome
         if err:
             self._chat.insert("end", f"(couldn't reach a model: {err} — try ⚙ Setup)"
                               "\n\n", ("error",))
@@ -348,7 +352,6 @@ class MeshTabView:
             self._status("No model answered.")
         else:
             ans = self._trim_followups(ans)
-            self._clear_attachment()               # it landed — the ride is over
             self._history.append(("assistant", ans))
             self._append_prof(where, ans)
             self._status(f"Answered by {where}.")
@@ -377,8 +380,10 @@ class MeshTabView:
         clipped = len(text) > self.ATTACH_MAX
         self._attachment = {"name": name, "text": text[:self.ATTACH_MAX],
                             "clipped": clipped}
-        self._attachlbl.config(text=f"📎 {name}" + ("  (clipped)" if clipped else ""))
-        self._status(f"Attached {name} — rides with your next Ask (📎 again to replace).")
+        self._attachlbl.config(text=f"📎 {name}" + ("  (clipped)" if clipped else "")
+                               + "  ✕")
+        self._status(f"Attached {name} — rides with your next Ask "
+                     "(click the 📎 chip to drop it).")
 
     def _clear_attachment(self):
         self._attachment = None
