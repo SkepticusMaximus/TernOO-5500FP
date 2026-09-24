@@ -295,7 +295,7 @@ def preview_font(path, widgets):
     thf = font_to_thf(path)
     for x in widgets.values():
         if x.get("name") == "preview":
-            x["label"] = os.path.basename(path) + "  " + PANGRAM
+            x["label"] = PANGRAM
             if thf:
                 _setprop(x, "facefont", thf)
         if x.get("name") == "picked":
