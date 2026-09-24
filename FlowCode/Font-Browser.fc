@@ -9,8 +9,8 @@
    "kind": "gui_window",
    "x": 20,
    "y": 10,
-   "w": 900,
-   "h": 640,
+   "w": 960,
+   "h": 620,
    "label": "Font Browser",
    "name": "win",
    "parent_id": null,
@@ -21,11 +21,11 @@
   {
    "id": 1,
    "kind": "gui_button",
-   "x": -340,
-   "y": -253,
-   "w": 160,
-   "h": 34,
-   "label": "Browse folder...",
+   "x": -375,
+   "y": -243,
+   "w": 150,
+   "h": 38,
+   "label": "Browse...",
    "name": "browse",
    "parent_id": 0,
    "layout_mode": null,
@@ -45,6 +45,10 @@
     {
      "name": "start",
      "value": "/usr/share/fonts"
+    },
+    {
+     "name": "size",
+     "value": "13"
     }
    ],
    "signal_ids": {}
@@ -52,11 +56,11 @@
   {
    "id": 2,
    "kind": "gui_button",
-   "x": -160,
-   "y": -253,
-   "w": 170,
-   "h": 34,
-   "label": "Pick font file...",
+   "x": -205,
+   "y": -243,
+   "w": 150,
+   "h": 38,
+   "label": "Pick file...",
    "name": "pick",
    "parent_id": 0,
    "layout_mode": null,
@@ -72,6 +76,10 @@
     {
      "name": "start",
      "value": "/usr/share/fonts"
+    },
+    {
+     "name": "size",
+     "value": "13"
     }
    ],
    "signal_ids": {}
@@ -79,18 +87,18 @@
   {
    "id": 3,
    "kind": "gui_label",
-   "x": 90,
-   "y": -252,
-   "w": 300,
-   "h": 24,
-   "label": "select a font to preview it",
+   "x": -200,
+   "y": -197,
+   "w": 500,
+   "h": 22,
+   "label": "select a font in the list, or Browse / Pick file",
    "name": "hint",
    "parent_id": 0,
    "layout_mode": null,
    "properties": [
     {
      "name": "size",
-     "value": "14"
+     "value": "13"
     }
    ],
    "signal_ids": {}
@@ -98,10 +106,10 @@
   {
    "id": 4,
    "kind": "gui_listbox",
-   "x": -230,
-   "y": 15,
+   "x": -260,
+   "y": 43,
    "w": 380,
-   "h": 470,
+   "h": 430,
    "label": "fonts",
    "name": "fonts",
    "parent_id": 0,
@@ -113,7 +121,7 @@
     },
     {
      "name": "size",
-     "value": "15"
+     "value": "14"
     }
    ],
    "signal_ids": {}
@@ -121,10 +129,10 @@
   {
    "id": 5,
    "kind": "gui_label",
-   "x": 200,
-   "y": -197,
-   "w": 420,
-   "h": 26,
+   "x": 195,
+   "y": -160,
+   "w": 470,
+   "h": 24,
    "label": "picked: (none)",
    "name": "picked",
    "parent_id": 0,
@@ -132,7 +140,7 @@
    "properties": [
     {
      "name": "size",
-     "value": "16"
+     "value": "15"
     }
    ],
    "signal_ids": {}
@@ -140,18 +148,18 @@
   {
    "id": 6,
    "kind": "gui_label",
-   "x": 200,
-   "y": -50,
-   "w": 420,
-   "h": 200,
-   "label": "(pick a font to see it here)",
+   "x": 195,
+   "y": 50,
+   "w": 470,
+   "h": 360,
+   "label": "(pick a font to preview it)",
    "name": "preview",
    "parent_id": 0,
    "layout_mode": null,
    "properties": [
     {
      "name": "size",
-     "value": "30"
+     "value": "22"
     }
    ],
    "signal_ids": {}

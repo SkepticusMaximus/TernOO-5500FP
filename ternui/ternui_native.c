@@ -422,6 +422,8 @@ static void fill_glyph(SDL_Surface *s, SGlyph *g, int cx, int base,
 
 /* draw text with the house strokes. px = cap height in pixels;
  * (x, y) = top-left of the line box (box spans cap..descender). */
+static int CLIP_X = 1 << 30;           /* right edge; text stops here */
+
 static void stroke_text_m(SDL_Surface *s, int x, int y, int px,
                           const char *txt, SDL_Color c,
                           SGlyph *M[3][244], int v1)
@@ -434,6 +436,7 @@ static void stroke_text_m(SDL_Surface *s, int x, int y, int px,
             if ((ch & 0xC0) == 0x80) continue;
             ch = '~';
         }
+        if (cx > CLIP_X - px) break;              /* clip to the box */
         int small = 0;
         int o = char_ordinal(ch, &small);
         int cs = (ch >= 'A' && ch <= 'Z') ? 2 : small ? 0 : 1;
@@ -587,8 +590,10 @@ static void render(SDL_Surface *s, TTF_Font *f, TTF_Font *fs)
             fill(s, x, y, w->w, w->h, ACCENT);
             fill(s, x, y, w->w, 2, ACC_HI);
             frame(s, x, y, w->w, w->h, LINE);
+            CLIP_X = x + w->w - 6;
             wtext(s, x + 10, y + (w->h - 18) / 2,
                   w->tsize ? w->tsize : 13, w->label, INK);
+            CLIP_X = 1 << 30;
         } else if (is_kind(w, "gui_entry")) {
             fill(s, x, y, w->w, w->h, BG);
             frame(s, x, y, w->w, w->h, LINE);
@@ -619,12 +624,14 @@ static void render(SDL_Surface *s, TTF_Font *f, TTF_Font *fs)
             text(s, f, x + 22, y + 2, w->label, on ? ACC_HI : INK);
         } else if (is_kind(w, "gui_label")) {
             int lp = w->tsize ? w->tsize : 14;
+            CLIP_X = x + w->w - 4;
             if (w->facefont[0])              /* preview: this label's face */
                 draw_in_font(s, x + 4, y + 2, lp, w->label,
                              cube_colour(w->colour, INK), w->facefont);
             else
                 wtext(s, x + 4, y + 2, lp, w->label,
                       cube_colour(w->colour, INK));
+            CLIP_X = 1 << 30;
         } else if (is_kind(w, "gui_listbox") && w->items[0]) {
             int px = w->tsize ? w->tsize : 14;
             int rh = px * 2 + 4;
@@ -643,11 +650,13 @@ static void render(SDL_Surface *s, TTF_Font *f, TTF_Font *fs)
                 if (row == w->sel)
                     fill(s, x + 2, y + 4 + row * rh, w->w - 4, rh - 2,
                          ACCENT);
+                CLIP_X = x + w->w - 6;
                 if (fl && *fl)                   /* row in its OWN face */
                     draw_in_font(s, x + 10, y + 6 + row * rh, px, ln,
                                  INK, fl);
                 else
                     wtext(s, x + 10, y + 6 + row * rh, px, ln, INK);
+                CLIP_X = 1 << 30;
                 if (fl) fl = strtok_r(NULL, "\n", &fsave);
             }
         } else if (is_container(w)) {
@@ -687,10 +696,10 @@ int main(int argc, char **argv)
     if (!load_stream(tuw)) { fprintf(stderr, "no widgets\n"); return 2; }
     {   /* the house font travels beside the binary or in the repo */
         const char *env = getenv("TERNUI_FONT");
-        const char *cand[] = {env, "ternui/house_font.thf",
-                              "/tmp/house_font.thf", "house_font.thf",
-                              NULL};
-        for (int i = 0; i < 4 && !THF_OK; i++)
+        const char *cand[] = {env, "ternui/dejavu.thf",
+                              "/tmp/dejavu.thf", "ternui/house_font.thf",
+                              "house_font.thf", NULL};
+        for (int i = 0; cand[i] && !THF_OK; i++)
             if (cand[i]) load_thf(cand[i]);
         struct stat fw;
         if (stat(FONT_WATCH, &fw) == 0) {        /* a click already chose */
