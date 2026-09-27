@@ -256,9 +256,11 @@
   .fields input { flex: 1; background: var(--panel2);
                   border: 1px solid var(--line); color: var(--ink);
                   border-radius: 7px; padding: 8px 12px; }
-  #docbody { min-height: 280px; background: var(--panel);
+  #docbody { min-height: 280px; max-height: calc(100vh - 260px);
+             overflow-y: auto; background: var(--panel);
              padding: 16px 22px; border: 1px solid var(--line);
-             border-radius: 9px; outline: none; flex: 1; }
+             border-radius: 9px; outline: none; line-height: 1.5; }
+  #docbody p, #docbody div { margin: 0 0 .5em; }
   #docbody:focus { border-color: var(--accent); }
   .doc h1 { font-size: 25px; margin: .4em 0; color: var(--accent2); }
   .doc h2 { font-size: 20px; margin: .5em 0; color: var(--accent2); }
