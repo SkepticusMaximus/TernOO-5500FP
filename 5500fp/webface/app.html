@@ -259,12 +259,19 @@
   #docbody { min-height: 280px; max-height: calc(100vh - 260px);
              overflow-y: auto; background: var(--panel);
              padding: 16px 22px; border: 1px solid var(--line);
-             border-radius: 9px; outline: none; line-height: 1.5; }
-  #docbody p, #docbody div { margin: 0 0 .5em; }
+             border-radius: 9px; outline: none; line-height: 1.55; }
+  #docbody p, #docbody div, #docbody li { margin: 0 0 .55em; }
+  #docbody > :first-child { margin-top: 0; }
+  #docbody ul, #docbody ol { margin: .3em 0 .7em; padding-left: 1.6em; }
   #docbody:focus { border-color: var(--accent); }
-  .doc h1 { font-size: 25px; margin: .4em 0; color: var(--accent2); }
-  .doc h2 { font-size: 20px; margin: .5em 0; color: var(--accent2); }
-  .doc h3 { font-size: 17px; margin: .5em 0; color: var(--accent2); }
+  .doc h1 { font-size: 25px; margin: .55em 0 .3em; color: var(--accent2);
+            line-height: 1.25; }
+  .doc h2 { font-size: 20px; margin: .9em 0 .28em; color: var(--accent2);
+            line-height: 1.25; }
+  .doc h3 { font-size: 17px; margin: .8em 0 .25em; color: var(--accent2);
+            line-height: 1.25; }
+  #docbody > :first-child.doc, .doc h1:first-child,
+  .doc h2:first-child, .doc h3:first-child { margin-top: 0; }
   .doc code { background: var(--code-bg); padding: 1px 6px;
               border-radius: 5px; color: var(--accent2);
               font-family: monospace; font-size: 13px; }
