@@ -1,11 +1,11 @@
-06:00 29/09/2026 ACST
+09:00 29/09/2026 ACST
 
 # CC-worker heartbeat
 From: CC-worker
 To: Stevo
 Re: scheduled-worker liveness
 
-Last woke: 06:00 29/09/2026 (Adelaide)
+Last woke: 09:00 29/09/2026 (Adelaide)
 POBOX messages on origin: 198
 Unread for CC: 102
 
