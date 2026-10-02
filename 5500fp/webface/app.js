@@ -1313,11 +1313,53 @@ function inlineCode() {
     "<code>" + sel.toString().replace(/[<>&]/g,
       m => ({"<": "&lt;", ">": "&gt;", "&": "&amp;"}[m])) + "</code>"); }
 }
+/* — attachments — */
+window.__attach = [];
+function attachFile() { $("attpick").click(); }
+function escAtt(s) { return String(s).replace(/[&<>"]/g,
+  m => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[m])); }
+function renderAtt() {
+  const bar = $("attbar");
+  if (!window.__attach.length) {
+    bar.className = "attbar hidden"; bar.innerHTML = ""; return;
+  }
+  bar.className = "attbar";
+  bar.innerHTML = window.__attach.map((a, i) =>
+    `<span class="attchip">` +
+    (a.is_image ? `<img src="${a.url}" alt="">` : "📄") +
+    `<span class="nm">${escAtt(a.name)}</span>` +
+    `<button title="remove" onclick="removeAtt(${i})">✕</button></span>`
+  ).join("");
+}
+function removeAtt(i) { window.__attach.splice(i, 1); renderAtt(); }
+$("attpick").addEventListener("change", async ev => {
+  for (const f of ev.target.files) {
+    if (f.size > 25 * 1024 * 1024) {
+      toast(`${f.name} is over 25 MB — skipped`); continue;
+    }
+    const data = await new Promise(res => {
+      const fr = new FileReader();
+      fr.onload = () => res(fr.result);
+      fr.readAsDataURL(f);
+    });
+    const r = await api("/api/attach", {name: f.name, data});
+    if (r && r.path) {
+      window.__attach.push(r); renderAtt(); toast(`attached ${r.name}`);
+    } else toast((r && r.error) || "attach failed");
+  }
+  ev.target.value = "";
+});
 async function sendMail() {
   const res = await api("/api/send", {to: $("to").value,
-    subject: $("subject").value, html: $("docbody").innerHTML});
-  if (res.dropped) toast(`dropped ${res.dropped} — the watcher has it`);
-  else toast(res.error || "send failed");
+    from: ($("from") ? $("from").value : "") || undefined,
+    subject: $("subject").value, html: $("docbody").innerHTML,
+    attachments: window.__attach});
+  if (res.dropped) {
+    toast(`sent ${res.dropped}` +
+          (res.attached ? ` + ${res.attached} file(s)` : "") +
+          " — the watcher has it");
+    window.__attach = []; renderAtt();
+  } else toast(res.error || "send failed");
 }
 async function mdOfBody() {
   return (await api("/api/convert",
