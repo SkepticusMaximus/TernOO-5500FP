@@ -1349,6 +1349,32 @@ $("attpick").addEventListener("change", async ev => {
   }
   ev.target.value = "";
 });
+/* — paste an image straight from the clipboard (no dialog) + inline preview — */
+function readAsDataURL(f) {
+  return new Promise(r => {
+    const fr = new FileReader(); fr.onload = () => r(fr.result);
+    fr.readAsDataURL(f);
+  });
+}
+$("docbody").addEventListener("paste", async ev => {
+  const items = (ev.clipboardData && ev.clipboardData.items) || [];
+  for (const it of items) {
+    if (it.kind === "file" && it.type && it.type.indexOf("image/") === 0) {
+      ev.preventDefault();                  // handle the image ourselves
+      const file = it.getAsFile();
+      if (!file) continue;
+      const name = file.name || `pasted-${Date.now()}.png`;
+      const r = await api("/api/attach",
+                          {name, data: await readAsDataURL(file)});
+      if (r && r.path) {
+        document.execCommand("insertHTML", false,
+          `<img src="${r.url}" alt="${escAtt(name)}" style="max-width:100%">`);
+        toast(`pasted ${name}`);
+      } else toast((r && r.error) || "paste failed");
+      return;                               // don't also paste it as text
+    }
+  }
+});
 async function sendMail() {
   const res = await api("/api/send", {to: $("to").value,
     from: ($("from") ? $("from").value : "") || undefined,
