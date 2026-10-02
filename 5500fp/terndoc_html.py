@@ -90,6 +90,20 @@ class _Walker(HTMLParser):
         elif tag == "a":
             href = dict(attrs).get("href")
             self.hrefs.append(href)
+        elif tag == "img":
+            # inline image (e.g. a pasted screenshot) → markdown image ref.
+            # Normalise the web-face preview URL to the delivered relative path
+            # so the letter carries `![alt](attachments/x.png)` in place.
+            a = dict(attrs)
+            src = (a.get("src") or "").strip()
+            alt = (a.get("alt") or "").strip()
+            if src.startswith("/pobox/attachments/"):
+                src = "attachments/" + src[len("/pobox/attachments/"):]
+            elif src.startswith("/pobox/"):
+                src = src[len("/pobox/"):]
+            if src:
+                self.spans.append(TD.span(f"![{alt}]({src})",
+                                          self._cur_styles(), self._cur_href()))
 
     def handle_endtag(self, tag):
         if tag == "pre":
