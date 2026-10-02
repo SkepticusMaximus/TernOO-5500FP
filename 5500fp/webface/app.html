@@ -285,6 +285,19 @@
   .actions button { background: var(--panel2); color: var(--ink);
                     border: 1px solid var(--line); padding: 8px 14px;
                     border-radius: 8px; cursor: pointer; }
+  .attbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
+  .attchip { display: inline-flex; align-items: center; gap: 6px;
+             background: var(--panel2); border: 1px solid var(--line);
+             border-radius: 7px; padding: 3px 7px 3px 4px; font-size: 12px;
+             max-width: 230px; }
+  .attchip img { width: 26px; height: 26px; object-fit: cover;
+                 border-radius: 4px; flex-shrink: 0; }
+  .attchip .nm { overflow: hidden; text-overflow: ellipsis;
+                 white-space: nowrap; }
+  .attchip button { background: none; border: none; color: var(--dim);
+                    cursor: pointer; font-size: 13px; padding: 0 2px;
+                    min-width: auto; height: auto; }
+  .attchip button:hover { color: #ef8080; border-color: transparent; }
   #apppreview { position: fixed; inset: 0; z-index: 80;
     background: rgba(8, 8, 14, .82); display: flex;
     align-items: center; justify-content: center; }
@@ -612,6 +625,8 @@
 <section id="tab-author" class="hidden">
   <div id="author">
     <div class="fields">
+      <input id="from" placeholder="From" value="Stevo"
+             style="max-width:120px;flex:0 0 120px">
       <input id="to" placeholder="To — CC, CF5, CAI, Stevo, crew">
       <input id="subject" placeholder="Subject / document title">
     </div>
@@ -620,6 +635,7 @@
       <button title="Italic (Ctrl+I)" onclick="cmd('italic')"><i>I</i></button>
       <button title="Inline code" onclick="inlineCode()">&lt;/&gt;</button>
       <button title="Link" onclick="makeLink()">&#128279;</button>
+      <button title="Attach image / file" onclick="attachFile()">&#128206;</button>
       <span class="sep"></span>
       <button onclick="blockFmt('h1')">H1</button>
       <button onclick="blockFmt('h2')">H2</button>
@@ -629,6 +645,7 @@
       <button onclick="cmd('insertOrderedList')">1≡</button>
       <button onclick="blockFmt('pre')">{ }</button>
     </div>
+    <div id="attbar" class="attbar hidden"></div>
     <div id="docbody" class="doc" contenteditable="true" spellcheck="true">
       <h1>One surface, two exits</h1>
       <p>Write once. <b>Send</b> as a letter, or <b>save</b> as a document
@@ -642,6 +659,8 @@
       <button onclick="previewMd()">View as Markdown</button>
     </div>
     <input type="file" id="filepick" accept=".md" class="hidden">
+    <input type="file" id="attpick" multiple class="hidden"
+           accept="image/*,application/pdf,.txt,.md,.log,.json">
   </div>
 </section>
 </main>
