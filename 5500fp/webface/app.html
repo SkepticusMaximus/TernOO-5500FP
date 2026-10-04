@@ -187,59 +187,97 @@
   #guiwrap { overflow: auto; }
   #guicanvas { position: absolute; top: 0; left: 0;
                min-width: 100%; min-height: 100%; }
-  .gw { position: absolute; border: 1px solid #2c2c3c;
-        border-radius: 6px; background: var(--panel2); cursor: move;
+  .gw { position: absolute; border: 1px solid var(--line);
+        border-radius: 8px; background: var(--panel2); cursor: move;
         overflow: hidden; user-select: none; font-size: 13px;
-        box-shadow: 0 2px 6px rgba(0,0,0,.35); }
-  .gw.sel { outline: 2px solid var(--accent); }
+        color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  .gw.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
   .gw.sel::after { content: ""; position: absolute; right: -1px;
         bottom: -1px; width: 10px; height: 10px;
         background: var(--accent); border-radius: 2px 0 6px 0; }
-  .gw .ttl { background: linear-gradient(#34344a, #262637);
-             color: var(--ink); font-size: 11px; padding: 3px 8px 2px;
-             border-bottom: 1px solid #1c1c28; pointer-events: none;
-             letter-spacing: .3px; }
-  .gw-gui_window, .gw-gui_dialog { border-radius: 9px;
-      background: linear-gradient(#232332, #1d1d2a);
-      border-color: #3a3a52; box-shadow: 0 8px 22px rgba(0,0,0,.5); }
-  .gw-gui_window > .ttl::before, .gw-gui_dialog > .ttl::before {
-      content: "● ● ●"; font-size: 7px; letter-spacing: 2px;
-      color: #8a8aa8; margin-right: 8px; }
+  .gw * { pointer-events: none; }   /* inner chrome never steals the drag */
+  .gw .ttl { display: flex; align-items: center; gap: 7px;
+             background: rgba(255,255,255,.04); color: var(--ink);
+             font-size: 11.5px; font-weight: 600; padding: 5px 10px;
+             border-bottom: 1px solid var(--line); letter-spacing: .2px; }
+  /* window / dialog — real title bar with traffic-light dots */
+  .gw-gui_window, .gw-gui_dialog { border-radius: 10px;
+      background: #23232f; border-color: #3a3a52;
+      box-shadow: 0 10px 30px rgba(0,0,0,.55),
+                  inset 0 1px 0 rgba(255,255,255,.05); }
+  .gw-gui_window > .ttl, .gw-gui_dialog > .ttl {
+      background: linear-gradient(#30303f, #282836); }
+  .wdots { display: inline-flex; gap: 5px; }
+  .wdots i { width: 9px; height: 9px; border-radius: 50%;
+      box-shadow: inset 0 0 0 .5px rgba(0,0,0,.4); }
+  .wdots i:nth-child(1) { background: #ff5f57; }
+  .wdots i:nth-child(2) { background: #febc2e; }
+  .wdots i:nth-child(3) { background: #28c840; }
+  /* frame / box / notebook — labeled grouping surface */
   .gw-gui_frame, .gw-gui_box, .gw-gui_notebook {
-      background: rgba(255,255,255,.02); border-color: #34344a;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.03); }
-  .gw-leaf { display: flex; align-items: center; padding: 0 8px; }
-  .tseg { display: inline-block; min-width: 18px; text-align: center;
-    border: 1px solid var(--line); background: var(--panel2);
-    color: var(--dim); border-radius: 4px; margin-right: 1px;
-    font-size: 12px; }
-  .tseg.on { background: var(--accent); color: #eaf2ff;
-    border-color: #1d3a60; }
-  .gw-gui_button { background: linear-gradient(#3d6ea8, #2d5488);
-      color: #eaf2ff; justify-content: center; font-weight: 600;
-      border-radius: 7px; border-color: #1d3a60;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.18),
-                  0 2px 5px rgba(0,0,0,.4);
-      text-shadow: 0 1px 1px rgba(0,0,0,.4); }
+      background: rgba(255,255,255,.025); border-color: var(--line); }
+  .gw-gui_frame > .ttl, .gw-gui_box > .ttl, .gw-gui_notebook > .ttl {
+      background: none; color: var(--accent2); }
+  /* leaf controls */
+  .gw-leaf { display: flex; align-items: center; gap: 7px; padding: 0 10px; }
+  .wlbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* button */
+  .gw-gui_button { justify-content: center; font-weight: 600;
+      border-radius: 7px; border-color: #2a4e7d;
+      background: linear-gradient(#4a7fc0, #3663a0); color: #f2f7ff;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.22),
+                  0 1px 3px rgba(0,0,0,.4);
+      text-shadow: 0 1px 1px rgba(0,0,0,.35); }
+  .gw-gui_button .wlbl { color: #f2f7ff; }
+  /* label */
   .gw-gui_label { background: none; border-color: transparent;
-      box-shadow: none; color: var(--ink); }
-  .gw-gui_entry { background: #14141d; border-color: #34344a;
-      color: var(--dim); font-style: italic; border-radius: 5px;
-      box-shadow: inset 0 2px 5px rgba(0,0,0,.5); }
+      box-shadow: none; }
+  /* entry — real text field with caret */
+  .gw-gui_entry { gap: 1px; background: #15151f; border-color: #3a3a52;
+      border-radius: 6px; box-shadow: inset 0 1px 3px rgba(0,0,0,.5); }
+  .gw-gui_entry .entrytext { color: var(--dim); }
+  .gw-gui_entry .caret { width: 1px; height: 15px;
+      background: var(--accent); opacity: .85; }
+  /* checkbox / radio — real controls */
   .gw-gui_checkbox, .gw-gui_radio { background: none;
       border-color: transparent; box-shadow: none; }
-  .gw-gui_checkbox .mark, .gw-gui_radio .mark { color: var(--accent);
-      margin-right: 2px; }
-  .gw-gui_listbox { background: #14141d; border-color: #34344a;
-      box-shadow: inset 0 2px 6px rgba(0,0,0,.45);
+  .ctl-box, .ctl-radio { flex: none; width: 15px; height: 15px;
+      border: 1.5px solid var(--dim); background: #15151f;
+      position: relative; }
+  .ctl-box { border-radius: 3px; }
+  .ctl-radio { border-radius: 50%; }
+  .ctl-box.on, .ctl-radio.on { border-color: var(--accent);
+      background: var(--accent); }
+  .ctl-box.on::after { content: ""; position: absolute; left: 4px;
+      top: 1px; width: 4px; height: 8px; border: solid #0b1220;
+      border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .ctl-radio.on::after { content: ""; position: absolute; inset: 3px;
+      border-radius: 50%; background: #0b1220; }
+  /* ternary segmented control (tritoggle / trifilter) */
+  .gw-gui_tritoggle, .gw-gui_trifilter { background: none;
+      border-color: transparent; box-shadow: none; }
+  .triseg { display: inline-flex; border: 1px solid var(--line);
+      border-radius: 7px; overflow: hidden; background: #15151f;
+      box-shadow: inset 0 1px 2px rgba(0,0,0,.4); }
+  .tseg { min-width: 22px; text-align: center; padding: 3px 0;
+      color: var(--dim); font-size: 12px; font-weight: 600;
+      border-right: 1px solid var(--line); }
+  .tseg:last-child { border-right: none; }
+  .tseg.on { background: var(--accent); color: #0b1220; }
+  /* trit strip + listbox — inset surfaces */
+  .gw-gui_tritstrip { background: #15151f; border-color: #3a3a52;
+      border-radius: 6px; box-shadow: inset 0 1px 3px rgba(0,0,0,.45); }
+  .gw-gui_listbox { background: #15151f; border-color: #3a3a52;
+      border-radius: 6px; box-shadow: inset 0 1px 4px rgba(0,0,0,.4);
       background-image: repeating-linear-gradient(
-        transparent 0 25px, rgba(255,255,255,.035) 25px 26px); }
+        transparent 0 25px, rgba(255,255,255,.03) 25px 26px); }
+  /* bars */
   .gw-gui_statusbar, .gw-gui_menubar, .gw-gui_toolbar,
   .gw-gui_headerbar, .gw-gui_actionbar {
-      background: linear-gradient(#2b2b3d, #232331);
-      display: flex; align-items: center;
-      padding-left: 8px; color: var(--dim); font-size: 11.5px;
-      border-color: #34344a; }
+      background: linear-gradient(#2c2c3b, #24242f);
+      display: flex; align-items: center; gap: 10px;
+      padding: 0 10px; color: var(--ink); font-size: 12px;
+      border-color: var(--line); }
 
   /* author */
   #author { flex-direction: column; overflow-y: auto;
@@ -313,7 +351,8 @@
   #apppreview .appbar button { background: var(--panel2);
     color: var(--ink); border: 1px solid var(--line); border-radius: 6px;
     padding: 3px 12px; cursor: pointer; }
-  #apppreview .appcanvas { position: relative; }
+  #apppreview .appcanvas { position: relative;
+    background: radial-gradient(130% 130% at 50% 0%, #1b1b26, #101018); }
   #apppreview .gw { cursor: default; }
   #fatalbar { position: fixed; top: 0; left: 0; right: 0; z-index: 99;
     background: #5d1a1a; color: #ffb3b3; border-bottom: 1px solid #a33;

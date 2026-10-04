@@ -833,20 +833,25 @@ function guiRender() {
       (GSEL === w.id ? " sel" : "");
     d.style.cssText =
       `left:${w.x}px;top:${w.y}px;width:${w.w}px;height:${w.h}px`;
-    if (["gui_window", "gui_dialog", "gui_frame", "gui_notebook",
-         "gui_box"].includes(w.kind)) {
+    if (w.kind === "gui_window" || w.kind === "gui_dialog") {
+      d.innerHTML = `<div class="ttl"><span class="wdots">` +
+        `<i></i><i></i><i></i></span>${esc(w.label)}</div>`;
+    } else if (["gui_frame", "gui_notebook", "gui_box"].includes(w.kind)) {
       d.innerHTML = `<div class="ttl">${esc(w.label)}</div>`;
     } else if (w.kind === "gui_tritoggle" || w.kind === "gui_trifilter") {
       const v = w.value ?? 0;
-      d.innerHTML = ["\u2212", "0", "+"].map((g, k) =>
+      d.innerHTML = `<span class="triseg">` + ["−", "0", "+"].map((g, k) =>
         `<span class="tseg${k - 1 === v ? " on" : ""}">${g}</span>`)
-        .join("") + "&nbsp;" + esc(w.label);
-    } else if (w.kind === "gui_radio" || w.kind === "gui_checkbox") {
-      d.innerHTML = `<span class="mark">` +
-        (w.kind === "gui_radio" ? "◉" : "☐") + `</span>&nbsp;` +
-        esc(w.label);
+        .join("") + `</span><span class="wlbl">${esc(w.label)}</span>`;
+    } else if (w.kind === "gui_checkbox" || w.kind === "gui_radio") {
+      const cls = w.kind === "gui_radio" ? "ctl-radio" : "ctl-box";
+      d.innerHTML = `<span class="${cls}${w.value ? " on" : ""}"></span>` +
+        `<span class="wlbl">${esc(w.label)}</span>`;
+    } else if (w.kind === "gui_entry") {
+      d.innerHTML = `<span class="entrytext">${esc(w.label)}</span>` +
+        `<span class="caret"></span>`;
     } else {
-      d.textContent = w.label;
+      d.innerHTML = `<span class="wlbl">${esc(w.label)}</span>`;
     }
     d.addEventListener("mousedown", e => {
       e.stopPropagation(); e.preventDefault();
