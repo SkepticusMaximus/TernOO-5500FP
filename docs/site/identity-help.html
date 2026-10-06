@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Your Keys, Your Mail</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Public+Sans:wght@400;500;600&display=swap">
+<style>
+  /* Layout: single reading column; calm help page, slim sticky header, selective cards. */
+  :root{
+    --bg:#f5f7f9; --surface:#ffffff; --surface-2:#eef2f5;
+    --fg:#1a2431; --muted:#586575; --line:#e2e7ee;
+    --accent:#0f857a; --accent-soft:#e1f1ee;
+    --warn:#9a6513; --warn-soft:#f8eed7;
+    --maxw:44rem; --radius:14px;
+    --display:"Fraunces",Georgia,"Times New Roman",serif;
+    --body:"Public Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#0f141a; --surface:#161d26; --surface-2:#1d2630;
+    --fg:#e8eef4; --muted:#9aa7b5; --line:#2a333e;
+    --accent:#45bcac; --accent-soft:#143029;
+    --warn:#e2a449; --warn-soft:#2e2611;
+    color-scheme:dark;
+  }}
+  :root[data-theme="dark"]{
+    --bg:#0f141a; --surface:#161d26; --surface-2:#1d2630;
+    --fg:#e8eef4; --muted:#9aa7b5; --line:#2a333e;
+    --accent:#45bcac; --accent-soft:#143029;
+    --warn:#e2a449; --warn-soft:#2e2611;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--fg);font-family:var(--body);line-height:1.6;
+    font-size:1.02rem;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding-inline:20px;padding-block:0}
+  a{color:var(--accent)}
+  h1,h2,h3{font-family:var(--display);font-weight:600;line-height:1.15;text-wrap:balance;margin:0}
+  p{margin:0}
+
+  header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:10;
+    background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line)}
+  .top .wrap{display:flex;align-items:center;gap:14px;padding-block:12px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:10px;font-family:var(--display);font-weight:600;font-size:1.06rem}
+  .brand svg{width:22px;height:22px;color:var(--accent);flex:none}
+  nav.toc{margin-left:auto;display:flex;gap:4px;flex-wrap:wrap}
+  nav.toc a{color:var(--muted);text-decoration:none;font-size:.82rem;padding:5px 9px;border-radius:999px;white-space:nowrap}
+  nav.toc a:hover{color:var(--fg);background:var(--surface-2)}
+
+  .hero{padding-block:46px 30px}
+  .eyebrow{font-size:.78rem;letter-spacing:.10em;text-transform:uppercase;color:var(--accent);font-weight:600}
+  .hero h1{font-size:clamp(2rem,6vw,2.9rem);margin-top:12px;font-weight:600}
+  .hero .lede{margin-top:16px;font-size:1.14rem;color:var(--muted);max-width:34rem}
+
+  section{padding-block:26px;border-top:1px solid var(--line)}
+  section h2{font-size:1.5rem;display:flex;align-items:center;gap:11px}
+  section h2 svg{width:24px;height:24px;color:var(--accent);flex:none}
+  section>p,section>ul,section>.note,section>figure,section>.states{margin-top:14px}
+  .sub{color:var(--muted)}
+  ul{margin:0;padding-left:1.15rem}
+  li{margin-block:7px}
+  li::marker{color:var(--accent)}
+  strong{font-weight:600}
+
+  .states{display:grid;gap:10px}
+  .state{display:flex;gap:12px;align-items:flex-start;background:var(--surface);
+    border:1px solid var(--line);border-radius:var(--radius);padding:13px 15px}
+  .tag{font-size:.72rem;font-weight:600;letter-spacing:.03em;padding:3px 8px;border-radius:999px;white-space:nowrap;flex:none;margin-top:2px}
+  .tag.ok{background:var(--accent-soft);color:var(--accent)}
+  .tag.neutral{background:var(--surface-2);color:var(--muted)}
+  .tag.warn{background:var(--warn-soft);color:var(--warn)}
+  .state p{font-size:.95rem}
+
+  .note{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:var(--radius);padding:15px 17px}
+  .note.caution{border-left-color:var(--warn)}
+  .note h3{font-size:1rem;margin-bottom:5px}
+  .note p{font-size:.95rem;color:var(--muted)}
+
+  figure{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  figure svg{display:block;width:100%;height:auto}
+  figcaption{margin-top:10px;font-size:.85rem;color:var(--muted);text-align:center}
+  .flow .lbl{font-family:var(--body);font-size:11px;fill:var(--fg)}
+  .flow .sub{font-family:var(--body);font-size:9.5px;fill:var(--muted)}
+  .flow .box{fill:var(--surface-2);stroke:var(--line)}
+  .flow .ink{stroke:var(--accent);fill:none}
+  .flow .seal{fill:var(--accent)}
+  .flow .arrow{stroke:var(--muted);fill:none}
+
+  footer{border-top:1px solid var(--line);margin-top:10px;padding-block:28px 40px;color:var(--muted);font-size:.9rem}
+  footer .wrap{display:flex;flex-direction:column;gap:6px}
+  @media (prefers-reduced-motion:no-preference){nav.toc a,.state{transition:background .15s ease}}
+</style>
+<style>html{-webkit-text-size-adjust:100%}body{margin:0}img{max-width:100%;height:auto}[hidden]{display:none!important}</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <span class="brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 11V8a5 5 0 0 1 10 0v3"/><rect x="5" y="11" width="14" height="9" rx="2"/><circle cx="12" cy="15.5" r="1.3" fill="currentColor" stroke="none"/></svg>
+      Your Keys, Your Mail
+    </span>
+    <nav class="toc" aria-label="Sections">
+      <a href="#keys">Keys</a><a href="#people">People</a><a href="#mail">Mail</a>
+      <a href="#groups">Groups</a><a href="#lost">Lost phone</a><a href="#data">Your data</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <div class="eyebrow">A quick guide</div>
+    <h1>You are not a key. You are you.</h1>
+    <p class="lede">Your account is yours alone. No company holds a master key, no one reads your mail, and you can walk away any time and take everything with you. Here is how it works, in plain words.</p>
+  </div>
+
+  <section id="keys">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 14a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M10 11h10l-2 2 2 2"/></svg>You never see a key</h2>
+    <p>The hard security math lives inside your phone and does its job quietly, the same way a car key fob just works in your pocket. You open the app, pick a name people will know you by, and use it. There is no key to copy down and no password to invent.</p>
+    <p class="sub">The one idea behind everything here: your gadgets hold the keys, and your <strong>account</strong> is the steady thing people connect to. Think of a house. The address stays the same. The keys that open it live on your keyring, with a neighbour, in a drawer. Losing a key never moves your house.</p>
+  </section>
+
+  <section id="people">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 7.5a3 3 0 0 1 0 5"/><path d="M18 19a5.5 5.5 0 0 0-3-4.9"/></svg>Meeting people</h2>
+    <p>You give your contacts the names <em>you</em> choose, like in your phone's address book. The app always shows you your own name for someone, and shows whether it has checked that they are really them.</p>
+    <div class="states">
+      <div class="state"><span class="tag ok">Verified</span><p>Someone you have added. You see your name for them with a check mark. Only a contact you set up yourself earns the check.</p></div>
+      <div class="state"><span class="tag neutral">Not yet yours</span><p>A stranger who says they are "Sam." Shown quietly as a claim, never styled like a real contact, until you choose to add them.</p></div>
+      <div class="state"><span class="tag warn">Careful</span><p>A new, different key trying to borrow a name you already use. You get a loud warning: this is <strong>not</strong> your contact.</p></div>
+    </div>
+    <p style="margin-top:16px">Four ways to connect, easiest first:</p>
+    <ul>
+      <li><strong>Scan a code in person.</strong> Two phones on a table. Works with no internet.</li>
+      <li><strong>Get introduced.</strong> Someone you both trust taps "introduce you," and the app confirms it really came from them. No public username needed.</li>
+      <li><strong>Send an invite link.</strong> For a first contact with no mutual friend, send a one-time link over a channel you already trust, like a text or an email. It works like sending a video-call link.</li>
+      <li><strong>Paste an address.</strong> For the technically minded, paste someone's address and confirm a short safety code together.</li>
+    </ul>
+    <div class="note">
+      <h3>When you have no friend in common</h3>
+      <p>If you and a stranger share no contact and no earlier channel, there is nothing to check against yet. The app trusts the first connection, remembers it, and lets you upgrade to "verified" later with an introduction or a quick safety-code check. It never pretends to be sure when it is not.</p>
+    </div>
+  </section>
+
+  <section id="mail">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 6.5 8.5 6 8.5-6"/></svg>Sending and getting mail</h2>
+    <p>Your message is locked on your own device before it leaves. The server that passes it along only ever sees a scrambled envelope. It cannot read a single word, and neither can anyone who runs it.</p>
+    <figure>
+      <svg class="flow" viewBox="0 0 520 150" role="img" aria-label="Your device locks the message, the portal only sees scrambled text, their device unlocks it">
+        <!-- your device -->
+        <rect class="box" x="18" y="46" width="92" height="58" rx="9"/>
+        <text class="lbl" x="64" y="76" text-anchor="middle">Your phone</text>
+        <text class="sub" x="64" y="92" text-anchor="middle">locks it</text>
+        <!-- arrow 1 -->
+        <path class="arrow" d="M116 75 H196" marker-end="url(#a)"/>
+        <!-- portal -->
+        <rect class="box" x="204" y="40" width="112" height="70" rx="9"/>
+        <path class="ink" d="M247 66v-6a13 13 0 0 1 26 0v6"/>
+        <rect class="seal" x="244" y="66" width="32" height="24" rx="4"/>
+        <text class="lbl" x="260" y="104" text-anchor="middle">The portal</text>
+        <text class="sub" x="260" y="33" text-anchor="middle">sees only scrambled text</text>
+        <!-- arrow 2 -->
+        <path class="arrow" d="M322 75 H402" marker-end="url(#a)"/>
+        <!-- their device -->
+        <rect class="box" x="410" y="46" width="92" height="58" rx="9"/>
+        <text class="lbl" x="456" y="76" text-anchor="middle">Their phone</text>
+        <text class="sub" x="456" y="92" text-anchor="middle">unlocks it</text>
+        <defs><marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M1 1 6 4 1 7" fill="none" stroke="currentColor" stroke-width="1.4" class="arrow"/></marker></defs>
+      </svg>
+      <figcaption>The message is readable only on the two phones. The middle never holds a key.</figcaption>
+    </figure>
+    <div class="note" style="margin-top:16px">
+      <h3>No spam, by design</h3>
+      <p>Your mailbox only accepts letters from people you have let in. A stranger cannot drop mail on you, and anyone who turns into a nuisance can be removed once and for good.</p>
+    </div>
+  </section>
+
+  <section id="groups">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="9" r="2.6"/><circle cx="16" cy="9" r="2.6"/><path d="M3.5 18a4.5 4.5 0 0 1 9 0"/><path d="M11.5 18a4.5 4.5 0 0 1 9 0"/></svg>Groups</h2>
+    <p>A group is a shared space with its own name, like a family chat or a crew mailbox. Everyone inside sees the same letters. When someone leaves, the group quietly changes its lock so the person who left cannot read anything sent afterwards.</p>
+    <p class="sub">Letters sent before they left were already theirs to read. Changing the lock protects what comes next, which is the part that matters.</p>
+  </section>
+
+  <section id="lost">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 2"/><path d="M21 3v5h-5"/></svg>If you lose your phone</h2>
+    <p>This is the moment people worry about, so it is built to be calm:</p>
+    <ul>
+      <li><strong>Have another device?</strong> Tap "I lost a device." The lost phone stops working immediately, and everything carries on where you left off.</li>
+      <li><strong>Lost everything?</strong> A few people or backups you chose at the start, your <strong>guardians</strong>, approve your new phone becoming you. There is a short window to cancel in case it was not you.</li>
+    </ul>
+    <p class="sub">Guardians can only help you back in. They can never read your messages or act as you. No company resets your account, because none ever held the keys.</p>
+    <div class="note caution">
+      <h3>The honest part</h3>
+      <p>Because no company holds a master key, if you lose every device at once and cannot reach your guardians and kept no backup, you can be locked out. That is the price of true ownership. Setting up guardians takes one tap, and keeping a second device makes this almost impossible. It is worth doing on day one.</p>
+    </div>
+  </section>
+
+  <section id="data">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.5 7.5 8 9 4.5-1.5 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>Your data is yours</h2>
+    <p>You can leave a provider whenever you like and nothing is held hostage. Your letters were never theirs to keep in a form they could read, so moving on is simple.</p>
+    <ul>
+      <li><strong>Leaving is just pointing somewhere new.</strong> Your account and your contacts come with you.</li>
+      <li><strong>Revoking really works.</strong> When you leave, the scrambled copy a provider still holds turns into useless noise. You do not have to trust anyone to delete it.</li>
+      <li><strong>No lock-in, ever.</strong> If a service treats you badly, you walk, and that choice keeps everyone honest.</li>
+    </ul>
+    <div class="note">
+      <h3>For the curious</h3>
+      <p>Power users can turn on extra safety nets like a written recovery phrase or a hardware key. And if you want total independence, you can run your own server at home from a single card and host everything yourself.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Your account, your keys, your data. Built so ownership is the default, not a setting.</span>
+    <span class="sub">Part of the TernOO project.</span>
+  </div>
+</footer>
+</body>
+</html>
