@@ -17,6 +17,10 @@
   the portal and serves ciphertext; it runs no user-supplied code.
 - **D-TOPO-3 — The substrate is a pluggable adapter, not a hard dependency** (see §3).
 - **D-TOPO-4 — Build it for its own repo** (see §4).
+- **D-TOPO-5 — Loose coupling to TernOO.** The protocol depends on the TernOO word
+  *grammar* (a spec) + standard crypto, **not** on the TernOO C *runtime*. TernOO is the
+  reference/native implementation, never a requirement (see §6–§7). *(Captain's ruling,
+  06/10/2026.)*
 
 ## 2. The machines (our reference deployment)
 
@@ -83,10 +87,63 @@ Build for that now:
   `/spec`, scaffold `/node` (the SD-card build) and `/substrate` (the adapter + Freenet
   impl + conformance suite). TernOO then depends on the ID/Auth repo, not vice-versa.
 
-## 5. Open items this raises
+## 5. Deployment forms — one protocol, three faces
+
+It is standalone first; the portal/login is a deployment *on top*, not the only form.
+
+1. **Pure P2P (standalone contracts).** Two people with the app talk through substrate
+   contracts — account/mailbox/group records. No website needed, and it works *before*
+   the TernOO webface exists.
+2. **The TernOO webface's login/portal.** When the webface exists, it uses this as its
+   auth layer: the Pi portal + the blind-custody mailbox. Our showcase form.
+3. **"Sign in with your sovereign ID" on anyone's site.** A third-party service adopts
+   the protocol; the user logs in with their own identity and the site receives a
+   **scoped capability, not the user's data** — like "Sign in with Apple" with no Apple
+   and no custody. The largest adoption surface, and the "democracy in commerce" payoff.
+
+All three are the *same* protocol; only the deployment differs — the adapter/spoke
+pattern again.
+
+## 6. TernOO coupling — grammar, not runtime (D-TOPO-5)
+
+The protocol depends on **specs, not runtimes**:
+
+- **Depends on** — the TernOO word *grammar* (the capability is a CRYPTO-primary word
+  sentence = a data encoding), the substrate *interface* (§3), and *standard crypto*
+  (Ed25519/HKDF/SHA3/HMAC) for the authenticator.
+- **Does NOT depend on** — the TernOO C *server*. Verifying a capability is standard
+  crypto over the word's canonical bytes; it need not execute on the 5500FP.
+
+So **TernOO is the premier, native implementation** (where words run on the real
+machine, alongside FlowCode and the mesh) but a conforming client on any platform can
+parse the word encoding and verify with vetted crypto. Same shape as "Freenet is the
+reference backend, not a dependency." (Our shipped node *bundles* TernOO — §4 — but the
+protocol does not *require* it.) Rejected alternative: tight coupling, where verification
+runs as TernOO code on the C server — ship-true, but it makes TernOO a hard runtime
+dependency and kills platform-agnostic adoption. Loose coupling ruled, 06/10.
+
+## 7. Packaging & distribution (the separate repo's CI)
+
+Distribution is a real workstream across targets, all built in the separate repo:
+
+| Target | Artifact | Channel |
+|---|---|---|
+| Self-hosted node | Raspberry-Pi **SD-card image** (full stack, §4) | image download / flasher |
+| Desktop client (messenger) | installers | **Windows** (MSI / winget / NSIS), macOS (notarized dmg), Linux (AppImage/flatpak/deb) |
+| "Sign in with sovereign ID" | developer **SDK/library** | npm / PyPI / crates.io |
+| The records | **Freenet contracts** | published to the substrate |
+
+CI in the ID/Auth repo builds each artifact; this is another reason the repo split earns
+its keep (§4).
+
+## 8. Open items this raises
 
 1. Confirm the SD-card stack list (§4) and the minimum viable first image (likely
    Tor + crypto + ID/Auth + one substrate backend + a mailbox client).
 2. Substrate conformance suite — write it before the second backend exists.
 3. Repo-split timing — design now, lift when the capability-word + substrate interface
    are stable (not before, to avoid moving a moving target).
+4. First packaging target after the SD-card image — likely the desktop messenger client
+   (Windows installer first, given the audience).
+5. The "sign in with sovereign ID" SDK surface — the minimal API a third-party site
+   needs, and which language binding ships first.
