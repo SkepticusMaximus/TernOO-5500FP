@@ -21,6 +21,12 @@ reconciliation. Gate: captain's side window. No code is cut until CF5's pre-buil
   serialization** of the grant sentence. That format can be fixed *now*; the TernOO
   *trit* encoding becomes an equivalent native serializer added when CC clears the ask.
   So the crypto/verify core does **not** wait on the Language Audit.
+- **Wrap prior art; don't rebuild it** (see `identity-ssi-prior-art.md`). The core
+  **adopts** well-licensed Apache-2 stacks rather than hand-rolling: **Spruce `ssi`/DIDKit**
+  (Rust) for DID/VC crypto + resolution, and **KERI pre-rotation** for the key
+  rotation/recovery crux. This shrinks the from-scratch core to our genuine contribution —
+  the capability *word*, the zero-custody mailbox, the substrate adapter, and the petname
+  layer. Phase 1/2 become "wrap + integrate," not "invent."
 
 ## 2. Phased build
 
