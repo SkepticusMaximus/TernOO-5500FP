@@ -61,7 +61,10 @@ addressing scheme — it reuses the ship's own.
 - **Canonical bytes (C3).** Fixed 24-trit-word→byte mapping (3²⁴ ≈ 2³⁸ → **5 bytes/word**),
   word order **LSB-first**, fixed field widths — one sentence → one byte string, always. A
   verifier **rejects any word with nonzero padding or an out-of-range trit value** (no
-  malleability). Key/address encoding: a 256-bit value maps to 9 MAP words via the **offset
+  malleability). **Per word (N1):** the unsigned byte value is `U = V + (3²⁴−1)/2` (V = the
+  word's signed 24-trit value), stored little-endian; a verifier **rejects any `U ≥ 3²⁴`**
+  (such 5-byte strings exist, since `3²⁴ < 2⁴⁰`). Test vectors include the zero, max and min
+  words. Key/address encoding: a 256-bit value maps to 9 MAP words via the **offset
   `value − 2²⁵⁵`** (a raw unsigned 256-bit number overflows 162 balanced trits for ~15% of
   the space; the offset fits). Pinned in one place against `build_map_word`, with round-trip
   test vectors at `0, 1, 2²⁵⁵−1, 2²⁵⁵, 2²⁵⁶−1`.
@@ -93,9 +96,13 @@ addressing scheme — it reuses the ship's own.
 2. **Published revocation record** — a `CRYPTO/REVOKE` word naming the grant's
    content-address, published to the substrate; verifiers check it on `resolve`.
 3. **Key rotation** — the issuer rotates its key; *every* grant under the old key dies at
-   once. This is the **zero/blind-custody revocation**: after rotation, the Pi's blind
-   ciphertext is undecryptable and any grant it held is dead. (Depends on the rotation
-   design — the round's crux; see primer §6.)
+   once: no new mail is encrypted to it, and the Pi will no longer serve for it. **Honest
+   boundary (F3):** rotation protects the *future*, not the past. Mail already encrypted to an
+   old device key stays decryptable by anyone holding that key plus a copy of the ciphertext,
+   and the substrate keeps immutable copies — so revocation does **not** make old ciphertext
+   noise to a thief who has the key. Past-mail protection comes from **forward-secret
+   per-message keys deleted after reading** + OS-keystore protection of the device key. (The
+   rotation design is the round's crux; see primer §6 and `key-lifecycle.md`.)
 
 **Revocation rules (C4):**
 - A `REVOKE` names the target grant by a **vetted-hash content-address of its canonical
@@ -189,7 +196,9 @@ above. (Source: `master:private/POBOX/2026-10-07-1146-CF5-to-CC-ternid-pre-build
 - **C1 — rights normal form** (§1, §5, §7): each right trit is `+1 granted / 0 not / −1
   invalid (fail closed)`; a RIGHTS word must be in **closed normal form** (a higher right
   implies its lowers — reject otherwise). Explicit deny is a `CAVEAT`, never a trit state (a
-  deny that attenuation can drop is no deny).
+  deny that attenuation can drop is no deny). **Implications (N2):** `admin ⇒ write`;
+  `write ⇒ append` and `write ⇒ read`; **`list` and `delegate` imply nothing and are implied
+  by nothing** — `admin` does *not* grant them, so "admin" is not "everything".
 - **C2 — blind custody ⇒ Ed25519** (§2, §5, §7): HMAC verification needs the secret, so a
   blind host uses the **signature** profile; HMAC is only for first-party cabins where the
   verifier is the issuer. *(Fixes the one headline claim the audit caught.)*
