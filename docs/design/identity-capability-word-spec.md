@@ -1,9 +1,10 @@
 # The Capability Word — Spec (DRAFT)
 
 **Status:** DRAFT, design-round deliverable (CF5 order of work, step 3). Gate: captain's
-side window. Trit-level assignments below are **proposals pending reconciliation with the
-authoritative Language Audit** (local-only; CC-HP / CF5 hold it — this seat does not).
-**Author:** CC (CLOUD seat) · **Date:** 06/10/2026 ACST
+side window. Trit-level assignments below were **cleared by CC-HP on 07-10-2026** against
+the canonical emulator (`5500fp_ternoo_v03.py`) and recorded in the rebuilt Language Audit
+§9 (`private/TernOO-Language-Audit.md`) — **final subject to CF5's pre-build audit.**
+**Author:** CC (CLOUD seat) · **Date:** 06/10/2026 ACST (assignments reconciled 07/10/2026)
 **Reads with:** `identity-design-round-primer.md`, `identity-threat-model.md`,
 `identity-deployment-topology.md`.
 **Grounding:** TernOO word frame 2+4+18 — PRIMARY T23-T22 (9 types), QUALIFIER T21-T18
@@ -27,9 +28,11 @@ This is a **macaroon in ternary** (and maps 1:1 to a UCAN — §6).
 
 ## 1. The grant sentence (a sequence of CRYPTO words)
 
-A capability is an ordered sentence of words under the **CRYPTO primary (T23,T22 = 0,+1;
-reserved — this spec is the proposed first use; un-reserving is a captain/CF5 call)**. Each
-word's 4-trit QUALIFIER (81 values) names its role; the 18-trit payload carries the field.
+A capability is an ordered sentence of words under the **CRYPTO primary (T23,T22 = 0,+1 =
+`0+`)** — confirmed genuinely reserved/unused and **un-reserved for this family by CC-HP,
+07-10** (final subject to CF5). Each word's 4-trit QUALIFIER (81 values; **7 used, 74
+free**) names its role via the cleared canonical value shown below; the 18-trit payload
+carries the field.
 
 | # | Role (CRYPTO qualifier) | Payload (T17-T0, 18 trits) | Notes |
 |---|---|---|---|
@@ -40,6 +43,11 @@ word's 4-trit QUALIFIER (81 values) names its role; the 18-trit payload carries 
 | 5..n | `CAVEAT` (0+) | one attenuation each: `EXPIRY` · `SCOPE` (prefix under object) · `QUOTA` · `AUDIENCE` | macaroon caveats; **narrow only** |
 | last-1 | `DELEG_DEPTH` | remaining re-delegation hops (0 = terminal) | attenuation of re-sharing |
 | — | *(authenticator)* | **not a word** — Ed25519 sig / HMAC over canonical bytes | carried alongside (the dual-digest pattern) |
+
+**Cleared CRYPTO qualifier values** (flat 4-trit; CC-HP 07-10, final subject to CF5):
+`GRANT_HEAD = 0` · `ISSUER_REF = +1` · `OBJECT_REF = +2` · `RIGHTS = +3` · `CAVEAT = +4` ·
+`DELEG_DEPTH = +5` · `REVOKE = −1`. (The head sits at the origin; withdrawal reads
+naturally negative. 7 of 81 used, 74 free for future grant vocabulary.)
 
 **Designation uses MAP, not a new type.** Because MAP words are already TernOO's
 content-addressable addresses ("data located by hashing it to MAP word addresses"),
@@ -118,17 +126,26 @@ at the boundary — ship-true inside, interoperable outside).
 
 ## 8. Open questions for the round
 
-1. **Un-reserve CRYPTO for this use** — ratify with CF5 + reconcile exact
-   qualifier assignments against the Language Audit (this seat can't see it).
-2. **Rights lattice** — the exact permission set and its partial order (what ≤ what).
+**Cleared by CC-HP (07-10, final subject to CF5's pre-build audit):**
+- ✅ **Un-reserve CRYPTO** — confirmed reserved/unused; un-reserved for this family.
+- ✅ **Qualifier assignments** — `GRANT_HEAD 0 / ISSUER_REF +1 / OBJECT_REF +2 / RIGHTS +3 /
+  CAVEAT +4 / DELEG_DEPTH +5 / REVOKE −1` (7 of 81). Recorded in Language Audit §9.
+- ✅ **256-bit address = exactly 9 MAP words** (LSB-first; final word zero-padded high trits).
+
+**Still open for CF5 / the build:**
+1. **Rights lattice — CF5 to bless the final order.** CC's recommendation:
+   `admin ≥ write ≥ append`, `write ≥ read`, `list` and `delegate` orthogonal;
+   monotone-narrowing down any delegation chain (child right ≤ parent).
+2. **MAP-address chunking/padding** — pin the exact chunking/padding/endianness against
+   `build_map_word` before freezing the canonical byte serialization (CC to pin; not a
+   blocker to start).
 3. **Macaroon vs signature as the default** — first-party cabins HMAC, cross-node Ed25519;
    confirm the split and where the boundary sits.
-4. **Key/address word-encoding** — the canonical multi-word MAP encoding of a 256-bit key
-   (chunking, padding, endianness) — needs the audit.
-5. **Revocation record lifetime & propagation** — how long a `REVOKE` must persist and how
+4. **Revocation record lifetime & propagation** — how long a `REVOKE` must persist and how
    `resolve` guarantees a verifier sees it.
-6. **Rotation binding** (the crux) — "every grant under the old key dies" presumes a clean
-   key→grants binding and a working rotation story. That design is step-0 of §4.3.
+5. **Rotation binding** (the crux) — "every grant under the old key dies" presumes a clean
+   key→grants binding and a working rotation story (now backed by KERI pre-rotation —
+   `ssi-prior-art.md` §3).
 
 ---
 *Designed to lift into the separate ID/Auth repo as `/spec/capability-word.md` (per
