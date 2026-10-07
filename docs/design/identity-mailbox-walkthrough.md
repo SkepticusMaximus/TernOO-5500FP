@@ -57,8 +57,10 @@ Stevo types a message to "CC" and hits send. On **Stevo's device**:
 4. It drops the sealed envelope into CC's mailbox: written to the **substrate** and handed to
    the **Pi's blind cache** for fast delivery.
 
-The **Pi** checks the append capability is valid and stores the **ciphertext** — it cannot
-read a word of it. (Invariant I4; topology D-TOPO-1.)
+The **Pi** checks the append capability is valid — by **verifying CC's Ed25519 signature
+with CC's *public* key** (never an HMAC, which would need a secret the blind Pi must not
+hold — capability-word spec C2) — and stores the **ciphertext**; it cannot read a word of it.
+(Invariant I4; topology D-TOPO-1.)
 
 **Anti-spam, for free:** CC's mailbox accepts appends *only from holders of an append
 capability CC issued*. Strangers can't dump mail; a spammer CC revokes once and is gone. Spam
