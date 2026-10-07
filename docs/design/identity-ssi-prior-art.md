@@ -61,10 +61,16 @@ that already solves this, and its ethos matches ours exactly:
   (rotation, delegation). Anyone can verify any log **anywhere, anytime, with no special
   infrastructure** ("ambient verifiability") — which is precisely Zooko's "verifiable" edge.
 - **Pre-rotation** — you commit *now* to the hash of your *next* key. If your current key
-  leaks, the attacker still cannot rotate, because the next key was pre-committed and is
-  held separately. This is a proven, **post-quantum-secure** answer to the rotation/recovery
-  crux we flagged as unsolved. We should adopt it rather than invent our own.
+  leaks, the attacker still cannot rotate, because the next key was pre-committed and is held
+  separately. This is the proven answer to the rotation/recovery crux we flagged as unsolved.
+  We adopt it rather than invent our own. **Correction (F4):** pre-rotation is *not*
+  "post-quantum-secure" wholesale — it protects the **rotation commitment** (the next key hides
+  behind a hash); the Ed25519 **signatures** themselves are **not** post-quantum.
 - **Witnesses** (indirect mode) ≈ our guardians / availability helpers.
+
+> **D-KEY-1 (captain's call, 07-10): the KEL *is* the account record** — not a bespoke record
+> alongside KERI. We adopt KERI's KEL as the one account mechanism (F4). `key-lifecycle.md` §6
+> is written around it.
 
 KERI being *ledger-less* is the key alignment: it gives self-sovereign rotation **without**
 a global anchor, which is the whole point of our no-global-namespace design. It slots under

@@ -37,7 +37,7 @@ carries the field.
 | # | Role (CRYPTO qualifier) | Payload (T17-T0, 18 trits) | Notes |
 |---|---|---|---|
 | 1 | `GRANT_HEAD` | version · grant-type · flags | opens every capability; grant-type ∈ {cabin, mailbox, record, delegation} |
-| 2 | `ISSUER_REF` | MAP content-address of the issuer's identity record | multi-word (a key is ~9 words); self-certifying |
+| 2 | `ISSUER_REF` | MAP content-address of the issuer's **account (KERI AID)** — *not* a bare device key (F1) | multi-word (~9 words); self-certifying |
 | 3 | `OBJECT_REF` | MAP content-address of the target (mailbox/cabin/record) | the thing being granted — "a word designating a mailbox" |
 | 4 | `RIGHTS` | one trit per right (read/append/write/list/delegate/admin): **+1 granted · 0 not granted · −1 invalid → fail closed** (C1) | must be in **closed normal form** (a higher right implies its lowers); explicit deny is a `CAVEAT`, never a trit state |
 | 5..n | `CAVEAT` (0+) | one attenuation each: `EXPIRY` · `SCOPE` (prefix under object) · `QUOTA` · `AUDIENCE` | macaroon caveats; **narrow only** |
@@ -79,6 +79,11 @@ addressing scheme — it reuses the ship's own.
     is meant to be blind.
 - **Vetted crypto only** — SHA3 / HKDF / Ed25519 / HMAC. The ternary layer never computes
   the digest.
+- **The account model (F1).** `ISSUER_REF` names an **account (a KERI KEL / AID)**, not a bare
+  key (`key-lifecycle.md` §6). So the detached authenticator also carries the signing **device
+  key**, the **KEL event that authorizes it**, and the **KEL version (sequence number)** it
+  relied on. The verifier's real input is the issuer's **current KEL**, resolved through a
+  pluggable **resolver** — so nothing here hard-codes which key signs.
 
 ## 3. Attenuation (delegate weaker, never stronger)
 
@@ -122,7 +127,10 @@ addressing scheme — it reuses the ship's own.
    qualifier value, non-closed `RIGHTS`, nonzero padding, or a `REVOKE` word presented as a
    grant.
 2. Check the authenticator over the canonical bytes — **Ed25519 signature if the verifier is
-   blind**; HMAC only where the verifier is the trusted issuer (C2).
+   blind**; HMAC only where the verifier is the trusted issuer (C2). **Resolve the issuer's
+   current KEL** (pluggable resolver, F1) and confirm the signing device key is authorized by
+   it; apply **C4 freshness** — a stale KEL fails closed for write/admin/delegate, bounded-stale
+   is tolerated for read/append.
 3. Walk any delegation chain: each child's `RIGHTS` ⊆ parent, `DELEG_DEPTH` not exceeded,
    proof links resolve.
 4. Evaluate every `CAVEAT` (expiry against a signed time source, request within
@@ -222,6 +230,18 @@ versions and confirm each is AGPL-3.0-compatible before adding (recorded in `ssi
 
 **Deferred to `key-lifecycle.md` before any rotation-touching code (open-Q #5):** the
 rotation-binding story. Phases 1–7 that don't touch rotation may start now.
+
+**Part-2 audit (F-conditions, 07-10), where addressed:**
+- **F1 (who is the issuer)** — `ISSUER_REF` = the account (KERI AID); the authenticator carries
+  the device key + KEL authorization + version; `verify()` resolves the current KEL via a
+  pluggable resolver with C4 freshness. (§1 row, §2, §5; `key-lifecycle.md` §6.)
+- **F2/F6** — guardian honesty, M-of-N Ed25519 recovery, and the vertical-slice build order are
+  in `key-lifecycle.md` and `build-roadmap.md`.
+- **F3 (revocation overstates)** — corrected in §4 item 3 (rotation protects the future, not
+  already-exfiltrated ciphertext).
+- **F4 (one account model)** — **D-KEY-1: the KEL is the account record** (`ssi-prior-art.md`,
+  `key-lifecycle.md` §6); the "post-quantum" claim corrected.
+- **N1/N2** — per-word byte formula pinned (§2); rights implications table (C1 above).
 
 ---
 *Designed to lift into the separate ID/Auth repo as `/spec/capability-word.md` (per

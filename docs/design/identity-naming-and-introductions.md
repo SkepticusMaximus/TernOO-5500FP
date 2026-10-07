@@ -44,8 +44,10 @@ This closes the impersonation seam a global namespace would open.
 
 ## 3. Meeting people — four ways, friendliest first
 
-**① In person — scan a QR.** Two phones on a table, scan, done. No internet needed. Keys pin,
-each side assigns a petname. (Walkthrough Act 2.) Safest and simplest.
+**① In person — scan a QR.** Two phones on a table, scan, done. No internet needed. The QR
+**carries the key's hash** and the two devices confirm a **short authentication string (SAS)**,
+so a nearby attacker cannot swap keys mid-pairing (F5). Keys pin, each side assigns a petname.
+(Walkthrough Act 2; same mechanism as offline add-device, key-lifecycle §8.) Safest and simplest.
 
 **② Introduction — a mutual contact vouches.** Someone you both trust sends "meet CC"; their
 app verifies it came through your existing secure link with the introducer, and shows *"Stevo

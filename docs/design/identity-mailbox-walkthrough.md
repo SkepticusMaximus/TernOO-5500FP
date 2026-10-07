@@ -57,10 +57,11 @@ Stevo types a message to "CC" and hits send. On **Stevo's device**:
 4. It drops the sealed envelope into CC's mailbox: written to the **substrate** and handed to
    the **Pi's blind cache** for fast delivery.
 
-The **Pi** checks the append capability is valid — by **verifying CC's Ed25519 signature
-with CC's *public* key** (never an HMAC, which would need a secret the blind Pi must not
-hold — capability-word spec C2) — and stores the **ciphertext**; it cannot read a word of it.
-(Invariant I4; topology D-TOPO-1.)
+The **Pi** checks the append capability is valid — by **verifying an Ed25519 signature from a
+CC *device* key that CC's account KEL currently authorizes** (resolved by the Pi, with
+freshness checks — F1), using only *public* keys (never an HMAC, which would need a secret the
+blind Pi must not hold — capability-word spec C2) — and stores the **ciphertext**; it cannot
+read a word of it. (Invariant I4; topology D-TOPO-1.)
 
 **Anti-spam, for free:** CC's mailbox accepts appends *only from holders of an append
 capability CC issued*. Strangers can't dump mail; a spammer CC revokes once and is gone. Spam
@@ -91,11 +92,17 @@ run her own node (topology §4).
 
 ## Act 7 — CC loses a laptop (rotation live)
 
-CC's laptop is stolen. On the HP, CC taps **"I lost a device."** That device's key is struck
-from CC's account record; its **capabilities are revoked**, so the **Pi's cached ciphertext for
-it is now undecryptable noise**, and mail keeps flowing to CC's remaining device. No password
-reset, no company, no re-introduction to contacts — Stevo's petname for CC still points to the
-same account. (key-lifecycle §3④, capability §4.)
+CC's laptop is stolen. On the HP, CC taps **"I lost a device."** A rotation event in CC's
+account KEL strikes that device key; its **capabilities are revoked**, so **no new mail is
+encrypted to it and the Pi stops serving for it**, while mail keeps flowing to CC's remaining
+device. No password reset, no company, no re-introduction to contacts — Stevo's petname for CC
+still points to the same account.
+
+**Honest boundary (F3):** revocation protects the *future*. Mail the thief's laptop already
+decrypted, or any ciphertext it copied, stays readable with that device key — the substrate
+keeps immutable copies, so revocation can't make old ciphertext noise. Past-mail secrecy comes
+from **forward-secret per-message keys deleted after reading** + OS-keystore protection of the
+device key, not from revocation. (key-lifecycle §3④/§6, capability §4.)
 
 ## Act 8 — Someone leaves the crew
 
