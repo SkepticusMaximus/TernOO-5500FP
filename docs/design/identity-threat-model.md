@@ -60,9 +60,17 @@ Default posture: **least authority** — a passenger gets the narrowest grant th
 - **I1 — Authority ≠ identity.** Access is a held capability, never ambient from "who you are".
 - **I2 — Passenger ≠ peer.** No passenger grant ever becomes mesh/mint standing, by construction.
 - **I3 — Crew data has no public path.** The passenger process has no filesystem route to `private/`.
-- **I4 — Zero-custody.** A host holds no data it can read without a *live* grant; **revocation
-  (= key rotation) renders its stored copy useless**. (Caveat: cannot un-see already-decrypted
-  cleartext; content custody ≠ metadata secrecy — see non-goals.)
+- **I4 — Zero-custody.** A host holds no data it can **read** without a *live* grant.
+  (Caveats, F3: revocation stops *new* mail to a key and stops the host serving it, but does
+  **not** make already-exfiltrated ciphertext unreadable to a key-holder — the substrate keeps
+  immutable copies. Past-mail secrecy comes from **forward-secret per-message keys deleted
+  after reading** + OS-keystore protection, not revocation. Also: content custody ≠ metadata
+  secrecy — see non-goals.)
+- **I8 — No secret reaches the Pi (F5).** Portal login is a **device signature over a
+  server challenge**, audience-bound with proof-of-possession (C5) — never a password or
+  shared secret sent to the Pi. Public append (a passenger messaging the crew's public
+  contact) is a **public-append capability** and MUST carry a quota + abuse/takedown limit
+  (a Phase-5 test).
 - **I5 — Designate in ternary, authenticate with vetted crypto.** MMID/word *labels*; a real
   signature/HMAC over canonical bytes *authenticates*. Never the GF(3)-collidable sponge.
 - **I6 — Least authority & attenuation.** Every grant is the weakest that works and is

@@ -67,8 +67,11 @@ you, from another device. *When:* the second you say so.
 people and/or backups you chose at setup — approve your new device becoming you (say, 3 of
 5). There's a short waiting window so *you* can cancel if it wasn't you. Then you're back.
 *Decided by:* your guardians together — **never a company, never a password reset to beg
-for.** Crucially, guardians can *only* help you back in; they can **never** read your
-messages or act as you. (This is the Argent/Vitalik "social recovery" idea.)
+for.** No **single** guardian can do anything, and guardians can **never read** your
+messages. But a **colluding threshold** of them *can* install a new key — that *is* the
+recovery mechanism, so choose guardians you would trust with that. (The Argent/Vitalik
+"social recovery" idea.) A **device marked lost cannot cancel** a recovery, and guardians
+**confirm out of band**, so a thief holding one un-struck device can't hijack or block it (F2a).
 
 **⑥ Panic / "something's wrong."** One button: reset. Every old key is kicked, a fresh one
 is minted, and anyone watching gets told "my keys changed" (like Signal's safety-number
@@ -94,38 +97,58 @@ The sovereign promise ("no company holds a master key") has a real cost: if you 
 **everything** at once, no one can magically reset you. We don't hide that — we design so it
 almost never happens, and so getting back is friendly when it does:
 
-- **Default for the many — spares + guardians.** Keep a second device, and/or pick 2–3
-  guardians (friends, family, your own backup). Losing one thing never locks you out;
-  losing all is fixed by people you trust, not a corporation. No seed phrase to lose.
+- **Default for the many — spares + guardians.** Keep a second device, and/or pick 2–5
+  guardians (friends, family, a hardware key you hold). Losing one thing never locks you out;
+  losing all is fixed by people you trust, not a corporation. No seed phrase to lose. (A
+  *cloud backup* is **not** a guardian — handing recovery to a provider reintroduces a
+  custodian, the exact thing we're removing. F2b.)
 - **Optional for the few — a written recovery phrase or a hardware key.** The crypto-native
   safety net. Powerful, but easy to lose or have stolen, so it's **hard mode, off by
   default**, offered to users who want it.
+- **Recovery starts fresh (F3).** A recovered account runs on a **new** key, so it **cannot
+  read old mail** unless you kept a backup. The promise is "you're back," not "your old
+  mailbox is back" — the UI must say so plainly.
 - **The honest limit:** lose every device *and* fail to reach enough guardians *and* keep no
   backup → you're locked out. That's the price of having no central master key. We counter
   it by making guardians one-tap to set up and nudging everyone to keep at least one spare.
 
-## 6. Under the hood (for CF5 / CC-HP) — it reuses the capability machinery
+## 6. Under the hood (for CF5 / CC-HP) — the account IS a KEL
 
-Nothing new is invented; the lifecycle is just capability words (see the capability-word
-spec) being issued and revoked:
+**D-KEY-1 (captain's call, 07-10): the account is a KERI Key Event Log (KEL)** — one
+mechanism, not two. We do **not** keep a separate bespoke account record alongside it (F4).
 
-- **Account record** = a mutable, signed record on the substrate (the §A.3 record) listing
-  (a) the device keys currently allowed to act as you, and (b) your guardians and the
-  recovery threshold. Others petname *this account*, so it is the stable "you."
-- **"A device is me"** = that device holds a **delegation capability** from the account.
-  *Add* = issue a delegation + sign an account-record update. *Remove* = `REVOKE` + record
-  update. *Recover* = guardians jointly sign the record update that installs the new key
-  (threshold / Shamir-style). Message-key rotation = the ratchet, separate and automatic.
-- **Who may change the record?** A threshold of current device keys, or the guardian set on
-  the recovery path. The record is self-governing — a tiny council of *your own* keys. No
-  registrar. (This is the DID-document-rotation pattern, done with our words.)
-- **Ties to blind-custody (I4):** revoking a device's capability means the Pi's ciphertext
-  for it is dead weight; a full rotation kills every grant at once — the revocation
-  mechanism in the capability spec §4.
+- **Account = a KEL** — a hash-chained, append-only log of **signed key events** for a
+  self-certifying account identifier (KERI's AID). The KEL's current established state lists
+  the **device keys** authorized to act for the account and the **guardians + M-of-N
+  threshold**. Others petname *the account (AID)*, so it is the stable "you." Any party can
+  verify a KEL anywhere with no special infrastructure (ambient verifiability).
+- **"A device is me"** = a key event in the KEL authorizes that device key. *Add* = an
+  establishment/rotation event adding the key (signed at the current threshold). *Remove /
+  rotate* = a rotation event; **KERI pre-rotation** pre-commits the *hash* of the next key, so
+  a leaked current key still cannot rotate the account. *Recover* = an **M-of-N of ordinary
+  Ed25519 guardian signatures** on a rotation event installing the new device key — **not**
+  Shamir-split keys and **not** threshold signatures (plain on-record M-of-N, F2c).
+  Message-key rotation is the ratchet, separate and automatic.
+- **Who may change the KEL?** The current device keys at the established threshold, or the
+  guardian set on the recovery path. Self-governing — a tiny council of *your own* keys. No
+  registrar.
+- **Issuer of a capability (F1):** a grant's `ISSUER_REF` names the **account (AID)**, never a
+  bare device key. The authenticator carries the signing **device key**, the **KEL event that
+  authorizes it**, and the **KEL version (sequence number)** it relied on. A verifier resolves
+  the **current KEL** through a pluggable resolver and applies **C4 freshness**: on a stale
+  KEL, `write`/`admin`/`delegate` **fail closed**; `read`/`append` may use a **bounded-stale**
+  one. Senders encrypting to "current device keys" must likewise **warn or refuse** past a
+  stated KEL age, or they encrypt to a revoked device.
+- **Blind-custody boundary (F3):** revoking/rotating kills the *grant* (no new mail is
+  encrypted to the old key; the Pi won't serve for it). It does **not** make
+  already-exfiltrated ciphertext unreadable to someone holding the old key — the substrate
+  keeps immutable copies. Past-mail secrecy comes from **forward-secret per-message keys
+  deleted after reading** + OS-keystore protection, not from revocation.
 
-The crux we promised to solve: **"rotation kills every grant" works because grants are
-delegations under the account, and the account survives key changes.** Identity ≠ key is
-what makes rotation safe instead of fatal.
+The crux: **the account (KEL) survives key changes, so rotating a device never loses *you*.**
+Identity ≠ key is what makes rotation safe instead of fatal. **Post-quantum note:**
+pre-rotation protects the *rotation commitment* (the next key hides behind a hash); the
+Ed25519 signatures themselves are **not** post-quantum.
 
 ## 7. The friendliness principles (the product bet)
 
@@ -139,18 +162,23 @@ what makes rotation safe instead of fatal.
 
 ## 8. Open questions for the round
 
-1. **Guardian threshold & cancel-window defaults** (e.g. 3-of-5, 48h to cancel) — and
-   whether a guardian can be "a device" vs. "a person" vs. "a cloud backup."
-2. **Account-record update rule** — how many current device keys must co-sign a routine
-   change; how that interacts with the guardian path.
-3. **Threshold mechanism** — Shamir secret sharing vs. threshold signatures vs. an
-   on-record M-of-N policy (which is simplest to verify with our capability words?).
-4. **Offline add-device** — QR enrolment must work with no internet (two phones on a table);
-   confirm the handshake needs no substrate round-trip.
-5. **Compromise detection** — what, if anything, auto-triggers a rotation (vs. only the
-   user's panic button), given invariant "no surprises."
-6. **"Lost my last device" UX** — the exact flow and wait-window, since it's the scariest
-   moment and the one most likely to lose a user.
+**Settled by the audit (07-10):**
+- ✅ **Threshold mechanism** — **on-record M-of-N of ordinary Ed25519 signatures** (not Shamir,
+  not threshold signatures) (F2c). A cloud backup is **not** a guardian (F2b). Cancel-window:
+  a lost-marked device cannot cancel; guardians confirm out of band (F2a).
+- ✅ **Account model** — the account **is a KEL** (§6, D-KEY-1, F4).
+- ✅ **Offline add-device (F5):** QR enrolment works offline and the QR **carries the new key's
+  hash**; the two devices confirm a **short authentication string (SAS)** so a nearby attacker
+  cannot swap keys. No substrate round-trip needed.
+
+**Still open:**
+1. **Guardian threshold & cancel-window defaults** (e.g. 3-of-5, 48h) and the exact out-of-band
+   confirmation channel.
+2. **Routine KEL update rule** — how many current device keys co-sign a non-recovery change.
+3. **Compromise detection** — what, if anything, auto-triggers a rotation vs. only the panic
+   button (given "no surprises").
+4. **"Lost my last device" UX** — the exact flow and wait-window; the scariest moment and the
+   one most likely to lose a user.
 
 ---
 
