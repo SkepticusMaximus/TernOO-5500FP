@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect x="4" y="4" width="120" height="120" rx="22" fill="#1a1f2b" stroke="#5a82be" stroke-width="3"/>
+  <g font-family="DejaVu Sans Mono, monospace" font-weight="bold" text-anchor="middle">
+    <rect x="18" y="38" width="28" height="40" rx="5" fill="#15151f" stroke="#3a3a52"/>
+    <text x="32" y="67" font-size="28" fill="#ff8a8a">&#8722;</text>
+    <rect x="50" y="38" width="28" height="40" rx="5" fill="#15151f" stroke="#3a3a52"/>
+    <text x="64" y="67" font-size="28" fill="#9a9aac">0</text>
+    <rect x="82" y="38" width="28" height="40" rx="5" fill="#15151f" stroke="#3a3a52"/>
+    <text x="96" y="67" font-size="28" fill="#7dd3a0">+</text>
+    <text x="64" y="100" font-size="15" fill="#8a8aa8">24-trit</text>
+  </g>
+</svg>
