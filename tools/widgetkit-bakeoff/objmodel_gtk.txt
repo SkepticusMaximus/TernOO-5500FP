@@ -1,0 +1,23 @@
+=== GTK3 · GtkTextView — object model ===
+
+Python MRO:
+    gi.repository.Gtk.TextView
+    gi.overrides.Gtk.Container
+    gi.repository.Gtk.Container
+    gi.overrides.Gtk.Widget
+    gi.repository.Gtk.Widget
+    gi.repository.GObject.InitiallyUnowned
+    gi.overrides.GObject.Object
+    gi.repository.GObject.Object
+    gi._gi.GObject
+    gi.repository.Atk.ImplementorIface
+    gi.repository.Gtk.Buildable
+    gi.repository.Gtk.Scrollable
+    gobject.GInterface
+    builtins.object
+
+GType ancestry (inherits ->):
+   GtkTextView -> GtkContainer -> GtkWidget -> GInitiallyUnowned -> GObject
+
+properties (67):
+   accepts-tab, app-paintable, border-width, bottom-margin, buffer, can-default, can-focus, child, composite-child, cursor-visible, double-buffered, editable, events, expand, focus-on-click, hadjustment, halign, has-default, has-focus, has-tooltip, height-request, hexpand, hexpand-set, hscroll-policy, im-module, indent, input-hints, input-purpose, is-focus, justification, left-margin, margin, margin-bottom, margin-end, margin-left, margin-right, margin-start, margin-top, monospace, name, no-show-all, opacity, overwrite, parent, pixels-above-lines, pixels-below-lines, pixels-inside-wrap, populate-all, receives-default, resize-mode, right-margin, scale-factor, sensitive, style, tabs, tooltip-markup, tooltip-text, top-margin, vadjustment, valign, vexpand, vexpand-set, visible, vscroll-policy, width-request, window, wrap-mode

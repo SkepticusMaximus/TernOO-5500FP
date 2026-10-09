@@ -1,0 +1,17 @@
+=== PySide6 · QTextEdit — object model ===
+
+Python MRO:
+    PySide6.QtWidgets.QTextEdit
+    PySide6.QtWidgets.QAbstractScrollArea
+    PySide6.QtWidgets.QFrame
+    PySide6.QtWidgets.QWidget
+    PySide6.QtCore.QObject
+    PySide6.QtGui.QPaintDevice
+    Shiboken.Object
+    builtins.object
+
+Qt meta ancestry (inherits ->):
+   QTextEdit -> QAbstractScrollArea -> QFrame -> QWidget -> QObject
+
+meta-properties (87, own+inherited):
+   objectName, modal, windowModality, enabled, geometry, frameGeometry, normalGeometry, x, y, pos, frameSize, size, width, height, rect, childrenRect, childrenRegion, sizePolicy, minimumSize, maximumSize, minimumWidth, minimumHeight, maximumWidth, maximumHeight, sizeIncrement, baseSize, palette, font, cursor, mouseTracking, tabletTracking, isActiveWindow, focusPolicy, focus, contextMenuPolicy, updatesEnabled, visible, minimized, maximized, fullScreen, sizeHint, minimumSizeHint, acceptDrops, windowTitle, windowIcon, windowIconText, windowOpacity, windowModified, toolTip, toolTipDuration, statusTip, whatsThis, accessibleName, accessibleDescription, accessibleIdentifier, layoutDirection, autoFillBackground, styleSheet, locale, windowFilePath, inputMethodHints, frameShape, frameShadow, lineWidth, midLineWidth, frameWidth, frameRect, verticalScrollBarPolicy, horizontalScrollBarPolicy, sizeAdjustPolicy, autoFormatting, tabChangesFocus, documentTitle, undoRedoEnabled, lineWrapMode, lineWrapColumnOrWidth, readOnly, markdown, html, plainText, overwriteMode, tabStopDistance, acceptRichText, cursorWidth, textInteractionFlags, document, placeholderText
