@@ -295,7 +295,8 @@ def _open_props(iid):
     if dpg.does_item_exist("props_modal"):
         dpg.delete_item("props_modal")
     with dpg.window(label="Properties", modal=True, tag="props_modal",
-                    width=500, height=450, pos=[32, 50], no_resize=True):
+                    width=500, height=492, pos=[32, 46], no_resize=True,
+                    no_scrollbar=True):
         dpg.add_text("Text", color=ACC)
         dpg.add_input_text(tag="p_text", default_value=it["text"], width=-1,
                            on_enter=True, callback=lambda *a: _props_commit(iid))
