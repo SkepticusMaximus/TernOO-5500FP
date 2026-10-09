@@ -192,8 +192,7 @@ def _render():
                                           user_data=(iid, "progress"))
                         dpg.add_menu_item(label="X  Complete", callback=_set_status,
                                           user_data=(iid, "complete"))
-                    dpg.add_menu_item(label="Edit text…", callback=_edit_from, user_data=iid)
-                    dpg.add_menu_item(label="Notes…", callback=_notes_from, user_data=iid)
+                    dpg.add_menu_item(label="Properties…", callback=_props_from, user_data=iid)
                     dpg.add_menu_item(label="Add sub-goal…", callback=_add_sub_dialog,
                                       user_data=iid)
                     dpg.add_menu_item(label="Copy text", callback=_ctx_copy, user_data=iid)
@@ -279,80 +278,73 @@ def _sub_commit(parent_id):
         dpg.delete_item("sub_modal")
 
 
-def _edit_from(_s, _a, iid):
-    _open_edit(iid)
+def _props_from(_s, _a, iid):
+    _open_props(iid)
 
 
-def _edit_sel(*_):
+def _props_sel(*_):
     if SEL[0]:
-        _open_edit(SEL[0])
+        _open_props(SEL[0])
 
 
-def _open_edit(iid):
+def _open_props(iid):
+    """Properties dialog — text + status + notes + metadata, all in one place."""
     it = _by_id(iid)
     if not it:
         return
-    if dpg.does_item_exist("edit_modal"):
-        dpg.delete_item("edit_modal")
-    with dpg.window(label="Edit text", modal=True, tag="edit_modal",
-                    width=420, height=130, pos=[48, 110], no_resize=True):
-        dpg.add_input_text(tag="edit_field", default_value=it["text"], width=-1,
-                           on_enter=True, callback=lambda *a: _edit_commit(iid))
+    if dpg.does_item_exist("props_modal"):
+        dpg.delete_item("props_modal")
+    with dpg.window(label="Properties", modal=True, tag="props_modal",
+                    width=500, height=450, pos=[32, 50], no_resize=True):
+        dpg.add_text("Text", color=ACC)
+        dpg.add_input_text(tag="p_text", default_value=it["text"], width=-1,
+                           on_enter=True, callback=lambda *a: _props_commit(iid))
+        dpg.add_spacer(height=6)
+        dpg.add_text("Status", color=ACC)
+        dpg.add_radio_button(tag="p_status", items=[SLABEL[s] for s in STATUSES],
+                             default_value=SLABEL.get(it.get("status", "pending")),
+                             horizontal=True)
+        dpg.add_spacer(height=6)
+        dpg.add_text("Notes  (Markdown — shared format with skills/Obsidian)", color=ACC)
+        dpg.add_input_text(tag="p_notes", default_value=it.get("notes", ""),
+                           multiline=True, width=-1, height=175)
+        dpg.add_spacer(height=6)
+        h = it.get("history", [])
+        meta = f"id {it['id']}  ·  created {h[0]['ts'] if h else '—'}  ·  {len(h)} change(s)"
+        if it.get("parent"):
+            meta += f"  ·  sub-goal of {it['parent']}"
+        dpg.add_text(meta, color=DIM)
         dpg.add_spacer(height=8)
         with dpg.group(horizontal=True):
-            dpg.add_button(label="Save", width=100, callback=lambda *a: _edit_commit(iid))
-            dpg.add_button(label="Cancel", width=100,
-                           callback=lambda *a: dpg.delete_item("edit_modal"))
-    dpg.focus_item("edit_field")
+            dpg.add_button(label="Save", width=110, callback=lambda *a: _props_commit(iid))
+            dpg.add_button(label="Cancel", width=110,
+                           callback=lambda *a: dpg.delete_item("props_modal"))
+    dpg.focus_item("p_text")
 
 
-def _edit_commit(iid):
-    new = (dpg.get_value("edit_field") or "").strip()
+def _props_commit(iid):
     it = _by_id(iid)
-    if new and it:
-        _snapshot(); it["text"] = new; _save(); _render()
-    if dpg.does_item_exist("edit_modal"):
-        dpg.delete_item("edit_modal")
-
-
-def _notes_from(_s, _a, iid):
-    _open_notes(iid)
-
-
-def _notes_sel(*_):
-    if SEL[0]:
-        _open_notes(SEL[0])
-
-
-def _open_notes(iid):
-    it = _by_id(iid)
-    if not it:
-        return
-    if dpg.does_item_exist("notes_modal"):
-        dpg.delete_item("notes_modal")
-    with dpg.window(label="Notes", modal=True, tag="notes_modal",
-                    width=480, height=340, pos=[40, 70], no_resize=True):
-        dpg.add_text(it["text"][:54], color=GRN, wrap=450)
-        dpg.add_text("free text — Markdown welcome (shared format with skills/Obsidian)",
-                     color=DIM, wrap=450)
-        dpg.add_input_text(tag="notes_field", default_value=it.get("notes", ""),
-                           multiline=True, width=-1, height=210)
-        dpg.add_spacer(height=6)
-        with dpg.group(horizontal=True):
-            dpg.add_button(label="Save", width=100, callback=lambda *a: _notes_commit(iid))
-            dpg.add_button(label="Cancel", width=100,
-                           callback=lambda *a: dpg.delete_item("notes_modal"))
-    dpg.focus_item("notes_field")
-
-
-def _notes_commit(iid):
-    it = _by_id(iid)
-    if it is not None:
-        new = dpg.get_value("notes_field") or ""
-        if new != it.get("notes", ""):
-            _snapshot(); it["notes"] = new; _save(); _render()
-    if dpg.does_item_exist("notes_modal"):
-        dpg.delete_item("notes_modal")
+    if it:
+        new_text = (dpg.get_value("p_text") or "").strip()
+        new_notes = dpg.get_value("p_notes") or ""
+        lbl2st = {v: k for k, v in SLABEL.items()}
+        new_status = lbl2st.get(dpg.get_value("p_status"), it.get("status"))
+        tc = bool(new_text) and new_text != it["text"]
+        nc = new_notes != it.get("notes", "")
+        sc = new_status != it.get("status")
+        if tc or nc or sc:
+            _snapshot()
+            if tc:
+                it["text"] = new_text
+            if nc:
+                it["notes"] = new_notes
+            if sc:
+                ts = _now(); it["status"] = new_status
+                it.setdefault("history", []).append({"ts": ts, "status": new_status})
+                TIMELINE.append({"ts": ts, "id": iid, "text": it["text"], "to": new_status})
+            _save(); _save_timeline(); _render()
+    if dpg.does_item_exist("props_modal"):
+        dpg.delete_item("props_modal")
 
 
 # ── selection + clipboard ─────────────────────────────────────────────────────
@@ -539,12 +531,11 @@ def _show_help(*_):
                      ("Ctrl+Z", "undo the last change"),
                      ("Ctrl+C", "copy the selected record"),
                      ("Ctrl+V", "paste clipboard as an objective"),
-                     ("F2", "edit the selected record's text"),
-                     ("Ctrl+E", "edit the selected record's notes"),
+                     ("F2 / Ctrl+E", "open Properties (text + status + notes)"),
                      ("Del", "delete selected (asks first)"),
                      ("Ctrl+N", "jump to the new box"),
-                     ("double-click", "edit a record"),
-                     ("right-click", "status / edit / notes / sub-goal / history")]:
+                     ("double-click", "open Properties"),
+                     ("right-click", "status / properties / sub-goal / history")]:
             with dpg.group(horizontal=True):
                 dpg.add_text(f"{k:>13}", color=ACC)
                 dpg.add_text("  " + v, color=INK)
@@ -559,7 +550,7 @@ def _ctrl():
 
 
 def _typing():
-    for t in ("input", "edit_field", "sub_field", "notes_field"):
+    for t in ("input", "sub_field", "p_text", "p_notes"):
         if dpg.does_item_exist(t) and dpg.is_item_focused(t):
             return True
     return False
@@ -585,9 +576,9 @@ def _k_new(*_):
         _focus_input()
 
 
-def _k_notes(*_):
+def _k_props(*_):
     if _ctrl() and not _typing():
-        _notes_sel()
+        _props_sel()
 
 
 def _k_delete(*_):
@@ -597,7 +588,7 @@ def _k_delete(*_):
 
 def _k_edit(*_):
     if not _typing():
-        _edit_sel()
+        _props_sel()
 
 
 def _on_dblclick(_s, button):
@@ -605,7 +596,7 @@ def _on_dblclick(_s, button):
         return
     for iid, sid in list(ROW_SEL.items()):
         if dpg.does_item_exist(sid) and dpg.is_item_hovered(sid):
-            _open_edit(iid)
+            _open_props(iid)
             return
 
 
@@ -660,8 +651,7 @@ def build_ui():
                 dpg.add_separator()
                 dpg.add_menu_item(label="Copy selected\tCtrl+C", callback=_copy_sel)
                 dpg.add_menu_item(label="Paste as objective\tCtrl+V", callback=_paste_new)
-                dpg.add_menu_item(label="Edit text\tF2", callback=_edit_sel)
-                dpg.add_menu_item(label="Edit notes\tCtrl+E", callback=_notes_sel)
+                dpg.add_menu_item(label="Properties…\tF2", callback=_props_sel)
                 dpg.add_separator()
                 dpg.add_menu_item(label="Delete selected…\tDel", callback=_delete_sel)
             with dpg.menu(label="View"):
@@ -698,7 +688,7 @@ def build_ui():
         dpg.add_key_press_handler(dpg.mvKey_C, callback=_k_copy)
         dpg.add_key_press_handler(dpg.mvKey_V, callback=_k_paste)
         dpg.add_key_press_handler(dpg.mvKey_N, callback=_k_new)
-        dpg.add_key_press_handler(dpg.mvKey_E, callback=_k_notes)
+        dpg.add_key_press_handler(dpg.mvKey_E, callback=_k_props)
         dpg.add_key_press_handler(dpg.mvKey_Delete, callback=_k_delete)
         dpg.add_key_press_handler(dpg.mvKey_F2, callback=_k_edit)
         dpg.add_mouse_double_click_handler(callback=_on_dblclick)
