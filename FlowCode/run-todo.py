@@ -1,174 +1,330 @@
 #!/home/stevo/.venvs/p2pcp/bin/python3
-"""TernOO · To-Do — a standalone task list for the ship's captain.
+"""TernOO · To-Do — the ship's captain's objective tracker.
 
-A working FlowCode-ecosystem app in the same run-window pattern as the Word
-Explorer: a DearPyGui window, FlowCode's theme + font, with the sensible
-defaults every basic GUI app is owed —
+A standalone FlowCode-ecosystem app (DPG + FlowCode theme/font) that keeps
+OBJECTIVES and their SUB-GOALS with a three-state status, a full timestamped
+history, and a graphical timeline.
 
-    • Menu bar          File / Edit / Help
-    • Undo              Ctrl+Z  (also Edit menu + right-click)  — nothing is lost
-    • Context menu      right-click any task: Toggle / Edit / Copy / Delete / Undo
-    • Edit a task       double-click it, or F2, or the context menu
-    • Clipboard         Copy (Ctrl+C) / Paste-as-task (Ctrl+V); the input box has
-                        the standard Ctrl+C/V/X/A/Z while you type
-    • Keyboard          Enter add · Del delete · F2 edit · Ctrl+N new · Ctrl+Z undo
-    • Selection         click a task to select it; menu actions act on it
+Status (glyph in the right-hand column — click to advance, right-click to set):
+    ✓  pending        O  in progress        X  complete   (red)
 
-Persisted to ~/.config/ternoo/todo.json.
-Launch:  run-todo.py        (or the TernOO To-Do desktop icon)
+Records are KEPT for history. They are never removed by normal use — delete is
+an explicit, double-checked, confirmed action only. Every status change writes a
+date+time stamp to the record's history and to the append-only timeline file.
+
+Sensible defaults throughout: menu bar, Undo (Ctrl+Z), right-click context menu,
+clipboard, keyboard shortcuts, selection.
+
+Data:   ~/.config/ternoo/todo.json      (objectives + sub-goals + per-record history)
+        ~/.config/ternoo/timeline.json  (append-only log of every status change)
+Launch: run-todo.py        (or the TernOO To-Do desktop icon)
 """
 import os
 import json
+import datetime
 import dearpygui.dearpygui as dpg
 
-STORE = os.path.expanduser("~/.config/ternoo/todo.json")
-os.makedirs(os.path.dirname(STORE), exist_ok=True)
+CFG = os.path.expanduser("~/.config/ternoo")
+STORE = os.path.join(CFG, "todo.json")
+TLINE = os.path.join(CFG, "timeline.json")
+os.makedirs(CFG, exist_ok=True)
 
-GRN, INK, DIM, BAD, ACC = (63, 208, 143), (230, 230, 236), (150, 150, 165), \
-                          (240, 130, 130), (110, 168, 254)
+GRN, INK, DIM = (63, 208, 143), (230, 230, 236), (150, 150, 165)
+BAD, ACC, AMB = (240, 130, 130), (110, 168, 254), (232, 200, 144)
 
-TASKS = []          # [{"text": str, "done": bool}, ...]
-UNDO = []           # snapshots for Ctrl+Z
-SEL = [-1]          # selected row index (mutable holder)
-ROW_SEL = {}        # idx -> row-button item id, rebuilt each render
-THEMES = {}         # flat row themes, built once in build_ui
+STATUSES = ["pending", "progress", "complete"]
+GLYPH = {"pending": "✓", "progress": "O", "complete": "X"}
+SCOLOR = {"pending": ACC, "progress": AMB, "complete": BAD}
+SLABEL = {"pending": "Pending", "progress": "In progress", "complete": "Complete"}
+NEXT = {"pending": "progress", "progress": "complete", "complete": "pending"}
+
+DB = {"version": 2, "seq": 0, "items": []}   # {id,text,status,parent,history:[{ts,status,note?}]}
+TIMELINE = []                                # [{ts,id,text,to,note?}]
+UNDO = []                                    # (DB, TIMELINE) snapshots
+SEL = [None]                                 # selected item id
+ROW_SEL = {}                                 # id -> text-button item (rebuilt each render)
+THEMES = {}
 
 
-# ── persistence ──────────────────────────────────────────────────────────────
-def _load():
+def _now():
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+# ── persistence (+ one-time migration of the old flat list) ───────────────────
+def _load_db():
     try:
-        return json.load(open(STORE, encoding="utf-8"))
+        raw = json.load(open(STORE, encoding="utf-8"))
+    except Exception:
+        raw = []
+    if isinstance(raw, dict) and raw.get("version") == 2:
+        raw.setdefault("seq", len(raw.get("items", [])))
+        for it in raw.get("items", []):
+            it.setdefault("parent", None)
+            it.setdefault("status", "pending")
+            it.setdefault("history", [])
+        return raw
+    # migrate [{text, done}] -> v2
+    try:
+        if os.path.exists(STORE):
+            json.dump(raw, open(STORE + ".v1bak", "w", encoding="utf-8"), indent=1)
+    except Exception:
+        pass
+    items, seq, now = [], 0, _now()
+    for t in (raw if isinstance(raw, list) else []):
+        seq += 1
+        st = "complete" if t.get("done") else "pending"
+        items.append({"id": f"g{seq}", "text": t.get("text", ""), "status": st,
+                      "parent": None,
+                      "history": [{"ts": now, "status": st, "note": "imported"}]})
+    return {"version": 2, "seq": seq, "items": items}
+
+
+def _load_timeline():
+    try:
+        return json.load(open(TLINE, encoding="utf-8"))
     except Exception:
         return []
 
 
 def _save():
-    json.dump(TASKS, open(STORE, "w", encoding="utf-8"), indent=1)
+    json.dump(DB, open(STORE, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
+
+
+def _save_timeline():
+    json.dump(TIMELINE, open(TLINE, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
+
+
+def _by_id(iid):
+    for it in DB.get("items", []):
+        if it["id"] == iid:
+            return it
+    return None
 
 
 # ── undo ─────────────────────────────────────────────────────────────────────
 def _snapshot():
-    UNDO.append([dict(t) for t in TASKS])
+    UNDO.append((json.loads(json.dumps(DB)), json.loads(json.dumps(TIMELINE))))
     if len(UNDO) > 100:
         UNDO.pop(0)
 
 
 def _undo(*_):
     if UNDO:
-        TASKS[:] = UNDO.pop()
-        if SEL[0] >= len(TASKS):
-            SEL[0] = -1
-        _save()
-        _render()
+        db, tl = UNDO.pop()
+        DB.clear(); DB.update(db)
+        TIMELINE[:] = tl
+        if SEL[0] and not _by_id(SEL[0]):
+            SEL[0] = None
+        _save(); _save_timeline(); _render()
 
 
-# ── render ───────────────────────────────────────────────────────────────────
+# ── ordering + render ─────────────────────────────────────────────────────────
+def _ordered():
+    """[(item, is_subgoal), ...] — each objective followed by its sub-goals."""
+    out, seen = [], set()
+    for m in DB.get("items", []):
+        if m.get("parent"):
+            continue
+        out.append((m, False)); seen.add(m["id"])
+        for c in DB["items"]:
+            if c.get("parent") == m["id"]:
+                out.append((c, True)); seen.add(c["id"])
+    for it in DB.get("items", []):          # orphans (missing parent) show as mains
+        if it["id"] not in seen:
+            out.append((it, False))
+    return out
+
+
+def _counts():
+    c = {"pending": 0, "progress": 0, "complete": 0}
+    for it in DB.get("items", []):
+        c[it.get("status", "pending")] = c.get(it.get("status", "pending"), 0) + 1
+    return c
+
+
 def _render():
     ROW_SEL.clear()
     dpg.delete_item("tasklist", children_only=True)
-    if not TASKS:
-        dpg.add_text("  no tasks yet — type one above and hit Add",
+    rows = _ordered()
+    if not rows:
+        dpg.add_text("  no objectives yet — type one above and hit Add",
                      color=DIM, parent="tasklist")
-    for i, t in enumerate(TASKS):
+    for it, sub in rows:
+        iid = it["id"]
+        st = it.get("status", "pending")
         with dpg.group(horizontal=True, parent="tasklist"):
-            dpg.add_checkbox(default_value=t["done"], callback=_toggle, user_data=i)
-            lbl = ("✔  " if t["done"] else "    ") + t["text"]
-            sid = dpg.add_button(label=lbl, width=-1, callback=_select, user_data=i)
+            if sub:
+                dpg.add_spacer(width=26)
+            prefix = "└  " if sub else ""
+            tb = dpg.add_button(label=prefix + it["text"], width=-52,
+                                callback=_select, user_data=iid)
             if THEMES:
-                dpg.bind_item_theme(sid, THEMES["sel"] if i == SEL[0]
+                dpg.bind_item_theme(tb, THEMES["sel"] if iid == SEL[0]
                                     else THEMES["row"])
-            ROW_SEL[i] = sid
-            with dpg.popup(sid, mousebutton=dpg.mvMouseButton_Right):
-                dpg.add_menu_item(label="Toggle done", callback=_ctx_toggle, user_data=i)
-                dpg.add_menu_item(label="Edit…", callback=_edit_from, user_data=i)
-                dpg.add_menu_item(label="Copy text", callback=_ctx_copy, user_data=i)
-                dpg.add_menu_item(label="Delete", callback=_delete, user_data=i)
-                dpg.add_separator()
-                dpg.add_menu_item(label="Undo  (Ctrl+Z)", callback=_undo)
-    done = sum(1 for t in TASKS if t["done"])
+            ROW_SEL[iid] = tb
+            sb = dpg.add_button(label=GLYPH[st], width=40,
+                                callback=_cycle_status, user_data=iid)
+            if THEMES:
+                dpg.bind_item_theme(sb, THEMES["st_" + st])
+            with dpg.tooltip(sb):
+                dpg.add_text(f"{SLABEL[st]} — click to advance")
+            for anchor in (tb, sb):
+                with dpg.popup(anchor, mousebutton=dpg.mvMouseButton_Right):
+                    with dpg.menu(label="Set status"):
+                        dpg.add_menu_item(label="✓  Pending", callback=_set_status,
+                                          user_data=(iid, "pending"))
+                        dpg.add_menu_item(label="O  In progress", callback=_set_status,
+                                          user_data=(iid, "progress"))
+                        dpg.add_menu_item(label="X  Complete", callback=_set_status,
+                                          user_data=(iid, "complete"))
+                    dpg.add_menu_item(label="Edit…", callback=_edit_from, user_data=iid)
+                    if not sub:
+                        dpg.add_menu_item(label="Add sub-goal…", callback=_add_sub_dialog,
+                                          user_data=iid)
+                    dpg.add_menu_item(label="Copy text", callback=_ctx_copy, user_data=iid)
+                    dpg.add_menu_item(label="History…", callback=_show_history, user_data=iid)
+                    dpg.add_separator()
+                    dpg.add_menu_item(label="Delete record…", callback=_confirm_delete,
+                                      user_data=iid)
+                    dpg.add_separator()
+                    dpg.add_menu_item(label="Undo  (Ctrl+Z)", callback=_undo)
+    c = _counts()
     if dpg.does_item_exist("count"):
-        dpg.set_value("count", f"{len(TASKS)} task(s) · {done} done")
+        dpg.set_value("count", f"{len(DB.get('items', []))} records · "
+                      f"{c['pending']} pending · {c['progress']} in progress · "
+                      f"{c['complete']} complete")
 
 
-# ── mutations ────────────────────────────────────────────────────────────────
+# ── status changes (timestamped → history + timeline) ─────────────────────────
+def _apply_status(iid, new, note=None):
+    it = _by_id(iid)
+    if not it or it.get("status") == new:
+        return
+    _snapshot()
+    ts = _now()
+    it["status"] = new
+    it.setdefault("history", []).append({"ts": ts, "status": new})
+    TIMELINE.append({"ts": ts, "id": iid, "text": it["text"], "to": new})
+    _save(); _save_timeline(); _render()
+
+
+def _cycle_status(_s, _a, iid):
+    it = _by_id(iid)
+    if it:
+        _apply_status(iid, NEXT[it.get("status", "pending")])
+
+
+def _set_status(_s, _a, ud):
+    iid, new = ud
+    _apply_status(iid, new)
+
+
+# ── add / edit ────────────────────────────────────────────────────────────────
+def _new_item(text, parent=None):
+    DB["seq"] = DB.get("seq", 0) + 1
+    iid = f"g{DB['seq']}"
+    ts = _now()
+    DB["items"].append({"id": iid, "text": text, "status": "pending",
+                        "parent": parent,
+                        "history": [{"ts": ts, "status": "pending", "note": "created"}]})
+    TIMELINE.append({"ts": ts, "id": iid, "text": text, "to": "pending", "note": "created"})
+    return iid
+
+
 def _add(*_):
     txt = (dpg.get_value("input") or "").strip()
     if txt:
         _snapshot()
-        TASKS.append({"text": txt, "done": False})
-        _save()
+        _new_item(txt)
+        _save(); _save_timeline()
         dpg.set_value("input", "")
         _render()
     if dpg.does_item_exist("input"):
         dpg.focus_item("input")
 
 
-def _toggle(_s, val, idx):
-    if 0 <= idx < len(TASKS):
+def _add_sub_dialog(_s, _a, parent_id):
+    if dpg.does_item_exist("sub_modal"):
+        dpg.delete_item("sub_modal")
+    with dpg.window(label="Add sub-goal", modal=True, tag="sub_modal",
+                    width=400, height=130, pos=[48, 110], no_resize=True):
+        parent = _by_id(parent_id)
+        dpg.add_text("under: " + (parent["text"][:44] if parent else "?"), color=DIM)
+        dpg.add_input_text(tag="sub_field", hint="sub-goal…", width=-1,
+                           on_enter=True, callback=lambda *a: _sub_commit(parent_id))
+        dpg.add_spacer(height=8)
+        with dpg.group(horizontal=True):
+            dpg.add_button(label="Add", width=100,
+                           callback=lambda *a: _sub_commit(parent_id))
+            dpg.add_button(label="Cancel", width=100,
+                           callback=lambda *a: dpg.delete_item("sub_modal"))
+    dpg.focus_item("sub_field")
+
+
+def _sub_commit(parent_id):
+    txt = (dpg.get_value("sub_field") or "").strip()
+    if txt and _by_id(parent_id):
         _snapshot()
-        TASKS[idx]["done"] = bool(val)
-        _save()
-        _render()
+        _new_item(txt, parent=parent_id)
+        _save(); _save_timeline(); _render()
+    if dpg.does_item_exist("sub_modal"):
+        dpg.delete_item("sub_modal")
 
 
-def _ctx_toggle(_s, _a, idx):
-    if 0 <= idx < len(TASKS):
+def _edit_from(_s, _a, iid):
+    _open_edit(iid)
+
+
+def _edit_sel(*_):
+    if SEL[0]:
+        _open_edit(SEL[0])
+
+
+def _open_edit(iid):
+    it = _by_id(iid)
+    if not it:
+        return
+    if dpg.does_item_exist("edit_modal"):
+        dpg.delete_item("edit_modal")
+    with dpg.window(label="Edit text", modal=True, tag="edit_modal",
+                    width=400, height=130, pos=[48, 110], no_resize=True):
+        dpg.add_input_text(tag="edit_field", default_value=it["text"], width=-1,
+                           on_enter=True, callback=lambda *a: _edit_commit(iid))
+        dpg.add_spacer(height=8)
+        with dpg.group(horizontal=True):
+            dpg.add_button(label="Save", width=100, callback=lambda *a: _edit_commit(iid))
+            dpg.add_button(label="Cancel", width=100,
+                           callback=lambda *a: dpg.delete_item("edit_modal"))
+    dpg.focus_item("edit_field")
+
+
+def _edit_commit(iid):
+    new = (dpg.get_value("edit_field") or "").strip()
+    it = _by_id(iid)
+    if new and it:
         _snapshot()
-        TASKS[idx]["done"] = not TASKS[idx]["done"]
-        _save()
-        _render()
+        it["text"] = new
+        _save(); _render()
+    if dpg.does_item_exist("edit_modal"):
+        dpg.delete_item("edit_modal")
 
 
-def _delete(_s, _a, idx):
-    if 0 <= idx < len(TASKS):
-        _snapshot()
-        del TASKS[idx]
-        if SEL[0] == idx:
-            SEL[0] = -1
-        elif SEL[0] > idx:
-            SEL[0] -= 1
-        _save()
-        _render()
-
-
-def _delete_sel(*_):
-    if 0 <= SEL[0] < len(TASKS):
-        _delete(None, None, SEL[0])
-
-
-def _clear_done(*_):
-    if any(t["done"] for t in TASKS):
-        _snapshot()
-        TASKS[:] = [t for t in TASKS if not t["done"]]
-        SEL[0] = -1
-        _save()
-        _render()
-
-
-def _delete_all(*_):
-    if TASKS:
-        _snapshot()
-        TASKS.clear()
-        SEL[0] = -1
-        _save()
-        _render()
-
-
-# ── selection ────────────────────────────────────────────────────────────────
-def _select(_s, _val, idx):
-    SEL[0] = idx
+# ── selection + clipboard ─────────────────────────────────────────────────────
+def _select(_s, _a, iid):
+    SEL[0] = iid
     _render()
 
 
-# ── clipboard ────────────────────────────────────────────────────────────────
-def _ctx_copy(_s, _a, idx):
-    if 0 <= idx < len(TASKS):
-        dpg.set_clipboard_text(TASKS[idx]["text"])
+def _ctx_copy(_s, _a, iid):
+    it = _by_id(iid)
+    if it:
+        dpg.set_clipboard_text(it["text"])
 
 
 def _copy_sel(*_):
-    if 0 <= SEL[0] < len(TASKS):
-        dpg.set_clipboard_text(TASKS[SEL[0]]["text"])
+    it = _by_id(SEL[0]) if SEL[0] else None
+    if it:
+        dpg.set_clipboard_text(it["text"])
 
 
 def _paste_new(*_):
@@ -178,52 +334,124 @@ def _paste_new(*_):
         txt = ""
     if txt:
         _snapshot()
-        TASKS.append({"text": txt, "done": False})
-        _save()
-        _render()
+        _new_item(txt)
+        _save(); _save_timeline(); _render()
 
 
-# ── edit ─────────────────────────────────────────────────────────────────────
-def _edit_from(_s, _a, idx):
-    _open_edit(idx)
-
-
-def _edit_sel(*_):
-    if 0 <= SEL[0] < len(TASKS):
-        _open_edit(SEL[0])
-
-
-def _open_edit(idx):
-    if not (0 <= idx < len(TASKS)):
+# ── delete (gated: confirm + double-check) ────────────────────────────────────
+def _confirm_delete(_s, _a, iid):
+    it = _by_id(iid)
+    if not it:
         return
-    if dpg.does_item_exist("edit_modal"):
-        dpg.delete_item("edit_modal")
-    with dpg.window(label="Edit task", modal=True, tag="edit_modal",
-                    width=400, height=130, pos=[48, 110], no_resize=True):
-        dpg.add_input_text(tag="edit_field", default_value=TASKS[idx]["text"],
-                           width=-1, on_enter=True,
-                           callback=lambda *a: _edit_commit(idx))
+    kids = [x for x in DB["items"] if x.get("parent") == iid]
+    if dpg.does_item_exist("del_modal"):
+        dpg.delete_item("del_modal")
+    with dpg.window(label="Delete record", modal=True, tag="del_modal",
+                    width=440, height=230, pos=[40, 80], no_resize=True):
+        dpg.add_text("Permanently delete this record?", color=BAD)
+        dpg.add_text(it["text"], wrap=400, color=INK)
+        if kids:
+            dpg.add_text(f"This also deletes {len(kids)} sub-goal(s).", color=AMB)
+        dpg.add_spacer(height=4)
+        dpg.add_text("Records are normally kept for history. This removes it from",
+                     color=DIM, wrap=400)
+        dpg.add_text("the active list for good.", color=DIM, wrap=400)
+        dpg.add_spacer(height=8)
+        dpg.add_checkbox(label="I understand — remove it permanently", tag="del_ok",
+                         callback=lambda _s, v: dpg.configure_item("del_go", enabled=v))
         dpg.add_spacer(height=8)
         with dpg.group(horizontal=True):
-            dpg.add_button(label="Save", width=100,
-                           callback=lambda *a: _edit_commit(idx))
+            dpg.add_button(label="Delete permanently", tag="del_go", enabled=False,
+                           width=190, callback=lambda *a: _do_delete(iid))
             dpg.add_button(label="Cancel", width=100,
-                           callback=lambda *a: dpg.delete_item("edit_modal"))
-    dpg.focus_item("edit_field")
+                           callback=lambda *a: dpg.delete_item("del_modal"))
 
 
-def _edit_commit(idx):
-    new = (dpg.get_value("edit_field") or "").strip()
-    if new and 0 <= idx < len(TASKS):
+def _do_delete(iid):
+    if not dpg.get_value("del_ok"):
+        return
+    it = _by_id(iid)
+    if it:
         _snapshot()
-        TASKS[idx]["text"] = new
-        _save()
-        _render()
-    if dpg.does_item_exist("edit_modal"):
-        dpg.delete_item("edit_modal")
+        ids = {iid} | {x["id"] for x in DB["items"] if x.get("parent") == iid}
+        ts = _now()
+        for d in ids:
+            d_it = _by_id(d)
+            if d_it:
+                TIMELINE.append({"ts": ts, "id": d, "text": d_it["text"],
+                                 "to": "deleted", "note": "deleted"})
+        DB["items"][:] = [x for x in DB["items"] if x["id"] not in ids]
+        if SEL[0] in ids:
+            SEL[0] = None
+        _save(); _save_timeline(); _render()
+    if dpg.does_item_exist("del_modal"):
+        dpg.delete_item("del_modal")
 
 
-# ── misc actions ─────────────────────────────────────────────────────────────
+def _delete_sel(*_):
+    if SEL[0]:
+        _confirm_delete(None, None, SEL[0])
+
+
+# ── history + timeline views ──────────────────────────────────────────────────
+def _show_history(_s, _a, iid):
+    it = _by_id(iid)
+    if not it:
+        return
+    if dpg.does_item_exist("hist_modal"):
+        dpg.delete_item("hist_modal")
+    with dpg.window(label="Record history", modal=True, tag="hist_modal",
+                    width=440, height=320, pos=[50, 70]):
+        dpg.add_text(it["text"][:52], color=GRN, wrap=410)
+        dpg.add_separator()
+        hist = it.get("history", [])
+        if not hist:
+            dpg.add_text("  (no recorded changes)", color=DIM)
+        for h in hist:
+            s = h.get("status", "?")
+            with dpg.group(horizontal=True):
+                dpg.add_text(GLYPH.get(s, "?"), color=SCOLOR.get(s, DIM))
+                dpg.add_text(f"  {h.get('ts', '—')}   {SLABEL.get(s, s)}"
+                             + (f"  ({h['note']})" if h.get("note") else ""),
+                             color=INK)
+        dpg.add_spacer(height=8)
+        dpg.add_button(label="Close", width=100,
+                       callback=lambda *a: dpg.delete_item("hist_modal"))
+
+
+def _show_timeline(*_):
+    if dpg.does_item_exist("tl_win"):
+        dpg.delete_item("tl_win")
+    ev = sorted(TIMELINE, key=lambda e: e.get("ts", ""))
+    with dpg.window(label="Timeline", tag="tl_win", width=600, height=560, pos=[30, 30]):
+        dpg.add_text("every status change, oldest first", color=DIM)
+        dpg.add_separator()
+        if not ev:
+            dpg.add_text("  no status changes yet — advance a goal to begin its timeline",
+                         color=DIM)
+            dpg.add_spacer(height=6)
+            dpg.add_button(label="Close", width=100,
+                           callback=lambda *a: dpg.delete_item("tl_win"))
+            return
+        with dpg.child_window(autosize_x=True, height=-40):
+            h = 24 + len(ev) * 46
+            with dpg.drawlist(width=560, height=h):
+                x0 = 26
+                dpg.draw_line((x0, 8), (x0, h - 8), color=(80, 90, 110), thickness=2)
+                for k, e in enumerate(ev):
+                    y = 22 + k * 46
+                    to = e.get("to", "")
+                    col = SCOLOR.get(to, (200, 120, 120) if to == "deleted" else DIM)
+                    dpg.draw_circle((x0, y), 7, fill=col, color=col)
+                    dpg.draw_text((x0 + 18, y - 15), e.get("ts", ""), size=14, color=DIM)
+                    tgt = SLABEL.get(to, "Deleted" if to == "deleted" else to)
+                    dpg.draw_text((x0 + 18, y + 2),
+                                  f"{e.get('text', '')[:46]}   →   {tgt}", size=15, color=INK)
+        dpg.add_button(label="Close", width=100,
+                       callback=lambda *a: dpg.delete_item("tl_win"))
+
+
+# ── misc ──────────────────────────────────────────────────────────────────────
 def _focus_input(*_):
     if dpg.does_item_exist("input"):
         dpg.focus_item("input")
@@ -237,34 +465,35 @@ def _show_help(*_):
     if dpg.does_item_exist("help_modal"):
         dpg.delete_item("help_modal")
     with dpg.window(label="Keyboard shortcuts", modal=True, tag="help_modal",
-                    width=360, height=250, pos=[60, 90], no_resize=True):
-        for k, v in [("Enter", "add the typed task"),
+                    width=380, height=300, pos=[60, 70], no_resize=True):
+        for k, v in [("Enter", "add the typed objective"),
+                     ("click status", "advance ✓ → O → X"),
                      ("Ctrl+Z", "undo the last change"),
-                     ("Ctrl+C", "copy the selected task"),
-                     ("Ctrl+V", "paste clipboard as a new task"),
-                     ("F2", "edit the selected task"),
-                     ("Del", "delete the selected task"),
-                     ("Ctrl+N", "jump to the new-task box"),
-                     ("double-click", "edit a task"),
-                     ("right-click", "task options menu")]:
+                     ("Ctrl+C", "copy the selected record"),
+                     ("Ctrl+V", "paste clipboard as an objective"),
+                     ("F2", "edit the selected record"),
+                     ("Del", "delete selected (asks first)"),
+                     ("Ctrl+N", "jump to the new box"),
+                     ("double-click", "edit a record"),
+                     ("right-click", "set status / edit / sub-goal / history")]:
             with dpg.group(horizontal=True):
-                dpg.add_text(f"{k:>12}", color=ACC)
+                dpg.add_text(f"{k:>13}", color=ACC)
                 dpg.add_text("  " + v, color=INK)
         dpg.add_spacer(height=8)
-        dpg.add_text("The new-task box also has the standard", color=DIM)
-        dpg.add_text("Ctrl+C / V / X / A / Z while you type.", color=DIM)
-        dpg.add_spacer(height=6)
         dpg.add_button(label="Close", width=100,
                        callback=lambda *a: dpg.delete_item("help_modal"))
 
 
-# ── keyboard ─────────────────────────────────────────────────────────────────
+# ── keyboard ──────────────────────────────────────────────────────────────────
 def _ctrl():
     return dpg.is_key_down(dpg.mvKey_LControl) or dpg.is_key_down(dpg.mvKey_RControl)
 
 
 def _typing():
-    return dpg.does_item_exist("input") and dpg.is_item_focused("input")
+    for t in ("input", "edit_field", "sub_field"):
+        if dpg.does_item_exist(t) and dpg.is_item_focused(t):
+            return True
+    return False
 
 
 def _k_undo(*_):
@@ -297,9 +526,17 @@ def _k_edit(*_):
         _edit_sel()
 
 
-# ── build ────────────────────────────────────────────────────────────────────
-def _flat_theme(bg):
-    """A flat, left-aligned button theme for task rows."""
+def _on_dblclick(_s, button):
+    if button != 0:
+        return
+    for iid, sid in list(ROW_SEL.items()):
+        if dpg.does_item_exist(sid) and dpg.is_item_hovered(sid):
+            _open_edit(iid)
+            return
+
+
+# ── build ─────────────────────────────────────────────────────────────────────
+def _flat_theme(bg, text=None, align=0.0):
     with dpg.theme() as th:
         with dpg.theme_component(dpg.mvButton):
             dpg.add_theme_color(dpg.mvThemeCol_Button, bg)
@@ -307,12 +544,14 @@ def _flat_theme(bg):
                                 tuple(min(255, c + 16) for c in bg))
             dpg.add_theme_color(dpg.mvThemeCol_ButtonActive,
                                 tuple(min(255, c + 28) for c in bg))
-            dpg.add_theme_style(dpg.mvStyleVar_ButtonTextAlign, 0.0, 0.5)
+            if text:
+                dpg.add_theme_color(dpg.mvThemeCol_Text, text)
+            dpg.add_theme_style(dpg.mvStyleVar_ButtonTextAlign, align, 0.5)
     return th
 
 
 def build_ui():
-    """Build the window + widgets (no viewport) — callable headless for tests."""
+    """Build window + widgets (no viewport) — callable headless for tests."""
     font = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
     if os.path.exists(font):
         with dpg.font_registry():
@@ -331,45 +570,53 @@ def build_ui():
             dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 4)
             dpg.add_theme_style(dpg.mvStyleVar_ChildBorderSize, 1)
 
-    THEMES["row"] = _flat_theme((34, 40, 54))      # flat, blends into the list
-    THEMES["sel"] = _flat_theme((46, 70, 110))     # selected row highlight
+    THEMES["row"] = _flat_theme((34, 40, 54))
+    THEMES["sel"] = _flat_theme((46, 70, 110))
+    for s in STATUSES:
+        THEMES["st_" + s] = _flat_theme((34, 40, 54), text=SCOLOR[s], align=0.5)
 
     with dpg.window(tag="main", no_scrollbar=True, menubar=True):
         with dpg.menu_bar():
             with dpg.menu(label="File"):
-                dpg.add_menu_item(label="New task\tCtrl+N", callback=_focus_input)
+                dpg.add_menu_item(label="New objective\tCtrl+N", callback=_focus_input)
                 dpg.add_separator()
                 dpg.add_menu_item(label="Quit", callback=_quit)
             with dpg.menu(label="Edit"):
                 dpg.add_menu_item(label="Undo\tCtrl+Z", callback=_undo)
                 dpg.add_separator()
                 dpg.add_menu_item(label="Copy selected\tCtrl+C", callback=_copy_sel)
-                dpg.add_menu_item(label="Paste as task\tCtrl+V", callback=_paste_new)
+                dpg.add_menu_item(label="Paste as objective\tCtrl+V", callback=_paste_new)
                 dpg.add_menu_item(label="Edit selected\tF2", callback=_edit_sel)
-                dpg.add_menu_item(label="Delete selected\tDel", callback=_delete_sel)
                 dpg.add_separator()
-                dpg.add_menu_item(label="Clear done", callback=_clear_done)
-                dpg.add_menu_item(label="Delete all", callback=_delete_all)
+                dpg.add_menu_item(label="Delete selected…\tDel", callback=_delete_sel)
+            with dpg.menu(label="View"):
+                dpg.add_menu_item(label="Timeline…", callback=_show_timeline)
             with dpg.menu(label="Help"):
                 dpg.add_menu_item(label="Keyboard shortcuts", callback=_show_help)
 
         dpg.add_text("TernOO · To-Do", color=GRN)
-        dpg.add_text("the ship's captain's task list", color=DIM)
+        dpg.add_text("objectives · sub-goals · status timeline", color=DIM)
         dpg.add_spacer(height=8)
         with dpg.group(horizontal=True):
-            dpg.add_input_text(tag="input", hint="new task…", width=-84,
+            dpg.add_input_text(tag="input", hint="new objective…", width=-84,
                                on_enter=True, callback=_add)
             dpg.add_button(label=" Add ", width=78, callback=_add)
         dpg.add_spacer(height=4)
-        dpg.add_text("right-click a task for options · double-click to edit "
-                     "· Ctrl+Z to undo", color=DIM)
+        with dpg.group(horizontal=True):
+            dpg.add_text("status:", color=DIM)
+            dpg.add_text(GLYPH["pending"], color=SCOLOR["pending"])
+            dpg.add_text("pending ", color=DIM)
+            dpg.add_text(GLYPH["progress"], color=SCOLOR["progress"])
+            dpg.add_text("in progress ", color=DIM)
+            dpg.add_text(GLYPH["complete"], color=SCOLOR["complete"])
+            dpg.add_text("complete  · right-click a record for options", color=DIM)
         dpg.add_spacer(height=4)
         dpg.add_child_window(tag="tasklist", height=-44, border=True)
         dpg.add_separator()
         with dpg.group(horizontal=True):
             dpg.add_text("", tag="count", color=DIM)
             dpg.add_spacer(width=12)
-            dpg.add_button(label="Clear done", callback=_clear_done)
+            dpg.add_button(label="Timeline", callback=_show_timeline)
 
     with dpg.handler_registry():
         dpg.add_key_press_handler(dpg.mvKey_Z, callback=_k_undo)
@@ -384,21 +631,14 @@ def build_ui():
     dpg.bind_theme(theme)
 
 
-def _on_dblclick(_s, button):
-    if button != 0:
-        return
-    for idx, sid in list(ROW_SEL.items()):
-        if dpg.does_item_exist(sid) and dpg.is_item_hovered(sid):
-            _open_edit(idx)
-            return
-
-
 def main():
-    global TASKS
-    TASKS = _load()
+    global DB, TIMELINE
+    DB = _load_db()
+    TIMELINE = _load_timeline()
+    _save()                      # persist a fresh migration if one happened
     dpg.create_context()
     build_ui()
-    dpg.create_viewport(title="TernOO · To-Do", width=470, height=580)
+    dpg.create_viewport(title="TernOO · To-Do", width=520, height=620)
     dpg.setup_dearpygui()
     dpg.set_primary_window("main", True)
     dpg.show_viewport()
