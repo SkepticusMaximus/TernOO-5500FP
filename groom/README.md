@@ -35,9 +35,20 @@ ancestry: QTextEdit -> QAbstractScrollArea -> QFrame -> QWidget -> QObject
 87 property-words  (DATA·PROP·<id>)
 ```
 
+## Loop closer (`groom_render.py`)
+```bash
+QT_QPA_PLATFORM=offscreen ~/.venvs/p2pcp/bin/python3 groom_render.py
+```
+`spec()` encodes a widget's class + property VALUES into words (+ a string pool;
+strings are MAP content-addressed — the native char-map plane fills the pool
+later). `render()` reads the words back to a spec; `build_qt()` reconstructs a
+live PySide6 widget. Proven: `QLabel("Hello TernOO")` → 7 words → a live `QLabel`
+whose text round-trips exactly. **reference → words → native closes.** 11/11.
+
 ## Status
-Core built + tested: word pack/unpack (2+4+18), id registry, dissector, GrOOM
-objects, flatten-to-words. Next: a **persisted** registry (cross-run stable
-class/prop ids), **value-word** encoding of live property values, and a **TernUI
-renderer** that reads the words back into a live surface — closing the loop
-reference → words → native.
+Built + tested: word pack/unpack (2+4+18), bidirectional id registry, dissector,
+GrOOM objects, flatten-to-words, **value-word encoding + a renderer that closes
+the loop**. Next: a **persisted** registry (cross-run stable class/prop ids),
+richer value kinds (enums-by-name, colors, refs), a **full-widget** renderer
+(layouts + children, not just leaf props), and the native **char-map string pool**
+(CF5 charter) so strings are words too, not a side table.

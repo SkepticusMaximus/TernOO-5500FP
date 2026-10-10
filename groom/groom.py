@@ -72,19 +72,28 @@ def glyphs(word):
 class Registry:
     def __init__(self):
         self.classes, self.props = {}, {}
+        self.classes_inv, self.props_inv = {}, {}
         self._c, self._p = 0, 0
 
     def class_id(self, name):
         if name not in self.classes:
             self._c += 1
             self.classes[name] = self._c
+            self.classes_inv[self._c] = name
         return self.classes[name]
 
     def prop_id(self, name):
         if name not in self.props:
             self._p += 1
             self.props[name] = self._p
+            self.props_inv[self._p] = name
         return self.props[name]
+
+    def class_name(self, cid):
+        return self.classes_inv.get(cid)
+
+    def prop_name(self, pid):
+        return self.props_inv.get(pid)
 
 
 # ── the mill: grind a widget's object model into GrOOM words ───────────────────
