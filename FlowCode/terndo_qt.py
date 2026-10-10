@@ -64,6 +64,9 @@ class Store:
             it.setdefault("status", "pending")
             it.setdefault("history", [])
             it.setdefault("notes", "")
+            it.setdefault("staging", "")          # dispatch lane (CCC §F)
+            it.setdefault("assignees", [])        # identity handles — inert until the agent lands
+            it.setdefault("grants", [])           # capability refs — inert
         return raw
 
     def _load_tl(self):
@@ -120,6 +123,7 @@ class Store:
         ts = now()
         self.db["items"].append({"id": iid, "text": text, "status": "pending",
                                  "parent": parent, "notes": "",
+                                 "staging": "", "assignees": [], "grants": [],
                                  "history": [{"ts": ts, "status": "pending", "note": "created"}]})
         self.tl.append({"ts": ts, "id": iid, "text": text, "to": "pending", "note": "created"})
         return iid
@@ -149,16 +153,24 @@ class Store:
         if it:
             self.set_status(iid, NEXT[it["status"]])
 
-    def apply_props(self, iid, text, status, notes):
+    def apply_props(self, iid, text, status, notes, staging=None, assignees=None):
         it = self.by_id(iid)
         if not it:
             return False
+        if assignees is None:
+            assignees = it.get("assignees", [])
         tc = text.strip() and text.strip() != it["text"]
         nc = notes != it.get("notes", "")
         sc = status != it["status"]
-        if not (tc or nc or sc):
+        gc = staging is not None and staging != it.get("staging", "")
+        ac = assignees != it.get("assignees", [])
+        if not (tc or nc or sc or gc or ac):
             return False
         self.snapshot()
+        if gc:
+            it["staging"] = staging
+        if ac:
+            it["assignees"] = assignees
         if tc:
             it["text"] = text.strip()
         if nc:
@@ -212,6 +224,17 @@ class PropsDialog(QDialog):
         self.notes.setFont(QFont("DejaVu Sans Mono", 10))
         self.notes.setPlainText(it.get("notes", ""))
         v.addWidget(self.notes, 1)
+        v.addWidget(_hdr("Staging lane · Assignees  (inert until the TernID agent lands)"))
+        sa = QHBoxLayout()
+        self.staging = QLineEdit(it.get("staging", ""))
+        self.staging.setPlaceholderText("lane (e.g. now / blocked / CC / CCC)")
+        sa.addWidget(self.staging, 1)
+        self.assignees = QLineEdit(", ".join(it.get("assignees", [])))
+        self.assignees.setPlaceholderText("assignees (comma-separated)")
+        sa.addWidget(self.assignees, 1)
+        saw = QWidget()
+        saw.setLayout(sa)
+        v.addWidget(saw)
         h = it.get("history", [])
         meta = "id %s  ·  created %s  ·  %d change(s)" % (
             it["id"], h[0]["ts"] if h else "—", len(h))
@@ -229,7 +252,8 @@ class PropsDialog(QDialog):
     def commit(self):
         return self.store.apply_props(
             self.iid, self.text.text(), self.status.currentData(),
-            self.notes.toPlainText())
+            self.notes.toPlainText(), staging=self.staging.text(),
+            assignees=[a.strip() for a in self.assignees.text().split(",") if a.strip()])
 
 
 class DeleteDialog(QDialog):
