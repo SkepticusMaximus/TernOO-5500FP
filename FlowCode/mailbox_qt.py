@@ -33,17 +33,24 @@ UID = Qt.ItemDataRole.UserRole
 
 
 # ── AgentClient facade (CCC handoff §B) — crypto-free; the real agent swaps in here ──
-class AgentClient:
+class StubBackend:
+    """Inert git-POBOX backend — CCC's §B methods over the existing POBOX + a local roster.
+    Returns the handoff-1129 wire shapes. The real TernID agent replaces this behind serve()."""
     def __init__(self):
         self._msgs = self._scan()
         self._contacts = self._load_contacts()
 
     # accounts
+    def create_account(self, display_name):
+        if display_name not in SEATS:
+            SEATS.append(display_name)
+        return {"account_handle": display_name}
+
     def list_accounts(self):
         return list(SEATS)
 
-    def account_display(self, handle):
-        return handle
+    def account_display(self, account_handle):
+        return account_handle
 
     # POBOX scan / parse
     def _scan(self):
@@ -91,10 +98,11 @@ class AgentClient:
     def inbox(self, account):
         return [m for m in self._msgs if self._match(m["to"], account)]
 
-    def mark_read(self, account, mid):
+    def mark_read(self, account, message_id):
         for m in self._msgs:
-            if m["id"] == mid:
+            if m["id"] == message_id:
                 m["unread"] = False
+        return {"ok": True}
 
     # contacts (the roster)
     def _load_contacts(self):
@@ -113,10 +121,10 @@ class AgentClient:
         c = {"handle": "contact:" + re.sub(r"\W+", "", name).lower(), "display_name": name}
         self._contacts.append(c)
         json.dump(self._contacts, open(ROSTER, "w"), indent=1)
-        return c["handle"]
+        return {"contact_handle": c["handle"]}
 
-    def create_invite(self, account, for_name=None):
-        return "ternid-invite:%s:%s" % (account.lower(), "stub-token")   # opaque, NOT a key
+    def create_invite(self, account, for_display_name=None):
+        return {"invite": "ternid-invite:%s:stub-token" % account.lower()}   # opaque, NOT a key
 
     # mail — send is INERT (draft only)
     def send(self, from_account, to_contact, subject, body):
@@ -126,10 +134,16 @@ class AgentClient:
         stamp = datetime.datetime.now().strftime("%H:%M %d/%m/%Y ACDT")
         open(os.path.join(OUTBOX, fn), "w", encoding="utf-8").write(
             "%s\n\nTo: %s\nFrom: %s\nRe: %s\n\n%s\n" % (stamp, to_contact, from_account, subject, body))
-        return fn
+        return {"message_id": fn}
 
     def grants_on(self, object_handle):
         return []
+
+    def grant(self, account, object_handle, holder_contact, rights, caveats=None):
+        return {"grant_handle": "grant:stub"}
+
+    def revoke(self, account, grant_handle):
+        return {"ok": True}
 
 
 # ── compose dialog ──────────────────────────────────────────────────────────────
@@ -143,7 +157,7 @@ class Compose(QDialog):
         r = QHBoxLayout()
         r.addWidget(QLabel("To:"))
         self.to = QComboBox()
-        for c in agent.contacts(account):
+        for c in agent.contacts(account=account):
             self.to.addItem(c["display_name"])
         r.addWidget(self.to, 1)
         v.addLayout(r)
@@ -228,7 +242,7 @@ class MailApp(QMainWindow):
 
     def _reload(self):
         self.list.clear()
-        msgs = sorted(self.agent.inbox(self.account), key=lambda m: m["time"], reverse=True)
+        msgs = sorted(self.agent.inbox(account=self.account), key=lambda m: m["time"], reverse=True)
         for m in msgs:
             it = QListWidgetItem("%s\n%s   ·   %s" % (m["subject"][:60], m["from"], m["time"]))
             it.setData(UID, m)
@@ -241,7 +255,7 @@ class MailApp(QMainWindow):
         if not cur:
             return
         m = cur.data(UID)
-        self.agent.mark_read(self.account, m["id"])
+        self.agent.mark_read(account=self.account, message_id=m["id"])
         self.read.setHtml(
             "<div style='color:#3fd08f;font-size:14px'>%s</div>"
             "<div style='color:#9696a5'>from <b style='color:#e6e6ec'>%s</b> · to %s · %s</div><hr>"
@@ -251,14 +265,16 @@ class MailApp(QMainWindow):
     def compose(self):
         d = Compose(self.agent, self.account, self)
         if d.exec() == QDialog.DialogCode.Accepted:
-            fn = self.agent.send(self.account, d.to.currentText(),
-                                 d.subj.text() or "(no subject)", d.body.toPlainText())
+            res = self.agent.send(from_account=self.account, to_contact=d.to.currentText(),
+                                  subject=d.subj.text() or "(no subject)",
+                                  body=d.body.toPlainText())
+            fn = res["message_id"] if isinstance(res, dict) else res
             QMessageBox.information(self, "Draft saved",
                                     "Saved to outbox (NOT transmitted):\n%s\n\n%s"
                                     % (fn, OUTBOX))
 
     def show_contacts(self):
-        names = ", ".join(c["display_name"] for c in self.agent.contacts(self.account))
+        names = ", ".join(c["display_name"] for c in self.agent.contacts(account=self.account))
         QMessageBox.information(self, "Contacts (the roster)",
                                 names + "\n\n(Add-contact uses an opaque invite token — no keys.)")
 
@@ -280,10 +296,21 @@ DARK = ("QWidget{background:#1a1f2b;color:#e6e6ec;}"
         "QMenuBar,QMenu{background:#1e2431;} QMenu::item:selected{background:#2e466e;}")
 
 
+def make_agent():
+    """Pick the backend: the real TernID agent over IPC if TERNID_AGENT_SOCK is set,
+    else the inert in-process git-POBOX stub. Same §B methods either way."""
+    sock = os.environ.get("TERNID_AGENT_SOCK")
+    if sock:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from ternid_agent_protocol import Client
+        return Client(sock)
+    return StubBackend()
+
+
 def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(DARK)
-    w = MailApp(AgentClient())
+    w = MailApp(make_agent())
     w.show()
     sys.exit(app.exec())
 
