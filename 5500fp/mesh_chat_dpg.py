@@ -121,6 +121,13 @@ BUSY = False
 # the mesh worker, and this seat all read it), so swapping the model here
 # re-seats the Professor everywhere at once.
 SEAT = [CFGD.get("prof_seat", "mesh")]
+AGENT = [bool(CFGD.get("prof_agent", False))]       # chat wields the Forge macros as tools
+PROF_MODEL = [CFGD.get("prof_model", "Professor")]   # the ollama model agent mode talks to
+
+
+def on_agent_toggle(_s, val):
+    AGENT[0] = bool(val)
+    CFGD["prof_agent"] = AGENT[0]
 _LOCAL = [None, ""]                            # [backend, why-empty reason]
 _BR = [None]
 
@@ -938,7 +945,16 @@ def on_ask(*_):
         global BUSY, ATTACH
         where = ans = err = None
         try:
-            where, ans = ask_professor(context, messages=turns)
+            if AGENT[0]:
+                import professor_agent as _PA   # the ship's own engine; Forge macros = tools
+                ans, _tr = _PA.ask(prompt, model=PROF_MODEL[0])
+                where = "Professor (agent)"
+                if _tr:
+                    runs = "\n".join("  🛠 %s → %s" % (t["tool"], " ".join(t["cmd"]) or "(no cmd)")
+                                     for t in _tr)
+                    ans = "[ran %d tool(s)]\n%s\n\n%s" % (len(_tr), runs, ans)
+            else:
+                where, ans = ask_professor(context, messages=turns)
         except Exception as e:                  # noqa: BLE001 — surfaced to user
             err = str(e)
 
@@ -2046,6 +2062,9 @@ def build():
                                                      tag="askbtn",
                                                      callback=on_ask)
                                 dpg.bind_item_theme(ask, "greenbtn")
+                                dpg.add_checkbox(label="🛠 Agent", tag="agent_chk",
+                                                 default_value=AGENT[0],
+                                                 callback=on_agent_toggle)
                         with dpg.child_window(tag="chat", height=-32):
                             dpg.add_text("You're connected to the mesh — ask "
                                          "the Professor anything. Ctrl+Enter "
