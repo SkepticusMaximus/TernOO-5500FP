@@ -22,10 +22,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 MACRO_DIR = os.path.join(HERE, "macros")
 OLLAMA = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
 
-SYSTEM = ("You are the Professor, the ship's assistant. You have tools — the "
-          "captain's forged macros. When a tool would help answer the user's "
-          "request, call it; otherwise answer directly. After a tool returns, "
-          "use its output to give a short, direct answer.")
+SYSTEM = ("You are the Professor, the ship's assistant. You can read and reason "
+          "about everything in this conversation — including the contents of any "
+          "attached file — and answer directly. You ALSO have tools (the captain's "
+          "forged macros) for things like listing or searching files; call a tool "
+          "only when it genuinely helps. NEVER claim you cannot read content that "
+          "is already present in the conversation. After a tool returns, use its "
+          "output to answer.")
 
 
 def _san(name):
@@ -120,15 +123,21 @@ def _ollama_chat(messages, tools, model="Professor", timeout=900):
         return json.load(r)
 
 
-def ask(user_msg, model="Professor", max_steps=5, system=None, on_event=None,
-        macro_dir=MACRO_DIR):
+def ask(user_msg=None, model="Professor", max_steps=5, system=None, on_event=None,
+        macro_dir=MACRO_DIR, messages=None):
     """Run the agent loop. Returns (final_answer, transcript).
-    on_event(name, args, cmd, result) fires on each tool run (for live UI)."""
+    Pass either `user_msg` (one question) OR `messages` (a full conversation — e.g.
+    Mesh-Chat's build_messages() with history AND any attached file). The system
+    message is always the agent's, so the model knows it can read content and use
+    tools. on_event(name, args, cmd, result) fires on each tool run."""
     macros = load_macros(macro_dir)
     tools = macros_as_tools(macros)
     by_name = {_san(s["name"]): s for s in macros}
-    messages = [{"role": "system", "content": system or SYSTEM},
-                {"role": "user", "content": user_msg}]
+    sysmsg = {"role": "system", "content": system or SYSTEM}
+    if messages is not None:
+        messages = [sysmsg] + [m for m in messages if m.get("role") != "system"]
+    else:
+        messages = [sysmsg, {"role": "user", "content": user_msg or ""}]
     transcript = []
     for _ in range(max_steps):
         resp = _ollama_chat(messages, tools, model=model)

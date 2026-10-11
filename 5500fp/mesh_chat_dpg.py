@@ -965,7 +965,7 @@ def on_ask(*_):
         try:
             if SEAT[0] == "agent" or AGENT[0]:
                 import professor_agent as _PA   # the ship's own engine; Forge macros = tools
-                ans, _tr = _PA.ask(prompt, model=PROF_MODEL[0])
+                ans, _tr = _PA.ask(messages=turns, model=PROF_MODEL[0])  # full context + attachment
                 where = "Professor (agent)"
                 if _tr:
                     runs = "\n".join("  🛠 %s → %s" % (t["tool"], " ".join(t["cmd"]) or "(no cmd)")
