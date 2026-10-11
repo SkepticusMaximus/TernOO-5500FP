@@ -162,18 +162,30 @@ def seat_model_name():
     return os.path.splitext(os.path.basename(model))[0] if model else None
 
 
+AGENT_SEAT = "Professor — OLMo 3 (agent · macros)"
+
+
 def seat_items():
     name = seat_model_name()
     return ["Mesh — remote Professors",
-            f"Local — {name}" if name else "Local — (no model yet)"]
+            f"Local — {name}" if name else "Local — (no model yet)",
+            AGENT_SEAT]
 
 
 def seat_value():
+    if SEAT[0] == "agent":
+        return AGENT_SEAT
     return seat_items()[1 if SEAT[0] == "local" else 0]
 
 
 def on_seat_pick(_s=None, val=None):
-    SEAT[0] = "local" if str(val or "").startswith("Local") else "mesh"
+    v = str(val or "")
+    if v.startswith("Professor"):
+        SEAT[0] = "agent"
+    elif v.startswith("Local"):
+        SEAT[0] = "local"
+    else:
+        SEAT[0] = "mesh"
     CFGD["prof_seat"] = SEAT[0]
     _cfg_save(CFGD)
     set_status(f"Professor's seat: {seat_value()}")
@@ -497,6 +509,12 @@ def ask_professor(prompt, messages=None, max_tokens=None):
     comes through this door. Returns (where, answer). ``max_tokens`` lets
     long-form asks (the forge's spec JSON) outgrow the seat's chat-sized
     budget — 384 tokens truncated grep's field list mid-object (12-09)."""
+    if SEAT[0] == "agent":                      # OLMo 3 via ollama (plain; the chat adds tools)
+        import professor_agent as _PA
+        msgs = messages or [{"role": "user", "content": prompt}]
+        resp = _PA._ollama_chat(msgs, [], model=PROF_MODEL[0])
+        return ("local · Professor (OLMo 3)",
+                (resp.get("message", {}) or {}).get("content", ""))
     if SEAT[0] == "local":
         be, why = local_backend()
         if be is None:
@@ -945,7 +963,7 @@ def on_ask(*_):
         global BUSY, ATTACH
         where = ans = err = None
         try:
-            if AGENT[0]:
+            if SEAT[0] == "agent" or AGENT[0]:
                 import professor_agent as _PA   # the ship's own engine; Forge macros = tools
                 ans, _tr = _PA.ask(prompt, model=PROF_MODEL[0])
                 where = "Professor (agent)"
