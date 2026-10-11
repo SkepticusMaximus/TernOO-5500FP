@@ -15,6 +15,7 @@ import os
 import re
 import glob
 import json
+import time
 import subprocess
 import urllib.request
 
@@ -117,10 +118,17 @@ def run_macro(spec, values, timeout=30):
 def _ollama_chat(messages, tools, model="Professor", timeout=900):
     body = json.dumps({"model": model, "messages": messages,
                        "tools": tools, "stream": False}).encode()
-    req = urllib.request.Request(OLLAMA + "/api/chat", body,
-                                 {"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.load(r)
+    last = None
+    for _ in range(3):           # ollama can drop the connection while (re)loading a big model
+        try:
+            req = urllib.request.Request(OLLAMA + "/api/chat", body,
+                                         {"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return json.load(r)
+        except Exception as e:   # RemoteDisconnected on reload / transient — give it time, retry
+            last = e
+            time.sleep(4)
+    raise last
 
 
 def ask(user_msg=None, model="Professor", max_steps=5, system=None, on_event=None,
