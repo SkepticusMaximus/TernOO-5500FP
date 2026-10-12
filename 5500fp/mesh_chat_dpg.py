@@ -121,6 +121,13 @@ BUSY = False
 # the mesh worker, and this seat all read it), so swapping the model here
 # re-seats the Professor everywhere at once.
 SEAT = [CFGD.get("prof_seat", "mesh")]
+AGENT = [bool(CFGD.get("prof_agent", False))]       # chat wields the Forge macros as tools
+PROF_MODEL = [CFGD.get("prof_model", "Professor")]   # the ollama model agent mode talks to
+
+
+def on_agent_toggle(_s, val):
+    AGENT[0] = bool(val)
+    CFGD["prof_agent"] = AGENT[0]
 _LOCAL = [None, ""]                            # [backend, why-empty reason]
 _BR = [None]
 
@@ -155,18 +162,30 @@ def seat_model_name():
     return os.path.splitext(os.path.basename(model))[0] if model else None
 
 
+AGENT_SEAT = "Professor — OLMo 3 (agent · macros)"
+
+
 def seat_items():
     name = seat_model_name()
     return ["Mesh — remote Professors",
-            f"Local — {name}" if name else "Local — (no model yet)"]
+            f"Local — {name}" if name else "Local — (no model yet)",
+            AGENT_SEAT]
 
 
 def seat_value():
+    if SEAT[0] == "agent":
+        return AGENT_SEAT
     return seat_items()[1 if SEAT[0] == "local" else 0]
 
 
 def on_seat_pick(_s=None, val=None):
-    SEAT[0] = "local" if str(val or "").startswith("Local") else "mesh"
+    v = str(val or "")
+    if v.startswith("Professor"):
+        SEAT[0] = "agent"
+    elif v.startswith("Local"):
+        SEAT[0] = "local"
+    else:
+        SEAT[0] = "mesh"
     CFGD["prof_seat"] = SEAT[0]
     _cfg_save(CFGD)
     set_status(f"Professor's seat: {seat_value()}")
@@ -490,6 +509,12 @@ def ask_professor(prompt, messages=None, max_tokens=None):
     comes through this door. Returns (where, answer). ``max_tokens`` lets
     long-form asks (the forge's spec JSON) outgrow the seat's chat-sized
     budget — 384 tokens truncated grep's field list mid-object (12-09)."""
+    if SEAT[0] == "agent":                      # OLMo 3 via ollama (plain; the chat adds tools)
+        import professor_agent as _PA
+        msgs = messages or [{"role": "user", "content": prompt}]
+        resp = _PA._ollama_chat(msgs, [], model=PROF_MODEL[0])
+        return ("local · Professor (OLMo 3)",
+                (resp.get("message", {}) or {}).get("content", ""))
     if SEAT[0] == "local":
         be, why = local_backend()
         if be is None:
@@ -938,7 +963,16 @@ def on_ask(*_):
         global BUSY, ATTACH
         where = ans = err = None
         try:
-            where, ans = ask_professor(context, messages=turns)
+            if SEAT[0] == "agent" or AGENT[0]:
+                import professor_agent as _PA   # the ship's own engine; Forge macros = tools
+                ans, _tr = _PA.ask(messages=turns, model=PROF_MODEL[0])  # full context + attachment
+                where = "Professor (agent)"
+                if _tr:
+                    runs = "\n".join("  🛠 %s → %s" % (t["tool"], " ".join(t["cmd"]) or "(no cmd)")
+                                     for t in _tr)
+                    ans = "[ran %d tool(s)]\n%s\n\n%s" % (len(_tr), runs, ans)
+            else:
+                where, ans = ask_professor(context, messages=turns)
         except Exception as e:                  # noqa: BLE001 — surfaced to user
             err = str(e)
 
@@ -2046,6 +2080,9 @@ def build():
                                                      tag="askbtn",
                                                      callback=on_ask)
                                 dpg.bind_item_theme(ask, "greenbtn")
+                                dpg.add_checkbox(label="🛠 Agent", tag="agent_chk",
+                                                 default_value=AGENT[0],
+                                                 callback=on_agent_toggle)
                         with dpg.child_window(tag="chat", height=-32):
                             dpg.add_text("You're connected to the mesh — ask "
                                          "the Professor anything. Ctrl+Enter "

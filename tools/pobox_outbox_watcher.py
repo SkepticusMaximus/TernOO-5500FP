@@ -23,6 +23,7 @@ import datetime
 import hashlib
 import os
 import re
+import shutil
 import subprocess
 import time
 
@@ -43,6 +44,7 @@ SETTLE = 2          # stable scans required before sending (~4-6 s after drop)
 PULL_EVERY = 60     # keep the Inbox fresh — arrive with the notification, not 5 min later
 RETRY_EVERY = 60    # failed-push retry interval
 STAMP_RE = re.compile(r"^\d{2}:\d{2} \d{2}/\d{2}/\d{4}")
+ATT_RE = re.compile(r"\]\(attachments/([^)\s]+)\)")   # markdown attachment refs
 
 
 def now():
@@ -92,6 +94,7 @@ def deliver(name, content):
     filed as 'sent' while never leaving the machine — the silent-vanish bug. We
     guard it by requiring HEAD to advance before trusting the push."""
     ensure_worktree()
+    refs = [os.path.basename(r) for r in ATT_RE.findall(content)]
     for _ in range(3):
         run(REPO, "git", "fetch", "--quiet", "origin", "master")
         run(WT, "git", "reset", "--hard", "origin/master")
@@ -99,6 +102,14 @@ def deliver(name, content):
         with open(os.path.join(WT, "private/POBOX", name), "w") as f:
             f.write(content)
         run(WT, "git", "add", "-f", f"private/POBOX/{name}")
+        for ref in refs:                        # carry the attachments along
+            src = os.path.join(BOX, "attachments", ref)
+            if os.path.isfile(src):
+                dstd = os.path.join(WT, "private/POBOX/attachments")
+                os.makedirs(dstd, exist_ok=True)
+                shutil.copy2(src, os.path.join(dstd, ref))
+                run(WT, "git", "add", "-f",
+                    f"private/POBOX/attachments/{ref}")
         run(WT, "git", "commit", "-q", "-m", f"POBOX mail: {name}")
         after = run(WT, "git", "rev-parse", "HEAD").stdout.strip()
         if not after or after == before:

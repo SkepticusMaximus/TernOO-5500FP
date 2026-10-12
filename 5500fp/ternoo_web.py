@@ -38,6 +38,8 @@ import os
 import time
 import re
 import sys
+import base64
+import mimetypes
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -80,6 +82,22 @@ except Exception:                               # noqa: BLE001
 HOST, PORT = "127.0.0.1", 8610
 APP_PATH = os.path.join(_HERE, "webface", "app.html")
 FLOWDIR = os.path.join(os.path.dirname(_HERE), "FlowCode")
+ATTACHDIR = os.path.join(TM.POBOX, "attachments")   # mail attachments sidecar
+
+
+def _att_ctype(name):
+    ct, _ = mimetypes.guess_type(name)
+    return ct or "application/octet-stream"
+
+
+def _safe_attname(name):
+    """Timestamped, filesystem-safe attachment name — can't collide or escape
+    the attachments dir (basename only, sanitised stem + ext)."""
+    base = os.path.basename(name or "file")
+    stem, ext = os.path.splitext(base)
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip("-.")[:40] or "file"
+    ext = "." + re.sub(r"[^A-Za-z0-9]+", "", ext)[:8] if ext else ""
+    return f"{time.strftime('%Y%m%d-%H%M%S')}-{stem}{ext}"
 
 
 def html_body(doc):
@@ -252,6 +270,17 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, f.read(), "text/javascript")
             except FileNotFoundError:
                 self._send(404, {"error": "app.js missing"})
+        elif self.path.startswith("/pobox/attachments/"):
+            from urllib.parse import unquote
+            name = os.path.basename(
+                unquote(self.path[len("/pobox/attachments/"):]))
+            p = os.path.join(ATTACHDIR, name)
+            if not os.path.isfile(p):
+                self._send(404, {"error": "no such attachment"})
+                return
+            with open(p, "rb") as f:
+                self._send(200, f.read(), _att_ctype(name))
+            return
         elif self.path == "/api/status":
             try:
                 mt = os.path.getmtime(
@@ -497,6 +526,31 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"saved": name,
                              "note": "git is the safety net"})
             return
+        if self.path == "/api/attach":
+            raw_b64 = req.get("data", "")
+            if raw_b64.startswith("data:") and "," in raw_b64:
+                raw_b64 = raw_b64.split(",", 1)[1]
+            try:
+                raw = base64.b64decode(raw_b64)
+            except Exception:                       # noqa: BLE001
+                self._send(400, {"error": "bad attachment data"})
+                return
+            if not raw:
+                self._send(400, {"error": "empty attachment"})
+                return
+            if len(raw) > 25 * 1024 * 1024:
+                self._send(400, {"error": "attachment over 25 MB"})
+                return
+            safe = _safe_attname(req.get("name", "file"))
+            os.makedirs(ATTACHDIR, exist_ok=True)
+            with open(os.path.join(ATTACHDIR, safe), "wb") as f:
+                f.write(raw)
+            self._send(200, {
+                "path": f"attachments/{safe}",
+                "name": os.path.basename(req.get("name") or safe),
+                "url": f"/pobox/attachments/{safe}",
+                "is_image": _att_ctype(safe).startswith("image/")})
+            return
         if self.path == "/api/render":
             doc = TD.from_markdown(req.get("md", ""))
             self._send(200, {"html": html_body(doc)})
@@ -510,12 +564,27 @@ class Handler(BaseHTTPRequestHandler):
                 body_md = TD.to_markdown(TH.from_html(req["html"]))
             else:
                 body_md = req.get("md", "")
-            if not body_md.strip():
+            atts = req.get("attachments") or []
+            if not body_md.strip() and not atts:
                 self._send(400, {"error": "refusing an empty letter"})
                 return
-            path = TM.drop_letter(to, subject, body_md,
-                                   sender="CC (via TernOO web face)")
+            if atts:
+                lines = ["", "---", "", "**Attachments**", ""]
+                for a in atts:
+                    ap = str(a.get("path", "")).lstrip("/")
+                    if not ap.startswith("attachments/") or ".." in ap:
+                        continue
+                    nm = os.path.basename(a.get("name") or ap)
+                    lines.append(f"![{nm}]({ap})" if a.get("is_image")
+                                 else f"- [{nm}]({ap})")
+                    lines.append("")
+                body_md = (body_md.rstrip() + "\n"
+                           + "\n".join(lines)).strip() + "\n"
+            path = TM.drop_letter(
+                to, subject, body_md,
+                sender=(req.get("from") or "Stevo").strip() + " (via web face)")
             self._send(200, {"dropped": os.path.basename(path),
+                             "attached": len(atts),
                              "note": "the drop IS the send"})
         else:
             self._send(404, {"error": "no such route"})

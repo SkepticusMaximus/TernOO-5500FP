@@ -833,20 +833,25 @@ function guiRender() {
       (GSEL === w.id ? " sel" : "");
     d.style.cssText =
       `left:${w.x}px;top:${w.y}px;width:${w.w}px;height:${w.h}px`;
-    if (["gui_window", "gui_dialog", "gui_frame", "gui_notebook",
-         "gui_box"].includes(w.kind)) {
+    if (w.kind === "gui_window" || w.kind === "gui_dialog") {
+      d.innerHTML = `<div class="ttl"><span class="wdots">` +
+        `<i></i><i></i><i></i></span>${esc(w.label)}</div>`;
+    } else if (["gui_frame", "gui_notebook", "gui_box"].includes(w.kind)) {
       d.innerHTML = `<div class="ttl">${esc(w.label)}</div>`;
     } else if (w.kind === "gui_tritoggle" || w.kind === "gui_trifilter") {
       const v = w.value ?? 0;
-      d.innerHTML = ["\u2212", "0", "+"].map((g, k) =>
+      d.innerHTML = `<span class="triseg">` + ["−", "0", "+"].map((g, k) =>
         `<span class="tseg${k - 1 === v ? " on" : ""}">${g}</span>`)
-        .join("") + "&nbsp;" + esc(w.label);
-    } else if (w.kind === "gui_radio" || w.kind === "gui_checkbox") {
-      d.innerHTML = `<span class="mark">` +
-        (w.kind === "gui_radio" ? "◉" : "☐") + `</span>&nbsp;` +
-        esc(w.label);
+        .join("") + `</span><span class="wlbl">${esc(w.label)}</span>`;
+    } else if (w.kind === "gui_checkbox" || w.kind === "gui_radio") {
+      const cls = w.kind === "gui_radio" ? "ctl-radio" : "ctl-box";
+      d.innerHTML = `<span class="${cls}${w.value ? " on" : ""}"></span>` +
+        `<span class="wlbl">${esc(w.label)}</span>`;
+    } else if (w.kind === "gui_entry") {
+      d.innerHTML = `<span class="entrytext">${esc(w.label)}</span>` +
+        `<span class="caret"></span>`;
     } else {
-      d.textContent = w.label;
+      d.innerHTML = `<span class="wlbl">${esc(w.label)}</span>`;
     }
     d.addEventListener("mousedown", e => {
       e.stopPropagation(); e.preventDefault();
@@ -1313,11 +1318,79 @@ function inlineCode() {
     "<code>" + sel.toString().replace(/[<>&]/g,
       m => ({"<": "&lt;", ">": "&gt;", "&": "&amp;"}[m])) + "</code>"); }
 }
+/* — attachments — */
+window.__attach = [];
+function attachFile() { $("attpick").click(); }
+function escAtt(s) { return String(s).replace(/[&<>"]/g,
+  m => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[m])); }
+function renderAtt() {
+  const bar = $("attbar");
+  if (!window.__attach.length) {
+    bar.className = "attbar hidden"; bar.innerHTML = ""; return;
+  }
+  bar.className = "attbar";
+  bar.innerHTML = window.__attach.map((a, i) =>
+    `<span class="attchip">` +
+    (a.is_image ? `<img src="${a.url}" alt="">` : "📄") +
+    `<span class="nm">${escAtt(a.name)}</span>` +
+    `<button title="remove" onclick="removeAtt(${i})">✕</button></span>`
+  ).join("");
+}
+function removeAtt(i) { window.__attach.splice(i, 1); renderAtt(); }
+$("attpick").addEventListener("change", async ev => {
+  for (const f of ev.target.files) {
+    if (f.size > 25 * 1024 * 1024) {
+      toast(`${f.name} is over 25 MB — skipped`); continue;
+    }
+    const data = await new Promise(res => {
+      const fr = new FileReader();
+      fr.onload = () => res(fr.result);
+      fr.readAsDataURL(f);
+    });
+    const r = await api("/api/attach", {name: f.name, data});
+    if (r && r.path) {
+      window.__attach.push(r); renderAtt(); toast(`attached ${r.name}`);
+    } else toast((r && r.error) || "attach failed");
+  }
+  ev.target.value = "";
+});
+/* — paste an image straight from the clipboard (no dialog) + inline preview — */
+function readAsDataURL(f) {
+  return new Promise(r => {
+    const fr = new FileReader(); fr.onload = () => r(fr.result);
+    fr.readAsDataURL(f);
+  });
+}
+$("docbody").addEventListener("paste", async ev => {
+  const items = (ev.clipboardData && ev.clipboardData.items) || [];
+  for (const it of items) {
+    if (it.kind === "file" && it.type && it.type.indexOf("image/") === 0) {
+      ev.preventDefault();                  // handle the image ourselves
+      const file = it.getAsFile();
+      if (!file) continue;
+      const name = file.name || `pasted-${Date.now()}.png`;
+      const r = await api("/api/attach",
+                          {name, data: await readAsDataURL(file)});
+      if (r && r.path) {
+        document.execCommand("insertHTML", false,
+          `<img src="${r.url}" alt="${escAtt(name)}" style="max-width:100%">`);
+        toast(`pasted ${name}`);
+      } else toast((r && r.error) || "paste failed");
+      return;                               // don't also paste it as text
+    }
+  }
+});
 async function sendMail() {
   const res = await api("/api/send", {to: $("to").value,
-    subject: $("subject").value, html: $("docbody").innerHTML});
-  if (res.dropped) toast(`dropped ${res.dropped} — the watcher has it`);
-  else toast(res.error || "send failed");
+    from: ($("from") ? $("from").value : "") || undefined,
+    subject: $("subject").value, html: $("docbody").innerHTML,
+    attachments: window.__attach});
+  if (res.dropped) {
+    toast(`sent ${res.dropped}` +
+          (res.attached ? ` + ${res.attached} file(s)` : "") +
+          " — the watcher has it");
+    window.__attach = []; renderAtt();
+  } else toast(res.error || "send failed");
 }
 async function mdOfBody() {
   return (await api("/api/convert",

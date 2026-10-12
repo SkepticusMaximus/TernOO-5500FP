@@ -1,0 +1,32 @@
+=== GrOOM dissection — TernDO widget set (PySide6) ===
+
+QTextEdit     87 props   QTextEdit -> QAbstractScrollArea -> QFrame -> QWidget -> QObject
+QTreeWidget  102 props   QTreeWidget -> QTreeView -> QAbstractItemView -> QAbstractScrollArea -> QFrame -> QWidget -> QObject
+QLineEdit     80 props   QLineEdit -> QWidget -> QObject
+QComboBox     77 props   QComboBox -> QWidget -> QObject
+QPushButton   75 props   QPushButton -> QAbstractButton -> QWidget -> QObject
+QDialog       63 props   QDialog -> QWidget -> QObject
+
+=== GrOOM first-pass: QTextEdit property -> TernOO word field ===
+A GrOOM object = identity (TernID) + class-word + parent-ref (MAP) + property words.
+
+  lineWrapMode                 -> DATA word: wrap policy (−/0/+ = none / widget / fixed-col)
+  undoRedoEnabled              -> DATA word: trit flag (+ on, 0 off)
+  readOnly                     -> DATA word: trit flag
+  plainText / markdown / html  -> MAP words: content-address of the body (char-map plane)
+  document                     -> MAP ref: the retained text-document object (its OWN GrOOM object)
+  font                         -> MAP ref -> font/glyph object (CF5 char-map charter)
+  tabStopDistance              -> DATA word: payload = trit-encoded distance
+  textInteractionFlags         -> QUALIFIER: capability-shaped (select/edit/link) -> meets TernID
+  palette / styleSheet         -> MAP ref -> style object
+  placeholderText              -> MAP ref -> hint string (char-map)
+
+Inheritance (QTextEdit -> QAbstractScrollArea -> QFrame -> QWidget -> QObject)
+  == a chain of MAP words: child class-word --MAP--> parent class-word;
+     properties accumulate down the chain (exactly the inference DPG can't give).
+
+Convergence with TernID: a GrOOM object's IDENTITY is a TernID identity, and
+'who may read/edit this object' is a CRYPTO capability-word over it
+(textInteractionFlags is the local shadow of that). GrOOM objects are
+TernID-addressable by construction — the object model and the capability
+model share one word substrate.
