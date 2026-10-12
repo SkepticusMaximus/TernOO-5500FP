@@ -12,7 +12,27 @@
 
 set -u
 if [ "${1:-}" = "--watch" ]; then
-    exec watch -n30 "ls -l '$2' 2>/dev/null | awk '{printf \"%.2f GiB of %.2f\n\", \$5/1073741824, $3/1073741824}' || echo 'not started'"
+    # Live readout: size, percent, sampled rate, ETA. The fetch loop itself
+    # logs quietly (12-10), so this is the instrument that proves it's alive.
+    W_DEST="$2"; W_WANT="$3"; prev=0; prev_t=0
+    while :; do
+        now=$(stat -c %s "$W_DEST" 2>/dev/null || echo 0)
+        t=$(date +%s)
+        rate=0
+        [ "$prev_t" -gt 0 ] && [ "$t" -gt "$prev_t" ] && rate=$(( (now - prev) / (t - prev_t) ))
+        eta='--'
+        if [ "$rate" -gt 0 ]; then
+            s=$(( (W_WANT - now) / rate ))
+            eta=$(printf '%dh%02dm' $((s / 3600)) $(((s % 3600) / 60)))
+        fi
+        awk -v n="$now" -v w="$W_WANT" -v r="$rate" -v e="$eta" 'BEGIN{
+            printf "\r  %.2f of %.2f GiB   %5.1f%%   %5d KB/s   ETA %-7s", \
+                   n/1073741824, w/1073741824, (w ? 100*n/w : 0), r/1024, e}'
+        [ "$now" -ge "$W_WANT" ] && { echo; echo "  complete."; break; }
+        prev=$now; prev_t=$t
+        sleep 5
+    done
+    exit 0
 fi
 
 URL="$1"; DEST="$2"; WANT="$3"
