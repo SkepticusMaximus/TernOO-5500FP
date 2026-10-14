@@ -16,4 +16,7 @@ fi
 
 export TERNID_AGENT_SOCK="$SOCK"
 echo "POBOX Mail → live agent at $SOCK"
-exec python3 "$HERE/mailbox_qt.py"
+# PySide6 lives in the p2pcp venv; fall back to system python3 if it's gone
+PY="$HOME/.venvs/p2pcp/bin/python3"
+[ -x "$PY" ] || PY="python3"
+exec "$PY" "$HERE/mailbox_qt.py"
