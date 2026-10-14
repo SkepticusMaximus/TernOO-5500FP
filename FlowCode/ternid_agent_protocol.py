@@ -16,7 +16,8 @@ import socket
 
 METHODS = ["create_account", "list_accounts", "account_display", "send", "inbox",
            "mark_read", "contacts", "add_contact", "create_invite",
-           "grant", "revoke", "grants_on"]
+           "grant", "revoke", "grants_on",
+           "issued_invites", "revoke_invite", "create_object", "objects"]
 
 
 def default_sock():
