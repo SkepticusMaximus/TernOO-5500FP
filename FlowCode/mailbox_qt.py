@@ -158,7 +158,7 @@ class Compose(QDialog):
         r.addWidget(QLabel("To:"))
         self.to = QComboBox()
         for c in agent.contacts(account=account):
-            self.to.addItem(c["display_name"])
+            self.to.addItem(c["display_name"], c["handle"])   # show name, send opaque handle
         r.addWidget(self.to, 1)
         v.addLayout(r)
         self.subj = QLineEdit()
@@ -167,13 +167,12 @@ class Compose(QDialog):
         self.body = QTextEdit()
         self.body.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         v.addWidget(self.body, 1)
-        note = QLabel("Draft only — saved to your outbox, not transmitted "
-                      "(sending is the TernID agent's job, pending).")
+        note = QLabel("Sends live through the TernID agent — real, sealed, delivered.")
         note.setStyleSheet("color:#e8c890;")
         note.setWordWrap(True)
         v.addWidget(note)
         bb = QDialogButtonBox()
-        bb.addButton("Save draft", QDialogButtonBox.ButtonRole.AcceptRole)
+        bb.addButton("Send", QDialogButtonBox.ButtonRole.AcceptRole)
         bb.addButton(QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
@@ -200,9 +199,15 @@ class MailApp(QMainWindow):
         top.addStretch(1)
         top.addWidget(QLabel("Account:"))
         self.acct = QComboBox()
-        self.acct.addItems(agent.list_accounts())
-        self.acct.setCurrentText(self.account)
-        self.acct.currentTextChanged.connect(self._switch)
+        for h in agent.list_accounts():                       # real handles are opaque (acct_…)
+            self.acct.addItem(agent.account_display(account_handle=h), h)  # show name, carry handle
+        want = self.acct.findText(self.account)               # prefer the captain's own seat
+        if want < 0 and self.acct.count():
+            want = 0
+        if want >= 0:
+            self.acct.setCurrentIndex(want)
+            self.account = self.acct.itemData(want)
+        self.acct.currentIndexChanged.connect(self._switch)
         top.addWidget(self.acct)
         cb = QPushButton("Compose")
         cb.clicked.connect(self.compose)
@@ -236,15 +241,15 @@ class MailApp(QMainWindow):
         hm = mb.addMenu("Help")
         hm.addAction(QAction("About", self, triggered=self._about))
 
-    def _switch(self, acct):
-        self.account = acct
+    def _switch(self, idx):
+        self.account = self.acct.itemData(idx)
         self._reload()
 
     def _reload(self):
         self.list.clear()
         msgs = sorted(self.agent.inbox(account=self.account), key=lambda m: m["time"], reverse=True)
         for m in msgs:
-            it = QListWidgetItem("%s\n%s   ·   %s" % (m["subject"][:60], m["from"], m["time"]))
+            it = QListWidgetItem("%s\n%s   ·   %s" % (m["subject"][:60], m["from"], _fmt_time(m["time"])))
             it.setData(UID, m)
             self.list.addItem(it)
         self.read.clear()
@@ -260,18 +265,18 @@ class MailApp(QMainWindow):
             "<div style='color:#3fd08f;font-size:14px'>%s</div>"
             "<div style='color:#9696a5'>from <b style='color:#e6e6ec'>%s</b> · to %s · %s</div><hr>"
             "<pre style='color:#e6e6ec;white-space:pre-wrap;font-family:DejaVu Sans Mono'>%s</pre>"
-            % (_esc(m["subject"]), _esc(m["from"]), _esc(m["to"]), _esc(m["time"]), _esc(m["body"])))
+            % (_esc(m["subject"]), _esc(m["from"]), _esc(m["to"]), _esc(_fmt_time(m["time"])), _esc(m["body"])))
 
     def compose(self):
         d = Compose(self.agent, self.account, self)
         if d.exec() == QDialog.DialogCode.Accepted:
-            res = self.agent.send(from_account=self.account, to_contact=d.to.currentText(),
+            res = self.agent.send(from_account=self.account, to_contact=d.to.currentData(),
                                   subject=d.subj.text() or "(no subject)",
                                   body=d.body.toPlainText())
             fn = res["message_id"] if isinstance(res, dict) else res
-            QMessageBox.information(self, "Draft saved",
-                                    "Saved to outbox (NOT transmitted):\n%s\n\n%s"
-                                    % (fn, OUTBOX))
+            QMessageBox.information(self, "Sent",
+                                    "Delivered through the TernID agent.\nmessage id: %s" % fn)
+            self._reload()
 
     def show_contacts(self):
         names = ", ".join(c["display_name"] for c in self.agent.contacts(account=self.account))
@@ -287,6 +292,14 @@ class MailApp(QMainWindow):
 
 def _esc(s):
     return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _fmt_time(t):
+    """Agent sends `time` as a unix int; the old stub sent a string. Format either."""
+    try:
+        return datetime.datetime.fromtimestamp(int(t)).strftime("%H:%M %d/%m/%Y")
+    except (ValueError, TypeError, OSError):
+        return str(t)
 
 
 DARK = ("QWidget{background:#1a1f2b;color:#e6e6ec;}"
