@@ -4,7 +4,7 @@
 set -e
 export LD_LIBRARY_PATH="$HOME/.local/lib/ternoo-qt:$LD_LIBRARY_PATH"   # ternoo-qt libs (parity w/ wrapper)
 HERE="$(cd "$(dirname "$0")" && pwd)"
-AGENT_BIN="/home/stevo/dev/SkepticusMaximus/TernID/target/debug/ternid-agent"
+AGENT_BIN="$HOME/dev/SkepticusMaximus/TernID/target/debug/ternid-agent"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 SOCK="$XDG_RUNTIME_DIR/ternid-agent.sock"
 

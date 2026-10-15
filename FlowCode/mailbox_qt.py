@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
 from PySide6.QtGui import QAction, QFont, QBrush, QColor, QIcon
 from PySide6.QtCore import Qt
 
-REPO = "/home/stevo/dev/SkepticusMaximus/TernOO-5500FP"
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # repo root — portable across machines
 POBOX = os.path.join(REPO, "private", "POBOX")
 ICON = os.path.join(REPO, "tools", "pobox-mail.svg")
 OUTBOX = os.path.expanduser("~/.config/ternoo/mail-outbox")   # DRAFTS only — never transmitted
