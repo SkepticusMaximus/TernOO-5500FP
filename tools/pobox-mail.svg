@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <rect x="2" y="2" width="124" height="124" rx="26" fill="#1a1f2b"/>
+  <rect x="3" y="3" width="122" height="122" rx="25" fill="none" stroke="#2e466e" stroke-width="2"/>
+  <!-- envelope body -->
+  <rect x="26" y="40" width="76" height="50" rx="7" fill="#15151f" stroke="#3fd08f" stroke-width="4.5"/>
+  <!-- flap -->
+  <path d="M29.5 44 L64 68 L98.5 44" fill="none" stroke="#3fd08f" stroke-width="4.5"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- balanced-ternary triad  −  0  +  -->
+  <g stroke="#3fd08f" stroke-width="3" stroke-linecap="round">
+    <line x1="46" y1="80" x2="54" y2="80"/>
+    <circle cx="64" cy="80" r="1.8" fill="#3fd08f" stroke="none"/>
+    <line x1="74" y1="80" x2="82" y2="80"/>
+    <line x1="78" y1="76" x2="78" y2="84"/>
+  </g>
+</svg>

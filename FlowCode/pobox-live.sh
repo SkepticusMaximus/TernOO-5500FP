@@ -2,6 +2,7 @@
 # Open POBOX Mail on the LIVE TernID agent (real sealed mail), not the inert stub.
 # Ensures the agent is running, points the face at its socket, launches the Qt face.
 set -e
+export LD_LIBRARY_PATH="$HOME/.local/lib/ternoo-qt:$LD_LIBRARY_PATH"   # ternoo-qt libs (parity w/ wrapper)
 HERE="$(cd "$(dirname "$0")" && pwd)"
 AGENT_BIN="/home/stevo/dev/SkepticusMaximus/TernID/target/debug/ternid-agent"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
