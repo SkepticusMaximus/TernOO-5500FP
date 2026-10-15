@@ -28,6 +28,7 @@ POBOX = os.path.join(REPO, "private", "POBOX")
 ICON = os.path.join(REPO, "tools", "pobox-mail.svg")
 OUTBOX = os.path.expanduser("~/.config/ternoo/mail-outbox")   # DRAFTS only — never transmitted
 ROSTER = os.path.expanduser("~/.config/ternoo/contacts.json")
+MAILLISTS = os.path.expanduser("~/.config/ternoo/maillists.json")   # named distribution lists
 os.makedirs(OUTBOX, exist_ok=True)
 SEATS = ["Stevo", "CC", "CCC", "CF5", "CAI", "CO5", "Professor"]
 UID = Qt.ItemDataRole.UserRole
@@ -157,8 +158,13 @@ class Compose(QDialog):
         v = QVBoxLayout(self)
         r = QHBoxLayout()
         r.addWidget(QLabel("To:"))
+        self.contacts = agent.contacts(account=account)
         self.to = QComboBox()
-        for c in agent.contacts(account=account):
+        self.to.addItem("📣 crew — everyone", "list:crew")               # distribution lists first
+        for lname in sorted(load_lists()):
+            self.to.addItem("📣 %s" % lname, "list:" + lname)
+        self.to.insertSeparator(self.to.count())
+        for c in self.contacts:
             self.to.addItem(c["display_name"], c["handle"])   # show name, send opaque handle
         r.addWidget(self.to, 1)
         v.addLayout(r)
@@ -272,14 +278,29 @@ class MailApp(QMainWindow):
 
     def compose(self):
         d = Compose(self.agent, self.account, self)
-        if d.exec() == QDialog.DialogCode.Accepted:
-            res = self.agent.send(from_account=self.account, to_contact=d.to.currentData(),
-                                  subject=d.subj.text() or "(no subject)",
-                                  body=d.body.toPlainText())
+        if d.exec() != QDialog.DialogCode.Accepted:
+            return
+        to_data = d.to.currentData()
+        subject = d.subj.text() or "(no subject)"
+        body = d.body.toPlainText()
+        if isinstance(to_data, str) and to_data.startswith("list:"):
+            lname = to_data[5:]
+            targets = resolve_list(lname, d.contacts)
+            if not targets:
+                QMessageBox.warning(self, "Empty list", "No reachable members on the '%s' list." % lname)
+                return
+            for h in targets:
+                self.agent.send(from_account=self.account, to_contact=h,
+                                subject="[%s] %s" % (lname, subject), body=body)
+            QMessageBox.information(self, "Sent to list",
+                                    "Delivered to %d on the %s list." % (len(targets), lname))
+        else:
+            res = self.agent.send(from_account=self.account, to_contact=to_data,
+                                  subject=subject, body=body)
             fn = res["message_id"] if isinstance(res, dict) else res
             QMessageBox.information(self, "Sent",
                                     "Delivered through the TernID agent.\nmessage id: %s" % fn)
-            self._reload()
+        self._reload()
 
     def show_contacts(self):
         names = ", ".join(c["display_name"] for c in self.agent.contacts(account=self.account))
@@ -303,6 +324,28 @@ def _fmt_time(t):
         return datetime.datetime.fromtimestamp(int(t)).strftime("%H:%M %d/%m/%Y")
     except (ValueError, TypeError, OSError):
         return str(t)
+
+
+def load_lists():
+    """Named distribution lists {name: [display_name, ...]}. 'crew' is built-in (everyone)."""
+    try:
+        return json.load(open(MAILLISTS))
+    except Exception:
+        default = {"claudes": ["CC", "CCC", "CAI", "Professor"]}   # a handy starter list
+        try:
+            os.makedirs(os.path.dirname(MAILLISTS), exist_ok=True)
+            json.dump(default, open(MAILLISTS, "w"), indent=1)
+        except Exception:
+            pass
+        return default
+
+
+def resolve_list(name, contacts):
+    """Contact handles for a list. 'crew' = all contacts; named lists match members by display name."""
+    if name == "crew":
+        return [c["handle"] for c in contacts]
+    by_disp = {c["display_name"]: c["handle"] for c in contacts}
+    return [by_disp[m] for m in load_lists().get(name, []) if m in by_disp]
 
 
 DARK = ("QWidget{background:#1a1f2b;color:#e6e6ec;}"
