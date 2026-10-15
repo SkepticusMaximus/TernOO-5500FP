@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=POBOX Mail (TernID)
+GenericName=Crew Mail
+Comment=Crew mail over the POBOX — live on the TernID agent (real sealed mail)
+Exec=/home/stevo/.local/bin/pobox-mail-qt
+Icon=/home/stevo/dev/SkepticusMaximus/TernOO-5500FP/tools/pobox-mail.svg
+Terminal=false
+Categories=Office;Network;Email;
+StartupNotify=true
