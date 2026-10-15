@@ -20,11 +20,12 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QListWidget, QListWidgetItem, QTextEdit, QLabel, QComboBox,
                                QPushButton, QDialog, QLineEdit, QDialogButtonBox, QSplitter,
                                QMessageBox)
-from PySide6.QtGui import QAction, QFont, QBrush, QColor
+from PySide6.QtGui import QAction, QFont, QBrush, QColor, QIcon
 from PySide6.QtCore import Qt
 
 REPO = "/home/stevo/dev/SkepticusMaximus/TernOO-5500FP"
 POBOX = os.path.join(REPO, "private", "POBOX")
+ICON = os.path.join(REPO, "tools", "pobox-mail.svg")
 OUTBOX = os.path.expanduser("~/.config/ternoo/mail-outbox")   # DRAFTS only — never transmitted
 ROSTER = os.path.expanduser("~/.config/ternoo/contacts.json")
 os.makedirs(OUTBOX, exist_ok=True)
@@ -186,6 +187,7 @@ class MailApp(QMainWindow):
         self.agent = agent
         self.account = "Stevo"
         self.setWindowTitle("TernOO · POBOX Mail")
+        self.setWindowIcon(QIcon(ICON))
         self.resize(820, 560)
         self._menus()
         central = QWidget()
@@ -199,6 +201,7 @@ class MailApp(QMainWindow):
         top.addStretch(1)
         top.addWidget(QLabel("Account:"))
         self.acct = QComboBox()
+        self.acct.setMinimumWidth(170)                        # fit the longest seat name (Professor)
         for h in agent.list_accounts():                       # real handles are opaque (acct_…)
             self.acct.addItem(agent.account_display(account_handle=h), h)  # show name, carry handle
         want = self.acct.findText(self.account)               # prefer the captain's own seat
@@ -322,6 +325,9 @@ def make_agent():
 
 def main():
     app = QApplication(sys.argv)
+    app.setApplicationName("POBOX Mail")
+    app.setDesktopFileName("pobox-mail-qt")   # so Cinnamon matches the window to the .desktop icon
+    app.setWindowIcon(QIcon(ICON))
     app.setStyleSheet(DARK)
     w = MailApp(make_agent())
     w.show()

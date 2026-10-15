@@ -1,16 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
   <rect x="2" y="2" width="124" height="124" rx="26" fill="#1a1f2b"/>
   <rect x="3" y="3" width="122" height="122" rx="25" fill="none" stroke="#2e466e" stroke-width="2"/>
-  <!-- envelope body -->
-  <rect x="26" y="40" width="76" height="50" rx="7" fill="#15151f" stroke="#3fd08f" stroke-width="4.5"/>
-  <!-- flap -->
-  <path d="M29.5 44 L64 68 L98.5 44" fill="none" stroke="#3fd08f" stroke-width="4.5"
+  <!-- envelope (bold, reads at small sizes) -->
+  <rect x="20" y="34" width="88" height="60" rx="9" fill="#15151f" stroke="#3fd08f" stroke-width="6"/>
+  <path d="M24.5 40 L64 71 L103.5 40" fill="none" stroke="#3fd08f" stroke-width="6"
         stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- balanced-ternary triad  −  0  +  (spread wide, 0 is an obvious ring) -->
-  <g stroke="#3fd08f" stroke-width="3.2" stroke-linecap="round" fill="none">
-    <line x1="36" y1="80" x2="46" y2="80"/>
-    <circle cx="64" cy="80" r="5.4" stroke-width="2.8"/>
-    <line x1="82" y1="80" x2="92" y2="80"/>
-    <line x1="87" y1="75" x2="87" y2="85"/>
+  <!-- tri-colour balanced-ternary triad:  −(red)   0(blue ring)   +(green) -->
+  <g stroke-width="5" stroke-linecap="round" fill="none">
+    <line x1="30" y1="81" x2="45" y2="81" stroke="#ff8a8a"/>
+    <circle cx="64" cy="81" r="7" stroke="#6ea8fe" stroke-width="4.5"/>
+    <line x1="83" y1="81" x2="98" y2="81" stroke="#3fd08f"/>
+    <line x1="90.5" y1="73.5" x2="90.5" y2="88.5" stroke="#3fd08f"/>
   </g>
 </svg>
