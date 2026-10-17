@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 # wait for the Pi gadget link, then route to Lenny's side through the Pi
 ExecStartPre=/bin/sh -c 'until ping -c1 -W2 10.55.0.1 >/dev/null 2>&1; do sleep 3; done'
-ExecStartPre=-/sbin/ip route add 10.55.1.0/24 via 10.55.0.1
+ExecStartPre=-/usr/sbin/ip route add 10.55.1.0/24 via 10.55.0.1
 # run the coordinator as stevo; bind 0.0.0.0 so Lenny can reach the API
 ExecStart=/usr/sbin/runuser -l stevo -c 'cd ~/colibri && exec python3 c/coli serve --model ~/glm-local --gpu none --ctx 8192 --cluster-workers 10.55.1.2:9100 --host 0.0.0.0 --port 8000'
 Restart=on-failure
