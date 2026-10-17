@@ -5,45 +5,17 @@ set -e
 U=stevo; H=/home/$U
 
 echo "== 1/5  console menu  =="
-cat >/usr/local/bin/huey-console <<'SCRIPT'
-#!/bin/bash
-# Headless console menu for the Huey GLM appliance (auto-shown on tty1).
-while true; do
-  clear
-  echo " ========================================"
-  echo "    HUEY  —  GLM Oracle Appliance"
-  echo " ========================================"
-  if systemctl is-active --quiet glm; then
-    if ss -ltn 2>/dev/null | grep -q ':8000'; then
-      echo "    GLM : READY  (serving on port 8000)"
-    else
-      echo "    GLM : starting... (loading dense core, ~1 min)"
-    fi
-  else
-    echo "    GLM : stopped"
-  fi
-  echo " ----------------------------------------"
-  echo "    1)  Switch to the DESKTOP (GUI)"
-  echo "    2)  Restart GLM"
-  echo "    3)  Show GLM log"
-  echo "    4)  Command shell  (type 'exit' to return)"
-  echo "    5)  Reboot"
-  echo "    6)  Power off"
-  echo " ----------------------------------------"
-  echo "    (Tip: Ctrl+Alt+F2 gives a plain login without this menu)"
-  read -rp "    Choose [1-6]: " c
-  case "$c" in
-    1) echo "    Freeing GLM and starting the desktop..."; sudo systemctl stop glm 2>/dev/null || true; sudo systemctl isolate graphical.target;;
-    2) sudo systemctl restart glm; echo "    GLM restarting..."; sleep 3;;
-    3) journalctl -u glm -n 60 --no-pager 2>/dev/null | less;;
-    4) echo; bash;;
-    5) sudo systemctl reboot;;
-    6) sudo systemctl poweroff;;
-    *) ;;
-  esac
-done
-SCRIPT
-chmod +x /usr/local/bin/huey-console
+# The menu script lives in the repo at tools/glm/huey-console -- it is NOT
+# inlined here any more.  The inlined first version piped the GLM log through
+# `less`, which trapped the console (q and Ctrl+C did not escape) and forced a
+# Ctrl+Alt+F2 rescue; keeping one copy under version control is how that stays
+# fixed.  A user-space copy in ~/.local/bin is what the tty1 hook actually
+# runs, so the menu can be updated without root.
+SRC="$(dirname "$(readlink -f "$0")")/huey-console"
+[ -r "$SRC" ] || { echo "cannot find huey-console next to this installer"; exit 1; }
+install -m 755 "$SRC" /usr/local/bin/huey-console
+install -d -o $U -g $U $H/.local/bin
+install -m 755 -o $U -g $U "$SRC" $H/.local/bin/huey-console
 
 echo "== 2/5  auto-show menu on headless tty1  =="
 touch $H/.profile
@@ -51,7 +23,7 @@ if ! grep -q huey-console $H/.profile; then
 cat >>$H/.profile <<'HOOK'
 
 # Huey GLM-appliance menu: only on the physical text console, not SSH or GUI
-if [ "$(tty)" = "/dev/tty1" ] && [ -z "$DISPLAY" ]; then huey-console; fi
+if [ "$(tty)" = "/dev/tty1" ] && [ -z "$DISPLAY" ]; then "$HOME/.local/bin/huey-console"; fi
 HOOK
 fi
 chown $U:$U $H/.profile
