@@ -1,0 +1,142 @@
+#!/bin/bash
+# Headless console menu for the Huey GLM appliance (auto-shown on tty1).
+#
+# Contract: every option RUNS -> PAUSES -> RETURNS to this menu, and option 7
+# leaves cleanly.  Nothing here may open an interactive pager: the first
+# version piped the log through `less`, which trapped the console (q and
+# Ctrl+C did not escape) and forced a Ctrl+Alt+F2 rescue.
+
+# Belt and braces: even if something we call decides it wants a pager, it gets
+# `cat` instead.  systemd honours SYSTEMD_PAGER for journalctl/systemctl.
+export PAGER=cat GIT_PAGER=cat SYSTEMD_PAGER=cat SYSTEMD_COLORS=0
+
+# Ctrl+C / Ctrl+\ must not kill the menu or dump the user at a bare prompt.
+# A *handled* trap (not an ignored one) is reset to default in children, so
+# the option-5 shell still takes Ctrl+C normally.
+trap ':' INT QUIT
+
+API_HOST="100.65.86.46"   # Huey's tailnet address (what the fleet dials)
+
+pause() {
+  echo
+  read -r -p "    Press Enter to return to the menu... " _
+  return 0
+}
+
+confirm() {   # confirm "Reboot Huey?" -> 0 on an explicit y
+  local reply
+  echo
+  read -r -p "    $1  Type y to confirm, anything else to cancel: " reply
+  [ "$reply" = "y" ] || [ "$reply" = "Y" ]
+}
+
+glm_state() {
+  if ! systemctl is-active --quiet glm; then
+    echo "    GLM : stopped"
+    return
+  fi
+  if ss -ltn 2>/dev/null | grep -qE ':8000 '; then
+    echo "    GLM : READY   http://$API_HOST:8000/v1"
+  else
+    echo "    GLM : starting... (loading the dense core, ~1 min)"
+  fi
+}
+
+eof_guard=0
+while true; do
+  clear
+  echo " ========================================"
+  echo "    HUEY  —  GLM Oracle Appliance"
+  echo " ========================================"
+  glm_state
+  echo " ----------------------------------------"
+  echo "    1)  Switch to the DESKTOP (GUI)"
+  echo "    2)  Restart GLM"
+  echo "    3)  Show GLM status + recent log"
+  echo "    4)  Ask GLM a test question (slow: minutes)"
+  echo "    5)  Command shell  (type 'exit' to return)"
+  echo "    6)  Reboot"
+  echo "    7)  Power off"
+  echo "    8)  Exit this menu (plain shell prompt)"
+  echo " ----------------------------------------"
+  echo "    (Tip: Ctrl+Alt+F2 gives a plain login without this menu)"
+  echo
+
+  if ! read -r -p "    Choose [1-8]: " c; then
+    # stdin closed (not a real console) -- never spin the menu forever.
+    eof_guard=$((eof_guard + 1))
+    [ "$eof_guard" -ge 2 ] && { echo; echo "    (no console input -- leaving the menu)"; exit 0; }
+    continue
+  fi
+  eof_guard=0
+
+  case "$c" in
+    1)
+      echo
+      echo "    Freeing GLM's RAM and starting the desktop..."
+      sudo systemctl stop glm 2>/dev/null || true
+      sudo systemctl isolate graphical.target
+      pause
+      ;;
+    2)
+      echo
+      echo "    Restarting GLM..."
+      sudo systemctl restart glm
+      sleep 3
+      glm_state
+      echo "    (the dense core takes about a minute to load)"
+      pause
+      ;;
+    3)
+      echo
+      echo "    ---- service ----"
+      systemctl status glm --no-pager -l 2>&1 | head -n 12
+      echo
+      echo "    ---- last 40 log lines ----"
+      journalctl -u glm -n 40 --no-pager 2>&1 | tail -n 40
+      pause
+      ;;
+    4)
+      echo
+      if [ -x "$HOME/glm-chat.sh" ]; then
+        echo "    Asking GLM. This is the slow oracle -- minutes, not seconds."
+        echo
+        "$HOME/glm-chat.sh" "Reply with exactly: GLM ONLINE" 2>&1 | tail -n 20
+      else
+        echo "    ~/glm-chat.sh is missing, so there is nothing to ask with."
+      fi
+      pause
+      ;;
+    5)
+      echo
+      echo "    Type 'exit' to come back to this menu."
+      echo
+      bash
+      ;;
+    6)
+      if confirm "Reboot Huey?"; then
+        echo "    Rebooting..."
+        sudo systemctl reboot
+        pause
+      fi
+      ;;
+    7)
+      if confirm "Power Huey OFF?"; then
+        echo "    Powering off..."
+        sudo systemctl poweroff
+        pause
+      fi
+      ;;
+    8)
+      echo
+      echo "    Leaving the menu. Type 'huey-console' to bring it back."
+      echo
+      exit 0
+      ;;
+    *)
+      echo
+      echo "    '$c' is not one of 1-8."
+      pause
+      ;;
+  esac
+done
