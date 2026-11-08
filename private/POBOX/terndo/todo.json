@@ -1,0 +1,970 @@
+{
+ "_mirror_of": "~/.config/ternoo/todo.json \u2014 this is a READ-ONLY export",
+ "_exported": "2026-11-08 19:26:23",
+ "_how_to_slate": "Mail the task; the local TernDO store is the single writer (one writer, many readers).",
+ "seq": 50,
+ "items": [
+  {
+   "id": "g1",
+   "text": "Make TernID invisible under the POBOX mail",
+   "status": "pending",
+   "parent": null,
+   "history": [
+    {
+     "ts": "2026-10-09 11:48:10",
+     "status": "pending",
+     "note": "imported"
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g2",
+   "text": "Generic FlowCode run-engine interactivity (controls fire their handlers)",
+   "status": "pending",
+   "parent": null,
+   "history": [
+    {
+     "ts": "2026-10-09 11:48:10",
+     "status": "pending",
+     "note": "imported"
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g3",
+   "text": "Re-home the Drive->git carrier on the HP (rclone auth)",
+   "status": "pending",
+   "parent": null,
+   "history": [
+    {
+     "ts": "2026-10-09 11:48:10",
+     "status": "pending",
+     "note": "imported"
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g4",
+   "text": "Carry the ~16 stranded CF5/CAI Drive drops into the box",
+   "status": "pending",
+   "parent": null,
+   "history": [
+    {
+     "ts": "2026-10-09 11:48:10",
+     "status": "pending",
+     "note": "imported"
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g5",
+   "text": "GLM-5.2 (372GB) download to Lenny when home broadband returns",
+   "status": "pending",
+   "parent": null,
+   "history": [
+    {
+     "ts": "2026-10-09 11:48:10",
+     "status": "pending",
+     "note": "imported"
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g6",
+   "text": "Windows installer + Linux repo packaging + Mac",
+   "status": "pending",
+   "parent": null,
+   "history": [
+    {
+     "ts": "2026-10-09 11:48:10",
+     "status": "pending",
+     "note": "imported"
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g7",
+   "text": "Android TernOO (NDK C engine + WebView face)",
+   "status": "pending",
+   "parent": null,
+   "history": [
+    {
+     "ts": "2026-10-09 11:48:10",
+     "status": "pending",
+     "note": "imported"
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g8",
+   "text": "Put home broadband back on",
+   "status": "progress",
+   "parent": null,
+   "history": [
+    {
+     "ts": "2026-10-09 11:48:10",
+     "status": "pending",
+     "note": "imported"
+    },
+    {
+     "ts": "2026-10-09 12:02:39",
+     "status": "progress"
+    },
+    {
+     "ts": "2026-10-09 12:02:42",
+     "status": "complete"
+    },
+    {
+     "ts": "2026-10-09 12:02:45",
+     "status": "pending"
+    },
+    {
+     "ts": "2026-10-09 12:02:46",
+     "status": "progress"
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g9",
+   "text": "TernPIM \u2014 modular FlowCode PIM suite (100% TernOO/FlowCode)",
+   "status": "pending",
+   "parent": null,
+   "notes": "100% TernOO, 100% FlowCode from the bottom up \u2014 complete Flows, GUI layouts and spreadsheets wherever relevant. The PIM build drives 'emergent widgets by need'; keep the widget-vocabulary record as development targets.",
+   "history": [
+    {
+     "ts": "2026-10-10 05:45:22",
+     "status": "pending",
+     "note": "created"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g10",
+   "text": "Make TernDO FlowCode-native: real Flow + GUI layout + Sheet",
+   "status": "progress",
+   "parent": "g9",
+   "notes": "The whole point of the exercise: TernDO should be GENERATED from a FlowCode design (Flow + GUI canvas + Sheet) run via the generic run-engine \u2014 not hand-coded Python. Showcase app for FlowCode.",
+   "history": [
+    {
+     "ts": "2026-10-10 05:45:22",
+     "status": "pending",
+     "note": "created"
+    },
+    {
+     "ts": "2026-10-10 10:56:21",
+     "status": "progress"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g11",
+   "text": "Shared Markdown format for Claude skills + Obsidian (list items as skill files)",
+   "status": "pending",
+   "parent": "g9",
+   "notes": "Both Claude skills and Obsidian notes are Markdown. Establish one file format compatible with both, so a TernDO item can be saved as a little skill/MD file (text + notes + frontmatter).",
+   "history": [
+    {
+     "ts": "2026-10-10 05:45:22",
+     "status": "pending",
+     "note": "created"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g12",
+   "text": "Investigate Obsidian \u2014 MD-based PIM workflow",
+   "status": "pending",
+   "parent": "g9",
+   "notes": "Obsidian has great PIM features and its whole workflow is MD files. Mine it for ideas; informs the shared-MD-format item.",
+   "history": [
+    {
+     "ts": "2026-10-10 05:45:22",
+     "status": "pending",
+     "note": "created"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g13",
+   "text": "Professor: local model for offline/LAN tasks + chat (when credit/data runs out)",
+   "status": "pending",
+   "parent": null,
+   "notes": "When Anthropic credit and/or phone data run out, a capable local model to dig into useful tasks and to chat about niche interests. Ties to the Colony (llama.cpp RPC), Colibri/GLM-5.2 plans, and Vector Manifold training.",
+   "history": [
+    {
+     "ts": "2026-10-10 05:45:22",
+     "status": "pending",
+     "note": "created"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g14",
+   "text": "Research self-driving mobility scooters.",
+   "status": "progress",
+   "parent": null,
+   "notes": "While at The Big Breakfast yesterday, \nI browsed the callender and saw one of my\nwork mates in an old wheelchair. Stevie, was \nalways in a mobility scooter for as long as I've \nknown him. I was informed that he's been \ndowngraded to a wheelchair for saftey reasons. \nApparently his eyesight has deteriorated to the \npoint that his scooter driving is a public \ndanger. That got me thinking about self-driving \nscooters. Aprently they exist but they're like \n$5-7,000. What if our little GHOST AI in TernOO \non a Raspi, were trained to use vision and \ninfra-red sensors to drive a retro-fitted \nscooter? Perhaps a self-driving retro fit kit \ncould be made for just a few $100 to a $1,000.",
+   "history": [
+    {
+     "ts": "2026-10-10 06:16:37",
+     "status": "pending",
+     "note": "created"
+    },
+    {
+     "ts": "2026-10-10 07:46:34",
+     "status": "progress"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g15",
+   "text": "Make Default Aplication Feature Checklist.",
+   "status": "pending",
+   "parent": null,
+   "notes": "Things like text boxes allways need to be made \nwith refference to default inheritance sets. \nPerhaps a refference tool with nested list and a\nVenn diagram view of our emerging object model \nwould help. But text boxes should have context \nmenus with cut/copy/paste and undo/redo if and \nwhere relevnt. Another text box default item is \nword wrap. This tool is presently not word \nwrapping. Then there's spell check. Not all \nthese feeatures are nescecarily relevant in \nsome cases, but many are warrented as default \nand should be assumed as defult unless \notherwise speified.   \n",
+   "history": [
+    {
+     "ts": "2026-10-10 06:58:16",
+     "status": "pending",
+     "note": "created"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g16",
+   "text": "Set up Go Fund Me",
+   "status": "pending",
+   "parent": "g14",
+   "notes": "",
+   "history": [
+    {
+     "ts": "2026-10-10 07:46:00",
+     "status": "pending",
+     "note": "created"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g17",
+   "text": "Write a Street Sheet Article For MobiGhost",
+   "status": "pending",
+   "parent": "g14",
+   "notes": "",
+   "history": [
+    {
+     "ts": "2026-10-10 07:48:42",
+     "status": "pending",
+     "note": "created"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g18",
+   "text": "QR code maker TernQR to point paper print articles @ websites.",
+   "status": "pending",
+   "parent": "g17",
+   "notes": "",
+   "history": [
+    {
+     "ts": "2026-10-10 07:50:51",
+     "status": "pending",
+     "note": "created"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g19",
+   "text": "List Of Apps & Tools to Dev.",
+   "status": "pending",
+   "parent": null,
+   "notes": "Let's keep a Wish to DEV list.  \n\nTernQR to make QR codes. \nContact Lists import from Phone and social media \nmake groups and assign TernDo's (Delegte) and \nassign requsitions for assets and equiptment.\n\nTernIP TCP/IP stack for TernOO and ",
+   "history": [
+    {
+     "ts": "2026-10-10 07:51:48",
+     "status": "pending",
+     "note": "created"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g20",
+   "text": "TernQR TernOO native QR maker for print",
+   "status": "pending",
+   "parent": "g19",
+   "notes": "This is a simple QR code maker to point any smart\ndevice at a website or digital artifact. \nIt could make use of our in house char word to\nuse a font we create for the QR blocks.",
+   "history": [
+    {
+     "ts": "2026-10-10 07:52:59",
+     "status": "pending",
+     "note": "created"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g21",
+   "text": "Rasperry Pi Server Raft",
+   "status": "pending",
+   "parent": null,
+   "notes": "",
+   "history": [
+    {
+     "ts": "2026-10-18 07:23:23",
+     "status": "pending",
+     "note": "created"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g22",
+   "text": "Add Onion browser and Tails features.",
+   "status": "pending",
+   "parent": "g21",
+   "notes": "",
+   "history": [
+    {
+     "ts": "2026-11-01 05:08:21",
+     "status": "pending",
+     "note": "created"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g23",
+   "text": "Set up default shops and crypto payments",
+   "status": "pending",
+   "parent": "g22",
+   "notes": "",
+   "history": [
+    {
+     "ts": "2026-11-01 05:09:39",
+     "status": "pending",
+     "note": "created"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g24",
+   "text": "TernID/TernAuth",
+   "status": "pending",
+   "parent": "g21",
+   "notes": "",
+   "history": [
+    {
+     "ts": "2026-11-01 05:10:32",
+     "status": "pending",
+     "note": "created"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g25",
+   "text": "TernAPI API and SDK",
+   "status": "pending",
+   "parent": "g24",
+   "notes": "TernAPI API and SDK for any third party app \nsuch as in the case of going to ask Emergent to \ndesign a GUI with TernID/TernAuth functionality \nto replicate some sideband and amature radio sets\ninterfacing with LoRA and other hardware to \nproduce and authentic analog radio experiance for\nSWL, CB and Amature (HAM) radio, the QSO Logs and \nSQL in apps like signal or other social media might\nbenifit from gettin passed through TernID and \nTernAuth while the GHOST AI may assist the \noptimising of analog paramaters. Puting the \nsignal quality and settings into P2PVP could be \nan API level facility. A HexMesh such as the \nstandalone MeshChat client might make a good SDK \nitem even outside of TernOO.",
+   "history": [
+    {
+     "ts": "2026-11-01 05:18:34",
+     "status": "pending",
+     "note": "created"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g26",
+   "text": "Sync up Pi SD card & USB stick.",
+   "status": "pending",
+   "parent": "g21",
+   "notes": "",
+   "history": [
+    {
+     "ts": "2026-11-01 06:19:16",
+     "status": "pending",
+     "note": "created"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g27",
+   "text": "Make TernOOGram Proxy for TernOO",
+   "status": "progress",
+   "parent": "g25",
+   "notes": "",
+   "history": [
+    {
+     "ts": "2026-11-01 10:15:56",
+     "status": "pending",
+     "note": "created"
+    },
+    {
+     "ts": "2026-11-02 06:56:55",
+     "status": "progress"
+    }
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": []
+  },
+  {
+   "id": "g28",
+   "text": "TernAPI API and SDK",
+   "status": "pending",
+   "parent": null,
+   "notes": "",
+   "history": [
+    {
+     "ts": "2026-11-07 05:40:17",
+     "status": "pending",
+     "note": "created"
+    }
+   ]
+  },
+  {
+   "id": "g29",
+   "text": "Make a TO-Mail in TernDo and TO-TernDO in TMail (Likewise in other PIM modules)",
+   "status": "pending",
+   "parent": null,
+   "notes": "",
+   "history": [
+    {
+     "ts": "2026-11-07 06:01:06",
+     "status": "pending",
+     "note": "created"
+    }
+   ]
+  },
+  {
+   "id": "g30",
+   "text": "Scrolling Multi User Desktop Workspaces and WebTop Office CoLaboratories (for Freenet?)",
+   "status": "pending",
+   "parent": null,
+   "notes": "",
+   "history": [
+    {
+     "ts": "2026-11-07 06:32:25",
+     "status": "pending",
+     "note": "created"
+    }
+   ]
+  },
+  {
+   "id": "g31",
+   "text": "Android Mesh Chat Client.",
+   "status": "pending",
+   "parent": "g7",
+   "notes": "",
+   "history": [
+    {
+     "ts": "2026-11-07 18:37:47",
+     "status": "pending",
+     "note": "created"
+    }
+   ]
+  },
+  {
+   "id": "g32",
+   "text": "TurnID & TurnAuth For Android.",
+   "status": "pending",
+   "parent": "g7",
+   "notes": "",
+   "history": [
+    {
+     "ts": "2026-11-07 18:39:35",
+     "status": "pending",
+     "note": "created"
+    }
+   ]
+  },
+  {
+   "id": "g33",
+   "text": "Mail-app embellishments: Sent/Drafts/sub-boxes, sort by date/sender/topic/priority, Contacts+Groups manager (Un-Captive Portal spine)",
+   "status": "progress",
+   "parent": null,
+   "history": [
+    {
+     "ts": "2026-11-08 14:28:03",
+     "status": "pending",
+     "note": "created by CC"
+    },
+    {
+     "ts": "2026-11-08 16:45:00",
+     "status": "progress",
+     "note": "added Refresh + Inbox/Sent view; diagnosed two-worlds mail split (git-POBOX vs TernID agent)"
+    }
+   ],
+   "notes": "Refresh (Ctrl+R) + Inbox/Sent folder toggle DONE in mailbox_qt.py. Sent is reconstructed app-side (agent has no outbox query \u2014 cleaner fix = CCC adds a 'sent' method to the TernID agent). STILL WANT: Drafts, sort, Contacts+Groups manager.",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": []
+  },
+  {
+   "id": "g34",
+   "text": "Crew-wake / fan-out mail dispatcher \u2014 post once, fan to every seat's channel",
+   "status": "pending",
+   "parent": null,
+   "history": [
+    {
+     "ts": "2026-11-08 14:28:03",
+     "status": "pending",
+     "note": "created by CC"
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": []
+  },
+  {
+   "id": "g35",
+   "text": "Tor-router appliance on the Pi \u2014 transparent proxy isolated in a netns (Whonix-split on one box)",
+   "status": "complete",
+   "parent": "g21",
+   "history": [
+    {
+     "ts": "2026-11-08 14:28:03",
+     "status": "pending",
+     "note": "created by CC"
+    },
+    {
+     "ts": "2026-11-08 15:00:56",
+     "status": "progress",
+     "note": "Tor transparent-proxy engine configured+running; netns air-gap + leak-test gated on connectivity"
+    },
+    {
+     "ts": "2026-11-08 15:53:27",
+     "status": "complete",
+     "note": "netns air-gap built + leak-tested green against check.torproject.org; torns.service enabled for boot; torrun helper added"
+    }
+   ],
+   "notes": "Built + VERIFIED leak-free. torns netns -> IsTor:true via Tor exit (192.42.116.93), real IP (49.178.112.121) not leaking; DNS via Tor DNSPort; IPv6 disabled in-ns; FORWARD-drop backstop. Persistent (torns.service). Use: torrun <cmd>.",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": [],
+   "priority": 0,
+   "area": "networking"
+  },
+  {
+   "id": "g36",
+   "text": "TernIP \u2014 ternary network + domain/name layer (design-round topic; seed on POBOX wire 2026-11-08)",
+   "status": "pending",
+   "parent": null,
+   "history": [
+    {
+     "ts": "2026-11-08 14:28:03",
+     "status": "pending",
+     "note": "created by CC"
+    },
+    {
+     "ts": "2026-11-08 19:26:23",
+     "status": "pending",
+     "note": "CAI flagged 3 cautions + 3 contributions (POBOX 2026-11-08-1855): narrow the wire/line-code claim; trust-weighted routing is an anonymity hazard (path leaks the trust graph); build the cell as a Double Null not a new primary; reuse P2PCP transport; ship the naming layer first; keep TernIP behind the cheap unfinished things."
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [
+    "crew"
+   ],
+   "grants": []
+  },
+  {
+   "id": "g37",
+   "text": "Tidy Huey stray default-route to Pi; make the Huey->Pi internet-share persistent",
+   "status": "pending",
+   "parent": null,
+   "history": [
+    {
+     "ts": "2026-11-08 14:28:03",
+     "status": "pending",
+     "note": "created by CC"
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": []
+  },
+  {
+   "id": "g38",
+   "text": "Huey-session memory audit (consolidate-memory skill; must run on Huey)",
+   "status": "pending",
+   "parent": null,
+   "history": [
+    {
+     "ts": "2026-11-08 14:28:03",
+     "status": "pending",
+     "note": "created by CC"
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": []
+  },
+  {
+   "id": "g39",
+   "text": "Unified entity model across TernDO/Mail/TernID \u2014 ONE roster keyed by TernID handle, petname as display; @owner@petname namespacing (MY Dave vs YOUR Dave), collapse to @Dave on matching handle",
+   "status": "pending",
+   "parent": null,
+   "history": [
+    {
+     "ts": "2026-11-08 14:56:44",
+     "status": "pending",
+     "note": "created by CC"
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [
+    "CC",
+    "crew"
+   ],
+   "grants": [],
+   "priority": 0,
+   "area": "identity"
+  },
+  {
+   "id": "g40",
+   "text": "@-mention / cross-app refs \u2014 entities auto-appear & import between TernDO, Mail, TernID via the shared roster",
+   "status": "pending",
+   "parent": null,
+   "history": [
+    {
+     "ts": "2026-11-08 14:56:44",
+     "status": "pending",
+     "note": "created by CC"
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": [],
+   "priority": 0,
+   "area": "identity"
+  },
+  {
+   "id": "g41",
+   "text": "Contact canvas view \u2014 Obsidian-style scroll/zoom graph of entities; shared TernID = convergence node (visualises the identity-merge)",
+   "status": "pending",
+   "parent": null,
+   "history": [
+    {
+     "ts": "2026-11-08 14:56:44",
+     "status": "pending",
+     "note": "created by CC"
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": [],
+   "priority": 0,
+   "area": "identity"
+  },
+  {
+   "id": "g42",
+   "text": "Network topology audit + redesign (with the captain): Pi's wired path via Lenny as the DEFAULT, free Huey of the USB tether at home, get the Pi OFF WiFi (it's the hub/server)",
+   "status": "pending",
+   "parent": "g21",
+   "history": [
+    {
+     "ts": "2026-11-08 15:53:27",
+     "status": "pending",
+     "note": "created by CC \u2014 captain's plan: home broadband = moored ship, Huey+phone = dinghy; Pi falls back to Lenny's uplink. Needs eth0 IPv4 + Lenny NAT. Deferred until broadband returns."
+    },
+    {
+     "ts": "2026-11-08 16:45:00",
+     "status": "pending",
+     "note": "reframed failover -> DEFAULT path + topology audit per captain; priority normal; with-captain"
+    }
+   ],
+   "notes": "Captain's steer: Huey shouldn't be tethered to the Pi at home; USB-gadget path = high-throughput bursts only. Pi-on-WiFi is bad for speed/latency/security when it's the server. Current net was thrown together (old switch + PSU). DO WITH captain on hand (his design call).",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": [],
+   "priority": 0,
+   "area": "networking"
+  },
+  {
+   "id": "g43",
+   "text": "Unify mail: CC sends crew mail through the TernID agent (not git-POBOX commits) \u2014 ferry retirement",
+   "status": "progress",
+   "parent": "g9",
+   "history": [
+    {
+     "ts": "2026-11-08 16:45:00",
+     "status": "progress",
+     "note": "built tools/ternid_send.py; delivered TernIP seed CC->crew through the live agent (showed in Stevo's inbox). OPEN: make agent-send standing; decide POBOX-history backfill."
+    }
+   ],
+   "notes": "The Mail app reads the TernID agent (~/.ternid/data via /run/user/1000/ternid-agent.sock), NOT git-POBOX. Committing .md to private/POBOX no longer counts as 'sending'. ternid_send.py bridges it.",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": [],
+   "priority": 1,
+   "area": "mail"
+  },
+  {
+   "id": "g44",
+   "text": "Rich Mail face on the agent: 3-pane layout (box+contacts tree | sortable Time/From/To/Subject table | reading pane below), Qt \u2014 port pobox_mail.py's UX onto mailbox_qt.py",
+   "status": "pending",
+   "parent": "g9",
+   "history": [
+    {
+     "ts": "2026-11-08 17:39:15",
+     "status": "pending",
+     "note": "slated by CC from the captain's Mail-face review"
+    }
+   ],
+   "notes": "Captain prefers the old pobox_mail.py layout (left collapsible mailboxes+contacts, header table above, reading pane below, click column headers to sort). That app is Tkinter+git-POBOX; the strategic app is Qt+agent but thin. Build the rich layout in Qt on the agent. GATED on the captain's unify-vs-keep direction call.",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": [],
+   "priority": 0,
+   "area": "mail"
+  },
+  {
+   "id": "g45",
+   "text": "Mail entity-creation dialogs: add-contact (invite-token flow), new ID/alias (create_account), new group/mailing-list (maillists.json) \u2014 replace the dead 'opaque invite token' message box",
+   "status": "pending",
+   "parent": "g9",
+   "history": [
+    {
+     "ts": "2026-11-08 17:39:15",
+     "status": "pending",
+     "note": "slated by CC from the captain's Mail-face review"
+    }
+   ],
+   "notes": "Contacts button currently pops a useless info box. The agent HAS the methods (create_account, add_contact, create_invite/accept_invite, groups via maillists.json+resolve_list). TernID add-contact is an INVITE-TOKEN exchange (authority!=identity), so the UX must make generate-invite / share / accept-invite usable, not just a name field.",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": [],
+   "priority": 1,
+   "area": "mail"
+  },
+  {
+   "id": "g46",
+   "text": "Port git-POBOX history (235 msgs) into the TernID agent",
+   "status": "progress",
+   "parent": "g9",
+   "history": [
+    {
+     "ts": "2026-11-08 17:39:15",
+     "status": "pending",
+     "note": "slated by CC from the captain's Mail-face review"
+    },
+    {
+     "ts": "2026-11-08 19:26:23",
+     "status": "progress",
+     "note": "g48 done -> port unblocked; will build+dry-run the mapping, then execute on the captain's go (irreversible: no delete)"
+    }
+   ],
+   "notes": "BLOCKED: agent send() hardcodes time=now_unix() (TernID clients/agent/src/lib.rs:507) and exposes NO delete method, so a blind bulk-port would junk the mailbox with today's dates, irreversibly. Clean port needs CCC to add an import/send_at method accepting the original (time, from, to) \u2014 the MsgPayload already has a time field. CC to draft the precise spec to CCC once the captain picks the unify direction. | UNBLOCKED 2026-11-08: import_message live (account, from_display, subject, body, time-unix). Plan: parse each POBOX .md, time from filename (YYYY-MM-DD[-HHMM]), map 'to' -> recipient account(s), one import per box. NO DELETE exists -> dry-run + captain's GO before the live 235-msg import.",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": [],
+   "priority": 0,
+   "area": "mail"
+  },
+  {
+   "id": "g47",
+   "text": "DESIGN: Mail categorisation paradigm \u2014 user-creatable boxes/sub-boxes + incoming-mail filters + extra nominal fields",
+   "status": "pending",
+   "parent": "g9",
+   "history": [
+    {
+     "ts": "2026-11-08 17:39:15",
+     "status": "pending",
+     "note": "slated by CC from the captain's Mail-face review"
+    }
+   ],
+   "notes": "Captain's wish: make/categorise boxes, filter incoming mail, extra nominal fields for sorting. NOTE: the agent is ONE sealed inbox per account, so boxes/filters are a CLIENT-SIDE overlay (labels/rules applied in the app), like pobox_mail.py's local trays. Captain's/CF5 design lane.",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": [],
+   "priority": 0,
+   "area": "mail"
+  },
+  {
+   "id": "g48",
+   "text": "TernID agent: add an import/send_at method (preserve original time + from + to) so CC can port the 235 git-POBOX messages into the agent \u2014 gates Path A",
+   "status": "complete",
+   "parent": "g46",
+   "history": [
+    {
+     "ts": "2026-11-08 18:00:14",
+     "status": "pending",
+     "note": "DELEGATED to CCC by CC on the captain's word \u2014 workflow test: delegated task surfaced by mail"
+    },
+    {
+     "ts": "2026-11-08 19:26:23",
+     "status": "complete",
+     "note": "CCC landed import_message on TernID main (commit 044707d); deposit() owner-side write, preserves original time+sender; 68 tests green + live smoke. Workflow test round-trip confirmed."
+    }
+   ],
+   "notes": "Captain chose Path A (unify mail on the agent). Blocker: agent send() hard-codes time=now_unix() (TernID clients/agent/src/lib.rs:507) and has no delete, so a blind bulk-port junks dates irreversibly. MsgPayload already has a time field \u2014 add a trusted local import path accepting (time, from_display, to). CC ports the moment it lands.",
+   "staging": "",
+   "assignees": [
+    "CCC"
+   ],
+   "grants": [],
+   "priority": 1,
+   "area": "ternid"
+  },
+  {
+   "id": "g49",
+   "text": "Mirror TernDO to the wire so cloud seats can run session-start step 3 (CF5 flag)",
+   "status": "complete",
+   "parent": "g9",
+   "history": [
+    {
+     "ts": "2026-11-08 19:26:23",
+     "status": "complete",
+     "note": "tools/terndo_export.py: full mirror + per-seat digests under private/POBOX/terndo/, refreshed by the hourly heartbeat. One writer (local store), many readers (repo)."
+    }
+   ],
+   "notes": "CF5's fix for the gap in the session-start protocol: cloud containers can't see ~/.config/ternoo/todo.json. Writes stay local; slate-by-mail, TernDO ingests.",
+   "staging": "",
+   "assignees": [
+    "CC",
+    "CF5"
+   ],
+   "grants": [],
+   "priority": 0,
+   "area": "ternpim"
+  },
+  {
+   "id": "g50",
+   "text": "Seat TernID key custody: cloud seats get a short-lived attenuated capability each session (authority != identity), not a stored key",
+   "status": "pending",
+   "parent": "g9",
+   "history": [
+    {
+     "ts": "2026-11-08 19:26:23",
+     "status": "pending",
+     "note": "CF5 flag (POBOX 2026-11-08-1908): a cloud seat's container wipes between sessions, so a long-lived key can't live 'in' CF5, and pasting one into chat is worse. Long-term identity key lives with the captain/HP; seat gets a macaroon-style grant (scope=send/read-as-CF5, expiry, audience) per the C1-C6 audit. Decide BEFORE the Qt app treats seats as signers."
+    }
+   ],
+   "notes": "Captain + CC to slate the mechanism. Gates the Qt mail app treating CF5/CAI as signers.",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": [],
+   "priority": 1,
+   "area": "ternid"
+  }
+ ]
+}

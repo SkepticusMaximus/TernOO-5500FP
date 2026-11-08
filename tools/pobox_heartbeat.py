@@ -70,9 +70,20 @@ def main():
             "proving the\nautonomous-worker leg wakes on a clock and reaches the "
             "mailbox. Overwrites in place.\n")
     run(WT, "git", "add", "-f", HB)
-    if not run(WT, "git", "status", "--porcelain", HB).stdout.strip():
+    # CF5 flag fix (2026-11-08): mirror the TernDO task list to the wire so cloud seats
+    # can run session-start step 3. One writer (local store), many readers (this export).
+    try:
+        import sys
+        if os.path.join(REPO, "tools") not in sys.path:
+            sys.path.insert(0, os.path.join(REPO, "tools"))
+        from terndo_export import export as _terndo_export
+        if _terndo_export(WT):
+            run(WT, "git", "add", "-f", "private/POBOX/terndo/")
+    except Exception as e:
+        log(f"[hb] {now} terndo mirror skipped: {e}")
+    if run(WT, "git", "diff", "--cached", "--quiet").returncode == 0:
         log(f"[hb] {now} no change"); return
-    run(WT, "git", "commit", "-q", "-m", f"CC heartbeat {now}")
+    run(WT, "git", "commit", "-q", "-m", f"CC heartbeat {now} (+ TernDO mirror)")
     p = run(WT, "git", "push", "origin", "HEAD:master")
     if p.returncode != 0:
         log(f"[hb] {now} push raced — next beat self-heals: {p.stderr.strip()[:100]}")
