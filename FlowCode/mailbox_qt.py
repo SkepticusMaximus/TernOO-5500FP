@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QListWidget, QListWidgetItem, QTextEdit, QLabel, QComboBox,
                                QPushButton, QDialog, QLineEdit, QDialogButtonBox, QSplitter,
                                QMessageBox, QTreeWidget, QTreeWidgetItem, QTableWidget,
-                               QTableWidgetItem, QHeaderView, QAbstractItemView)
+                               QTableWidgetItem, QHeaderView, QAbstractItemView, QInputDialog)
 from PySide6.QtGui import QAction, QFont, QBrush, QColor, QIcon
 from PySide6.QtCore import Qt
 
@@ -214,6 +214,143 @@ class Compose(QDialog):
         self.accept()
 
 
+# ── group builder ─────────────────────────────────────────────────────────────────
+class NewGroup(QDialog):
+    """Create a named group / mailing list by checking members off the roster."""
+    def __init__(self, contacts, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("New group / mailing list")
+        self.resize(360, 420)
+        v = QVBoxLayout(self)
+        v.addWidget(QLabel("Group name:"))
+        self.name = QLineEdit()
+        self.name.setPlaceholderText("e.g. claudes, ops, family")
+        v.addWidget(self.name)
+        v.addWidget(QLabel("Members:"))
+        self.list = QListWidget()
+        for c in contacts:
+            it = QListWidgetItem(c["display_name"])
+            it.setFlags(it.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            it.setCheckState(Qt.CheckState.Unchecked)
+            it.setData(UID, c["display_name"])
+            self.list.addItem(it)
+        v.addWidget(self.list, 1)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        v.addWidget(bb)
+
+    def result_group(self):
+        members = [self.list.item(i).data(UID) for i in range(self.list.count())
+                   if self.list.item(i).checkState() == Qt.CheckState.Checked]
+        return self.name.text().strip(), members
+
+
+# ── roster manager ─────────────────────────────────────────────────────────────────
+class ContactsGroups(QDialog):
+    """Manage the roster: view contacts + groups, create/accept invites (TernID's
+    capability flow — authority ≠ identity), add a new alias/account, build groups."""
+    def __init__(self, agent, account, parent=None):
+        super().__init__(parent)
+        self.agent, self.account = agent, account
+        self.setWindowTitle("Contacts & Groups — %s" % _display(agent, account))
+        self.resize(460, 500)
+        v = QVBoxLayout(self)
+        self.tree = QTreeWidget()
+        self.tree.setHeaderHidden(True)
+        v.addWidget(self.tree, 1)
+        self._populate()
+        r1 = QHBoxLayout()
+        for label, slot in (("Create invite", self._create_invite), ("Add by invite", self._add_by_invite)):
+            b = QPushButton(label); b.clicked.connect(slot); r1.addWidget(b)
+        v.addLayout(r1)
+        r2 = QHBoxLayout()
+        for label, slot in (("New alias", self._new_alias), ("New group", self._new_group),
+                            ("Delete group", self._delete_group)):
+            b = QPushButton(label); b.clicked.connect(slot); r2.addWidget(b)
+        v.addLayout(r2)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        bb.clicked.connect(lambda *_: self.accept())
+        v.addWidget(bb)
+
+    def _populate(self):
+        self.tree.clear()
+        croot = QTreeWidgetItem(self.tree, ["Contacts"])
+        for c in self.agent.contacts(account=self.account):
+            QTreeWidgetItem(croot, [c["display_name"]])
+        groot = QTreeWidgetItem(self.tree, ["Groups"])
+        QTreeWidgetItem(groot, ["crew  —  everyone (built in)"]).setData(0, UID, "crew")
+        for name, members in load_lists().items():
+            QTreeWidgetItem(groot, ["%s  —  %s" % (name, ", ".join(members) or "empty")]).setData(0, UID, name)
+        self.tree.expandAll()
+
+    def _create_invite(self):
+        label, ok = QInputDialog.getText(self, "Create invite", "Label (who is it for)?")
+        if not ok:
+            return
+        res = self.agent.create_invite(account=self.account, for_display_name=label or None)
+        token = res.get("invite") if isinstance(res, dict) else str(res)
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Invite token")
+        dv = QVBoxLayout(dlg)
+        dv.addWidget(QLabel("Share this invite with %s so they can mail you.\n"
+                            "It is a capability, not a key — revocable, no identity exposed:" % (label or "them")))
+        field = QLineEdit(token)
+        field.setReadOnly(True)
+        dv.addWidget(field)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        bb.clicked.connect(lambda *_: dlg.accept())
+        dv.addWidget(bb)
+        field.selectAll()
+        dlg.exec()
+
+    def _add_by_invite(self):
+        token, ok = QInputDialog.getText(self, "Add by invite", "Paste the invite token you were given:")
+        if not ok or not token.strip():
+            return
+        try:
+            self.agent.add_contact(account=self.account, invite=token.strip())
+            self._populate()
+        except Exception as e:
+            QMessageBox.warning(self, "Add failed", str(e))
+
+    def _new_alias(self):
+        name, ok = QInputDialog.getText(self, "New alias / account", "Display name for the new seat:")
+        if not ok or not name.strip():
+            return
+        try:
+            self.agent.create_account(display_name=name.strip())
+            QMessageBox.information(self, "Created", "New seat/alias '%s' created." % name.strip())
+            self._populate()
+        except Exception as e:
+            QMessageBox.warning(self, "Create failed", str(e))
+
+    def _new_group(self):
+        d = NewGroup(self.agent.contacts(account=self.account), self)
+        if d.exec() != QDialog.DialogCode.Accepted:
+            return
+        name, members = d.result_group()
+        if not name:
+            QMessageBox.warning(self, "No name", "Give the group a name.")
+            return
+        lists = load_lists()
+        lists[name] = members
+        save_lists(lists)
+        self._populate()
+
+    def _delete_group(self):
+        it = self.tree.currentItem()
+        tag = it.data(0, UID) if it else None
+        if not tag or tag == "crew":
+            QMessageBox.information(self, "Delete group", "Select a user group (not 'crew') to delete.")
+            return
+        lists = load_lists()
+        if tag in lists:
+            del lists[tag]
+            save_lists(lists)
+            self._populate()
+
+
 # ── main window ──────────────────────────────────────────────────────────────────
 class MailApp(QMainWindow):
     BOXES = ("Inbox", "Sent", "Drafts")
@@ -250,7 +387,7 @@ class MailApp(QMainWindow):
         self.acct.currentIndexChanged.connect(self._switch)
         top.addWidget(self.acct)
         for label, slot in (("Compose", self.compose), ("Reply", self.reply),
-                            ("Refresh", lambda: self._reload())):
+                            ("Contacts", self.manage_contacts), ("Refresh", lambda: self._reload())):
             b = QPushButton(label)
             b.clicked.connect(slot)
             top.addWidget(b)
@@ -298,6 +435,7 @@ class MailApp(QMainWindow):
         fm = mb.addMenu("File")
         fm.addAction(QAction("Compose", self, shortcut="Ctrl+N", triggered=self.compose))
         fm.addAction(QAction("Reply", self, shortcut="Ctrl+R", triggered=self.reply))
+        fm.addAction(QAction("Contacts && Groups…", self, shortcut="Ctrl+B", triggered=self.manage_contacts))
         fm.addAction(QAction("Refresh", self, shortcut="F5", triggered=lambda: self._reload()))
         fm.addSeparator()
         fm.addAction(QAction("Quit", self, shortcut="Ctrl+Q", triggered=self.close))
@@ -320,6 +458,11 @@ class MailApp(QMainWindow):
                 node.setData(0, UID, ("contact", c["handle"], c["display_name"]))
         except Exception:
             pass
+        groot = QTreeWidgetItem(self.tree, ["Groups"])
+        groot.setFirstColumnSpanned(True)
+        QTreeWidgetItem(groot, ["crew"]).setData(0, UID, ("group", "crew"))
+        for gname in load_lists():
+            QTreeWidgetItem(groot, [gname]).setData(0, UID, ("group", gname))
         self.tree.expandAll()
         self.tree.blockSignals(False)
         self.tree.setCurrentItem(boxes.child(0))             # Inbox -> _tree_select -> _reload
@@ -336,6 +479,12 @@ class MailApp(QMainWindow):
         tag = it.data(0, UID)
         if tag and tag[0] == "contact":
             self._compose(prefill={"to": tag[1]})            # double-click a contact to write to them
+        elif tag and tag[0] == "group":
+            self._compose(prefill={"to": "list:" + tag[1]})  # or a group/mailing-list
+
+    def manage_contacts(self):
+        ContactsGroups(self.agent, self.account, self).exec()
+        self._build_tree()                                   # contacts/groups may have changed
 
     def _me(self):
         try:
@@ -572,12 +721,26 @@ def load_lists():
         return default
 
 
+def save_lists(lists):
+    """Persist the named distribution lists. 'crew' is built-in, never stored."""
+    os.makedirs(os.path.dirname(MAILLISTS), exist_ok=True)
+    json.dump({k: v for k, v in lists.items() if k != "crew"},
+              open(MAILLISTS, "w", encoding="utf-8"), indent=1)
+
+
 def resolve_list(name, contacts):
     """Contact handles for a list. 'crew' = all contacts; named lists match members by display name."""
     if name == "crew":
         return [c["handle"] for c in contacts]
     by_disp = {c["display_name"]: c["handle"] for c in contacts}
     return [by_disp[m] for m in load_lists().get(name, []) if m in by_disp]
+
+
+def _display(agent, account):
+    try:
+        return agent.account_display(account_handle=account)
+    except Exception:
+        return str(account)
 
 
 DARK = ("QWidget{background:#1a1f2b;color:#e6e6ec;}"
