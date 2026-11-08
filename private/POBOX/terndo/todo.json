@@ -1,6 +1,6 @@
 {
  "_mirror_of": "~/.config/ternoo/todo.json \u2014 this is a READ-ONLY export",
- "_exported": "2026-11-08 19:26:23",
+ "_exported": "2026-11-08 20:15:23",
  "_how_to_slate": "Mail the task; the local TernDO store is the single writer (one writer, many readers).",
  "seq": 50,
  "items": [
@@ -650,6 +650,11 @@
      "ts": "2026-11-08 19:26:23",
      "status": "pending",
      "note": "CAI flagged 3 cautions + 3 contributions (POBOX 2026-11-08-1855): narrow the wire/line-code claim; trust-weighted routing is an anonymity hazard (path leaks the trust graph); build the cell as a Double Null not a new primary; reuse P2PCP transport; ship the naming layer first; keep TernIP behind the cheap unfinished things."
+    },
+    {
+     "ts": "2026-11-08 20:15:23",
+     "status": "pending",
+     "note": "CAPTAIN OVERRULES CAI caution #2 (trust-routing = anonymity hazard): existence proofs \u2014 Web of Trust (reputation sacrosanct, identity pseudonymous), Tor (nodes = identity+reputation, no traceable history), Bitcoin (full ledger history, air-gapped from real-world identity). If dark-web markets sustain emergent trust for anonymous entities, trust-weighted routing without breaking anonymity is achievable. Design round to resolve HOW, not WHETHER."
     }
    ],
    "notes": "",
@@ -811,16 +816,21 @@
   {
    "id": "g44",
    "text": "Rich Mail face on the agent: 3-pane layout (box+contacts tree | sortable Time/From/To/Subject table | reading pane below), Qt \u2014 port pobox_mail.py's UX onto mailbox_qt.py",
-   "status": "pending",
+   "status": "progress",
    "parent": "g9",
    "history": [
     {
      "ts": "2026-11-08 17:39:15",
      "status": "pending",
      "note": "slated by CC from the captain's Mail-face review"
+    },
+    {
+     "ts": "2026-11-08 20:15:23",
+     "status": "progress",
+     "note": "laid down the rich 3-pane Qt face on the agent (mailbox_qt.py); offscreen smoke green"
     }
    ],
-   "notes": "Captain prefers the old pobox_mail.py layout (left collapsible mailboxes+contacts, header table above, reading pane below, click column headers to sort). That app is Tkinter+git-POBOX; the strategic app is Qt+agent but thin. Build the rich layout in Qt on the agent. GATED on the captain's unify-vs-keep direction call.",
+   "notes": "DONE: 3-pane layout (mailboxes+contacts tree | sortable Time/From/To/Subject table | reading pane), click-header sort, Reply (quote+prefill), Drafts box + Save-draft, double-click a contact to compose. Verified offscreen. REMAINS: g45 entity-creation dialogs; the history port (g46) to give it content on the agent.",
    "staging": "",
    "assignees": [
     "CC"

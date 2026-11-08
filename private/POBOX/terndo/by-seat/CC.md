@@ -1,6 +1,6 @@
 # TernDO — tasks naming CC
 
-_Read-only mirror, exported 2026-11-08 19:26:23. To slate/change a task: mail it; TernDO ingests (one writer, many readers). Session-start protocol step 3._
+_Read-only mirror, exported 2026-11-08 20:15:23. To slate/change a task: mail it; TernDO ingests (one writer, many readers). Session-start protocol step 3._
 
 ## Open (14)
 - ▸ [+] **g43** (progress) — Unify mail: CC sends crew mail through the TernID agent (not git-POBOX commits) — ferry retirement  _(mail)_
@@ -14,7 +14,7 @@ _Read-only mirror, exported 2026-11-08 19:26:23. To slate/change a task: mail it
 - · [0] **g40** (pending) — @-mention / cross-app refs — entities auto-appear & import between TernDO, Mail, TernID via the shared roster  _(identity)_
 - · [0] **g41** (pending) — Contact canvas view — Obsidian-style scroll/zoom graph of entities; shared TernID = convergence node (visualises the identity-merge)  _(identity)_
 - · [0] **g42** (pending) — Network topology audit + redesign (with the captain): Pi's wired path via Lenny as the DEFAULT, free Huey of the USB tether at home, get the Pi OFF WiFi (it's the hub/server)  _(networking)_
-- · [0] **g44** (pending) — Rich Mail face on the agent: 3-pane layout (box+contacts tree | sortable Time/From/To/Subject table | reading pane below), Qt — port pobox_mail.py's UX onto mailbox_qt.py  _(mail)_
+- ▸ [0] **g44** (progress) — Rich Mail face on the agent: 3-pane layout (box+contacts tree | sortable Time/From/To/Subject table | reading pane below), Qt — port pobox_mail.py's UX onto mailbox_qt.py  _(mail)_
 - ▸ [0] **g46** (progress) — Port git-POBOX history (235 msgs) into the TernID agent  _(mail)_
 - · [0] **g47** (pending) — DESIGN: Mail categorisation paradigm — user-creatable boxes/sub-boxes + incoming-mail filters + extra nominal fields  _(mail)_
 
