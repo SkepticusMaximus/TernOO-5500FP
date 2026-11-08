@@ -89,6 +89,9 @@ def _load_timeline():
         return []
 
 
+_DELETED = set()      # ids deleted here — never resurrect them on merge-save
+
+
 def _merge_external():
     """Two-writer safety. CC's scripts (and other seats) may append items to todo.json
     while this GUI is open — the captain vibe-codes between sessions, seats add tasks.
@@ -101,7 +104,8 @@ def _merge_external():
     except Exception:
         return
     have = {it.get("id") for it in DB.get("items", [])}
-    external = [it for it in disk.get("items", []) if it.get("id") not in have]
+    external = [it for it in disk.get("items", [])
+                if it.get("id") not in have and it.get("id") not in _DELETED]
     if external:
         DB.setdefault("items", []).extend(external)
     DB["seq"] = max(DB.get("seq", 0), disk.get("seq", 0))     # keep ids from colliding next
@@ -436,6 +440,7 @@ def _do_delete(iid):
                 TIMELINE.append({"ts": ts, "id": d, "text": d_it["text"],
                                  "to": "deleted", "note": "deleted"})
         DB["items"][:] = [x for x in DB["items"] if x["id"] not in ids]
+        _DELETED.update(ids)       # so merge-on-save never brings them back
         if SEL[0] in ids:
             SEL[0] = None
         _save(); _save_timeline(); _render()

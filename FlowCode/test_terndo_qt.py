@@ -19,8 +19,10 @@ os.environ["TERNDO_STORE"] = store
 os.environ["TERNDO_TLINE"] = tline
 os.environ["QT_QPA_PLATFORM"] = "offscreen"          # no live desktop, ever
 
-SHOT = "/tmp/claude-1000/-home-stevo-dev-SkepticusMaximus-TernOO-5500FP/" \
-       "e5549637-5d5b-494c-a9d3-eb3eed6c7080/scratchpad/widgetkit/"
+import os as _os, tempfile as _tf
+_shotdir = _os.environ.get("TERNDO_SHOT") or _tf.mkdtemp(prefix="terndo_shots_")
+_os.makedirs(_shotdir, exist_ok=True)
+SHOT = _shotdir + "/"
 
 spec = importlib.util.spec_from_file_location(
     "terndo_qt", "/home/stevo/dev/SkepticusMaximus/TernOO-5500FP/FlowCode/terndo_qt.py")
