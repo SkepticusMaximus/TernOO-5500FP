@@ -1,0 +1,10 @@
+[Unit]
+Description=TernOO Onion appliance (air-gapped Tor netns)
+After=network-online.target tor.service
+Wants=network-online.target
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/torns-up.sh
+[Install]
+WantedBy=multi-user.target

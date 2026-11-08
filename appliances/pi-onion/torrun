@@ -1,0 +1,5 @@
+#!/bin/bash
+# Run any command through the Onion appliance (torns namespace).
+if [ "$EUID" -ne 0 ]; then exec sudo "$0" "$@"; fi
+U="${SUDO_USER:-stevo}"
+exec ip netns exec torns sudo -u "$U" env DISPLAY="${DISPLAY:-:0}" "$@"
