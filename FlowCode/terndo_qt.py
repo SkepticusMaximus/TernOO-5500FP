@@ -67,6 +67,8 @@ class Store:
             it.setdefault("staging", "")          # dispatch lane (CCC §F)
             it.setdefault("assignees", [])        # identity handles — inert until the agent lands
             it.setdefault("grants", [])           # capability refs — inert
+            it.setdefault("priority", 0)          # balanced trit: -1 defer / 0 normal / +1 urgent
+            it.setdefault("area", "")             # classification tag (infra/FlowCode/identity/...)
         return raw
 
     def _load_tl(self):
@@ -124,6 +126,7 @@ class Store:
         self.db["items"].append({"id": iid, "text": text, "status": "pending",
                                  "parent": parent, "notes": "",
                                  "staging": "", "assignees": [], "grants": [],
+                                 "priority": 0, "area": "",
                                  "history": [{"ts": ts, "status": "pending", "note": "created"}]})
         self.tl.append({"ts": ts, "id": iid, "text": text, "to": "pending", "note": "created"})
         return iid
@@ -153,24 +156,35 @@ class Store:
         if it:
             self.set_status(iid, NEXT[it["status"]])
 
-    def apply_props(self, iid, text, status, notes, staging=None, assignees=None):
+    def apply_props(self, iid, text, status, notes, staging=None, assignees=None,
+                    priority=None, area=None):
         it = self.by_id(iid)
         if not it:
             return False
         if assignees is None:
             assignees = it.get("assignees", [])
+        if priority is None:
+            priority = it.get("priority", 0)
+        if area is None:
+            area = it.get("area", "")
         tc = text.strip() and text.strip() != it["text"]
         nc = notes != it.get("notes", "")
         sc = status != it["status"]
         gc = staging is not None and staging != it.get("staging", "")
         ac = assignees != it.get("assignees", [])
-        if not (tc or nc or sc or gc or ac):
+        pc = priority != it.get("priority", 0)
+        rc = area != it.get("area", "")
+        if not (tc or nc or sc or gc or ac or pc or rc):
             return False
         self.snapshot()
         if gc:
             it["staging"] = staging
         if ac:
             it["assignees"] = assignees
+        if pc:
+            it["priority"] = priority
+        if rc:
+            it["area"] = area
         if tc:
             it["text"] = text.strip()
         if nc:
@@ -218,6 +232,19 @@ class PropsDialog(QDialog):
             self.status.addItem(SLABEL[s], s)
         self.status.setCurrentIndex(STATUSES.index(it.get("status", "pending")))
         v.addWidget(self.status)
+        pa = QHBoxLayout()
+        pa.addWidget(QLabel("Priority:"))
+        self.priority = QComboBox()
+        for val, lbl in ((1, "+ urgent"), (0, "0 normal"), (-1, "− defer")):
+            self.priority.addItem(lbl, val)
+        self.priority.setCurrentIndex([1, 0, -1].index(it.get("priority", 0)))
+        pa.addWidget(self.priority)
+        pa.addWidget(QLabel("  Area:"))
+        self.area = QLineEdit(it.get("area", ""))
+        self.area.setPlaceholderText("infra / FlowCode / identity / networking / product / research")
+        pa.addWidget(self.area, 1)
+        _paw = QWidget(); _paw.setLayout(pa)
+        v.addWidget(_paw)
         v.addWidget(_hdr("Notes  (Markdown — shared format with skills/Obsidian)"))
         self.notes = QTextEdit()
         self.notes.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
@@ -230,7 +257,14 @@ class PropsDialog(QDialog):
         self.staging.setPlaceholderText("lane (e.g. now / blocked / CC / CCC)")
         sa.addWidget(self.staging, 1)
         self.assignees = QLineEdit(", ".join(it.get("assignees", [])))
-        self.assignees.setPlaceholderText("assignees (comma-separated)")
+        self.assignees.setPlaceholderText("assignees (from the shared roster)")
+        try:
+            from PySide6.QtWidgets import QCompleter
+            import json as _json
+            _r = _json.load(open(os.path.expanduser("~/.config/ternoo/contacts.json")))
+            self.assignees.setCompleter(QCompleter(sorted({c.get("display_name", "") for c in _r if c.get("display_name")})))
+        except Exception:
+            pass
         sa.addWidget(self.assignees, 1)
         saw = QWidget()
         saw.setLayout(sa)
@@ -253,7 +287,8 @@ class PropsDialog(QDialog):
         return self.store.apply_props(
             self.iid, self.text.text(), self.status.currentData(),
             self.notes.toPlainText(), staging=self.staging.text(),
-            assignees=[a.strip() for a in self.assignees.text().split(",") if a.strip()])
+            assignees=[a.strip() for a in self.assignees.text().split(",") if a.strip()],
+            priority=self.priority.currentData(), area=self.area.text().strip())
 
 
 class DeleteDialog(QDialog):
