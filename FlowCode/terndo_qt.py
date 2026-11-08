@@ -50,6 +50,7 @@ class Store:
         self.db = self._load_db()
         self.tl = self._load_tl()
         self.undo = []
+        self._deleted = set()      # ids deleted here — never resurrect them on merge-save
 
     def _load_db(self):
         try:
@@ -77,7 +78,24 @@ class Store:
         except Exception:
             return []
 
+    def _merge_external(self):
+        """Two-writer safety: CC's scripts (and other seats) may append items to the
+        store while this GUI is open — the captain vibe-codes the list between sessions.
+        Fold in any on-disk items we don't hold (by id) before overwriting, so a GUI save
+        never clobbers externally-added tasks. One file, last-writer-MERGES."""
+        try:
+            disk = json.load(open(STORE, encoding="utf-8"))
+        except Exception:
+            return
+        have = {it.get("id") for it in self.db.get("items", [])}
+        external = [it for it in disk.get("items", [])
+                    if it.get("id") not in have and it.get("id") not in self._deleted]
+        if external:
+            self.db.setdefault("items", []).extend(external)
+        self.db["seq"] = max(self.db.get("seq", 0), disk.get("seq", 0))
+
     def save(self):
+        self._merge_external()
         json.dump(self.db, open(STORE, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
         json.dump(self.tl, open(TLINE, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
 
@@ -210,6 +228,7 @@ class Store:
                 self.tl.append({"ts": ts, "id": d, "text": d_it["text"],
                                 "to": "deleted", "note": "deleted"})
         self.db["items"][:] = [x for x in self.db["items"] if x["id"] not in ids]
+        self._deleted |= ids       # so merge-on-save never brings them back
         self.save()
         return True
 
