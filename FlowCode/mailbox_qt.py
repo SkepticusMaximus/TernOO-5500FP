@@ -162,12 +162,14 @@ class Compose(QDialog):
         r.addWidget(QLabel("To:"))
         self.contacts = agent.contacts(account=account)
         self.to = QComboBox()
-        self.to.addItem("📣 crew — everyone", "list:crew")               # distribution lists first
+        self.to.addItem("— choose a recipient —", None)       # safe default: no accidental broadcast
+        self.to.addItem("📣 crew — everyone", "list:crew")               # distribution lists
         for lname in sorted(load_lists()):
             self.to.addItem("📣 %s" % lname, "list:" + lname)
         self.to.insertSeparator(self.to.count())
         for c in self.contacts:
             self.to.addItem(c["display_name"], c["handle"])   # show name, send opaque handle
+        self.to.setCurrentIndex(0)                            # start on the placeholder, not a broadcast
         r.addWidget(self.to, 1)
         v.addLayout(r)
         self.subj = QLineEdit()
@@ -177,10 +179,11 @@ class Compose(QDialog):
         self.body.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         v.addWidget(self.body, 1)
         if prefill:                                           # Reply / re-open a draft pre-fills
-            if prefill.get("to"):
-                i = self.to.findData(prefill["to"])
-                if i >= 0:
-                    self.to.setCurrentIndex(i)
+            i = self.to.findData(prefill["to"]) if prefill.get("to") else -1
+            if i < 0 and prefill.get("to_text"):              # drafts carry the recipient as display text
+                i = self.to.findText(prefill["to_text"])
+            if i >= 0:
+                self.to.setCurrentIndex(i)
             if prefill.get("subject"):
                 self.subj.setText(prefill["subject"])
             if prefill.get("body"):
@@ -198,6 +201,13 @@ class Compose(QDialog):
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
         v.addWidget(bb)
+
+    def accept(self):
+        if not self._save_draft and self.to.currentData() is None:
+            QMessageBox.warning(self, "No recipient",
+                                "Pick a recipient before sending (or use Save draft).")
+            return
+        super().accept()
 
     def _as_draft(self):
         self._save_draft = True
@@ -386,7 +396,8 @@ class MailApp(QMainWindow):
             return
         m = self._sel_msg()
         if m:
-            self._compose(prefill={"subject": re.sub(r"^Re:\s*", "", str(m.get("subject", ""))),
+            self._compose(prefill={"to_text": str(m.get("to", "")),
+                                   "subject": re.sub(r"^Re:\s*", "", str(m.get("subject", ""))),
                                    "body": str(m.get("body", ""))})
 
     def _sent_msgs(self):
@@ -438,9 +449,11 @@ class MailApp(QMainWindow):
                     if mm:
                         return mm.group(1).strip()
                 return ""
+            idx = next((i for i, l in enumerate(lines) if l.startswith("Re:")), None)
+            body = "\n".join(lines[idx + 1:]).strip() if idx is not None else txt
             out.append({"id": os.path.basename(p), "from": self._me(),
                         "to": _h("To") or "?", "subject": _h("Re") or os.path.basename(p),
-                        "time": int(os.path.getmtime(p)), "body": txt, "unread": False})
+                        "time": int(os.path.getmtime(p)), "body": body, "unread": False})
         return out
 
     # ── actions ──

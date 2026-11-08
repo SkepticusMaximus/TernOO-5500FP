@@ -1,5 +1,5 @@
 # TernDO — tasks naming CAI
 
-_Read-only mirror, exported 2026-11-08 20:15:23. To slate/change a task: mail it; TernDO ingests (one writer, many readers). Session-start protocol step 3._
+_Read-only mirror, exported 2026-11-08 23:56:12. To slate/change a task: mail it; TernDO ingests (one writer, many readers). Session-start protocol step 3._
 
 No open or closed tasks name this seat.
