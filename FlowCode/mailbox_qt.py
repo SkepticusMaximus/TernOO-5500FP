@@ -218,6 +218,14 @@ class MailApp(QMainWindow):
             self.account = self.acct.itemData(want)
         self.acct.currentIndexChanged.connect(self._switch)
         top.addWidget(self.acct)
+        top.addWidget(QLabel("Folder:"))
+        self.folder = QComboBox()
+        self.folder.addItems(["Inbox", "Sent"])
+        self.folder.currentIndexChanged.connect(lambda _=0: self._reload())
+        top.addWidget(self.folder)
+        rb = QPushButton("Refresh")
+        rb.clicked.connect(lambda: self._reload())
+        top.addWidget(rb)
         cb = QPushButton("Compose")
         cb.clicked.connect(self.compose)
         top.addWidget(cb)
@@ -245,6 +253,7 @@ class MailApp(QMainWindow):
         mb = self.menuBar()
         fm = mb.addMenu("File")
         fm.addAction(QAction("Compose", self, shortcut="Ctrl+N", triggered=self.compose))
+        fm.addAction(QAction("Refresh", self, shortcut="Ctrl+R", triggered=self._reload))
         fm.addSeparator()
         fm.addAction(QAction("Quit", self, shortcut="Ctrl+Q", triggered=self.close))
         hm = mb.addMenu("Help")
@@ -256,14 +265,50 @@ class MailApp(QMainWindow):
 
     def _reload(self):
         self.list.clear()
-        msgs = sorted(self.agent.inbox(account=self.account), key=lambda m: m["time"], reverse=True)
+        folder = self.folder.currentText() if hasattr(self, "folder") else "Inbox"
+        raw = self._sent_msgs() if folder == "Sent" else self.agent.inbox(account=self.account)
+        msgs = sorted(raw, key=lambda m: m["time"], reverse=True)
         for m in msgs:
-            it = QListWidgetItem("%s\n%s   ·   %s" % (m["subject"][:60], m["from"], _fmt_time(m["time"])))
+            who = ("to " + str(m.get("to", "?"))) if folder == "Sent" else m["from"]
+            it = QListWidgetItem("%s\n%s   ·   %s" % (m["subject"][:60], who, _fmt_time(m["time"])))
             it.setData(UID, m)
             self.list.addItem(it)
         self.read.clear()
-        self.status.setText("%s — %d messages   ·   outbox: %s"
-                            % (self.account, len(msgs), OUTBOX))
+        self.status.setText("%s · %s — %d messages   ·   outbox: %s"
+                            % (self.account, folder, len(msgs), OUTBOX))
+
+    def _sent_msgs(self):
+        """Reconstruct this account's SENT mail. The agent exposes no outbox query, so
+        gather messages we authored from across every account's inbox, folding a single
+        broadcast (same subject+time) into one row with its recipients joined."""
+        try:
+            me = self.agent.account_display(account_handle=self.account)
+        except Exception:
+            me = self.account
+        try:
+            accts = self.agent.list_accounts()
+        except Exception:
+            accts = [self.account]
+        seen, out = {}, []
+        for acct in accts:
+            try:
+                msgs = self.agent.inbox(account=acct)
+            except Exception:
+                continue
+            for m in msgs:
+                if m.get("from") != me:
+                    continue
+                key = (m.get("subject"), str(m.get("time")))
+                if key in seen:
+                    prev = seen[key]
+                    tos = [t.strip() for t in str(prev.get("to", "")).split(",")]
+                    if str(m.get("to")) not in tos:
+                        prev["to"] = str(prev.get("to", "")) + ", " + str(m.get("to"))
+                    continue
+                mm = dict(m)
+                seen[key] = mm
+                out.append(mm)
+        return out
 
     def _open(self, cur, _prev=None):
         if not cur:
