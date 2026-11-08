@@ -1,0 +1,7 @@
+[Unit]
+Description=Re-assert Pi internet route via Huey every minute
+[Timer]
+OnBootSec=20
+OnUnitActiveSec=60
+[Install]
+WantedBy=timers.target

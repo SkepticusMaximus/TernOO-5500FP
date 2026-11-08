@@ -1,0 +1,6 @@
+[Unit]
+Description=Assert Pi internet route+DNS via Huey gadget NAT
+After=network.target
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pi-internet.sh
