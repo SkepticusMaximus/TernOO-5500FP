@@ -19,7 +19,8 @@ import datetime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QListWidget, QListWidgetItem, QTextEdit, QLabel, QComboBox,
                                QPushButton, QDialog, QLineEdit, QDialogButtonBox, QSplitter,
-                               QMessageBox)
+                               QMessageBox, QTreeWidget, QTreeWidgetItem, QTableWidget,
+                               QTableWidgetItem, QHeaderView, QAbstractItemView)
 from PySide6.QtGui import QAction, QFont, QBrush, QColor, QIcon
 from PySide6.QtCore import Qt
 
@@ -150,9 +151,10 @@ class StubBackend:
 
 # ── compose dialog ──────────────────────────────────────────────────────────────
 class Compose(QDialog):
-    def __init__(self, agent, account, parent=None):
+    def __init__(self, agent, account, parent=None, prefill=None):
         super().__init__(parent)
         self.agent, self.account = agent, account
+        self._save_draft = False
         self.setWindowTitle("Compose — as %s" % account)
         self.resize(560, 460)
         v = QVBoxLayout(self)
@@ -174,27 +176,46 @@ class Compose(QDialog):
         self.body = QTextEdit()
         self.body.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         v.addWidget(self.body, 1)
-        note = QLabel("Sends live through the TernID agent — real, sealed, delivered.")
+        if prefill:                                           # Reply / re-open a draft pre-fills
+            if prefill.get("to"):
+                i = self.to.findData(prefill["to"])
+                if i >= 0:
+                    self.to.setCurrentIndex(i)
+            if prefill.get("subject"):
+                self.subj.setText(prefill["subject"])
+            if prefill.get("body"):
+                self.body.setPlainText(prefill["body"])
+        note = QLabel("Send goes live through the TernID agent — real, sealed, delivered. "
+                      "Save draft keeps it local, untransmitted.")
         note.setStyleSheet("color:#e8c890;")
         note.setWordWrap(True)
         v.addWidget(note)
         bb = QDialogButtonBox()
         bb.addButton("Send", QDialogButtonBox.ButtonRole.AcceptRole)
+        db = bb.addButton("Save draft", QDialogButtonBox.ButtonRole.ActionRole)
+        db.clicked.connect(self._as_draft)
         bb.addButton(QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
         v.addWidget(bb)
 
+    def _as_draft(self):
+        self._save_draft = True
+        self.accept()
+
 
 # ── main window ──────────────────────────────────────────────────────────────────
 class MailApp(QMainWindow):
+    BOXES = ("Inbox", "Sent", "Drafts")
+
     def __init__(self, agent):
         super().__init__()
         self.agent = agent
         self.account = "Stevo"
+        self.folder = "Inbox"
         self.setWindowTitle("TernOO · POBOX Mail")
         self.setWindowIcon(QIcon(ICON))
-        self.resize(820, 560)
+        self.resize(960, 600)
         self._menus()
         central = QWidget()
         self.setCentralWidget(central)
@@ -207,7 +228,7 @@ class MailApp(QMainWindow):
         top.addStretch(1)
         top.addWidget(QLabel("Account:"))
         self.acct = QComboBox()
-        self.acct.setMinimumWidth(170)                        # fit the longest seat name (Professor)
+        self.acct.setMinimumWidth(150)                        # fit the longest seat name (Professor)
         for h in agent.list_accounts():                       # real handles are opaque (acct_…)
             self.acct.addItem(agent.account_display(account_handle=h), h)  # show name, carry handle
         want = self.acct.findText(self.account)               # prefer the captain's own seat
@@ -218,64 +239,155 @@ class MailApp(QMainWindow):
             self.account = self.acct.itemData(want)
         self.acct.currentIndexChanged.connect(self._switch)
         top.addWidget(self.acct)
-        top.addWidget(QLabel("Folder:"))
-        self.folder = QComboBox()
-        self.folder.addItems(["Inbox", "Sent"])
-        self.folder.currentIndexChanged.connect(lambda _=0: self._reload())
-        top.addWidget(self.folder)
-        rb = QPushButton("Refresh")
-        rb.clicked.connect(lambda: self._reload())
-        top.addWidget(rb)
-        cb = QPushButton("Compose")
-        cb.clicked.connect(self.compose)
-        top.addWidget(cb)
-        ct = QPushButton("Contacts")
-        ct.clicked.connect(self.show_contacts)
-        top.addWidget(ct)
+        for label, slot in (("Compose", self.compose), ("Reply", self.reply),
+                            ("Refresh", lambda: self._reload())):
+            b = QPushButton(label)
+            b.clicked.connect(slot)
+            top.addWidget(b)
         v.addLayout(top)
 
         split = QSplitter(Qt.Orientation.Horizontal)
-        self.list = QListWidget()
-        self.list.setMinimumWidth(300)
-        self.list.currentItemChanged.connect(self._open)
-        split.addWidget(self.list)
+        self.tree = QTreeWidget()                             # LEFT: mailboxes + contacts
+        self.tree.setHeaderHidden(True)
+        self.tree.setMinimumWidth(160)
+        self.tree.setMaximumWidth(240)
+        self.tree.currentItemChanged.connect(self._tree_select)
+        self.tree.itemDoubleClicked.connect(self._tree_dblclick)
+        split.addWidget(self.tree)
+
+        right = QSplitter(Qt.Orientation.Vertical)            # RIGHT: header table over reading pane
+        self.table = QTableWidget(0, 4)
+        self.table.setHorizontalHeaderLabels(["Time", "From", "To", "Subject"])
+        self.table.setSortingEnabled(True)                   # click a column header to sort
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.verticalHeader().setVisible(False)
+        hh = self.table.horizontalHeader()
+        hh.setStretchLastSection(True)
+        for col in (0, 1, 2):
+            hh.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.itemSelectionChanged.connect(self._open)
+        self.table.itemDoubleClicked.connect(self._table_dblclick)
+        right.addWidget(self.table)
         self.read = QTextEdit()
         self.read.setReadOnly(True)
-        split.addWidget(self.read)
-        split.setSizes([320, 500])
+        right.addWidget(self.read)
+        right.setSizes([320, 260])
+        split.addWidget(right)
+        split.setSizes([200, 760])
         v.addWidget(split, 1)
+
         self.status = QLabel("")
         self.status.setStyleSheet("color:#9696a5;")
         v.addWidget(self.status)
-        self._reload()
+        self._build_tree()                                   # selects Inbox -> drives the first reload
 
     def _menus(self):
         mb = self.menuBar()
         fm = mb.addMenu("File")
         fm.addAction(QAction("Compose", self, shortcut="Ctrl+N", triggered=self.compose))
-        fm.addAction(QAction("Refresh", self, shortcut="Ctrl+R", triggered=self._reload))
+        fm.addAction(QAction("Reply", self, shortcut="Ctrl+R", triggered=self.reply))
+        fm.addAction(QAction("Refresh", self, shortcut="F5", triggered=lambda: self._reload()))
         fm.addSeparator()
         fm.addAction(QAction("Quit", self, shortcut="Ctrl+Q", triggered=self.close))
         hm = mb.addMenu("Help")
         hm.addAction(QAction("About", self, triggered=self._about))
 
-    def _switch(self, idx):
-        self.account = self.acct.itemData(idx)
-        self._reload()
+    # ── left tree: mailboxes + contacts ──
+    def _build_tree(self):
+        self.tree.blockSignals(True)
+        self.tree.clear()
+        boxes = QTreeWidgetItem(self.tree, ["Mailboxes"])
+        boxes.setFirstColumnSpanned(True)
+        for name in self.BOXES:
+            QTreeWidgetItem(boxes, [name]).setData(0, UID, ("box", name))
+        croot = QTreeWidgetItem(self.tree, ["Contacts"])
+        croot.setFirstColumnSpanned(True)
+        try:
+            for c in self.agent.contacts(account=self.account):
+                node = QTreeWidgetItem(croot, [c["display_name"]])
+                node.setData(0, UID, ("contact", c["handle"], c["display_name"]))
+        except Exception:
+            pass
+        self.tree.expandAll()
+        self.tree.blockSignals(False)
+        self.tree.setCurrentItem(boxes.child(0))             # Inbox -> _tree_select -> _reload
 
+    def _tree_select(self, cur, _prev=None):
+        if not cur:
+            return
+        tag = cur.data(0, UID)
+        if tag and tag[0] == "box":
+            self.folder = tag[1]
+            self._reload()
+
+    def _tree_dblclick(self, it, _col=0):
+        tag = it.data(0, UID)
+        if tag and tag[0] == "contact":
+            self._compose(prefill={"to": tag[1]})            # double-click a contact to write to them
+
+    def _me(self):
+        try:
+            return self.agent.account_display(account_handle=self.account)
+        except Exception:
+            return self.account
+
+    # ── message table ──
     def _reload(self):
-        self.list.clear()
-        folder = self.folder.currentText() if hasattr(self, "folder") else "Inbox"
-        raw = self._sent_msgs() if folder == "Sent" else self.agent.inbox(account=self.account)
-        msgs = sorted(raw, key=lambda m: m["time"], reverse=True)
-        for m in msgs:
-            who = ("to " + str(m.get("to", "?"))) if folder == "Sent" else m["from"]
-            it = QListWidgetItem("%s\n%s   ·   %s" % (m["subject"][:60], who, _fmt_time(m["time"])))
-            it.setData(UID, m)
-            self.list.addItem(it)
+        if self.folder == "Sent":
+            raw = self._sent_msgs()
+        elif self.folder == "Drafts":
+            raw = self._drafts()
+        else:
+            raw = self.agent.inbox(account=self.account)
+        self.table.setSortingEnabled(False)
+        self.table.setRowCount(0)
+        for m in raw:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            cells = (_table_time(m.get("time")), str(m.get("from", "?")),
+                     str(m.get("to", "?")), str(m.get("subject", "")))
+            for col, text in enumerate(cells):
+                cell = QTableWidgetItem(text)
+                if col == 0:
+                    cell.setData(UID, m)                      # stash the whole message on the Time cell
+                self.table.setItem(row, col, cell)
+        self.table.setSortingEnabled(True)
+        self.table.sortItems(0, Qt.SortOrder.DescendingOrder)   # newest first by default
         self.read.clear()
-        self.status.setText("%s · %s — %d messages   ·   outbox: %s"
-                            % (self.account, folder, len(msgs), OUTBOX))
+        n = self.table.rowCount()
+        self.status.setText("%s · %s — %d message%s" % (self._me(), self.folder, n, "" if n == 1 else "s"))
+
+    def _sel_msg(self):
+        items = self.table.selectedItems()
+        if not items:
+            return None
+        cell = self.table.item(items[0].row(), 0)
+        return cell.data(UID) if cell else None
+
+    def _open(self):
+        m = self._sel_msg()
+        if not m:
+            return
+        try:
+            self.agent.mark_read(account=self.account, message_id=m.get("id"))
+        except Exception:
+            pass
+        self.read.setHtml(
+            "<div style='color:#3fd08f;font-size:14px'>%s</div>"
+            "<div style='color:#9696a5'>from <b style='color:#e6e6ec'>%s</b> · to %s · %s</div><hr>"
+            "<pre style='color:#e6e6ec;white-space:pre-wrap;font-family:DejaVu Sans Mono'>%s</pre>"
+            % (_esc(str(m.get("subject"))), _esc(str(m.get("from"))), _esc(str(m.get("to"))),
+               _esc(_fmt_time(m.get("time"))), _esc(str(m.get("body")))))
+
+    def _table_dblclick(self, _item):
+        if self.folder != "Drafts":
+            return
+        m = self._sel_msg()
+        if m:
+            self._compose(prefill={"subject": re.sub(r"^Re:\s*", "", str(m.get("subject", ""))),
+                                   "body": str(m.get("body", ""))})
 
     def _sent_msgs(self):
         """Reconstruct this account's SENT mail. The agent exposes no outbox query, so
@@ -310,24 +422,67 @@ class MailApp(QMainWindow):
                 out.append(mm)
         return out
 
-    def _open(self, cur, _prev=None):
-        if not cur:
-            return
-        m = cur.data(UID)
-        self.agent.mark_read(account=self.account, message_id=m["id"])
-        self.read.setHtml(
-            "<div style='color:#3fd08f;font-size:14px'>%s</div>"
-            "<div style='color:#9696a5'>from <b style='color:#e6e6ec'>%s</b> · to %s · %s</div><hr>"
-            "<pre style='color:#e6e6ec;white-space:pre-wrap;font-family:DejaVu Sans Mono'>%s</pre>"
-            % (_esc(m["subject"]), _esc(m["from"]), _esc(m["to"]), _esc(_fmt_time(m["time"])), _esc(m["body"])))
+    def _drafts(self):
+        """Local, untransmitted compositions saved under OUTBOX (never on the wire)."""
+        out = []
+        for p in sorted(glob.glob(os.path.join(OUTBOX, "*.md"))):
+            try:
+                txt = open(p, encoding="utf-8", errors="replace").read()
+            except Exception:
+                continue
+            lines = txt.splitlines()
+
+            def _h(key):
+                for ln in lines[:8]:
+                    mm = re.match(r"^%s:\s*(.+)" % key, ln)
+                    if mm:
+                        return mm.group(1).strip()
+                return ""
+            out.append({"id": os.path.basename(p), "from": self._me(),
+                        "to": _h("To") or "?", "subject": _h("Re") or os.path.basename(p),
+                        "time": int(os.path.getmtime(p)), "body": txt, "unread": False})
+        return out
+
+    # ── actions ──
+    def _switch(self, idx):
+        self.account = self.acct.itemData(idx)
+        self._build_tree()                                   # contacts are per-account; reselect Inbox -> reload
 
     def compose(self):
-        d = Compose(self.agent, self.account, self)
+        self._compose()
+
+    def reply(self):
+        m = self._sel_msg()
+        if not m:
+            QMessageBox.information(self, "Reply", "Select a message first.")
+            return
+        sender = str(m.get("from"))
+        handle = None
+        try:
+            for c in self.agent.contacts(account=self.account):
+                if c["display_name"] == sender:
+                    handle = c["handle"]
+                    break
+        except Exception:
+            pass
+        subj = str(m.get("subject", ""))
+        if not subj.lower().startswith("re:"):
+            subj = "Re: " + subj
+        quoted = "\n\n> " + "\n> ".join(str(m.get("body", "")).splitlines())
+        self._compose(prefill={"to": handle, "subject": subj, "body": quoted})
+
+    def _compose(self, prefill=None):
+        d = Compose(self.agent, self.account, self, prefill=prefill)
         if d.exec() != QDialog.DialogCode.Accepted:
             return
         to_data = d.to.currentData()
+        to_text = d.to.currentText()
         subject = d.subj.text() or "(no subject)"
         body = d.body.toPlainText()
+        if getattr(d, "_save_draft", False):
+            self._write_draft(to_text, subject, body)
+            self._select_box("Drafts")
+            return
         if isinstance(to_data, str) and to_data.startswith("list:"):
             lname = to_data[5:]
             targets = resolve_list(lname, d.contacts)
@@ -347,16 +502,27 @@ class MailApp(QMainWindow):
                                     "Delivered through the TernID agent.\nmessage id: %s" % fn)
         self._reload()
 
-    def show_contacts(self):
-        names = ", ".join(c["display_name"] for c in self.agent.contacts(account=self.account))
-        QMessageBox.information(self, "Contacts (the roster)",
-                                names + "\n\n(Add-contact uses an opaque invite token — no keys.)")
+    def _write_draft(self, to_text, subject, body):
+        ts = datetime.datetime.now().strftime("%Y-%m-%d-%H%M")
+        slug = (re.sub(r"\W+", "-", subject.lower())[:40].strip("-")) or "draft"
+        stamp = datetime.datetime.now().strftime("%H:%M %d/%m/%Y ACDT")
+        with open(os.path.join(OUTBOX, "%s-draft-%s.md" % (ts, slug)), "w", encoding="utf-8") as f:
+            f.write("%s\n\nTo: %s\nFrom: %s\nRe: %s\n\n%s\n" % (stamp, to_text, self._me(), subject, body))
+
+    def _select_box(self, name):
+        root = self.tree.topLevelItem(0)
+        if not root:
+            return
+        for i in range(root.childCount()):
+            if root.child(i).text(0) == name:
+                self.tree.setCurrentItem(root.child(i))
+                return
 
     def _about(self):
         QMessageBox.information(self, "POBOX Mail",
-                                "TernOO POBOX Mail — PySide6 reference face (g1).\n"
-                                "Crypto-free AgentClient facade (CCC handoff 1107).\n"
-                                "Inert git-POBOX backend; the real TernID agent swaps in behind it.")
+                                "TernOO · POBOX Mail — PySide6 face on the live TernID agent.\n"
+                                "3-pane: mailboxes + contacts · sortable headers · reading pane.\n"
+                                "Compose / Reply send real sealed mail; Drafts stay local.")
 
 
 def _esc(s):
@@ -367,6 +533,14 @@ def _fmt_time(t):
     """Agent sends `time` as a unix int; the old stub sent a string. Format either."""
     try:
         return datetime.datetime.fromtimestamp(int(t)).strftime("%H:%M %d/%m/%Y")
+    except (ValueError, TypeError, OSError):
+        return str(t)
+
+
+def _table_time(t):
+    """Timestamp for the sortable Time column: ISO-ish, so lexical sort == chronological."""
+    try:
+        return datetime.datetime.fromtimestamp(int(t)).strftime("%Y-%m-%d %H:%M")
     except (ValueError, TypeError, OSError):
         return str(t)
 
