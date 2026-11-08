@@ -1,8 +1,8 @@
 {
  "_mirror_of": "~/.config/ternoo/todo.json \u2014 this is a READ-ONLY export",
- "_exported": "2026-11-08 23:58:37",
+ "_exported": "2026-11-09 00:28:56",
  "_how_to_slate": "Mail the task; the local TernDO store is the single writer (one writer, many readers).",
- "seq": 54,
+ "seq": 59,
  "items": [
   {
    "id": "g1",
@@ -75,13 +75,17 @@
   {
    "id": "g5",
    "text": "GLM-5.2 (372GB) download to Lenny when home broadband returns",
-   "status": "pending",
+   "status": "complete",
    "parent": null,
    "history": [
     {
      "ts": "2026-10-09 11:48:10",
      "status": "pending",
      "note": "imported"
+    },
+    {
+     "ts": "2026-11-08 21:08:39",
+     "status": "complete"
     }
    ],
    "notes": "",
@@ -178,7 +182,7 @@
    "text": "Make TernDO FlowCode-native: real Flow + GUI layout + Sheet",
    "status": "progress",
    "parent": "g9",
-   "notes": "The whole point of the exercise: TernDO should be GENERATED from a FlowCode design (Flow + GUI canvas + Sheet) run via the generic run-engine \u2014 not hand-coded Python. Showcase app for FlowCode.",
+   "notes": "The whole point of the exercise: TernDO should be \nGENERATED from a FlowCode design (Flow + GUI \ncanvas + Sheet) run via the generic \nrun-engine \u2014 not hand-coded Python. Showcase app \nfor FlowCode.",
    "history": [
     {
      "ts": "2026-10-10 05:45:22",
@@ -573,12 +577,11 @@
      "note": "created by CC"
     },
     {
-     "ts": "2026-11-08 16:45:00",
-     "status": "progress",
-     "note": "added Refresh + Inbox/Sent view; diagnosed two-worlds mail split (git-POBOX vs TernID agent)"
+     "ts": "2026-11-08 22:19:02",
+     "status": "progress"
     }
    ],
-   "notes": "Refresh (Ctrl+R) + Inbox/Sent folder toggle DONE in mailbox_qt.py. Sent is reconstructed app-side (agent has no outbox query \u2014 cleaner fix = CCC adds a 'sent' method to the TernID agent). STILL WANT: Drafts, sort, Contacts+Groups manager.",
+   "notes": "I still dont see any way for the user to make mail \nboxes nor any way to delegate tasks in the \nproperties dialog. \n",
    "staging": "",
    "assignees": [
     "CC"
@@ -645,11 +648,6 @@
      "ts": "2026-11-08 14:28:03",
      "status": "pending",
      "note": "created by CC"
-    },
-    {
-     "ts": "2026-11-08 19:26:23",
-     "status": "pending",
-     "note": "CAI flagged 3 cautions + 3 contributions (POBOX 2026-11-08-1855): narrow the wire/line-code claim; trust-weighted routing is an anonymity hazard (path leaks the trust graph); build the cell as a Double Null not a new primary; reuse P2PCP transport; ship the naming layer first; keep TernIP behind the cheap unfinished things."
     }
    ],
    "notes": "",
@@ -763,6 +761,83 @@
   },
   {
    "id": "g42",
+   "text": "Pi internet failover path 2: eth0 -> Netgear switch -> Lenny (for when Huey+phone leave the house)",
+   "status": "pending",
+   "parent": "g21",
+   "history": [
+    {
+     "ts": "2026-11-08 15:53:27",
+     "status": "pending",
+     "note": "created by CC \u2014 captain's plan: home broadband = moored ship, Huey+phone = dinghy; Pi falls back to Lenny's uplink. Needs eth0 IPv4 + Lenny NAT. Deferred until broadband returns."
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": [],
+   "priority": -1,
+   "area": "networking"
+  },
+  {
+   "id": "g43",
+   "text": "Add \"Make TernDo\" feature.",
+   "status": "pending",
+   "parent": "g33",
+   "notes": "",
+   "history": [
+    {
+     "ts": "2026-11-08 21:06:23",
+     "status": "pending",
+     "note": "created"
+    }
+   ]
+  },
+  {
+   "id": "g44",
+   "text": "Put a delegate feature in the properties dialog and context menu",
+   "status": "pending",
+   "parent": "g33",
+   "notes": "",
+   "history": [
+    {
+     "ts": "2026-11-08 22:24:18",
+     "status": "pending",
+     "note": "created"
+    }
+   ]
+  },
+  {
+   "id": "g45",
+   "text": "Add feature to let users create mailboxes",
+   "status": "pending",
+   "parent": "g33",
+   "notes": "",
+   "history": [
+    {
+     "ts": "2026-11-08 22:26:23",
+     "status": "pending",
+     "note": "created"
+    }
+   ]
+  },
+  {
+   "id": "g46",
+   "text": "Add feature to let users create groups (and add \"crew\")",
+   "status": "pending",
+   "parent": "g33",
+   "notes": "",
+   "history": [
+    {
+     "ts": "2026-11-08 22:29:50",
+     "status": "pending",
+     "note": "created"
+    }
+   ]
+  },
+  {
+   "id": "g47",
    "text": "Network topology audit + redesign (with the captain): Pi's wired path via Lenny as the DEFAULT, free Huey of the USB tether at home, get the Pi OFF WiFi (it's the hub/server)",
    "status": "pending",
    "parent": "g21",
@@ -788,7 +863,7 @@
    "area": "networking"
   },
   {
-   "id": "g43",
+   "id": "g48",
    "text": "Unify mail: CC sends crew mail through the TernID agent (not git-POBOX commits) \u2014 ferry retirement",
    "status": "progress",
    "parent": "g9",
@@ -809,7 +884,7 @@
    "area": "mail"
   },
   {
-   "id": "g44",
+   "id": "g49",
    "text": "Rich Mail face on the agent: 3-pane layout (box+contacts tree | sortable Time/From/To/Subject table | reading pane below), Qt \u2014 port pobox_mail.py's UX onto mailbox_qt.py",
    "status": "pending",
    "parent": "g9",
@@ -830,7 +905,7 @@
    "area": "mail"
   },
   {
-   "id": "g45",
+   "id": "g50",
    "text": "Mail entity-creation dialogs: add-contact (invite-token flow), new ID/alias (create_account), new group/mailing-list (maillists.json) \u2014 replace the dead 'opaque invite token' message box",
    "status": "pending",
    "parent": "g9",
@@ -851,7 +926,7 @@
    "area": "mail"
   },
   {
-   "id": "g46",
+   "id": "g51",
    "text": "Port git-POBOX history (235 msgs) into the TernID agent",
    "status": "complete",
    "parent": "g9",
@@ -882,7 +957,7 @@
    "area": "mail"
   },
   {
-   "id": "g47",
+   "id": "g52",
    "text": "DESIGN: Mail categorisation paradigm \u2014 user-creatable boxes/sub-boxes + incoming-mail filters + extra nominal fields",
    "status": "pending",
    "parent": "g9",
@@ -903,7 +978,7 @@
    "area": "mail"
   },
   {
-   "id": "g48",
+   "id": "g53",
    "text": "TernID agent: add an import/send_at method (preserve original time + from + to) so CC can port the 235 git-POBOX messages into the agent \u2014 gates Path A",
    "status": "complete",
    "parent": "g46",
@@ -929,7 +1004,7 @@
    "area": "ternid"
   },
   {
-   "id": "g49",
+   "id": "g54",
    "text": "Mirror TernDO to the wire so cloud seats can run session-start step 3 (CF5 flag)",
    "status": "complete",
    "parent": "g9",
@@ -951,7 +1026,7 @@
    "area": "ternpim"
   },
   {
-   "id": "g50",
+   "id": "g55",
    "text": "Seat TernID key custody: cloud seats get a short-lived attenuated capability each session (authority != identity), not a stored key",
    "status": "pending",
    "parent": "g9",
@@ -972,7 +1047,7 @@
    "area": "ternid"
   },
   {
-   "id": "g51",
+   "id": "g56",
    "text": "SECURITY: enforce per-seat auth at the agent socket \u2014 inbox(account=X) must require proof of X",
    "status": "pending",
    "parent": "g9",
@@ -994,7 +1069,7 @@
    "area": "ternid"
   },
   {
-   "id": "g52",
+   "id": "g57",
    "text": "Mail compose: safe recipient default + draft recipient restore (no accidental broadcast)",
    "status": "complete",
    "parent": "g9",
@@ -1015,7 +1090,7 @@
    "area": "mail"
   },
   {
-   "id": "g53",
+   "id": "g58",
    "text": "TernIP/Tmail: FULL Tor compatibility (wire-compatible, not just inspired) + user-created mailing proxies in the mail app",
    "status": "pending",
    "parent": "g9",
@@ -1036,7 +1111,7 @@
    "area": "networking"
   },
   {
-   "id": "g54",
+   "id": "g59",
    "text": "FIX: TernDO local store has TWO writers (terndo_qt GUI + CC scripts) -> clobbers",
    "status": "pending",
    "parent": "g9",
