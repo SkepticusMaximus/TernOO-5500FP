@@ -314,8 +314,7 @@ def _open_props(iid):
     if dpg.does_item_exist("props_modal"):
         dpg.delete_item("props_modal")
     with dpg.window(label="Properties", modal=True, tag="props_modal",
-                    width=500, height=492, pos=[32, 46], no_resize=True,
-                    no_scrollbar=True):
+                    width=680, height=540, pos=[32, 46]):   # resizable + wider (DPG can't wrap, so give more room)
         dpg.add_text("Text", color=ACC)
         dpg.add_input_text(tag="p_text", default_value=it["text"], width=-1,
                            on_enter=True, callback=lambda *a: _props_commit(iid))
@@ -327,7 +326,7 @@ def _open_props(iid):
         dpg.add_spacer(height=6)
         dpg.add_text("Notes  (Markdown — shared format with skills/Obsidian)", color=ACC)
         dpg.add_input_text(tag="p_notes", default_value=it.get("notes", ""),
-                           multiline=True, width=-1, height=175)
+                           multiline=True, width=-1, height=240)
         dpg.add_spacer(height=6)
         h = it.get("history", [])
         meta = f"id {it['id']}  ·  created {h[0]['ts'] if h else '—'}  ·  {len(h)} change(s)"
