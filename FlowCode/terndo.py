@@ -89,7 +89,26 @@ def _load_timeline():
         return []
 
 
+def _merge_external():
+    """Two-writer safety. CC's scripts (and other seats) may append items to todo.json
+    while this GUI is open — the captain vibe-codes between sessions, seats add tasks.
+    Before we overwrite the file with our in-memory DB, fold in any on-disk items we
+    don't already hold (by id) so a GUI save never clobbers externally-added tasks.
+    One file, last-writer-MERGES rather than last-writer-wins. (Fix for the 2026-11-08
+    fork; ADD-level protection — a true same-id content conflict still takes ours.)"""
+    try:
+        disk = json.load(open(STORE, encoding="utf-8"))
+    except Exception:
+        return
+    have = {it.get("id") for it in DB.get("items", [])}
+    external = [it for it in disk.get("items", []) if it.get("id") not in have]
+    if external:
+        DB.setdefault("items", []).extend(external)
+    DB["seq"] = max(DB.get("seq", 0), disk.get("seq", 0))     # keep ids from colliding next
+
+
 def _save():
+    _merge_external()
     json.dump(DB, open(STORE, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
 
 
