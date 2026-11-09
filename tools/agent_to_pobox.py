@@ -25,10 +25,11 @@ SOCK = os.environ.get("TERNID_AGENT_SOCK", "/run/ternid/agent.sock")
 POBOX = os.path.join(REPO, "private", "POBOX")
 
 
-def mirror():
+def mirror(pobox=None):
+    pobox = pobox or POBOX
     c = Client(SOCK)
     existing = ""
-    for f in glob.glob(os.path.join(POBOX, "*.md")):
+    for f in glob.glob(os.path.join(pobox, "*.md")):
         try:
             existing += open(f, encoding="utf-8", errors="replace").read()
         except Exception:
@@ -55,7 +56,7 @@ def mirror():
         slug = (re.sub(r"\W+", "-", (m.get("subject") or "").lower()).strip("-")[:40]) or "msg"
         fn = "%s-%s-to-%s-%s.md" % (dt.strftime("%Y-%m-%d-%H%M"), re.sub(r"\W+", "", frm),
                                     "crew" if to == "crew" else re.sub(r"\W+", "", to), slug)
-        with open(os.path.join(POBOX, fn), "w", encoding="utf-8") as f:
+        with open(os.path.join(pobox, fn), "w", encoding="utf-8") as f:
             f.write("%s\n\nFrom: %s\nTo: %s\nRe: %s\n\n%s\n"
                     % (dt.strftime("%H:%M %d/%m/%Y ACDT"), frm, to, m.get("subject", ""), m.get("body", "")))
         written.append(fn)
