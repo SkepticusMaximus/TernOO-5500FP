@@ -45,7 +45,7 @@ def main():
     ap.add_argument("--subject", default="(no subject)")
     ap.add_argument("--body")
     ap.add_argument("--body-file")
-    ap.add_argument("--sock", default=default_sock() if os.environ.get("TERNID_AGENT_SOCK") else "/run/user/1000/ternid-agent.sock")
+    ap.add_argument("--sock", default=default_sock() if os.environ.get("TERNID_AGENT_SOCK") else "/run/ternid/agent.sock")
     ap.add_argument("--list", action="store_true", help="show accounts/contacts and exit")
     a = ap.parse_args()
 
