@@ -81,6 +81,13 @@ def main():
             run(WT, "git", "add", "-f", "private/POBOX/terndo/")
     except Exception as e:
         log(f"[hb] {now} terndo mirror skipped: {e}")
+    # agent -> POBOX mirror: agent-only mail (Tmail sends) reaches the wire for cloud seats (CF5's flag 2026-11-09)
+    try:
+        from agent_to_pobox import mirror as _agent_mirror
+        if _agent_mirror(pobox=os.path.join(WT, "private", "POBOX")):
+            run(WT, "git", "add", "-f", "private/POBOX/")
+    except Exception as e:
+        log(f"[hb] {now} agent->pobox mirror skipped: {e}")
     if run(WT, "git", "diff", "--cached", "--quiet").returncode == 0:
         log(f"[hb] {now} no change"); return
     run(WT, "git", "commit", "-q", "-m", f"CC heartbeat {now} (+ TernDO mirror)")
