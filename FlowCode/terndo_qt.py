@@ -444,9 +444,21 @@ class TernDO(QMainWindow):
         em.addAction(QAction("Paste as objective", self, shortcut="Ctrl+V", triggered=self._paste))
         em.addAction(QAction("Delete selected…", self, shortcut="Del", triggered=self._del_sel))
         vm = mb.addMenu("View")
+        vm.addAction(QAction("Larger text", self, shortcut="Ctrl+=", triggered=lambda: self._zoom_text(1)))
+        vm.addAction(QAction("Smaller text", self, shortcut="Ctrl+-", triggered=lambda: self._zoom_text(-1)))
+        vm.addAction(QAction("Reset text size", self, shortcut="Ctrl+0", triggered=lambda: self._zoom_text(0)))
+        vm.addSeparator()
         vm.addAction(QAction("Timeline…", self, triggered=self.show_timeline))
         hm = mb.addMenu("Help")
         hm.addAction(QAction("About", self, triggered=self._about))
+
+    def _zoom_text(self, delta):
+        app = QApplication.instance()
+        f = app.font()
+        if not hasattr(self, "_base_pt"):
+            self._base_pt = f.pointSizeF()
+        f.setPointSizeF(self._base_pt if delta == 0 else max(6.0, f.pointSizeF() + delta * 1.5))
+        app.setFont(f)
 
     # -- rendering --
     def refresh(self):
