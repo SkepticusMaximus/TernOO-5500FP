@@ -268,9 +268,12 @@ class PropsDialog(QDialog):
         v.addWidget(_hdr("Notes  (Markdown — shared format with skills/Obsidian)"))
         self.notes = QTextEdit()
         self.notes.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
-        self.notes.setFont(QFont("DejaVu Sans Mono", 10))
+        self.notes.setFont(QFont("DejaVu Sans Mono", 18))
         self.notes.setPlainText(it.get("notes", ""))
         v.addWidget(self.notes, 1)
+        QShortcut(QKeySequence("Ctrl+="), self.notes, activated=self.notes.zoomIn)   # +/- text zoom (g61)
+        QShortcut(QKeySequence("Ctrl++"), self.notes, activated=self.notes.zoomIn)
+        QShortcut(QKeySequence("Ctrl+-"), self.notes, activated=self.notes.zoomOut)
         v.addWidget(_hdr("Staging lane · Assignees  (inert until the TernID agent lands)"))
         sa = QHBoxLayout()
         self.staging = QLineEdit(it.get("staging", ""))
@@ -384,7 +387,7 @@ class TernDO(QMainWindow):
         v = QVBoxLayout(central)
         v.setContentsMargins(10, 8, 10, 8)
         hdr = QLabel("TernOO · TernDO")
-        hdr.setStyleSheet("color:#3fd08f;font-size:17px;")
+        hdr.setStyleSheet("color:#3fd08f;font-size:26px;")
         v.addWidget(hdr)
         sub = QLabel("TernPIM · objectives · sub-goals · notes · timeline  (GrOOM reference)")
         sub.setStyleSheet("color:#9696a5;")
@@ -404,10 +407,11 @@ class TernDO(QMainWindow):
         v.addWidget(leg)
         self.tree = QTreeWidget()
         self.tree.setColumnCount(2)
-        self.tree.setHeaderLabels(["Objective", "St"])
-        self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.tree.setColumnWidth(1, 40)
+        self.tree.setHeaderLabels(["Objective", "Status"])
+        self.tree.header().setStretchLastSection(False)                                 # stop Status eating the width
+        self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)       # Objective fills
+        self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)   # Status: user-resizable
+        self.tree.setColumnWidth(1, 110)
         self.tree.setRootIsDecorated(True)
         self.tree.itemClicked.connect(self._clicked)
         self.tree.itemDoubleClicked.connect(lambda i, c: self.open_props(i.data(0, UID)))
@@ -589,6 +593,7 @@ def main():
     app.setDesktopFileName("terndo")          # match terndo.desktop -> Cinnamon groups + shows the running line
     app.setWindowIcon(QIcon(ICON))
     app.setStyleSheet(DARK)
+    _f = app.font(); _f.setPointSizeF((_f.pointSizeF() if _f.pointSizeF() > 0 else 10) * 2); app.setFont(_f)  # ~2x text
     w = TernDO(Store())
     w.show()
     sys.exit(app.exec())
