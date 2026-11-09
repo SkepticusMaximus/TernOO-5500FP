@@ -570,7 +570,7 @@ class MailApp(QMainWindow):
             for m in msgs:
                 if m.get("from") != me:
                     continue
-                key = (m.get("subject"), str(m.get("time")))
+                key = (m.get("subject"), str(m.get("body")))   # fold by CONTENT — a broadcast's sends straddle whole-second stamps, so time splits one send into rows
                 if key in seen:
                     prev = seen[key]
                     tos = [t.strip() for t in str(prev.get("to", "")).split(",")]
