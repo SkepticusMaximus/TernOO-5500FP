@@ -21,9 +21,8 @@ METHODS = ["create_account", "list_accounts", "account_display", "send", "inbox"
 
 
 def default_sock():
-    base = os.environ.get("XDG_RUNTIME_DIR") or os.path.expanduser("~/.ternid")
-    os.makedirs(base, exist_ok=True)
-    return os.path.join(base, "ternid-agent.sock")
+    # the shared, group-ternid socket (B/g56); env overrides for tests/dev
+    return os.environ.get("TERNID_AGENT_SOCK") or "/run/ternid/agent.sock"
 
 
 def serve(backend, sock_path=None, stop=None):

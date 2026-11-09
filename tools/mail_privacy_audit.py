@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 sys.path.insert(0, "FlowCode")
 from ternid_agent_protocol import Client
 
-SOCK = os.environ.get("TERNID_AGENT_SOCK", "/run/user/1000/ternid-agent.sock")
+SOCK = os.environ.get("TERNID_AGENT_SOCK", "/run/ternid/agent.sock")
 DATA = os.path.expanduser("~/.ternid/data")
 
 

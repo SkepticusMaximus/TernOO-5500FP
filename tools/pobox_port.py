@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(HERE), "FlowCode"))
 from ternid_agent_protocol import Client
 from mailbox_qt import StubBackend
 
-SOCK = os.environ.get("TERNID_AGENT_SOCK", "/run/user/1000/ternid-agent.sock")
+SOCK = os.environ.get("TERNID_AGENT_SOCK", "/run/ternid/agent.sock")
 
 
 def time_from_name(fname):

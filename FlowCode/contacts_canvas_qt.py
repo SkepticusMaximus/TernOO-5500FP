@@ -36,7 +36,7 @@ def load_graph():
     try:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from ternid_agent_protocol import Client
-        c = Client(os.environ.get("TERNID_AGENT_SOCK", "/run/user/1000/ternid-agent.sock"))
+        c = Client(os.environ.get("TERNID_AGENT_SOCK", "/run/ternid/agent.sock"))
         owners = [c.account_display(account_handle=a) for a in c.list_accounts()]
     except Exception:
         pass
