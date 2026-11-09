@@ -71,16 +71,19 @@ def _time(fname):
         return int(datetime.datetime.now().timestamp())
 
 
-def _new_files():
+def _new_files(pobox):
     done = _state()
-    return done, [os.path.basename(p) for p in sorted(glob.glob(os.path.join(POBOX, "*.md")))
-                  if os.path.basename(p) not in done]
+    return done, [os.path.basename(p) for p in sorted(glob.glob(os.path.join(pobox, "*.md")))
+                  if os.path.basename(p) not in done
+                  and "worker" not in os.path.basename(p).lower()
+                  and "heartbeat" not in os.path.basename(p).lower()]
 
 
-def import_new(dry=False, seed=False):
-    done, new = _new_files()
+def import_new(pobox=None, dry=False, seed=False):
+    pobox = pobox or POBOX
+    done, new = _new_files(pobox)
     if seed:
-        _save(done | {os.path.basename(p) for p in glob.glob(os.path.join(POBOX, "*.md"))})
+        _save(done | {os.path.basename(p) for p in glob.glob(os.path.join(pobox, "*.md"))})
         return 0
     if dry:
         return new                                   # list of filenames that would import
@@ -102,7 +105,7 @@ def import_new(dry=False, seed=False):
     imported = 0
     for fn in new:
         try:
-            txt = open(os.path.join(POBOX, fn), encoding="utf-8", errors="replace").read()
+            txt = open(os.path.join(pobox, fn), encoding="utf-8", errors="replace").read()
         except Exception:
             continue
         frm, to, subj, body = _parse(fn, txt)
