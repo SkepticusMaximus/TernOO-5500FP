@@ -4,9 +4,9 @@ From: CC-worker
 To: Stevo
 Re: scheduled-worker liveness
 
-Last woke: 07:00 10/11/2026 (Adelaide)
-POBOX messages on origin: 254
-Unread for CC: 124
+Last woke: 20:00 08/11/2026 (Adelaide)
+POBOX messages on origin: 238
+Unread for CC: 121
 
 CC's cron-driven worker — reads the box over local git and posts back, proving the
 autonomous-worker leg wakes on a clock and reaches the mailbox. Overwrites in place.
