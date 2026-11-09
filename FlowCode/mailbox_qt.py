@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QMessageBox, QTreeWidget, QTreeWidgetItem, QTableWidget,
                                QTableWidgetItem, QHeaderView, QAbstractItemView, QInputDialog)
 from PySide6.QtGui import QAction, QFont, QBrush, QColor, QIcon
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # repo root — portable across machines
 POBOX = os.path.join(REPO, "private", "POBOX")
@@ -354,10 +354,12 @@ class ContactsGroups(QDialog):
 # ── main window ──────────────────────────────────────────────────────────────────
 class MailApp(QMainWindow):
     BOXES = ("Inbox", "Sent", "Drafts")
+    _synced = Signal()
 
     def __init__(self, agent):
         super().__init__()
         self.agent = agent
+        self._synced.connect(self._reload)       # bridge sync finished (off-thread) -> reload on GUI thread
         self.account = "Stevo"
         self.folder = "Inbox"
         self.setWindowTitle("TernOO · POBOX Mail")
@@ -387,7 +389,7 @@ class MailApp(QMainWindow):
         self.acct.currentIndexChanged.connect(self._switch)
         top.addWidget(self.acct)
         for label, slot in (("Compose", self.compose), ("Reply", self.reply),
-                            ("Contacts", self.manage_contacts), ("Refresh", lambda: self._reload())):
+                            ("Contacts", self.manage_contacts), ("Refresh", lambda: self._sync_async())):
             b = QPushButton(label)
             b.clicked.connect(slot)
             top.addWidget(b)
@@ -430,13 +432,29 @@ class MailApp(QMainWindow):
         v.addWidget(self.status)
         self._build_tree()                                   # selects Inbox -> drives the first reload
 
+    def _sync_async(self):
+        """Run the agent<->wire bridge once on a background thread (worktree-isolated), then
+        reload via the thread-safe signal — a mail-call or send syncs in seconds, no UI freeze."""
+        import os
+        import subprocess
+        import threading
+
+        def work():
+            try:
+                subprocess.run(["python3", os.path.join(REPO, "tools", "mail_sync.py")],
+                               capture_output=True, timeout=120)
+            except Exception:
+                pass
+            self._synced.emit()
+        threading.Thread(target=work, daemon=True).start()
+
     def _menus(self):
         mb = self.menuBar()
         fm = mb.addMenu("File")
         fm.addAction(QAction("Compose", self, shortcut="Ctrl+N", triggered=self.compose))
         fm.addAction(QAction("Reply", self, shortcut="Ctrl+R", triggered=self.reply))
         fm.addAction(QAction("Contacts && Groups…", self, shortcut="Ctrl+B", triggered=self.manage_contacts))
-        fm.addAction(QAction("Refresh", self, shortcut="F5", triggered=lambda: self._reload()))
+        fm.addAction(QAction("Refresh", self, shortcut="F5", triggered=lambda: self._sync_async()))
         fm.addSeparator()
         fm.addAction(QAction("Quit", self, shortcut="Ctrl+Q", triggered=self.close))
         hm = mb.addMenu("Help")
@@ -662,7 +680,7 @@ class MailApp(QMainWindow):
             fn = res["message_id"] if isinstance(res, dict) else res
             QMessageBox.information(self, "Sent",
                                     "Delivered through the TernID agent.\nmessage id: %s" % fn)
-        self._reload()
+        self._sync_async()       # push the just-sent mail to the wire now, then reload
 
     def _write_draft(self, to_text, subject, body):
         ts = datetime.datetime.now().strftime("%Y-%m-%d-%H%M")

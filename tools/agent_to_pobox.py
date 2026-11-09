@@ -39,6 +39,9 @@ def mirror(pobox=None):
     for a in c.list_accounts():
         disp = c.account_display(account_handle=a)
         for m in c.inbox(account=a):
+            frm, subj = str(m.get("from", "")).lower(), str(m.get("subject", "")).lower()
+            if "worker" in frm or "liveness" in subj or "heartbeat" in subj:
+                continue                             # skip liveness beacons — not mail, content moves each beat
             k = str(m.get("body", ""))[:120]
             e = seen.setdefault(k, {"m": m, "to": set()})
             e["to"].add(disp)
