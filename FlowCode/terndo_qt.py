@@ -24,11 +24,12 @@ from PySide6.QtWidgets import (
     QPushButton, QTreeWidget, QTreeWidgetItem, QLabel, QDialog, QTextEdit,
     QComboBox, QDialogButtonBox, QCheckBox, QMenu, QListWidget, QListWidgetItem,
     QHeaderView, QFrame)
-from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QShortcut, QBrush
+from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QShortcut, QBrush, QIcon
 from PySide6.QtCore import Qt
 
 STORE = os.environ.get("TERNDO_STORE", os.path.expanduser("~/.config/ternoo/todo.json"))
 TLINE = os.environ.get("TERNDO_TLINE", os.path.expanduser("~/.config/ternoo/timeline.json"))
+ICON = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools", "terndo.svg")
 
 STATUSES = ["pending", "progress", "complete"]
 GLYPH = {"pending": "✓", "progress": "O", "complete": "X"}
@@ -583,6 +584,10 @@ DARK = ("QWidget{background:#1a1f2b;color:#e6e6ec;}"
 
 def main():
     app = QApplication(sys.argv)
+    app.setApplicationName("TernDO")
+    app.setApplicationDisplayName("TernDO")
+    app.setDesktopFileName("terndo")          # match terndo.desktop -> Cinnamon groups + shows the running line
+    app.setWindowIcon(QIcon(ICON))
     app.setStyleSheet(DARK)
     w = TernDO(Store())
     w.show()
