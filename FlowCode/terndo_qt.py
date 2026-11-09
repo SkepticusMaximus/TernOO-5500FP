@@ -417,12 +417,13 @@ class TernDO(QMainWindow):
         leg.setStyleSheet("color:#9696a5;")
         v.addWidget(leg)
         self.tree = QTreeWidget()
-        self.tree.setColumnCount(2)
-        self.tree.setHeaderLabels(["Objective", "Status"])
-        self.tree.header().setStretchLastSection(False)                                 # stop Status eating the width
-        self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)       # Objective fills
-        self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)   # Status: user-resizable
-        self.tree.setColumnWidth(1, 110)
+        self.tree.setColumnCount(3)
+        self.tree.setHeaderLabels(["ID", "Objective", "Status"])
+        self.tree.header().setStretchLastSection(False)
+        self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # ID: just wide enough
+        self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)           # Objective fills
+        self.tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)       # Status: user-resizable
+        self.tree.setColumnWidth(2, 110)
         self.tree.setRootIsDecorated(True)
         self.tree.itemClicked.connect(self._clicked)
         self.tree.itemDoubleClicked.connect(lambda i, c: self.open_props(i.data(0, UID)))
@@ -481,14 +482,16 @@ class TernDO(QMainWindow):
                 node = QTreeWidgetItem(nodes[it["parent"]])
             else:
                 node = QTreeWidgetItem(self.tree)
-            node.setText(0, it["text"])
+            node.setText(0, it["id"])
+            node.setForeground(0, QBrush(DIM))
+            node.setText(1, label)
             node.setData(0, UID, it["id"])
             st = it["status"]
-            node.setText(1, GLYPH[st])
-            node.setForeground(1, QBrush(SCOLOR[st]))
-            node.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
+            node.setText(2, GLYPH[st])
+            node.setForeground(2, QBrush(SCOLOR[st]))
+            node.setTextAlignment(2, Qt.AlignmentFlag.AlignCenter)
             if it.get("notes"):
-                node.setToolTip(0, it["notes"][:200])
+                node.setToolTip(1, it["notes"][:200])
             nodes[it["id"]] = node
         self.tree.expandAll()
         c = self.store.counts()
