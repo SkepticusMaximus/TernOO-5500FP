@@ -170,6 +170,17 @@ class Store:
         self.save()
         return True
 
+    def set_assignee(self, iid, who):
+        it = self.by_id(iid)
+        if not it:
+            return False
+        self.snapshot()
+        it["assignees"] = [who] if who else []
+        it.setdefault("history", []).append({"ts": now(), "status": it.get("status", "pending"),
+                                             "note": ("delegated to " + who) if who else "assignees cleared"})
+        self.save()
+        return True
+
     def cycle(self, iid):
         it = self.by_id(iid)
         if it:
@@ -577,6 +588,15 @@ class TernDO(QMainWindow):
             sm.addAction(QAction("%s  %s" % (GLYPH[s], SLABEL[s]), self,
                                  triggered=lambda _=False, x=s: (self.store.set_status(iid, x),
                                                                  self.refresh())))
+        dm = m.addMenu("Delegate to")
+        for seat in ("Stevo", "CC", "CCC", "CF5", "CAI", "Professor"):
+            dm.addAction(QAction(seat, self,
+                                 triggered=lambda _=False, who=seat: (self.store.set_assignee(iid, who),
+                                                                      self.refresh())))
+        dm.addSeparator()
+        dm.addAction(QAction("Clear assignees", self,
+                             triggered=lambda _=False: (self.store.set_assignee(iid, None),
+                                                        self.refresh())))
         m.addAction(QAction("Properties…", self, triggered=lambda: self.open_props(iid)))
         m.addAction(QAction("Add sub-goal…", self, triggered=lambda: self.add_sub(iid)))
         m.addAction(QAction("Copy text", self,
