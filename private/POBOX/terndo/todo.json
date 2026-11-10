@@ -1,25 +1,32 @@
 {
  "_mirror_of": "~/.config/ternoo/todo.json \u2014 this is a READ-ONLY export",
- "_exported": "2026-11-09 00:28:56",
+ "_exported": "2026-11-10 13:22:32",
  "_how_to_slate": "Mail the task; the local TernDO store is the single writer (one writer, many readers).",
- "seq": 59,
+ "seq": 64,
  "items": [
   {
    "id": "g1",
    "text": "Make TernID invisible under the POBOX mail",
-   "status": "pending",
+   "status": "complete",
    "parent": null,
    "history": [
     {
      "ts": "2026-10-09 11:48:10",
      "status": "pending",
      "note": "imported"
+    },
+    {
+     "ts": "2026-11-09 16:06:59",
+     "status": "complete",
+     "note": "recon pass: mail app runs ON the TernID agent \u2014 TernID invisible under POBOX mail (done this session chain)"
     }
    ],
    "notes": "",
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g2",
@@ -36,7 +43,9 @@
    "notes": "",
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g3",
@@ -53,7 +62,9 @@
    "notes": "",
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g4",
@@ -70,7 +81,9 @@
    "notes": "",
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g5",
@@ -91,24 +104,32 @@
    "notes": "",
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g6",
    "text": "Windows installer + Linux repo packaging + Mac",
-   "status": "pending",
+   "status": "progress",
    "parent": null,
    "history": [
     {
      "ts": "2026-10-09 11:48:10",
      "status": "pending",
      "note": "imported"
+    },
+    {
+     "ts": "2026-11-10 08:06:49",
+     "status": "progress"
     }
    ],
    "notes": "",
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g7",
@@ -125,7 +146,9 @@
    "notes": "",
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g8",
@@ -158,7 +181,9 @@
    "notes": "",
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g9",
@@ -175,7 +200,9 @@
    ],
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g10",
@@ -196,7 +223,9 @@
    ],
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g11",
@@ -213,7 +242,9 @@
    ],
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g12",
@@ -230,7 +261,9 @@
    ],
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g13",
@@ -247,7 +280,9 @@
    ],
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g14",
@@ -268,7 +303,9 @@
    ],
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g15",
@@ -285,7 +322,9 @@
    ],
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g16",
@@ -302,7 +341,9 @@
    ],
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g17",
@@ -319,12 +360,14 @@
    ],
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g18",
    "text": "QR code maker TernQR to point paper print articles @ websites.",
-   "status": "pending",
+   "status": "complete",
    "parent": "g17",
    "notes": "",
    "history": [
@@ -332,11 +375,18 @@
      "ts": "2026-10-10 07:50:51",
      "status": "pending",
      "note": "created"
+    },
+    {
+     "ts": "2026-11-09 16:06:59",
+     "status": "complete",
+     "note": "recon pass: TernQR built (FlowCode/ternqr_qt.py)"
     }
    ],
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g19",
@@ -353,24 +403,9 @@
    ],
    "staging": "",
    "assignees": [],
-   "grants": []
-  },
-  {
-   "id": "g20",
-   "text": "TernQR TernOO native QR maker for print",
-   "status": "pending",
-   "parent": "g19",
-   "notes": "This is a simple QR code maker to point any smart\ndevice at a website or digital artifact. \nIt could make use of our in house char word to\nuse a font we create for the QR blocks.",
-   "history": [
-    {
-     "ts": "2026-10-10 07:52:59",
-     "status": "pending",
-     "note": "created"
-    }
-   ],
-   "staging": "",
-   "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g21",
@@ -387,7 +422,9 @@
    ],
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g22",
@@ -404,7 +441,9 @@
    ],
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g23",
@@ -421,12 +460,14 @@
    ],
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g24",
    "text": "TernID/TernAuth",
-   "status": "pending",
+   "status": "complete",
    "parent": "g21",
    "notes": "",
    "history": [
@@ -434,11 +475,18 @@
      "ts": "2026-11-01 05:10:32",
      "status": "pending",
      "note": "created"
+    },
+    {
+     "ts": "2026-11-09 16:06:59",
+     "status": "complete",
+     "note": "recon pass: TernID/TernAuth built + deployed to the Pi + socket-auth g56 green"
     }
    ],
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g25",
@@ -455,12 +503,14 @@
    ],
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g26",
    "text": "Sync up Pi SD card & USB stick.",
-   "status": "pending",
+   "status": "complete",
    "parent": "g21",
    "notes": "",
    "history": [
@@ -468,11 +518,18 @@
      "ts": "2026-11-01 06:19:16",
      "status": "pending",
      "note": "created"
+    },
+    {
+     "ts": "2026-11-09 16:34:16",
+     "status": "complete",
+     "note": "SD medium DEAD (error -110, controller won't enumerate) = unusable hardware, not corrupt data. Can't rebuild. Pi boots from the USB stick (the working medium). LESSON: ship on proper thumb drives, not SD."
     }
    ],
    "staging": "",
    "assignees": [],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g27",
@@ -493,21 +550,9 @@
    ],
    "staging": "",
    "assignees": [],
-   "grants": []
-  },
-  {
-   "id": "g28",
-   "text": "TernAPI API and SDK",
-   "status": "pending",
-   "parent": null,
-   "notes": "",
-   "history": [
-    {
-     "ts": "2026-11-07 05:40:17",
-     "status": "pending",
-     "note": "created"
-    }
-   ]
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g29",
@@ -521,7 +566,12 @@
      "status": "pending",
      "note": "created"
     }
-   ]
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g30",
@@ -535,7 +585,12 @@
      "status": "pending",
      "note": "created"
     }
-   ]
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g31",
@@ -549,7 +604,12 @@
      "status": "pending",
      "note": "created"
     }
-   ]
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g32",
@@ -563,7 +623,12 @@
      "status": "pending",
      "note": "created"
     }
-   ]
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g33",
@@ -586,7 +651,9 @@
    "assignees": [
     "CC"
    ],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g34",
@@ -605,7 +672,9 @@
    "assignees": [
     "CC"
    ],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g35",
@@ -655,7 +724,9 @@
    "assignees": [
     "crew"
    ],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g37",
@@ -667,6 +738,11 @@
      "ts": "2026-11-08 14:28:03",
      "status": "pending",
      "note": "created by CC"
+    },
+    {
+     "ts": "2026-11-09 16:34:16",
+     "status": "pending",
+     "note": "PENDING (captain's call - ordeal): stray route via 10.55.0.1 metric 20100 is harmless (WiFi wins at 600). Permanent fix = Pi-side DHCP (stop advertising gateway) + NAT persistence, needs the Pi CONNECTED (currently unplugged)."
     }
    ],
    "notes": "",
@@ -674,7 +750,9 @@
    "assignees": [
     "CC"
    ],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g38",
@@ -693,7 +771,9 @@
    "assignees": [
     "CC"
    ],
-   "grants": []
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g39",
@@ -740,14 +820,19 @@
   },
   {
    "id": "g41",
-   "text": "Contact canvas view \u2014 Obsidian-style scroll/zoom graph of entities; shared TernID = convergence node (visualises the identity-merge)",
-   "status": "pending",
+   "text": "Contact canvas \u2014 flythrough/zoom graph of entity relationships (Obsidian-style; merged g60)",
+   "status": "progress",
    "parent": null,
    "history": [
     {
      "ts": "2026-11-08 14:56:44",
      "status": "pending",
      "note": "created by CC"
+    },
+    {
+     "ts": "2026-11-09 02:36:50",
+     "status": "progress",
+     "note": "first-pass canvas built (contacts_canvas_qt.py): pan/zoom QGraphicsView, owner ring + petname edges, mock @Stevo@Dave+@CC@Dave CONVERGE (gold node), Bobs DIVERGE. Next: wire real petname data, launcher, more crew links, into mail app."
     }
    ],
    "notes": "",
@@ -792,12 +877,17 @@
      "status": "pending",
      "note": "created"
     }
-   ]
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g44",
    "text": "Put a delegate feature in the properties dialog and context menu",
-   "status": "pending",
+   "status": "complete",
    "parent": "g33",
    "notes": "",
    "history": [
@@ -805,8 +895,18 @@
      "ts": "2026-11-08 22:24:18",
      "status": "pending",
      "note": "created"
+    },
+    {
+     "ts": "2026-11-09 16:34:16",
+     "status": "complete",
+     "note": "delegate live in BOTH places: Properties assignees field + right-click 'Delegate to <seat>' submenu (Store.set_assignee)"
     }
-   ]
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g45",
@@ -820,7 +920,12 @@
      "status": "pending",
      "note": "created"
     }
-   ]
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g46",
@@ -834,7 +939,12 @@
      "status": "pending",
      "note": "created"
     }
-   ]
+   ],
+   "staging": "",
+   "assignees": [],
+   "grants": [],
+   "priority": 0,
+   "area": ""
   },
   {
    "id": "g47",
@@ -865,13 +975,18 @@
   {
    "id": "g48",
    "text": "Unify mail: CC sends crew mail through the TernID agent (not git-POBOX commits) \u2014 ferry retirement",
-   "status": "progress",
+   "status": "complete",
    "parent": "g9",
    "history": [
     {
      "ts": "2026-11-08 16:45:00",
      "status": "progress",
      "note": "built tools/ternid_send.py; delivered TernIP seed CC->crew through the live agent (showed in Stevo's inbox). OPEN: make agent-send standing; decide POBOX-history backfill."
+    },
+    {
+     "ts": "2026-11-09 16:06:59",
+     "status": "complete",
+     "note": "recon pass: ferry retired: ternid_send.py + the 794-msg port \u2014 CC sends crew mail through the agent"
     }
    ],
    "notes": "The Mail app reads the TernID agent (~/.ternid/data via /run/user/1000/ternid-agent.sock), NOT git-POBOX. Committing .md to private/POBOX no longer counts as 'sending'. ternid_send.py bridges it.",
@@ -886,13 +1001,18 @@
   {
    "id": "g49",
    "text": "Rich Mail face on the agent: 3-pane layout (box+contacts tree | sortable Time/From/To/Subject table | reading pane below), Qt \u2014 port pobox_mail.py's UX onto mailbox_qt.py",
-   "status": "pending",
+   "status": "complete",
    "parent": "g9",
    "history": [
     {
      "ts": "2026-11-08 17:39:15",
      "status": "pending",
      "note": "slated by CC from the captain's Mail-face review"
+    },
+    {
+     "ts": "2026-11-09 16:06:59",
+     "status": "complete",
+     "note": "recon pass: 3-pane rich mail face built on the agent (mailbox_qt.py)"
     }
    ],
    "notes": "Captain prefers the old pobox_mail.py layout (left collapsible mailboxes+contacts, header table above, reading pane below, click column headers to sort). That app is Tkinter+git-POBOX; the strategic app is Qt+agent but thin. Build the rich layout in Qt on the agent. GATED on the captain's unify-vs-keep direction call.",
@@ -1028,13 +1148,18 @@
   {
    "id": "g55",
    "text": "Seat TernID key custody: cloud seats get a short-lived attenuated capability each session (authority != identity), not a stored key",
-   "status": "pending",
+   "status": "complete",
    "parent": "g9",
    "history": [
     {
      "ts": "2026-11-08 19:26:23",
      "status": "pending",
      "note": "CF5 flag (POBOX 2026-11-08-1908): a cloud seat's container wipes between sessions, so a long-lived key can't live 'in' CF5, and pasting one into chat is worse. Long-term identity key lives with the captain/HP; seat gets a macaroon-style grant (scope=send/read-as-CF5, expiry, audience) per the C1-C6 audit. Decide BEFORE the Qt app treats seats as signers."
+    },
+    {
+     "ts": "2026-11-09 16:06:59",
+     "status": "complete",
+     "note": "recon pass: DISSOLVED by SO_PEERCRED (g56): the seat's OS uid IS its credential \u2014 no stored key to custody"
     }
    ],
    "notes": "Captain + CC to slate the mechanism. Gates the Qt mail app treating CF5/CAI as signers.",
@@ -1049,13 +1174,33 @@
   {
    "id": "g56",
    "text": "SECURITY: enforce per-seat auth at the agent socket \u2014 inbox(account=X) must require proof of X",
-   "status": "pending",
+   "status": "complete",
    "parent": "g9",
    "history": [
     {
      "ts": "2026-11-08 23:58:37",
      "status": "pending",
      "note": "re-slated by CC (recovered after a TernDO two-writer clobber)"
+    },
+    {
+     "ts": "2026-11-09 02:46:14",
+     "status": "progress",
+     "note": "spec delivered to CCC (POBOX 2026-11-09-0235 + agent): strawman = per-connection session capabilities (admin-issued, scoped, expiring); acceptance = mail_privacy_audit.py SOCKET FAIL->PASS. CCC to build; CC to extend the audit into the regression harness on CCC's word."
+    },
+    {
+     "ts": "2026-11-09 11:15:00",
+     "status": "progress",
+     "note": "FOUNDATION DONE: captain created per-seat OS users (ternid-cc..professor, uid 1001-1005; stevo=admin 1000, group ternid). uid->seat map + socket-must-move-to-/run/ternid prereq delivered to CCC. Ball in CCC's court for the build; CC to set up the shared-socket dir (tmpfiles.d) on CCC's word."
+    },
+    {
+     "ts": "2026-11-09 11:59:08",
+     "status": "progress",
+     "note": "Agent migrated to /run/ternid/agent.sock (0660 grp ternid); rebuilt on CCC's b1da904 (SO_PEERCRED); all clients repointed; admin access verified. PENDING: captain runs 'sudo python3 tools/mail_privacy_harness.py' -> own-box ALLOW / other-box DENY / admin ALL = the SOCKET FAIL->PASS proof."
+    },
+    {
+     "ts": "2026-11-09 12:07:22",
+     "status": "complete",
+     "note": "PROOF GREEN (sudo mail_privacy_harness.py): admin ALLOW, own-box ALLOW, other-seat DENY x2. SOCKET audit FAIL->PASS. Per-seat mail privacy ENFORCED by SO_PEERCRED. CF5/CAI can return as genuinely private accounts. CCC built b1da904; CC migrated+verified. Closes B."
     }
    ],
    "notes": "Audit (tools/mail_privacy_audit.py): AT-REST sealing PASSES (ciphertext in ~/.ternid/data) but SOCKET FAILS \u2014 any local process reads EVERY box unauthenticated (single-box model, agent holds all keys). Captain's requirement: AI seats must NOT have unfettered POBOX access; privacy enforced, not voluntary. Fix = seat presents a capability (ties to g50 key-custody); re-run the audit to prove watertight. BLOCKS bringing seats back as private accounts.",
@@ -1113,13 +1258,18 @@
   {
    "id": "g59",
    "text": "FIX: TernDO local store has TWO writers (terndo_qt GUI + CC scripts) -> clobbers",
-   "status": "pending",
+   "status": "complete",
    "parent": "g9",
    "history": [
     {
      "ts": "2026-11-08 23:58:37",
      "status": "pending",
      "note": "re-slated by CC (recovered after a TernDO two-writer clobber)"
+    },
+    {
+     "ts": "2026-11-09 12:35:33",
+     "status": "complete",
+     "note": "merge-on-save + delete-tracking in BOTH terndo builds; validated live (board writes while GUI open)."
     }
    ],
    "notes": "Tonight a stale GUI instance saved over CC's script writes, reverting seq 50->46 and losing g47-g50 (recovered from backup). CF5's one-writer-many-readers must hold for the LOCAL store too: terndo_qt should re-read+merge before save, or CC writes via a terndo API/lock, not raw file writes.",
@@ -1130,6 +1280,122 @@
    "grants": [],
    "priority": 1,
    "area": "ternpim"
+  },
+  {
+   "id": "g61",
+   "text": "TernDO (Qt): +/- text zoom in the Properties notes editor",
+   "status": "complete",
+   "parent": "g9",
+   "history": [
+    {
+     "ts": "2026-11-09 02:36:50",
+     "status": "pending",
+     "note": "captain wishlist: zoom the Properties text (font scale). Qt QTextEdit.zoomIn/zoomOut + Ctrl+wheel; easy in the Qt build."
+    },
+    {
+     "ts": "2026-11-09 12:35:33",
+     "status": "complete",
+     "note": "Ctrl+= / Ctrl+- zoom in the notes editor; plus app font doubled app-wide."
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": [],
+   "priority": 0,
+   "area": "ternpim"
+  },
+  {
+   "id": "g62",
+   "text": "Tmail rich text: markdown compose helpers (bold/italic/heading) + render markdown in the reading pane (Qt setMarkdown)",
+   "status": "pending",
+   "parent": "g9",
+   "history": [
+    {
+     "ts": "2026-11-09 21:21:21",
+     "status": "pending",
+     "note": "Captain noticed the Compose QTextEdit renders pasted rich text (font sizes) \u2014 wants intentional RTF-style editing. TernOO-native path = MARKDOWN (POBOX mail is already markdown; shared with skills/Obsidian), rendered on display + a compose toolbar that inserts markdown, NOT bolt-on Qt HTML/RTF (which would change the mail wire format). Ties to CF5's char-map charter (native text/font plane) \u2014 the recurring 'rich text' theme has that north star."
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": [],
+   "priority": 0,
+   "area": "mail"
+  },
+  {
+   "id": "g63",
+   "text": "Make the AI seats' replies show up in your Tmail inbox (finish two-way mail sync)",
+   "status": "complete",
+   "parent": "g9",
+   "history": [
+    {
+     "ts": "2026-11-10 06:45:29",
+     "status": "pending",
+     "note": "agent->POBOX mirror DONE (CF5 flag, on the heartbeat). Remaining: NEW .md files committed by cloud seats (CF5/CAI) must import into the agent (via import_message, content-deduped so the 794-msg port isn't re-imported) so the captain's Tmail sees cloud replies. Then the two stores are bidirectionally synced."
+    },
+    {
+     "ts": "2026-11-10 07:26:24",
+     "status": "pending",
+     "note": "re-worded plain-language per captain (low-jargon board)"
+    },
+    {
+     "ts": "2026-11-10 08:07:43",
+     "status": "progress"
+    },
+    {
+     "ts": "2026-11-10 08:07:44",
+     "status": "complete"
+    },
+    {
+     "ts": "2026-11-10 08:07:45",
+     "status": "pending"
+    },
+    {
+     "ts": "2026-11-10 08:19:40",
+     "status": "complete",
+     "note": "Importer BUILT + wired: Tmail Refresh now runs the wire->agent import (via mail_sync), so cloud-seat replies appear in the captain's inbox on a mail-call."
+    }
+   ],
+   "notes": "Right now, mail YOU send reaches the AI seats, but when the cloud seats (CF5, CAI) reply, it lands only in the shared repo on the wire \u2014 not in your Tmail. This makes their replies also appear in your Tmail inbox, so mail flows both ways. (Technical name: POBOX->agent importer.)",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": [],
+   "priority": 1,
+   "area": "mail"
+  },
+  {
+   "id": "g64",
+   "text": "Make mail FAST: profile and speed up send/receive times",
+   "status": "complete",
+   "parent": "g9",
+   "history": [
+    {
+     "ts": "2026-11-10 07:26:24",
+     "status": "pending",
+     "note": "created by CC"
+    },
+    {
+     "ts": "2026-11-10 08:19:40",
+     "status": "complete",
+     "note": "DONE: event-driven sync on Send + Refresh, worktree-isolated + background-threaded (no freeze), idempotent + tested. Local mail stays instant; the cloud bridge drops from ~1hr (hourly beat) to seconds on a mail-call or send. Captain to confirm on relaunch. Continuous push-notify (seeing mail without refreshing) is a separate future item."
+    }
+   ],
+   "notes": "Mail between the AIs ON this computer is instant (local socket). But mail to/from the CLOUD seats syncs on an HOURLY timer, so it can take up to an hour to get through \u2014 and one direction isn't built yet. That's too slow for mail. Measure the real times and switch to event-driven (triggered on send) sync so delivery is near-instant. Nobody would use a mail system with a one-hour round trip for mail that never left the ship.",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": [],
+   "priority": 1,
+   "area": "mail"
   }
  ]
 }
