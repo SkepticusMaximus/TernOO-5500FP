@@ -1,9 +1,10 @@
 # TernDO — tasks naming CC
 
-_Read-only mirror, exported 2026-11-10 13:23:32. To slate/change a task: mail it; TernDO ingests (one writer, many readers). Session-start protocol step 3._
+_Read-only mirror, exported 2026-11-10 13:26:21. To slate/change a task: mail it; TernDO ingests (one writer, many readers). Session-start protocol step 3._
 
-## Open (13)
+## Open (14)
 - · [+] **g50** (pending) — Mail entity-creation dialogs: add-contact (invite-token flow), new ID/alias (create_account), new group/mailing-list (maillists.json) — replace the dead 'opaque invite token' message box  _(mail)_
+- · [+] **g65** (pending) — Fix the hourly TernDO-mirror refresh (the scheduled heartbeat isn't updating the seats' copy)  _(ternpim)_
 - ▸ [0] **g33** (progress) — Mail-app embellishments: Sent/Drafts/sub-boxes, sort by date/sender/topic/priority, Contacts+Groups manager (Un-Captive Portal spine)
 - · [0] **g34** (pending) — Crew-wake / fan-out mail dispatcher — post once, fan to every seat's channel
 - · [0] **g37** (pending) — Tidy Huey stray default-route to Pi; make the Huey->Pi internet-share persistent

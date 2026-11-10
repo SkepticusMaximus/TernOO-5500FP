@@ -1,8 +1,8 @@
 {
  "_mirror_of": "~/.config/ternoo/todo.json \u2014 this is a READ-ONLY export",
- "_exported": "2026-11-10 13:23:32",
+ "_exported": "2026-11-10 13:26:21",
  "_how_to_slate": "Mail the task; the local TernDO store is the single writer (one writer, many readers).",
- "seq": 64,
+ "seq": 65,
  "items": [
   {
    "id": "g1",
@@ -1396,6 +1396,27 @@
    "grants": [],
    "priority": 1,
    "area": "mail"
+  },
+  {
+   "id": "g65",
+   "text": "Fix the hourly TernDO-mirror refresh (the scheduled heartbeat isn't updating the seats' copy)",
+   "status": "pending",
+   "parent": "g9",
+   "history": [
+    {
+     "ts": "2026-11-10 13:26:21",
+     "status": "pending",
+     "note": "CF5+CCC saw a stale mirror (Sunday's date, seq 59) while the board was at seq 64. The heartbeat's export works when run by hand, but whatever schedules it hourly (not cron, not a systemd-user timer) runs it in an env where the export silently does nothing. Find the scheduler, make the export land. CC force-refreshed origin to current in the meantime."
+    }
+   ],
+   "notes": "",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": [],
+   "priority": 1,
+   "area": "ternpim"
   }
  ]
 }
