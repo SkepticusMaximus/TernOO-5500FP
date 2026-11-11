@@ -1,10 +1,9 @@
 # TernDO — tasks naming CC
 
-_Read-only mirror, exported 2026-11-10 13:26:21. To slate/change a task: mail it; TernDO ingests (one writer, many readers). Session-start protocol step 3._
+_Read-only mirror, exported 2026-11-11 14:23:15. To slate/change a task: mail it; TernDO ingests (one writer, many readers). Session-start protocol step 3._
 
-## Open (14)
+## Open (15)
 - · [+] **g50** (pending) — Mail entity-creation dialogs: add-contact (invite-token flow), new ID/alias (create_account), new group/mailing-list (maillists.json) — replace the dead 'opaque invite token' message box  _(mail)_
-- · [+] **g65** (pending) — Fix the hourly TernDO-mirror refresh (the scheduled heartbeat isn't updating the seats' copy)  _(ternpim)_
 - ▸ [0] **g33** (progress) — Mail-app embellishments: Sent/Drafts/sub-boxes, sort by date/sender/topic/priority, Contacts+Groups manager (Un-Captive Portal spine)
 - · [0] **g34** (pending) — Crew-wake / fan-out mail dispatcher — post once, fan to every seat's channel
 - · [0] **g37** (pending) — Tidy Huey stray default-route to Pi; make the Huey->Pi internet-share persistent
@@ -16,9 +15,11 @@ _Read-only mirror, exported 2026-11-10 13:26:21. To slate/change a task: mail it
 - · [0] **g52** (pending) — DESIGN: Mail categorisation paradigm — user-creatable boxes/sub-boxes + incoming-mail filters + extra nominal fields  _(mail)_
 - · [0] **g58** (pending) — TernIP/Tmail: FULL Tor compatibility (wire-compatible, not just inspired) + user-created mailing proxies in the mail app  _(networking)_
 - · [0] **g62** (pending) — Tmail rich text: markdown compose helpers (bold/italic/heading) + render markdown in the reading pane (Qt setMarkdown)  _(mail)_
+- · [0] **g66** (pending) — A 'crew' contact + Groups / mailing-list feature in Contacts  _(mail)_
+- · [0] **g67** (pending) — Mail 'To' field should show the real recipient list (fix forward double-header)  _(mail)_
 - · [−] **g42** (pending) — Pi internet failover path 2: eth0 -> Netgear switch -> Lenny (for when Huey+phone leave the house)  _(networking)_
 
-## Done (12)
+## Done (13)
 - ✓ [0] **g35** (complete) — Tor-router appliance on the Pi — transparent proxy isolated in a netns (Whonix-split on one box)  _(networking)_
 - ✓ [+] **g48** (complete) — Unify mail: CC sends crew mail through the TernID agent (not git-POBOX commits) — ferry retirement  _(mail)_
 - ✓ [0] **g49** (complete) — Rich Mail face on the agent: 3-pane layout (box+contacts tree | sortable Time/From/To/Subject table | reading pane below), Qt — port pobox_mail.py's UX onto mailbox_qt.py  _(mail)_
@@ -31,3 +32,4 @@ _Read-only mirror, exported 2026-11-10 13:26:21. To slate/change a task: mail it
 - ✓ [0] **g61** (complete) — TernDO (Qt): +/- text zoom in the Properties notes editor  _(ternpim)_
 - ✓ [+] **g63** (complete) — Make the AI seats' replies show up in your Tmail inbox (finish two-way mail sync)  _(mail)_
 - ✓ [+] **g64** (complete) — Make mail FAST: profile and speed up send/receive times  _(mail)_
+- ✓ [+] **g65** (complete) — Fix the hourly TernDO-mirror refresh (the scheduled heartbeat isn't updating the seats' copy)  _(ternpim)_

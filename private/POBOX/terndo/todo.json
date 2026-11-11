@@ -1,8 +1,8 @@
 {
  "_mirror_of": "~/.config/ternoo/todo.json \u2014 this is a READ-ONLY export",
- "_exported": "2026-11-10 13:26:21",
+ "_exported": "2026-11-11 14:23:15",
  "_how_to_slate": "Mail the task; the local TernDO store is the single writer (one writer, many readers).",
- "seq": 65,
+ "seq": 67,
  "items": [
   {
    "id": "g1",
@@ -1400,13 +1400,18 @@
   {
    "id": "g65",
    "text": "Fix the hourly TernDO-mirror refresh (the scheduled heartbeat isn't updating the seats' copy)",
-   "status": "pending",
+   "status": "complete",
    "parent": "g9",
    "history": [
     {
      "ts": "2026-11-10 13:26:21",
      "status": "pending",
      "note": "CF5+CCC saw a stale mirror (Sunday's date, seq 59) while the board was at seq 64. The heartbeat's export works when run by hand, but whatever schedules it hourly (not cron, not a systemd-user timer) runs it in an env where the export silently does nothing. Find the scheduler, make the export land. CC force-refreshed origin to current in the meantime."
+    },
+    {
+     "ts": "2026-11-11 14:21:00",
+     "status": "complete",
+     "note": "FIXED (commit e50db71). Root cause: the export rode an OTHER fleet node's hourly heartbeat reading ITS stale local store, not Huey's. Moved the export onto Huey's 3-min mail-sync timer (where the real store lives), gated by a one-writer marker (~/.config/ternoo/terndo.authoritative) so no other box clobbers it, and made it idempotent so an unchanged list never churns a commit. Wire mirror now tracks the real store within minutes."
     }
    ],
    "notes": "",
@@ -1417,6 +1422,48 @@
    "grants": [],
    "priority": 1,
    "area": "ternpim"
+  },
+  {
+   "id": "g66",
+   "text": "A 'crew' contact + Groups / mailing-list feature in Contacts",
+   "status": "pending",
+   "parent": "g9",
+   "history": [
+    {
+     "ts": "2026-11-11 14:21:00",
+     "status": "pending",
+     "note": "slated by CC from the captain's 'Great progress today' mail (wishlist rule)"
+    }
+   ],
+   "notes": "Captain: there's no 'crew' entry in Contacts and no group (mailing-list) type yet. He'd like to address a named group rather than enumerate seats. Add a Groups concept so 'crew' is a first-class recipient in compose + shows correctly in the To field.",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": [],
+   "priority": 0,
+   "area": "mail"
+  },
+  {
+   "id": "g67",
+   "text": "Mail 'To' field should show the real recipient list (fix forward double-header)",
+   "status": "pending",
+   "parent": "g9",
+   "history": [
+    {
+     "ts": "2026-11-11 14:21:00",
+     "status": "pending",
+     "note": "slated by CC from the captain's 'Great progress today' mail (wishlist rule)"
+    }
+   ],
+   "notes": "Captain: ported/forwarded mail shows 'To: Stevo' (or a collapsed 'crew') instead of who actually got it \u2014 he wants to see the full recipient list at a glance for his mental ledger. The mirror stacks its own From/To header over a body that already carries one (CF5's double-header flag). Fix the mirror to carry the true recipients and not double-wrap.",
+   "staging": "",
+   "assignees": [
+    "CC"
+   ],
+   "grants": [],
+   "priority": 0,
+   "area": "mail"
   }
  ]
 }
