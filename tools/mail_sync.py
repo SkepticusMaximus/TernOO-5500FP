@@ -53,6 +53,11 @@ def sync(push=True):
         out["mirrored"] = len(mirror(pobox=pobox))       # agent -> wire
     except Exception as e:
         out["mirror_err"] = str(e)[:70]
+    try:
+        from terndo_export import export as _terndo_export
+        out["terndo"] = bool(_terndo_export(WT))          # fresh TernDO mirror (authoritative host only)
+    except Exception as e:
+        out["terndo_err"] = str(e)[:70]
     if push:
         _r(WT, "add", "-f", "private/POBOX/")
         if _r(WT, "diff", "--cached", "--quiet").returncode != 0:

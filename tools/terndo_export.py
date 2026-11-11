@@ -15,10 +15,32 @@ Writes under <repo>/private/POBOX/terndo/ :
 """
 import json
 import os
+import re
 import datetime
 
 SRC = os.path.expanduser("~/.config/ternoo/todo.json")
+# ONE WRITER: only the host holding the authoritative TernDO store exports it. Huey
+# (where the captain's TernDO GUI writes) carries this marker; the HP does not, so the
+# HP heartbeat stops clobbering the wire mirror with its stale copy (the frozen-at-Sunday
+# bug CF5/CCC kept flagging). Create it on the authoritative box: touch ~/.config/ternoo/terndo.authoritative
+MARKER = os.path.expanduser("~/.config/ternoo/terndo.authoritative")
 SEATS = ["Stevo", "CC", "CCC", "CF5", "CAI", "CO5", "Professor"]
+
+
+def _write_if_changed(path, new_text, volatile=r"(?m)^.*_exported.*$|exported \d{4}-\d\d-\d\d[^\n]*"):
+    """Write only when the MEANINGFUL content changed — strip the volatile 'exported'
+    timestamp before comparing, so an unchanged task list doesn't churn a new commit
+    every run (the 3-min timer / hourly heartbeat spam). Returns True if written."""
+    def norm(t):
+        return re.sub(volatile, "", t or "")
+    try:
+        if norm(open(path).read()) == norm(new_text):
+            return False
+    except Exception:
+        pass
+    with open(path, "w") as f:
+        f.write(new_text)
+    return True
 _STAT = {"pending": "· ", "progress": "▸ ", "complete": "✓ "}
 _PRI = {1: "[+]", 0: "[0]", -1: "[−]"}
 
@@ -30,7 +52,11 @@ def _line(it):
 
 
 def export(repo):
-    """Write the mirror under repo/private/POBOX/terndo/. Returns the dir, or None if no store."""
+    """Write the mirror under repo/private/POBOX/terndo/. Returns True if anything
+    actually changed (so callers commit only on a real change), False/None otherwise.
+    Only the authoritative host (carrying MARKER) exports — one writer, many readers."""
+    if not os.path.exists(MARKER):
+        return None                    # not the authoritative store; don't clobber the wire
     try:
         d = json.load(open(SRC))
     except Exception:
@@ -39,6 +65,7 @@ def export(repo):
     out_dir = os.path.join(repo, "private", "POBOX", "terndo")
     os.makedirs(os.path.join(out_dir, "by-seat"), exist_ok=True)
     stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    changed = False
 
     mirror = {
         "_mirror_of": "~/.config/ternoo/todo.json — this is a READ-ONLY export",
@@ -47,27 +74,28 @@ def export(repo):
         "seq": d.get("seq"),
         "items": items,
     }
-    json.dump(mirror, open(os.path.join(out_dir, "todo.json"), "w"), indent=1)
+    changed |= _write_if_changed(os.path.join(out_dir, "todo.json"),
+                                 json.dumps(mirror, indent=1))
 
     for seat in SEATS:
         mine = [it for it in items if seat in (it.get("assignees") or [])]
         open_mine = [it for it in mine if it.get("status") != "complete"]
         done = [it for it in mine if it.get("status") == "complete"]
-        with open(os.path.join(out_dir, "by-seat", f"{seat}.md"), "w") as f:
-            f.write(f"# TernDO — tasks naming {seat}\n\n")
-            f.write(f"_Read-only mirror, exported {stamp}. To slate/change a task: mail it; "
-                    "TernDO ingests (one writer, many readers). Session-start protocol step 3._\n\n")
-            if not mine:
-                f.write("No open or closed tasks name this seat.\n")
-                continue
-            f.write(f"## Open ({len(open_mine)})\n")
+        lines = [f"# TernDO — tasks naming {seat}\n\n",
+                 f"_Read-only mirror, exported {stamp}. To slate/change a task: mail it; "
+                 "TernDO ingests (one writer, many readers). Session-start protocol step 3._\n\n"]
+        if not mine:
+            lines.append("No open or closed tasks name this seat.\n")
+        else:
+            lines.append(f"## Open ({len(open_mine)})\n")
             for it in sorted(open_mine, key=lambda x: (-(x.get("priority") or 0), x["id"])):
-                f.write(_line(it) + "\n")
+                lines.append(_line(it) + "\n")
             if done:
-                f.write(f"\n## Done ({len(done)})\n")
+                lines.append(f"\n## Done ({len(done)})\n")
                 for it in sorted(done, key=lambda x: x["id"]):
-                    f.write(_line(it) + "\n")
-    return out_dir
+                    lines.append(_line(it) + "\n")
+        changed |= _write_if_changed(os.path.join(out_dir, "by-seat", f"{seat}.md"), "".join(lines))
+    return changed
 
 
 if __name__ == "__main__":
