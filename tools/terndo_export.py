@@ -30,9 +30,11 @@ SEATS = ["Stevo", "CC", "CCC", "CF5", "CAI", "CO5", "Professor"]
 def _write_if_changed(path, new_text, volatile=r"(?m)^.*_exported.*$|exported \d{4}-\d\d-\d\d[^\n]*"):
     """Write only when the MEANINGFUL content changed — strip the volatile 'exported'
     timestamp before comparing, so an unchanged task list doesn't churn a new commit
-    every run (the 3-min timer / hourly heartbeat spam). Returns True if written."""
+    every run (the 3-min timer / hourly heartbeat spam). Returns True if written.
+    volatile=None compares full content (use when the time-ish fields are already
+    idempotent — shared with the list's seq/export-time, so they only move on a real change)."""
     def norm(t):
-        return re.sub(volatile, "", t or "")
+        return re.sub(volatile, "", t or "") if volatile else (t or "")
     try:
         if norm(open(path).read()) == norm(new_text):
             return False
@@ -76,14 +78,22 @@ def export(repo):
     }
     changed |= _write_if_changed(os.path.join(out_dir, "todo.json"),
                                  json.dumps(mirror, indent=1))
+    # The list's EFFECTIVE export time — old if the list didn't change (idempotent). Share it
+    # (with the seq) on every per-seat page so a seat whose own tasks didn't change doesn't see
+    # a per-page stamp OLDER than todo.json and read it as "stale" (CF5's flag, 2026-11-11).
+    try:
+        asof = json.load(open(os.path.join(out_dir, "todo.json"))).get("_exported", stamp)
+    except Exception:
+        asof = stamp
+    seq = d.get("seq")
 
     for seat in SEATS:
         mine = [it for it in items if seat in (it.get("assignees") or [])]
         open_mine = [it for it in mine if it.get("status") != "complete"]
         done = [it for it in mine if it.get("status") == "complete"]
         lines = [f"# TernDO — tasks naming {seat}\n\n",
-                 f"_Read-only mirror, exported {stamp}. To slate/change a task: mail it; "
-                 "TernDO ingests (one writer, many readers). Session-start protocol step 3._\n\n"]
+                 f"_Read-only mirror — full list at seq {seq}, as of {asof}. To slate/change a "
+                 "task: mail it; TernDO ingests (one writer, many readers). Session-start step 3._\n\n"]
         if not mine:
             lines.append("No open or closed tasks name this seat.\n")
         else:
@@ -94,7 +104,10 @@ def export(repo):
                 lines.append(f"\n## Done ({len(done)})\n")
                 for it in sorted(done, key=lambda x: x["id"]):
                     lines.append(_line(it) + "\n")
-        changed |= _write_if_changed(os.path.join(out_dir, "by-seat", f"{seat}.md"), "".join(lines))
+        # seq + asof are idempotent (move only on a real list change), so full-content compare:
+        # every list change refreshes ALL pages' freshness; idle runs rewrite nothing.
+        changed |= _write_if_changed(os.path.join(out_dir, "by-seat", f"{seat}.md"),
+                                     "".join(lines), volatile=None)
     return changed
 
 
