@@ -1,8 +1,8 @@
 {
  "_mirror_of": "~/.config/ternoo/todo.json \u2014 this is a READ-ONLY export",
- "_exported": "2026-11-11 14:23:15",
+ "_exported": "2026-11-11 23:34:01",
  "_how_to_slate": "Mail the task; the local TernDO store is the single writer (one writer, many readers).",
- "seq": 67,
+ "seq": 69,
  "items": [
   {
    "id": "g1",
@@ -1464,6 +1464,48 @@
    "grants": [],
    "priority": 0,
    "area": "mail"
+  },
+  {
+   "id": "g68",
+   "text": "Agent: message delete/redact \u2014 remove stuck duplicates and mis-sent mail (the agent has NO delete today)",
+   "status": "pending",
+   "parent": "g9",
+   "history": [
+    {
+     "ts": "2026-11-11 18:45:00",
+     "status": "pending",
+     "note": "slated to CCC by CC \u2014 agent-lane build work; CCC was sitting idle while mail glue piled up on CC. Captain flagged it."
+    }
+   ],
+   "notes": "CC keeps hitting 'the agent has no delete': the round-trip re-import left duplicate copies of sends in seats' boxes, and a mis-addressed compose can't be unsent \u2014 it's all irreversible cruft right now. CCC's lane (the Rust agent). Need a safe removal path: soft redact/hide by DEFAULT (records are kept for history per the keep-history policy \u2014 deletion is explicit, confirmed, double-checked), plus a confirmed hard-delete for true duplicates, and a way for the mail app to call it. This is the cleanup we literally cannot do today.",
+   "staging": "",
+   "assignees": [
+    "CCC"
+   ],
+   "grants": [],
+   "priority": 1,
+   "area": "ternid"
+  },
+  {
+   "id": "g69",
+   "text": "Agent: real outbox/sent query + authoritative per-message recipients",
+   "status": "pending",
+   "parent": "g9",
+   "history": [
+    {
+     "ts": "2026-11-11 18:45:00",
+     "status": "pending",
+     "note": "slated to CCC by CC \u2014 agent-lane build work; CCC was sitting idle while mail glue piled up on CC. Captain flagged it."
+    }
+   ],
+   "notes": "Two agent gaps the mail app currently papers over: (1) no sent/outbox query, so Tmail's Sent view is reconstructed app-side and loses fidelity; (2) recipients aren't authoritatively stored/exposed per message, so 'To' can't show who actually received each letter \u2014 the captain's 'Great progress today' gripe (ported mail showed To: Stevo instead of the real list). Expose a true sent query + a real recipients list per message, so Tmail shows who-got-what straight from the agent instead of guessing.",
+   "staging": "",
+   "assignees": [
+    "CCC"
+   ],
+   "grants": [],
+   "priority": 0,
+   "area": "ternid"
   }
  ]
 }

@@ -1,8 +1,10 @@
 # TernDO — tasks naming CCC
 
-_Read-only mirror — full list at seq 67, as of 2026-11-11 14:23:15. To slate/change a task: mail it; TernDO ingests (one writer, many readers). Session-start step 3._
+_Read-only mirror — full list at seq 69, as of 2026-11-11 23:34:01. To slate/change a task: mail it; TernDO ingests (one writer, many readers). Session-start step 3._
 
-## Open (0)
+## Open (2)
+- · [+] **g68** (pending) — Agent: message delete/redact — remove stuck duplicates and mis-sent mail (the agent has NO delete today)  _(ternid)_
+- · [0] **g69** (pending) — Agent: real outbox/sent query + authoritative per-message recipients  _(ternid)_
 
 ## Done (2)
 - ✓ [+] **g53** (complete) — TernID agent: add an import/send_at method (preserve original time + from + to) so CC can port the 235 git-POBOX messages into the agent — gates Path A  _(ternid)_
