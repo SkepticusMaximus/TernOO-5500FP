@@ -1,0 +1,12 @@
+[Unit]
+Description=TernOO mail bridge — sync the TernID agent <-> git-POBOX (carry Stevo's sends to the wire, pull crew replies back into his Tmail). Replaces the Send-hook/heartbeat as the RELIABLE floor so mail never gets stranded in the agent again.
+
+[Service]
+Type=oneshot
+# default socket + a sane PATH for a bare daemon environment
+Environment=TERNID_AGENT_SOCK=/run/ternid/agent.sock
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 %h/dev/SkepticusMaximus/TernOO-5500FP/tools/mail_sync.py
+# mail_sync never raises and self-heals on the next run; don't let a transient failure
+# (offline tether, push race) mark the unit failed and scare the timer off.
+SuccessExitStatus=0 1
