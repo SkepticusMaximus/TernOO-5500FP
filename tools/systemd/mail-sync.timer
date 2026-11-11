@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the TernOO mail bridge every 3 min — responsive send/receive, and (because stevo has linger=yes) it keeps running across suspend/logout, unlike the HP heartbeat that died at 04:00.
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=3min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

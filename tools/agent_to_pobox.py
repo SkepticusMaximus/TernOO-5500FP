@@ -23,6 +23,21 @@ from ternid_agent_protocol import Client
 
 SOCK = os.environ.get("TERNID_AGENT_SOCK", "/run/ternid/agent.sock")
 POBOX = os.path.join(REPO, "private", "POBOX")
+# the importer's dedup ledger — we mark files WE write here so the importer never
+# re-injects them back into the agent next run (the round-trip duplication that put
+# two copies of a single send in every seat's box; the agent has no delete).
+IMPORT_STATE = os.path.expanduser("~/.ternid/pobox_imported.json")
+
+
+def _mark_imported(filenames):
+    import json
+    try:
+        done = set(json.load(open(IMPORT_STATE)))
+    except Exception:
+        done = set()
+    done |= set(filenames)
+    os.makedirs(os.path.dirname(IMPORT_STATE), exist_ok=True)
+    json.dump(sorted(done), open(IMPORT_STATE, "w"), indent=0)
 
 
 def mirror(pobox=None):
@@ -63,6 +78,8 @@ def mirror(pobox=None):
             f.write("%s\n\nFrom: %s\nTo: %s\nRe: %s\n\n%s\n"
                     % (dt.strftime("%H:%M %d/%m/%Y ACDT"), frm, to, m.get("subject", ""), m.get("body", "")))
         written.append(fn)
+    if written:
+        _mark_imported(written)        # break the round-trip: don't re-import what we just mirrored
     return written
 
 
