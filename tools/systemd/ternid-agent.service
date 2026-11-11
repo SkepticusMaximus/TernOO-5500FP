@@ -1,0 +1,15 @@
+[Unit]
+Description=TernID agent — the sealed per-seat mail store Tmail and the bridge talk to (unix socket /run/ternid/agent.sock). Managed so it ALWAYS comes back on boot, instead of the ad-hoc PPID-1 daemon that would vanish on reboot.
+After=default.target
+
+[Service]
+Type=simple
+# /run/ternid itself is created at boot by /etc/tmpfiles.d/ternid.conf (2750 stevo:ternid).
+# Clear only a stale socket FILE before binding (no-op on a clean boot).
+ExecStartPre=-/bin/rm -f /run/ternid/agent.sock
+ExecStart=%h/dev/SkepticusMaximus/TernID/target/debug/ternid-agent --root %h/.ternid/data --sock /run/ternid/agent.sock
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
