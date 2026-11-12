@@ -1,6 +1,6 @@
 {
  "_mirror_of": "~/.config/ternoo/todo.json \u2014 this is a READ-ONLY export",
- "_exported": "2026-11-12 13:29:57",
+ "_exported": "2026-11-12 13:33:57",
  "_how_to_slate": "Mail the task; the local TernDO store is the single writer (one writer, many readers).",
  "seq": 71,
  "items": [
@@ -1551,7 +1551,7 @@
    "text": "Fix TernDO list jumping bug.",
    "status": "pending",
    "parent": null,
-   "notes": "",
+   "notes": "When I click on a goal list heading in TernOO it highlights that entry but the list jumps to a different position.",
    "staging": "",
    "assignees": [],
    "grants": [],
