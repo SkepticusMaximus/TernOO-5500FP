@@ -1,6 +1,6 @@
 # TernDO — tasks naming CC
 
-_Read-only mirror — full list at seq 69, as of 2026-11-11 23:34:01. To slate/change a task: mail it; TernDO ingests (one writer, many readers). Session-start step 3._
+_Read-only mirror — full list at seq 70, as of 2026-11-12 13:21:56. To slate/change a task: mail it; TernDO ingests (one writer, many readers). Session-start step 3._
 
 ## Open (15)
 - · [+] **g50** (pending) — Mail entity-creation dialogs: add-contact (invite-token flow), new ID/alias (create_account), new group/mailing-list (maillists.json) — replace the dead 'opaque invite token' message box  _(mail)_

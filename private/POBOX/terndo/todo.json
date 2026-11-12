@@ -1,8 +1,8 @@
 {
  "_mirror_of": "~/.config/ternoo/todo.json \u2014 this is a READ-ONLY export",
- "_exported": "2026-11-11 23:34:01",
+ "_exported": "2026-11-12 13:21:56",
  "_how_to_slate": "Mail the task; the local TernDO store is the single writer (one writer, many readers).",
- "seq": 69,
+ "seq": 70,
  "items": [
   {
    "id": "g1",
@@ -111,7 +111,7 @@
   {
    "id": "g6",
    "text": "Windows installer + Linux repo packaging + Mac",
-   "status": "progress",
+   "status": "complete",
    "parent": null,
    "history": [
     {
@@ -122,6 +122,10 @@
     {
      "ts": "2026-11-10 08:06:49",
      "status": "progress"
+    },
+    {
+     "ts": "2026-11-12 13:17:21",
+     "status": "complete"
     }
    ],
    "notes": "",
@@ -1506,6 +1510,33 @@
    "grants": [],
    "priority": 0,
    "area": "ternid"
+  },
+  {
+   "id": "g70",
+   "text": "Test the Old Lennovo AMD E1-2100 with Radeon HD 8210 x2 8GB ram.",
+   "status": "complete",
+   "parent": null,
+   "notes": "",
+   "staging": "",
+   "assignees": [],
+   "grants": [],
+   "priority": 0,
+   "area": "",
+   "history": [
+    {
+     "ts": "2026-11-12 13:17:11",
+     "status": "pending",
+     "note": "created"
+    },
+    {
+     "ts": "2026-11-12 13:18:09",
+     "status": "progress"
+    },
+    {
+     "ts": "2026-11-12 13:18:18",
+     "status": "complete"
+    }
+   ]
   }
  ]
 }
