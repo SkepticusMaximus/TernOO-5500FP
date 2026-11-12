@@ -1,8 +1,8 @@
 {
  "_mirror_of": "~/.config/ternoo/todo.json \u2014 this is a READ-ONLY export",
- "_exported": "2026-11-12 13:21:56",
+ "_exported": "2026-11-12 13:29:57",
  "_how_to_slate": "Mail the task; the local TernDO store is the single writer (one writer, many readers).",
- "seq": 70,
+ "seq": 71,
  "items": [
   {
    "id": "g1",
@@ -1514,9 +1514,9 @@
   {
    "id": "g70",
    "text": "Test the Old Lennovo AMD E1-2100 with Radeon HD 8210 x2 8GB ram.",
-   "status": "complete",
+   "status": "progress",
    "parent": null,
-   "notes": "",
+   "notes": "Test LOL (Lil' Old Lenny) the cobbeled together Laptop and make sure it has network conectivity and a copy of the ships essentials (P2PCP and FlowCode) Not nescecarily the whole repo but a standard Kit of TernOO ship-worthy apps. LOL may be our test unit for a non-crew install target, that's what any other TernOO pasanger might expect.  ",
    "staging": "",
    "assignees": [],
    "grants": [],
@@ -1535,6 +1535,33 @@
     {
      "ts": "2026-11-12 13:18:18",
      "status": "complete"
+    },
+    {
+     "ts": "2026-11-12 13:26:43",
+     "status": "pending"
+    },
+    {
+     "ts": "2026-11-12 13:27:01",
+     "status": "progress"
+    }
+   ]
+  },
+  {
+   "id": "g71",
+   "text": "Fix TernDO list jumping bug.",
+   "status": "pending",
+   "parent": null,
+   "notes": "",
+   "staging": "",
+   "assignees": [],
+   "grants": [],
+   "priority": 0,
+   "area": "",
+   "history": [
+    {
+     "ts": "2026-11-12 13:27:43",
+     "status": "pending",
+     "note": "created"
     }
    ]
   }
