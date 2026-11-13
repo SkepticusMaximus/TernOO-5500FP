@@ -1,8 +1,8 @@
 {
  "_mirror_of": "~/.config/ternoo/todo.json \u2014 this is a READ-ONLY export",
- "_exported": "2026-11-13 08:08:57",
+ "_exported": "2026-11-13 17:47:56",
  "_how_to_slate": "Mail the task; the local TernDO store is the single writer (one writer, many readers).",
- "seq": 71,
+ "seq": 73,
  "items": [
   {
    "id": "g1",
@@ -1564,6 +1564,44 @@
    "history": [
     {
      "ts": "2026-11-12 13:27:43",
+     "status": "pending",
+     "note": "created"
+    }
+   ]
+  },
+  {
+   "id": "g72",
+   "text": "Window Meta Data Window ID <---> .../Path-to/App/name <---> Icon&Launcher",
+   "status": "pending",
+   "parent": null,
+   "notes": "",
+   "staging": "",
+   "assignees": [],
+   "grants": [],
+   "priority": 0,
+   "area": "",
+   "history": [
+    {
+     "ts": "2026-11-13 17:46:52",
+     "status": "pending",
+     "note": "created"
+    }
+   ]
+  },
+  {
+   "id": "g73",
+   "text": "Force-Open-Captive-Portal",
+   "status": "pending",
+   "parent": null,
+   "notes": "",
+   "staging": "",
+   "assignees": [],
+   "grants": [],
+   "priority": 0,
+   "area": "",
+   "history": [
+    {
+     "ts": "2026-11-13 17:47:32",
      "status": "pending",
      "note": "created"
     }
