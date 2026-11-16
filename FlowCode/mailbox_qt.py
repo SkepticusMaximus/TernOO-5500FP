@@ -20,7 +20,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QListWidget, QListWidgetItem, QTextEdit, QLabel, QComboBox,
                                QPushButton, QDialog, QLineEdit, QDialogButtonBox, QSplitter,
                                QMessageBox, QTreeWidget, QTreeWidgetItem, QTableWidget,
-                               QTableWidgetItem, QHeaderView, QAbstractItemView, QInputDialog)
+                               QTableWidgetItem, QHeaderView, QAbstractItemView, QInputDialog,
+                               QCompleter)
 from PySide6.QtGui import (QAction, QFont, QBrush, QColor, QIcon, QShortcut, QKeySequence,
                            QTextCursor, QSyntaxHighlighter, QTextCharFormat, QTextBlockFormat,
                            QTextListFormat)
@@ -247,10 +248,54 @@ class SpellHighlighter(QSyntaxHighlighter):
 
 
 class SpellTextEdit(QTextEdit):
-    """QTextEdit with live spell-check + a right-click menu of corrections / add-to-dict."""
-    def __init__(self, parent=None):
+    """QTextEdit with live spell-check (red squiggles + right-click corrections) AND
+    autocomplete — a popup of dictionary words + contact / @-mention names after 3+ letters,
+    dismissed by typing past it or pressing Esc."""
+    def __init__(self, parent=None, words=None):
         super().__init__(parent)
         self._hl = SpellHighlighter(self.document())
+        self._completer = QCompleter(sorted(words) if words else [], self)
+        self._completer.setWidget(self)
+        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self._completer.setMaxVisibleItems(8)
+        self._completer.activated.connect(self._insert_completion)
+
+    def _completion_prefix(self):
+        """The word being typed, including a leading @ (so @-mentions complete)."""
+        cur = self.textCursor()
+        block = cur.block().text()
+        col = cur.positionInBlock()
+        start = col
+        while start > 0 and (block[start - 1].isalnum() or block[start - 1] in "@_'"):
+            start -= 1
+        return block[start:col]
+
+    def _insert_completion(self, completion):
+        cur = self.textCursor()
+        prefix = self._completion_prefix()
+        cur.movePosition(QTextCursor.MoveOperation.Left, QTextCursor.MoveMode.KeepAnchor, len(prefix))
+        cur.insertText(completion)
+        self.setTextCursor(cur)
+
+    def keyPressEvent(self, e):
+        c = self._completer
+        if c.popup().isVisible() and e.key() in (Qt.Key.Key_Enter, Qt.Key.Key_Return,
+                                                 Qt.Key.Key_Escape, Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
+            e.ignore()                                           # let the popup take Enter/Tab/Esc
+            return
+        super().keyPressEvent(e)
+        prefix = self._completion_prefix()
+        last = e.text()[-1] if e.text() else ""
+        if len(prefix.lstrip("@")) < 3 or (last and not last.isalnum() and last not in "@_'"):
+            c.popup().hide()
+            return
+        if prefix != c.completionPrefix():
+            c.setCompletionPrefix(prefix)
+            c.popup().setCurrentIndex(c.completionModel().index(0, 0))
+        rect = self.cursorRect()
+        rect.setWidth(c.popup().sizeHintForColumn(0) + c.popup().verticalScrollBar().sizeHint().width())
+        c.complete(rect)
 
     def contextMenuEvent(self, event):
         menu = self.createStandardContextMenu()
@@ -314,7 +359,10 @@ class Compose(QDialog):
         hint.setStyleSheet("color:#6f6f82;font-size:11px;")
         fmt.addWidget(hint)
         v.addLayout(fmt)
-        self.body = SpellTextEdit()                            # g70: live spell-check + suggestions
+        names = [c["display_name"] for c in self.contacts]      # autocomplete vocabulary
+        groups = list(load_lists().keys()) + ["crew"]
+        words = set(_load_dict()) | set(names) | set(groups) | {"@" + n for n in names + groups}
+        self.body = SpellTextEdit(words=words)                 # g70 spell-check + autocomplete
         self.body.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         v.addWidget(self.body, 1)
         QShortcut(QKeySequence("Ctrl+B"), self.body).activated.connect(self._md_bold)
