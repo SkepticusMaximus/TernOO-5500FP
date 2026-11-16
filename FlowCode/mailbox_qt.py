@@ -21,7 +21,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QPushButton, QDialog, QLineEdit, QDialogButtonBox, QSplitter,
                                QMessageBox, QTreeWidget, QTreeWidgetItem, QTableWidget,
                                QTableWidgetItem, QHeaderView, QAbstractItemView, QInputDialog)
-from PySide6.QtGui import QAction, QFont, QBrush, QColor, QIcon, QShortcut, QKeySequence, QTextCursor
+from PySide6.QtGui import (QAction, QFont, QBrush, QColor, QIcon, QShortcut, QKeySequence,
+                           QTextCursor, QSyntaxHighlighter, QTextCharFormat)
 from PySide6.QtCore import Qt, Signal
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # repo root — portable across machines
@@ -149,6 +150,126 @@ class StubBackend:
         return {"ok": True}
 
 
+# ── g70: spell-check — dependency-free (system word lists + difflib suggestions) ────
+PERSONAL_DICT = os.path.expanduser("~/.config/ternoo/mail-dict.txt")
+_DICT = None
+# ship-vocabulary so our own words don't squiggle; the user grows their own via "Add to dictionary"
+_TERNOO_WORDS = {
+    "ternoo", "ternid", "ternauth", "ternip", "tmail", "pobox", "flowcode", "terndo",
+    "gristmill", "cc", "ccc", "cf5", "cai", "co5", "huey", "lenny", "colibri", "trit",
+    "trits", "markdown", "rclone", "systemd", "tailscale", "repo", "config", "wifi", "async",
+}
+
+
+def _load_dict():
+    """Union of the system word list + the en_AU/en_US hunspell dictionaries (so Aussie
+    spellings pass) + the user's personal additions. Built once, cached."""
+    global _DICT
+    if _DICT is not None:
+        return _DICT
+    words = set()
+    try:
+        with open("/usr/share/dict/words", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                words.add(line.strip().lower())
+    except Exception:
+        pass
+    for path in ("/usr/share/hunspell/en_AU.dic", "/usr/share/hunspell/en_US.dic"):
+        try:
+            with open(path, encoding="utf-8", errors="ignore") as f:
+                next(f, None)                                  # first line is the entry count
+                for line in f:
+                    words.add(line.split("/")[0].strip().lower())   # drop affix flags
+        except Exception:
+            pass
+    try:
+        with open(PERSONAL_DICT, encoding="utf-8") as f:
+            for line in f:
+                words.add(line.strip().lower())
+    except Exception:
+        pass
+    words |= _TERNOO_WORDS
+    words.discard("")
+    _DICT = words
+    return words
+
+
+def _spell_ok(word):
+    d = _load_dict()
+    lw = word.lower().strip("'")
+    if not lw or lw in d:
+        return True
+    if word.isupper() or any(c.isdigit() for c in word):       # acronyms, codes
+        return True
+    if lw.endswith("'s") and lw[:-2] in d:                      # possessive
+        return True
+    return False
+
+
+def _spell_suggest(word, n=6):
+    import difflib
+    d = _load_dict()
+    lw = word.lower()
+    cand = [w for w in d if w[:1] == lw[:1] and abs(len(w) - len(lw)) <= 2]   # prefilter -> fast
+    sugg = difflib.get_close_matches(lw, cand or list(d), n=n, cutoff=0.6)
+    # adjacent-transposition typos (teh->the) score low in difflib; surface them first
+    for i in range(len(lw) - 1):
+        sw = lw[:i] + lw[i + 1] + lw[i] + lw[i + 2:]
+        if sw != lw and sw in d and sw not in sugg:
+            sugg.insert(0, sw)
+    return sugg[:n]
+
+
+def _add_personal(word):
+    try:
+        os.makedirs(os.path.dirname(PERSONAL_DICT), exist_ok=True)
+        with open(PERSONAL_DICT, "a", encoding="utf-8") as f:
+            f.write(word.lower() + "\n")
+        _load_dict().add(word.lower())
+    except Exception:
+        pass
+
+
+class SpellHighlighter(QSyntaxHighlighter):
+    """Red wavy underline under words the dictionary doesn't know."""
+    def __init__(self, doc):
+        super().__init__(doc)
+        self._fmt = QTextCharFormat()
+        self._fmt.setUnderlineStyle(QTextCharFormat.UnderlineStyle.SpellCheckUnderline)
+        self._fmt.setUnderlineColor(QColor("#e0533d"))
+
+    def highlightBlock(self, text):
+        for mo in re.finditer(r"[A-Za-z][A-Za-z']*", text):
+            w = mo.group()
+            if len(w) > 2 and not _spell_ok(w):
+                self.setFormat(mo.start(), len(w), self._fmt)
+
+
+class SpellTextEdit(QTextEdit):
+    """QTextEdit with live spell-check + a right-click menu of corrections / add-to-dict."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._hl = SpellHighlighter(self.document())
+
+    def contextMenuEvent(self, event):
+        menu = self.createStandardContextMenu()
+        cur = self.cursorForPosition(event.pos())
+        cur.select(QTextCursor.SelectionType.WordUnderCursor)
+        word = cur.selectedText()
+        if word and not _spell_ok(word):
+            first = menu.actions()[0] if menu.actions() else None
+            for s in _spell_suggest(word):
+                a = QAction(s, menu)
+                a.triggered.connect(lambda _=False, w=s, c=QTextCursor(cur): (c.insertText(w)))
+                menu.insertAction(first, a)
+            add = QAction('Add "%s" to dictionary' % word, menu)
+            add.triggered.connect(lambda _=False, w=word: (_add_personal(w), self._hl.rehighlight()))
+            menu.insertSeparator(first)
+            menu.insertAction(first, add)
+            menu.insertSeparator(first)
+        menu.exec(event.globalPos())
+
+
 # ── compose dialog ──────────────────────────────────────────────────────────────
 class Compose(QDialog):
     def __init__(self, agent, account, parent=None, prefill=None):
@@ -192,7 +313,7 @@ class Compose(QDialog):
         hint.setStyleSheet("color:#6f6f82;font-size:11px;")
         fmt.addWidget(hint)
         v.addLayout(fmt)
-        self.body = QTextEdit()
+        self.body = SpellTextEdit()                            # g70: live spell-check + suggestions
         self.body.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         v.addWidget(self.body, 1)
         QShortcut(QKeySequence("Ctrl+B"), self.body).activated.connect(self._md_bold)
