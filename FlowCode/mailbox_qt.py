@@ -907,7 +907,8 @@ def _md_body(text):
     t = re.sub(r'\*\*(\S(?:.*?\S)?)\*\*', r'<b>\1</b>', t)
     t = re.sub(r'(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)', r'<i>\1</i>', t)
     t = re.sub(r'\[([^\]]+)\]\((https?://[^\s)]+)\)', r"<a href='\2' style='color:#79b8ff'>\1</a>", t)
-    t = re.sub(r'(?<![\">=/])(https?://[^\s<]+)', r"<a href='\1' style='color:#79b8ff'>\1</a>", t)
+    # bare URLs — but NOT ones already inside an href (exclude a preceding ' " > = /)
+    t = re.sub(r"(?<![\"'>=/])(https?://[^\s<]+)", r"<a href='\1' style='color:#79b8ff'>\1</a>", t)
     t = re.sub(r'(?m)^(\s*)[-*]\s+', r'\1• ', t)
     return t
 
