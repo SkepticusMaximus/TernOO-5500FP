@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QPushButton, QDialog, QLineEdit, QDialogButtonBox, QSplitter,
                                QMessageBox, QTreeWidget, QTreeWidgetItem, QTableWidget,
                                QTableWidgetItem, QHeaderView, QAbstractItemView, QInputDialog)
-from PySide6.QtGui import QAction, QFont, QBrush, QColor, QIcon
+from PySide6.QtGui import QAction, QFont, QBrush, QColor, QIcon, QShortcut, QKeySequence, QTextCursor
 from PySide6.QtCore import Qt, Signal
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # repo root — portable across machines
@@ -175,9 +175,28 @@ class Compose(QDialog):
         self.subj = QLineEdit()
         self.subj.setPlaceholderText("Subject")
         v.addWidget(self.subj)
+        fmt = QHBoxLayout()                                   # g62: markdown compose helpers
+        fmt.setSpacing(4)
+        for lbl, tip, fn in (("B", "Bold  (Ctrl+B)", self._md_bold),
+                             ("I", "Italic  (Ctrl+I)", self._md_italic),
+                             ("H", "Heading", self._md_heading),
+                             ("•", "Bullet", self._md_bullet),
+                             ("</>", "Code", self._md_code)):
+            b = QPushButton(lbl)
+            b.setToolTip(tip)
+            b.setMaximumWidth(48 if len(lbl) > 1 else 30)
+            b.clicked.connect(fn)
+            fmt.addWidget(b)
+        fmt.addStretch(1)
+        hint = QLabel("markdown — renders in the reading pane")
+        hint.setStyleSheet("color:#6f6f82;font-size:11px;")
+        fmt.addWidget(hint)
+        v.addLayout(fmt)
         self.body = QTextEdit()
         self.body.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         v.addWidget(self.body, 1)
+        QShortcut(QKeySequence("Ctrl+B"), self.body).activated.connect(self._md_bold)
+        QShortcut(QKeySequence("Ctrl+I"), self.body).activated.connect(self._md_italic)
         if prefill:                                           # Reply / re-open a draft pre-fills
             i = self.to.findData(prefill["to"]) if prefill.get("to") else -1
             if i < 0 and prefill.get("to_text"):              # drafts carry the recipient as display text
@@ -212,6 +231,42 @@ class Compose(QDialog):
     def _as_draft(self):
         self._save_draft = True
         self.accept()
+
+    # ── g62: markdown compose helpers ──────────────────────────────────────────────
+    def _wrap_sel(self, mark):
+        """Wrap the selection in `mark`; with no selection, drop the marks and park the
+        cursor between them so you can just start typing."""
+        cur = self.body.textCursor()
+        sel = cur.selectedText()
+        if sel:
+            cur.insertText(mark + sel + mark)
+        else:
+            cur.insertText(mark + mark)
+            for _ in range(len(mark)):
+                cur.movePosition(QTextCursor.MoveOperation.Left)
+            self.body.setTextCursor(cur)
+        self.body.setFocus()
+
+    def _line_prefix(self, prefix):
+        cur = self.body.textCursor()
+        cur.movePosition(QTextCursor.MoveOperation.StartOfLine)
+        cur.insertText(prefix)
+        self.body.setFocus()
+
+    def _md_bold(self):
+        self._wrap_sel("**")
+
+    def _md_italic(self):
+        self._wrap_sel("*")
+
+    def _md_code(self):
+        self._wrap_sel("`")
+
+    def _md_heading(self):
+        self._line_prefix("## ")
+
+    def _md_bullet(self):
+        self._line_prefix("- ")
 
 
 # ── group builder ─────────────────────────────────────────────────────────────────
@@ -554,9 +609,9 @@ class MailApp(QMainWindow):
         self.read.setHtml(
             "<div style='color:#3fd08f;font-size:14px'>%s</div>"
             "<div style='color:#9696a5'>from <b style='color:#e6e6ec'>%s</b> · to %s · %s</div><hr>"
-            "<pre style='color:#e6e6ec;white-space:pre-wrap;font-family:DejaVu Sans Mono'>%s</pre>"
+            "<div style='color:#e6e6ec;white-space:pre-wrap;font-family:DejaVu Sans Mono'>%s</div>"
             % (_esc(str(m.get("subject"))), _esc(str(m.get("from"))), _esc(str(m.get("to"))),
-               _esc(_fmt_time(m.get("time"))), _esc(str(m.get("body")))))
+               _esc(_fmt_time(m.get("time"))), _md_body(str(m.get("body")))))
 
     def _table_dblclick(self, _item):
         if self.folder != "Drafts":
@@ -707,6 +762,26 @@ class MailApp(QMainWindow):
 
 def _esc(s):
     return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _md_body(text):
+    """Render the common markdown the compose helpers emit — **bold**, *italic*, `code`,
+    # headings, [links](url), bare URLs, - bullets — into inline HTML, WITHOUT touching line
+    breaks, alignment, or `---` rules (those stay verbatim; the reading pane keeps
+    white-space:pre-wrap). Deliberately NOT a full markdown parser: it must never mangle a
+    plain-text letter (a `---` separator, an aligned column, a stray `*`), only light up
+    real markup. Proven on real mail shapes (g62)."""
+    t = _esc(text)
+    t = re.sub(r'`([^`\n]+)`', r"<code style='background:#2a2a3a;padding:0 3px;border-radius:3px'>\1</code>", t)
+    t = re.sub(r'(?m)^(\s{0,3})###\s+(.+)$', r"\1<b style='color:#8fd0ff'>\2</b>", t)
+    t = re.sub(r'(?m)^(\s{0,3})##\s+(.+)$', r"\1<b style='color:#8fd0ff;font-size:15px'>\2</b>", t)
+    t = re.sub(r'(?m)^(\s{0,3})#\s+(.+)$', r"\1<b style='color:#8fd0ff;font-size:17px'>\2</b>", t)
+    t = re.sub(r'\*\*(\S(?:.*?\S)?)\*\*', r'<b>\1</b>', t)
+    t = re.sub(r'(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)', r'<i>\1</i>', t)
+    t = re.sub(r'\[([^\]]+)\]\((https?://[^\s)]+)\)', r"<a href='\2' style='color:#79b8ff'>\1</a>", t)
+    t = re.sub(r'(?<![\">=/])(https?://[^\s<]+)', r"<a href='\1' style='color:#79b8ff'>\1</a>", t)
+    t = re.sub(r'(?m)^(\s*)[-*]\s+', r'\1• ', t)
+    return t
 
 
 def _fmt_time(t):
