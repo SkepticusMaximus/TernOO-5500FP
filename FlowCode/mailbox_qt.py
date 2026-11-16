@@ -22,7 +22,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QMessageBox, QTreeWidget, QTreeWidgetItem, QTableWidget,
                                QTableWidgetItem, QHeaderView, QAbstractItemView, QInputDialog)
 from PySide6.QtGui import (QAction, QFont, QBrush, QColor, QIcon, QShortcut, QKeySequence,
-                           QTextCursor, QSyntaxHighlighter, QTextCharFormat)
+                           QTextCursor, QSyntaxHighlighter, QTextCharFormat, QTextBlockFormat,
+                           QTextListFormat)
 from PySide6.QtCore import Qt, Signal
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # repo root — portable across machines
@@ -309,7 +310,7 @@ class Compose(QDialog):
             b.clicked.connect(fn)
             fmt.addWidget(b)
         fmt.addStretch(1)
-        hint = QLabel("markdown — renders in the reading pane")
+        hint = QLabel("live formatting · sent as markdown")
         hint.setStyleSheet("color:#6f6f82;font-size:11px;")
         fmt.addWidget(hint)
         v.addLayout(fmt)
@@ -327,7 +328,7 @@ class Compose(QDialog):
             if prefill.get("subject"):
                 self.subj.setText(prefill["subject"])
             if prefill.get("body"):
-                self.body.setPlainText(prefill["body"])
+                self.body.setMarkdown(prefill["body"])        # show replies/drafts rendered, not raw
         note = QLabel("Send goes live through the TernID agent — real, sealed, delivered. "
                       "Save draft keeps it local, untransmitted.")
         note.setStyleSheet("color:#e8c890;")
@@ -353,41 +354,47 @@ class Compose(QDialog):
         self._save_draft = True
         self.accept()
 
-    # ── g62: markdown compose helpers ──────────────────────────────────────────────
-    def _wrap_sel(self, mark):
-        """Wrap the selection in `mark`; with no selection, drop the marks and park the
-        cursor between them so you can just start typing."""
-        cur = self.body.textCursor()
-        sel = cur.selectedText()
-        if sel:
-            cur.insertText(mark + sel + mark)
-        else:
-            cur.insertText(mark + mark)
-            for _ in range(len(mark)):
-                cur.movePosition(QTextCursor.MoveOperation.Left)
-            self.body.setTextCursor(cur)
-        self.body.setFocus()
-
-    def _line_prefix(self, prefix):
-        cur = self.body.textCursor()
-        cur.movePosition(QTextCursor.MoveOperation.StartOfLine)
-        cur.insertText(prefix)
-        self.body.setFocus()
-
+    # ── g62 WYSIWYG: real rich-text formatting; the wire still gets clean markdown ──────
+    # Compose shows true bold/italic/headings (toggled on the selection, or on what you type
+    # next). On Send/Save the body is exported via document().toMarkdown(), so **bold**, *italic*,
+    # `code`, ## headings and - bullets all come out as plain markdown the reader renders back.
     def _md_bold(self):
-        self._wrap_sel("**")
+        normal = QFont.Weight.Normal
+        self.body.setFontWeight(normal if self.body.fontWeight() > normal else QFont.Weight.Bold)
+        self.body.setFocus()
 
     def _md_italic(self):
-        self._wrap_sel("*")
+        self.body.setFontItalic(not self.body.fontItalic())
+        self.body.setFocus()
 
     def _md_code(self):
-        self._wrap_sel("`")
+        cur = self.body.textCursor()
+        on = cur.charFormat().fontFixedPitch()
+        f = QTextCharFormat()
+        f.setFontFixedPitch(not on)
+        f.setFontFamilies(["DejaVu Sans Mono"] if not on else [self.body.font().family()])
+        if cur.hasSelection():
+            cur.mergeCharFormat(f)
+        self.body.mergeCurrentCharFormat(f)
+        self.body.setFocus()
 
     def _md_heading(self):
-        self._line_prefix("## ")
+        cur = self.body.textCursor()
+        is_head = cur.blockFormat().headingLevel() > 0
+        bf = QTextBlockFormat()
+        bf.setHeadingLevel(0 if is_head else 2)                # toMarkdown turns this into "## "
+        cur.mergeBlockFormat(bf)
+        sel = QTextCursor(cur)
+        sel.select(QTextCursor.SelectionType.BlockUnderCursor)   # make it LOOK like a heading too
+        cf = QTextCharFormat()
+        cf.setFontWeight(QFont.Weight.Normal if is_head else QFont.Weight.Bold)
+        cf.setProperty(QTextCharFormat.Property.FontSizeAdjustment, 0 if is_head else 2)
+        sel.mergeCharFormat(cf)
+        self.body.setFocus()
 
     def _md_bullet(self):
-        self._line_prefix("- ")
+        self.body.textCursor().createList(QTextListFormat.Style.ListDisc)
+        self.body.setFocus()
 
 
 # ── group builder ─────────────────────────────────────────────────────────────────
@@ -834,7 +841,7 @@ class MailApp(QMainWindow):
         to_data = d.to.currentData()
         to_text = d.to.currentText()
         subject = d.subj.text() or "(no subject)"
-        body = d.body.toPlainText()
+        body = d.body.document().toMarkdown().strip()         # WYSIWYG -> clean markdown on the wire
         if getattr(d, "_save_draft", False):
             self._write_draft(to_text, subject, body)
             self._select_box("Drafts")
