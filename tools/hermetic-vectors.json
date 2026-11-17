@@ -1,0 +1,114 @@
+{
+  "spec": "CF5 spec/hermetic-mail.md \u00a710.11 \u2014 shared interop vectors",
+  "sig_context": "ternid-mail-v1",
+  "min_pad": 2048,
+  "stanza_multiple": 8,
+  "note": "Pinned seat material + self-signed cards + one message vector. Both the Python and Rust keyholders must reproduce every value here, and must cross-open live age envelopes sealed by the other.",
+  "seats": [
+    {
+      "display": "Stevo",
+      "ed_seed_hex": "58bcd5d4e9999327576afb5ebe5b466c2f311fd3e75ea3b476ddad4cbb2f6256",
+      "age_secret": "AGE-SECRET-KEY-12XEECSMGPYZPUCSAE765ML07L8KX2AAKSEA7ST4E7M9VR4FQD84SU0VC38",
+      "aid": "aid_8a6f38d6b826ab9a88f4241b",
+      "card": {
+        "display": "Stevo",
+        "aid": "aid_8a6f38d6b826ab9a88f4241b",
+        "enc": [
+          "age1e3yj0emmmzvgwu2x0633jxr9xfd3mfcp00kru4vgfs3xprhltd3s70f7ys"
+        ],
+        "sign": "68c0cebef4314ed17f0410aa1878b9e763b05023058fe2b56bb15b5a9bbba90a",
+        "sig": "d434760bb601cac2e549c03df6ded7b9a17e02e44fe5bf0460b77c2994f78897b36800a07aa4c252c78275e78cba7964b4b78628fd3a67d2cc364ba07f26770d"
+      }
+    },
+    {
+      "display": "CC",
+      "ed_seed_hex": "81e99bdf1eea66db185a42e132a52c2103619f02951bc8dafb5c883e7111a6a6",
+      "age_secret": "AGE-SECRET-KEY-1UPY5TVXPH4MF2ZJ27GXDAFFR4T6D0309704FTC0R6L8U03YK4ZZQPCTW63",
+      "aid": "aid_2fb87234cf4bcda99ab8eb9a",
+      "card": {
+        "display": "CC",
+        "aid": "aid_2fb87234cf4bcda99ab8eb9a",
+        "enc": [
+          "age1hrhs3z8hz9k7atr9lwcw8zc5q7c0fulfx0tngyak50skenp8rguqgcqjp8"
+        ],
+        "sign": "c8d6007bae515ef013c1ad4a2dba3809e1f685de49e9c65e6ec584ef603d26ec",
+        "sig": "ffc88a436008548811619f1b22c1bf4b77b93f888a39903cd0e0489a7ea640c315f66e99c09acfacf2975171775a6585eedc0c0458a86537800c057e6e67fa0f"
+      }
+    },
+    {
+      "display": "CCC",
+      "ed_seed_hex": "cf072722be6911e867e0723f23dac70082c4172d958e3724dd845e3064f9a50d",
+      "age_secret": "AGE-SECRET-KEY-1C88EDE899NZXCWYDKJKF6JQSE6PJE246XFPCJLWFGRDS30N2VWGSU6YUVV",
+      "aid": "aid_7b146864525656ea971f20eb",
+      "card": {
+        "display": "CCC",
+        "aid": "aid_7b146864525656ea971f20eb",
+        "enc": [
+          "age1ea03hlkw7273fass48dtpdjl88jv5u878kle8956t88ux8rrf3xqacsvxj"
+        ],
+        "sign": "dc198ee09eccddb3873096ad29f1ebf4e3e607395ed177f6800ac571c75b6304",
+        "sig": "00586a0b791da45ff56e6fc6fe0eebcabdb85afe2517399009324ff38cdf320d7791dfbf92b75c2b9091020f64dafd4d292cf383698c51840d864c0a87ce5101"
+      }
+    },
+    {
+      "display": "CF5",
+      "ed_seed_hex": "29ce74f8da660c9fe82cee292c152efb0cdc511829c5f3b0f0107279de294a78",
+      "age_secret": "AGE-SECRET-KEY-1698DY90ADTN9DXXGLEWWF7WT5F20652KH8G7TAMPQ9SDCYNXVWVQZADZV3",
+      "aid": "aid_75bc4ec81664c265b0e18821",
+      "card": {
+        "display": "CF5",
+        "aid": "aid_75bc4ec81664c265b0e18821",
+        "enc": [
+          "age1n90cj0yp42t2djv5etgxhmlgqsnt0mk8kcxmj5r5cclrz96jeaxqrts54a"
+        ],
+        "sign": "0cf99992e5610b210c9cab7a01a93087762ec7919ee14fbe93d3e6821b2a4b00",
+        "sig": "4c25b1cb2dfbbc6b878d04b28e68148b60e29fc9e4d74da928d979cfd81cad353796d4f955713d63b8497f710b7614184b0da4811c5798c45dbff2375341b902"
+      }
+    },
+    {
+      "display": "CAI",
+      "ed_seed_hex": "72c2bc2b0247fad6c1efc6fab670efec4c6ff69109404c057a98ed9b701febb6",
+      "age_secret": "AGE-SECRET-KEY-1ZVYZZPN583MU0UF33KA59XX37CZAP4RHTCQ9MVQXXK79FDAQ6ERSTX35M8",
+      "aid": "aid_9c33e5d9d43235fa6eabeb61",
+      "card": {
+        "display": "CAI",
+        "aid": "aid_9c33e5d9d43235fa6eabeb61",
+        "enc": [
+          "age13qrp7hwt2r0ktgkjrzt2nryn0z3dpaxw2kvfx6jwvywf6a59vgjsgnjxp6"
+        ],
+        "sign": "04e57b82b1eb11f3c702c55e62dc2ad7459ca46feecc9c5d53160cbd0172f069",
+        "sig": "a199b70ff8453548c7f69078247d24cb163340ec5f0ecdd323da3ba89c98357b716eb2091499d4175c494486872be0f8224d0f0ce98d61d49fbf6840de7f520b"
+      }
+    },
+    {
+      "display": "Professor",
+      "ed_seed_hex": "f7650f6f4e3bb458ac9da9c0925b96925da43188846d008202638e0a8af96e36",
+      "age_secret": "AGE-SECRET-KEY-1TY7PTR3DTTU3RWLPZP4XWJ23SF3YG0ZMNTAZ7V2GS53G82V7925QF4Q6XZ",
+      "aid": "aid_9525b6811ba9dc12fad69e59",
+      "card": {
+        "display": "Professor",
+        "aid": "aid_9525b6811ba9dc12fad69e59",
+        "enc": [
+          "age1f3s9w8cyrq0lk9newnv20s8djrmhvvxv2r38mawhkc2r0nyasgnsz3r653"
+        ],
+        "sign": "854e400cd362a88d3f322d3661e6f488a4ffd7975833e88baa9d9ec31ad9b2d8",
+        "sig": "3873b5bcd7ec1a598a8e35c2eefdd3af8a90e743652ddaa6f0aa7254a439dde705909723c4b74a24b1c31671e270bab0c64b30f44dd6453e4bb038b664cb7806"
+      }
+    }
+  ],
+  "message_vector": {
+    "from": "Stevo",
+    "to": [
+      "CC",
+      "CCC"
+    ],
+    "subject": "crew \u2014 d\u00e9j\u00e0 vu",
+    "body": "status: green \u2713 \u2014 ship it",
+    "time": 1763000000,
+    "id": "cafef00dbaadf00dcafef00d",
+    "in_reply_to": null,
+    "canon_hex": "7b22626f6479223a227374617475733a20677265656e205c7532373133205c75323031342073686970206974222c2266726f6d223a226169645f386136663338643662383236616239613838663432343162222c226964223a22636166656630306462616164663030646361666566303064222c22696e5f7265706c795f746f223a6e756c6c2c227375626a656374223a2263726577205c753230313420645c75303065396a5c7530306530207675222c2274696d65223a313736333030303030302c22746f223a5b226169645f326662383732333463663462636461393961623865623961222c226169645f376231343638363435323536353665613937316632306562225d2c2276223a317d",
+    "sha256_canon": "d4046de3ddc796c0fe3bdc0f372f793bf60b56ee0208d96645a0b344e8c932dc",
+    "sig_hex": "0846ecb7ac940ca0546d37d4dc77c448515b9dbc92f921b9e6b70f4bb99fa7c8715e2148c2046b49ae2aa4946b7f07633482e71727e720d1bb4e661ba6e3e20f"
+  }
+}
