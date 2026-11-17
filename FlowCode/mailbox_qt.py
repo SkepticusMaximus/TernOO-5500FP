@@ -206,6 +206,13 @@ def _spell_ok(word):
         return True
     if lw.endswith("'s") and lw[:-2] in d:                      # possessive
         return True
+    # inflection leniency: the hunspell .dic ships base words, not every inflected form, so
+    # "prioritising"/"organised"/"colours" would wrongly squiggle. Accept if a known base remains.
+    for suf, repl in (("ings", "e"), ("ing", "e"), ("ing", ""), ("ed", "e"), ("ed", ""),
+                      ("es", ""), ("s", ""), ("ly", ""), ("ers", ""), ("er", ""), ("est", ""),
+                      ("ations", "e"), ("ation", "e")):
+        if lw.endswith(suf) and len(lw) - len(suf) >= 3 and (lw[:-len(suf)] + repl) in d:
+            return True
     return False
 
 
@@ -549,16 +556,37 @@ class Compose(QDialog):
 
     def _md_heading(self):
         cur = self.body.textCursor()
-        is_head = cur.blockFormat().headingLevel() > 0
-        bf = QTextBlockFormat()
-        bf.setHeadingLevel(0 if is_head else 2)                # toMarkdown turns this into "## "
-        cur.mergeBlockFormat(bf)
-        sel = QTextCursor(cur)
-        sel.select(QTextCursor.SelectionType.BlockUnderCursor)   # make it LOOK like a heading too
-        cf = QTextCharFormat()
-        cf.setFontWeight(QFont.Weight.Normal if is_head else QFont.Weight.Bold)
-        cf.setProperty(QTextCharFormat.Property.FontSizeAdjustment, 0 if is_head else 2)
-        sel.mergeCharFormat(cf)
+        if cur.hasSelection():
+            # Only the SELECTED line becomes a heading — split it out of its block so it
+            # doesn't heading the whole body (the captain's finesse, 17-11).
+            txt = cur.selectedText().replace(" ", " ").replace(" ", " ").strip()
+            if not txt:
+                self.body.setFocus()
+                return
+            cur.removeSelectedText()
+            if cur.positionInBlock() != 0:                     # start the heading on its own line
+                cur.insertBlock()
+            hb = QTextBlockFormat()
+            hb.setHeadingLevel(2)                              # toMarkdown -> "## "
+            cur.setBlockFormat(hb)
+            hf = QTextCharFormat()
+            hf.setFontWeight(QFont.Weight.Bold)
+            hf.setProperty(QTextCharFormat.Property.FontSizeAdjustment, 2)
+            cur.insertText(txt, hf)
+            cur.insertBlock(QTextBlockFormat(), QTextCharFormat())   # normal block after, so typing continues plain
+            self.body.setTextCursor(cur)
+        else:
+            # No selection: toggle heading on the current line/block.
+            is_head = cur.blockFormat().headingLevel() > 0
+            hb = QTextBlockFormat()
+            hb.setHeadingLevel(0 if is_head else 2)
+            cur.mergeBlockFormat(hb)
+            line = QTextCursor(cur)
+            line.select(QTextCursor.SelectionType.BlockUnderCursor)
+            hf = QTextCharFormat()
+            hf.setFontWeight(QFont.Weight.Normal if is_head else QFont.Weight.Bold)
+            hf.setProperty(QTextCharFormat.Property.FontSizeAdjustment, 0 if is_head else 2)
+            line.mergeCharFormat(hf)
         self.body.setFocus()
 
     def _md_bullet(self):
