@@ -233,41 +233,76 @@ def _add_personal(word):
         pass
 
 
-# ── autocomplete ranking: common words first (freq-ordered), then dictionary shortest-first ──
-_COMMON = None
-_DICT_SORTED = None
+# ── autocomplete: frequency-ranked PIM dictionary + user pins + whole-string fuzzy ──────────
+# Dictionary built by tools/build_pim_dict.py (Norvig counts ∩ local clean dict, PIM-boosted,
+# log-normalized popularity). Ranking blends popularity with similarity (the captain's spec).
+_FREQ = None                                                   # {word: popularity 0..1}
+_FREQ_SORTED = None                                            # sorted keys for prefix bisect
+PINS_FILE = os.path.expanduser("~/.config/ternoo/mail-pins.txt")
+_PINS = None
 
 
-def _common_words():
-    """A hand-ranked list of everyday words (common_words.txt), in rough frequency order —
-    so 'blu' offers 'blue' before the dictionary's 'blubber'. No frequency data ships on the
-    box, so this is the stand-in; grow it over time."""
-    global _COMMON
-    if _COMMON is None:
-        out, seen = [], set()
+def _freq():
+    global _FREQ
+    if _FREQ is None:
+        _FREQ = {}
         try:
-            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "common_words.txt")
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pim_words.tsv")
             for line in open(path, encoding="utf-8"):
-                w = line.strip().lower()
-                if w and w not in seen:
-                    seen.add(w)
-                    out.append(w)
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) >= 2:
+                    _FREQ[parts[0]] = float(parts[1])
         except Exception:
             pass
-        _COMMON = out
-    return _COMMON
+        if not _FREQ:                                          # fallback: hand-seeded common_words.txt
+            try:
+                p2 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "common_words.txt")
+                seed = [l.strip().lower() for l in open(p2, encoding="utf-8") if l.strip()]
+                n = len(seed) or 1
+                _FREQ = {w: 1 - i / n for i, w in enumerate(seed)}
+            except Exception:
+                pass
+    return _FREQ
 
 
-def _dict_sorted():
-    global _DICT_SORTED
-    if _DICT_SORTED is None:
-        _DICT_SORTED = sorted(_load_dict())
-    return _DICT_SORTED
+def _freq_sorted():
+    global _FREQ_SORTED
+    if _FREQ_SORTED is None:
+        _FREQ_SORTED = sorted(_freq())
+    return _FREQ_SORTED
+
+
+def _pins():
+    """User-pinned words (right-click → Pin to predictions): always offered, top precedence."""
+    global _PINS
+    if _PINS is None:
+        try:
+            _PINS = [l.strip() for l in open(PINS_FILE, encoding="utf-8") if l.strip()]
+        except Exception:
+            _PINS = []
+    return _PINS
+
+
+def _add_pin(word):
+    """Pin a word to the TOP of predictions and whitelist it (offered + never squiggled)."""
+    w = word.strip()
+    if not w:
+        return
+    pins = _pins()
+    if w.lower() not in [p.lower() for p in pins]:
+        pins.insert(0, w)                                      # newest pin = highest precedence
+        try:
+            os.makedirs(os.path.dirname(PINS_FILE), exist_ok=True)
+            with open(PINS_FILE, "w", encoding="utf-8") as f:
+                f.write("\n".join(pins) + "\n")
+        except Exception:
+            pass
+    _add_personal(w)                                           # whitelist for the spell-checker too
 
 
 def _rank_completions(prefix, names, limit=8):
-    """Ranked autocomplete for `prefix`: @-mentions/contacts, then common words (frequency
-    order), then the dictionary shortest-first. `names` already includes @-prefixed forms."""
+    """Ranked predictions: user pins → contacts/@-mentions → frequency-ranked words (by
+    popularity) → whole-string similarity fallback for typo'd words (blend 0.7·sim + 0.3·pop)."""
     p = prefix.lower()
     out, seen = [], set()
 
@@ -282,21 +317,25 @@ def _rank_completions(prefix, names, limit=8):
             if n.lower().startswith(p):
                 add(n)
         return out[:limit]
-    for n in names:                                            # bare contact names
+    for w in _pins():                                          # 1. user pins — highest precedence
+        if w.lower().startswith(p):
+            add(w)
+    for n in names:                                            # 2. contacts
         if not n.startswith("@") and n.lower().startswith(p):
             add(n)
-    for w in _common_words():                                  # everyday words, frequency order
-        if w.startswith(p):
-            add(w)
-    ds = _dict_sorted()                                        # dictionary, shortest first
-    lo = bisect.bisect_left(ds, p)
-    hi = bisect.bisect_left(ds, p + "￿")
-    for w in sorted(ds[lo:hi], key=len)[:limit * 3]:
+    freq = _freq()                                             # 3. frequency-ranked, popularity desc
+    fs = _freq_sorted()
+    lo = bisect.bisect_left(fs, p)
+    hi = bisect.bisect_left(fs, p + "￿")
+    for w in sorted(fs[lo:hi], key=lambda x: -freq.get(x, 0)):
         add(w)
-    if len(out) < limit and len(p) >= 3:                       # captain's idea: whole-string SIMILARITY,
-        import difflib                                         # so a typo'd word still predicts (not just
-        pool = _common_words() + [n for n in names if not n.startswith("@")]   # left-to-right prefix)
-        for w in difflib.get_close_matches(p, pool, n=limit - len(out), cutoff=0.66):
+    if len(out) < limit and len(p) >= 3:                       # 4. whole-string similarity (typos)
+        import difflib
+        pool = list(freq.keys())[:8000] + [n for n in names if not n.startswith("@")]
+        cand = difflib.get_close_matches(p, pool, n=limit * 2, cutoff=0.6)
+        cand.sort(key=lambda w: -(difflib.SequenceMatcher(None, p, w).ratio() * 0.7
+                                  + freq.get(w.lower(), 0) * 0.3))
+        for w in cand:
             add(w)
     return out[:limit]
 
@@ -381,16 +420,19 @@ class SpellTextEdit(QTextEdit):
         cur = self.cursorForPosition(event.pos())
         cur.select(QTextCursor.SelectionType.WordUnderCursor)
         word = cur.selectedText()
-        if word and not _spell_ok(word):
+        if word:
             first = menu.actions()[0] if menu.actions() else None
-            for s in _spell_suggest(word):
-                a = QAction(s, menu)
-                a.triggered.connect(lambda _=False, w=s, c=QTextCursor(cur): (c.insertText(w)))
-                menu.insertAction(first, a)
-            add = QAction('Add "%s" to dictionary' % word, menu)
-            add.triggered.connect(lambda _=False, w=word: (_add_personal(w), self._hl.rehighlight()))
-            menu.insertSeparator(first)
-            menu.insertAction(first, add)
+            if not _spell_ok(word):                            # corrections for a misspelled word
+                for s in _spell_suggest(word):
+                    a = QAction(s, menu)
+                    a.triggered.connect(lambda _=False, w=s, c=QTextCursor(cur): c.insertText(w))
+                    menu.insertAction(first, a)
+                addw = QAction('Add "%s" to dictionary' % word, menu)
+                addw.triggered.connect(lambda _=False, w=word: (_add_personal(w), self._hl.rehighlight()))
+                menu.insertAction(first, addw)
+            pin = QAction('Pin "%s" to predictions' % word, menu)   # user-prioritise, any word
+            pin.triggered.connect(lambda _=False, w=word: (_add_pin(w), self._hl.rehighlight()))
+            menu.insertAction(first, pin)
             menu.insertSeparator(first)
         menu.exec(event.globalPos())
 
