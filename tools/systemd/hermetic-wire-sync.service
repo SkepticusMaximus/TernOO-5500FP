@@ -1,0 +1,8 @@
+[Unit]
+Description=Hermetic mail wire sync (CF5 spec §7) — moves SEALED envelopes between Huey's spool and the private Tmail-POBOX wire. Holds no keys, reads nothing. Replaces the plaintext mail bridge.
+
+[Service]
+Type=oneshot
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/stevo/.venvs/p2pcp/bin/python3 %h/dev/SkepticusMaximus/TernOO-5500FP/tools/hermetic_syncd.py
+SuccessExitStatus=0 1

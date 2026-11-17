@@ -14,6 +14,7 @@ Simplification vs the full spec: the AID here is the digest of the signing publi
 """
 import hashlib
 import json
+import os
 import secrets
 import time
 
@@ -47,6 +48,31 @@ class Keyholder:
         self.enc_priv = enc_priv or x25519.Identity.generate()
         self.sign_pub_hex = _raw_pub(self.sign_priv).hex()
         self.aid = _aid(self.sign_pub_hex)
+
+    def save(self, path, passphrase=None):
+        """Persist this seat's PRIVATE keys to its own file, mode 0600 (§5). The captain's key
+        is passphrase-wrapped (D3) via age's passphrase mode; cloud/other seats may store plain
+        in a 0700 dir. The key material never goes near the wire."""
+        blob = json.dumps({"display": self.display,
+                           "sign": self.sign_priv.private_bytes_raw().hex(),
+                           "enc": str(self.enc_priv)}).encode()
+        if passphrase:
+            import pyrage.passphrase
+            blob = pyrage.passphrase.encrypt(blob, passphrase)
+        os.makedirs(os.path.dirname(os.path.abspath(path)), mode=0o700, exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(blob)
+
+    @classmethod
+    def load(cls, path, passphrase=None):
+        blob = open(path, "rb").read()
+        if passphrase:
+            import pyrage.passphrase
+            blob = pyrage.passphrase.decrypt(blob, passphrase)
+        d = json.loads(blob)
+        return cls(d["display"], Ed25519PrivateKey.from_private_bytes(bytes.fromhex(d["sign"])),
+                   x25519.Identity.from_str(d["enc"]))
 
     def card(self):
         """The public key card (§5): what goes in the wire directory, signed by this seat."""

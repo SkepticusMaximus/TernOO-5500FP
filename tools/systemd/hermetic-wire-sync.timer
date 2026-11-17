@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the hermetic wire sync every 3 min. NOT ENABLED until cut-over (key ceremony + Tmail wired); the plaintext bridge stays disabled.
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=3min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
