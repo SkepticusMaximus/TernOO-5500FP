@@ -821,12 +821,31 @@ class MailApp(QMainWindow):
 
         def work():
             try:
-                subprocess.run(["python3", os.path.join(REPO, "tools", "mail_sync.py")],
-                               capture_output=True, timeout=120)
+                if hasattr(self.agent, "wire"):           # hermetic: push our sealed pool, pull others'
+                    self.agent.wire.sync(push=True)       # in-process; NO plaintext bridge
+                else:
+                    subprocess.run(["python3", os.path.join(REPO, "tools", "mail_sync.py")],
+                                   capture_output=True, timeout=120)
             except Exception:
                 pass
             self._synced.emit()
         threading.Thread(target=work, daemon=True).start()
+
+    def _names_for(self, handles, contacts):
+        by = {c["handle"]: c["display_name"] for c in contacts}
+        return [by.get(h, str(h)) for h in handles]
+
+    def _confirm_seal(self, names):
+        """Hermetic safety: before sealing, show EXACTLY who will be able to open this letter —
+        because once sealed, no one else ever can, by design."""
+        who = ", ".join(names) if names else "(no one)"
+        r = QMessageBox.question(
+            self, "Seal this letter?",
+            "This letter will be hermetically sealed.\n\nOnly these can ever open it:\n  %s\n\n"
+            "No one else — not the wire, not another seat, not even the captain — can read it.\n\nSend?"
+            % who,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+        return r == QMessageBox.StandardButton.Yes
 
     def _menus(self):
         mb = self.menuBar()
@@ -1046,20 +1065,27 @@ class MailApp(QMainWindow):
         if isinstance(to_data, str) and to_data.startswith("list:"):
             lname = to_data[5:]
             targets = resolve_list(lname, d.contacts)
+            subj_out = "[%s] %s" % (lname, subject)
             if not targets:
                 QMessageBox.warning(self, "Empty list", "No reachable members on the '%s' list." % lname)
                 return
-            for h in targets:
-                self.agent.send(from_account=self.account, to_contact=h,
-                                subject="[%s] %s" % (lname, subject), body=body)
-            QMessageBox.information(self, "Sent to list",
-                                    "Delivered to %d on the %s list." % (len(targets), lname))
         else:
-            res = self.agent.send(from_account=self.account, to_contact=to_data,
-                                  subject=subject, body=body)
-            fn = res["message_id"] if isinstance(res, dict) else res
-            QMessageBox.information(self, "Sent",
-                                    "Delivered through the TernID agent.\nmessage id: %s" % fn)
+            targets, subj_out = [to_data], subject
+
+        if hasattr(self.agent, "send_group"):             # hermetic: ONE seal to all, after confirming
+            names = self._names_for(targets, d.contacts)
+            if not self._confirm_seal(names):
+                return
+            res = self.agent.send_group(from_account=self.account, to_contacts=targets,
+                                        subject=subj_out, body=body)
+            sealed = ", ".join(res.get("recipients", names)) if isinstance(res, dict) else ", ".join(names)
+            QMessageBox.information(self, "Sealed & sent",
+                                    "Sealed so ONLY these can ever open it:\n%s" % sealed)
+        else:                                             # stub / legacy agent: per-recipient
+            for h in targets:
+                self.agent.send(from_account=self.account, to_contact=h, subject=subj_out, body=body)
+            QMessageBox.information(self, "Sent", "Delivered to %d recipient%s."
+                                    % (len(targets), "" if len(targets) == 1 else "s"))
         self._sync_async()       # push the just-sent mail to the wire now, then reload
 
     def _write_draft(self, to_text, subject, body):
@@ -1169,9 +1195,43 @@ DARK = ("QWidget{background:#1a1f2b;color:#e6e6ec;}"
         "QMenuBar,QMenu{background:#1e2431;} QMenu::item:selected{background:#2e466e;}")
 
 
+HERMETIC_KEY = os.environ.get("TERNOO_KEY", os.path.expanduser("~/.config/ternoo/keys/seat.key"))
+HERMETIC_WIRE = os.environ.get("TERNOO_WIRE", os.path.expanduser("~/.local/state/ternoo/wire"))
+
+
+def _hermetic_agent():
+    """Load THIS seat's keyholder (passphrase-unlocked if wrapped) and point Tmail at the sealed
+    wire. The backend seals every outgoing letter and opens only what this key can — there is no
+    admin, no shared keystore, no plaintext. This is the real mail system (CF5 spec §11)."""
+    sys.path.insert(0, os.path.join(REPO, "tools"))
+    from keyholder import Keyholder
+    from hermetic_mailbox import HermeticMailbox
+    try:
+        kh = Keyholder.load(HERMETIC_KEY)                 # unwrapped key (cloud/other seats)
+    except Exception:
+        pw, ok = QInputDialog.getText(None, "Unlock mailbox",
+                                      "Passphrase for your hermetic key:",
+                                      QLineEdit.EchoMode.Password)
+        if not ok:
+            sys.exit(0)
+        kh = Keyholder.load(HERMETIC_KEY, passphrase=pw)  # captain's passphrase-wrapped key (D3)
+    return HermeticMailbox(kh, HERMETIC_WIRE)
+
+
 def make_agent():
-    """Pick the backend: the real TernID agent over IPC if TERNID_AGENT_SOCK is set,
-    else the inert in-process git-POBOX stub. Same §B methods either way."""
+    """Backend selection, most-secure first:
+      1. HERMETIC — this seat's sealed mailbox, when its key file exists (the real system).
+      2. the old TernID agent over IPC (TERNID_AGENT_SOCK) — legacy, being retired.
+      3. the inert in-process git-POBOX stub — demo only."""
+    if os.path.exists(HERMETIC_KEY):
+        try:
+            return _hermetic_agent()
+        except SystemExit:
+            raise
+        except Exception as e:
+            QMessageBox.critical(None, "Mailbox locked",
+                                 "Couldn't unlock the hermetic mailbox:\n%s" % e)
+            sys.exit(1)
     sock = os.environ.get("TERNID_AGENT_SOCK")
     if sock:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

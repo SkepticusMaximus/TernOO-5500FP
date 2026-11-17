@@ -11,12 +11,21 @@ absent here.
   send      = seal to the recipient's card -> drop in the spool (daemon pushes) or the pool
   inbox     = open every pool envelope addressed to this seat (self-copies = Sent)
 """
+import datetime
 import os
 import secrets
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hermetic_wire import Wire
+
+
+def _stamp(t):
+    """Epoch int -> the ship's stamp. 0/blank -> '' (legacy mail with an unparseable date)."""
+    try:
+        return datetime.datetime.fromtimestamp(int(t)).strftime("%H:%M %d/%m/%Y") if t else ""
+    except (ValueError, OSError, OverflowError):
+        return ""
 
 
 class HermeticMailbox:
@@ -35,9 +44,12 @@ class HermeticMailbox:
     def list_accounts(self):
         return [self.kh.aid]
 
+    INFRA = {"migration"}                                     # cards present only so ported sigs verify
+
     def contacts(self, account=None):
         return [{"display_name": c["display"], "handle": c["aid"]}
-                for c in self.wire.directory().values() if c["aid"] != self.kh.aid]
+                for c in self.wire.directory().values()
+                if c["aid"] != self.kh.aid and c["display"] not in self.INFRA]
 
     def publish_card(self):
         """Put this seat's signed card on the wire (spool if daemon-backed, else straight in)."""
@@ -48,29 +60,72 @@ class HermeticMailbox:
 
     # ── send / receive ────────────────────────────────────────────────────────────────
     def send(self, from_account=None, to_contact=None, subject="", body=""):
+        return self.send_group(from_account, [to_contact], subject, body)
+
+    def send_group(self, from_account=None, to_contacts=(), subject="", body=""):
+        """Seal ONE envelope to every recipient at once (+ a self-copy = Sent). The padding hides
+        the count, so a crew letter and a one-to-one letter are indistinguishable on the wire, and
+        the sender keeps a single Sent record instead of one per head. Returns the id + who it
+        was sealed to (display names) so the GUI can confirm exactly who will be able to open it."""
         cards = self.wire.directory()
-        rcpt = cards.get(to_contact)
-        if not rcpt:
-            raise ValueError("no key card on the wire for recipient %r" % to_contact)
-        env, mid = self.kh.seal([rcpt], subject, body)
+        rcpts, names = [], []
+        for h in to_contacts:
+            c = cards.get(h)
+            if not c:
+                raise ValueError("no key card on the wire for recipient %r" % h)
+            rcpts.append(c)
+            names.append(c["display"])
+        if not rcpts:
+            raise ValueError("no recipients")
+        env, mid = self.kh.seal(rcpts, subject, body)
         dest = os.path.join(self.spool, "pool") if self.spool else self.wire.pool
         open(os.path.join(dest, secrets.token_hex(12) + ".age"), "wb").write(env)
-        return {"message_id": mid}
+        return {"message_id": mid, "recipients": names}
 
     def inbox(self, account=None):
         """Every letter this seat can open, as Tmail-shaped dicts. Sender/recipients are mapped
-        back to display names via the directory; nothing unreadable is ever surfaced."""
+        back to display names via the directory; nothing unreadable is ever surfaced.
+
+        Ported history (legacy=True) renders with its ORIGINAL sender/recipients/date — the
+        migration key sealed it, but the letter is shown as the real correspondence it was."""
         who = {c["aid"]: c["display"] for c in self.wire.directory().values()}
         who[self.kh.aid] = self.kh.display
         seen, out = set(), []
         for m in self.wire.fetch(self.kh, seen):
+            if m.get("legacy"):
+                frm, to = m.get("orig_from", "?"), m.get("orig_to", "?")
+                stamp, sent = _stamp(m.get("time_posted")), (m.get("orig_from", "") == self.kh.display)
+            else:
+                frm = who.get(m["from"], m["from"])
+                to = ", ".join(who.get(a, a) for a in m["to"])
+                stamp, sent = _stamp(m.get("time")), m["from"] == self.kh.aid
             out.append({
-                "id": m["id"],
-                "from": who.get(m["from"], m["from"]),
-                "to": ", ".join(who.get(a, a) for a in m["to"]),
-                "subject": m["subject"], "body": m["body"], "time": m["time"],
-                "unread": False, "sent": m["from"] == self.kh.aid})
+                "id": m["id"], "from": frm, "to": to,
+                "subject": m["subject"], "body": m["body"], "time": stamp,
+                "unread": False, "sent": sent, "legacy": bool(m.get("legacy"))})
         return out
+
+    # ── facade no-ops / hermetic behaviours the GUI also calls ─────────────────────────
+    def mark_read(self, account=None, message_id=None):
+        return {"ok": True}                                   # read-state is local, not on the wire
+
+    def create_account(self, display_name=None):
+        return {"account_handle": self.kh.aid}                # one keyholder == one seat; no minting here
+
+    def add_contact(self, account=None, invite=None):
+        return {"contact_handle": None}                       # contacts come from the wire directory (cards)
+
+    def create_invite(self, account=None, for_display_name=None):
+        return {"invite": "share your published card from the wire directory"}
+
+    def grants_on(self, object_handle=None):
+        return []                                             # no admin, no grants — that's the point
+
+    def grant(self, account=None, object_handle=None, holder_contact=None, rights=None, caveats=None):
+        return {"grant_handle": None}
+
+    def revoke(self, account=None, grant_handle=None):
+        return {"ok": True}
 
 
 def _selftest():

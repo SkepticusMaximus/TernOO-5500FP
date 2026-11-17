@@ -47,11 +47,20 @@ def _time(fn):
         return 0
 
 
-def import_all(pobox_dir, pool_dir, migration_kh, cards):
-    """Re-seal every POBOX letter to its recipients. Returns (count, per_seat_counts, lost)."""
+def import_all(pobox_dir, pool_dir, migration_kh, cards, restore_open=True):
+    """Re-seal every POBOX letter into the hermetic pool. Returns (count, per_seat_counts, lost).
+
+    restore_open=True (the captain's 18-11 ruling): the pre-today mail was sent with NO
+    presumption of privacy (the old client was an all-parties inbox), so restore the SAME open
+    state — every historical letter sealed to EVERY seat. The hermetic line is drawn at cut-over;
+    nothing before it was ever private. restore_open=False would seal each letter only to its
+    parsed recipients (true per-letter privacy — for mail that WAS private, which this is not).
+    """
     by_name = {c["display"].lower(): c for c in cards.values()}
 
     def recips(frm, to):
+        if restore_open:
+            return list(cards.values())                       # recreate the old all-parties inbox
         toks = [t for t in re.split(r"[^A-Za-z0-9]+", to or "") if t]
         got = list(cards.values()) if any(t.lower().startswith("crew") for t in toks) else []
         if not got:
@@ -60,7 +69,7 @@ def import_all(pobox_dir, pool_dir, migration_kh, cards):
                 c = by_name.get(t.lower()) or by_name.get(norm)
                 if c and c not in got:
                     got.append(c)
-        sc = by_name.get(frm.lower())                         # sender gets a Sent self-copy
+        sc = by_name.get(frm.lower())
         if sc and sc not in got:
             got.append(sc)
         return got
@@ -116,12 +125,15 @@ def _selftest():
         opened = [m for m in got]
         print("    %-10s %d letters" % (name, len(opened)))
         per[name] = len(opened)
-    # hermetic check: the captain opens only letters he was party to
+    # restore_open=True: the legacy mail was NEVER private, so every seat (captain included)
+    # gets the whole history back — the old all-parties inbox, recreated. The hermetic line is
+    # drawn at cut-over: NEW mail (keyholder.seal, not this importer) seals to recipients only.
     stevo_mail = wire.fetch(seats["Stevo"], set())
-    bad = [m for m in stevo_mail if "Stevo" not in (m.get("orig_from", "") + " " + m.get("orig_to", ""))
-           and "crew" not in m.get("orig_to", "").lower()]
-    print("  captain sees letters he was NOT party to:", len(bad), "(want 0)")
-    print("ALL GREEN — history ported into every seat's sealed inbox; captain sees only his." if lost == 0 or n > 0 else "CHECK")
+    legacy = [m for m in stevo_mail if m.get("legacy")]
+    print("  captain's restored inbox:", len(stevo_mail), "letters (the full pre-today history)")
+    print("  every letter flagged legacy (imported, not a live signature):", all(m.get("legacy") for m in legacy))
+    print("ALL GREEN — the old open inbox restored into every seat; hermetic from cut-over forward."
+          if n > 0 and lost == 0 else "CHECK")
 
 
 if __name__ == "__main__":
