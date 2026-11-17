@@ -81,11 +81,15 @@ class Keyholder:
         core["sig"] = self.sign_priv.sign(_canon(core)).hex()
         return core
 
-    def seal(self, recipient_cards, subject, body, msg_id=None, in_reply_to=None):
-        """Seal a letter to the recipients (+ a self-copy). Returns (envelope_bytes, msg_id)."""
+    def seal(self, recipient_cards, subject, body, msg_id=None, in_reply_to=None, extra=None):
+        """Seal a letter to the recipients (+ a self-copy). Returns (envelope_bytes, msg_id).
+        `extra` merges extra signed fields into the message (used by the legacy import to carry
+        the original sender/recipients) — still one canonical JSON, still interop-safe."""
         msg = {"v": 1, "from": self.aid, "to": [c["aid"] for c in recipient_cards],
                "subject": subject, "body": body, "time": int(time.time()),
                "id": msg_id or secrets.token_hex(12), "in_reply_to": in_reply_to}
+        if extra:
+            msg.update(extra)
         m = _canon(msg)
         sig = self.sign_priv.sign(SIG_CONTEXT + hashlib.sha256(m).digest())
         framed = len(sig).to_bytes(2, "big") + sig + m
