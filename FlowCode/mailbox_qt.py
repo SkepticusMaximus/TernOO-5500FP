@@ -293,6 +293,11 @@ def _rank_completions(prefix, names, limit=8):
     hi = bisect.bisect_left(ds, p + "￿")
     for w in sorted(ds[lo:hi], key=len)[:limit * 3]:
         add(w)
+    if len(out) < limit and len(p) >= 3:                       # captain's idea: whole-string SIMILARITY,
+        import difflib                                         # so a typo'd word still predicts (not just
+        pool = _common_words() + [n for n in names if not n.startswith("@")]   # left-to-right prefix)
+        for w in difflib.get_close_matches(p, pool, n=limit - len(out), cutoff=0.66):
+            add(w)
     return out[:limit]
 
 
@@ -301,8 +306,11 @@ class SpellHighlighter(QSyntaxHighlighter):
     def __init__(self, doc):
         super().__init__(doc)
         self._fmt = QTextCharFormat()
-        self._fmt.setUnderlineStyle(QTextCharFormat.UnderlineStyle.WaveUnderline)   # reliably visible
-        self._fmt.setUnderlineColor(QColor("#ff4b3e"))
+        # WaveUnderline relies on the paint engine and silently doesn't render on some X11
+        # setups (the captain's). A solid underline + a subtle red wash CAN'T fail to show.
+        self._fmt.setUnderlineStyle(QTextCharFormat.UnderlineStyle.SingleUnderline)
+        self._fmt.setUnderlineColor(QColor("#ff5a4a"))
+        self._fmt.setBackground(QColor("#4e2626"))
 
     def highlightBlock(self, text):
         for mo in re.finditer(r"[A-Za-z][A-Za-z']*", text):
