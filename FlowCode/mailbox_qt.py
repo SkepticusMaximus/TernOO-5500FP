@@ -15,6 +15,7 @@ import re
 import sys
 import glob
 import json
+import bisect
 import datetime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QListWidget, QListWidgetItem, QTextEdit, QLabel, QComboBox,
@@ -25,7 +26,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
 from PySide6.QtGui import (QAction, QFont, QBrush, QColor, QIcon, QShortcut, QKeySequence,
                            QTextCursor, QSyntaxHighlighter, QTextCharFormat, QTextBlockFormat,
                            QTextListFormat)
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QStringListModel
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # repo root — portable across machines
 POBOX = os.path.join(REPO, "private", "POBOX")
@@ -232,13 +233,76 @@ def _add_personal(word):
         pass
 
 
+# ── autocomplete ranking: common words first (freq-ordered), then dictionary shortest-first ──
+_COMMON = None
+_DICT_SORTED = None
+
+
+def _common_words():
+    """A hand-ranked list of everyday words (common_words.txt), in rough frequency order —
+    so 'blu' offers 'blue' before the dictionary's 'blubber'. No frequency data ships on the
+    box, so this is the stand-in; grow it over time."""
+    global _COMMON
+    if _COMMON is None:
+        out, seen = [], set()
+        try:
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "common_words.txt")
+            for line in open(path, encoding="utf-8"):
+                w = line.strip().lower()
+                if w and w not in seen:
+                    seen.add(w)
+                    out.append(w)
+        except Exception:
+            pass
+        _COMMON = out
+    return _COMMON
+
+
+def _dict_sorted():
+    global _DICT_SORTED
+    if _DICT_SORTED is None:
+        _DICT_SORTED = sorted(_load_dict())
+    return _DICT_SORTED
+
+
+def _rank_completions(prefix, names, limit=8):
+    """Ranked autocomplete for `prefix`: @-mentions/contacts, then common words (frequency
+    order), then the dictionary shortest-first. `names` already includes @-prefixed forms."""
+    p = prefix.lower()
+    out, seen = [], set()
+
+    def add(w):
+        lw = w.lower()
+        if lw not in seen and lw != p:
+            seen.add(lw)
+            out.append(w)
+
+    if p.startswith("@"):                                       # @-mentions only
+        for n in names:
+            if n.lower().startswith(p):
+                add(n)
+        return out[:limit]
+    for n in names:                                            # bare contact names
+        if not n.startswith("@") and n.lower().startswith(p):
+            add(n)
+    for w in _common_words():                                  # everyday words, frequency order
+        if w.startswith(p):
+            add(w)
+    ds = _dict_sorted()                                        # dictionary, shortest first
+    lo = bisect.bisect_left(ds, p)
+    hi = bisect.bisect_left(ds, p + "￿")
+    for w in sorted(ds[lo:hi], key=len)[:limit * 3]:
+        add(w)
+    return out[:limit]
+
+
 class SpellHighlighter(QSyntaxHighlighter):
     """Red wavy underline under words the dictionary doesn't know."""
     def __init__(self, doc):
         super().__init__(doc)
         self._fmt = QTextCharFormat()
-        self._fmt.setUnderlineStyle(QTextCharFormat.UnderlineStyle.SpellCheckUnderline)
-        self._fmt.setUnderlineColor(QColor("#e0533d"))
+        self._fmt.setUnderlineStyle(QTextCharFormat.UnderlineStyle.WaveUnderline)   # reliably visible
+        self._fmt.setUnderlineColor(QColor("#ff4b3e"))
 
     def highlightBlock(self, text):
         for mo in re.finditer(r"[A-Za-z][A-Za-z']*", text):
@@ -254,10 +318,13 @@ class SpellTextEdit(QTextEdit):
     def __init__(self, parent=None, words=None):
         super().__init__(parent)
         self._hl = SpellHighlighter(self.document())
-        self._completer = QCompleter(sorted(words) if words else [], self)
+        self._names = sorted(words) if words else []           # contact + @-mention vocabulary
+        self._cmodel = QStringListModel([], self)               # refilled per keystroke, pre-ranked
+        self._completer = QCompleter(self._cmodel, self)
         self._completer.setWidget(self)
         self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self._completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self._completer.setModelSorting(QCompleter.ModelSorting.UnsortedModel)   # keep OUR ranking
         self._completer.setMaxVisibleItems(8)
         self._completer.activated.connect(self._insert_completion)
 
@@ -287,12 +354,16 @@ class SpellTextEdit(QTextEdit):
         super().keyPressEvent(e)
         prefix = self._completion_prefix()
         last = e.text()[-1] if e.text() else ""
-        if len(prefix.lstrip("@")) < 3 or (last and not last.isalnum() and last not in "@_'"):
+        if len(prefix.lstrip("@")) < 2 or (last and not last.isalnum() and last not in "@_'"):
             c.popup().hide()
             return
-        if prefix != c.completionPrefix():
-            c.setCompletionPrefix(prefix)
-            c.popup().setCurrentIndex(c.completionModel().index(0, 0))
+        ranked = _rank_completions(prefix, self._names)         # common words first, blue > blubber
+        if not ranked:
+            c.popup().hide()
+            return
+        self._cmodel.setStringList(ranked)
+        c.setCompletionPrefix(prefix)
+        c.popup().setCurrentIndex(c.completionModel().index(0, 0))
         rect = self.cursorRect()
         rect.setWidth(c.popup().sizeHintForColumn(0) + c.popup().verticalScrollBar().sizeHint().width())
         c.complete(rect)
@@ -359,10 +430,10 @@ class Compose(QDialog):
         hint.setStyleSheet("color:#6f6f82;font-size:11px;")
         fmt.addWidget(hint)
         v.addLayout(fmt)
-        names = [c["display_name"] for c in self.contacts]      # autocomplete vocabulary
-        groups = list(load_lists().keys()) + ["crew"]
-        words = set(_load_dict()) | set(names) | set(groups) | {"@" + n for n in names + groups}
-        self.body = SpellTextEdit(words=words)                 # g70 spell-check + autocomplete
+        nm = [c["display_name"] for c in self.contacts]         # autocomplete name vocabulary
+        grp = list(load_lists().keys()) + ["crew"]
+        names = nm + grp + ["@" + n for n in nm + grp]
+        self.body = SpellTextEdit(words=names)                 # g70 spell-check + ranked autocomplete
         self.body.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         v.addWidget(self.body, 1)
         QShortcut(QKeySequence("Ctrl+B"), self.body).activated.connect(self._md_bold)
