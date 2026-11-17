@@ -9,7 +9,7 @@ handoff-from-original-thread.txt
 pics/!Claude-Last-Prompt.png
 pics/First-Flowcode-For-TernOO.png
 docs/TernOO-5500FP-Companion.md
-private/
+private/POBOX/
 GHOST/
 # GHOST commands corpus is node-private (manifold §5 seed-public/learning-private, Q3);
 # the public seed is ghost_train.TEMPLATES (in code) + the shipped starter model, not a
