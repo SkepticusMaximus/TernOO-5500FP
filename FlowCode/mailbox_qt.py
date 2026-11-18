@@ -805,6 +805,7 @@ class MailApp(QMainWindow):
         self.acct.currentIndexChanged.connect(self._switch)
         top.addWidget(self.acct)
         for label, slot in (("Compose", self.compose), ("Reply", self.reply),
+                            ("→ To-Do", self.make_todo),
                             ("Contacts", self.manage_contacts), ("Refresh", lambda: self._sync_async())):
             b = QPushButton(label)
             b.clicked.connect(slot)
@@ -903,6 +904,7 @@ class MailApp(QMainWindow):
         fm = mb.addMenu("File")
         fm.addAction(QAction("Compose", self, shortcut="Ctrl+N", triggered=self.compose))
         fm.addAction(QAction("Reply", self, shortcut="Ctrl+R", triggered=self.reply))
+        fm.addAction(QAction("Make To-Do from message", self, shortcut="Ctrl+T", triggered=self.make_todo))
         fm.addAction(QAction("Contacts && Groups…", self, shortcut="Ctrl+B", triggered=self.manage_contacts))
         fm.addAction(QAction("Refresh", self, shortcut="F5", triggered=lambda: self._sync_async()))
         fm.addSeparator()
@@ -1079,6 +1081,32 @@ class MailApp(QMainWindow):
     def _switch(self, idx):
         self.account = self.acct.itemData(idx)
         self._build_tree()                                   # contacts are per-account; reselect Inbox -> reload
+
+    def make_todo(self):
+        """g85 Mail → To-Do: turn the selected message into a tracked TernDO task. Appends via the
+        merge-safe board helper (TernDO folds external appends in, so this never clobbers the list)."""
+        m = self._sel_msg()
+        if not m:
+            QMessageBox.information(self, "Make To-Do", "Select a message first.")
+            return
+        subject = str(m.get("subject") or "(no subject)").strip()
+        frm, when = str(m.get("from") or "?"), _fmt_time(m.get("time"))
+        snippet = " ".join(str(m.get("body") or "").split())[:200]
+        default = subject[3:].strip() if subject.lower().startswith("re:") else subject
+        title, ok = QInputDialog.getText(self, "Make To-Do", "Task title:",
+                                         QLineEdit.EchoMode.Normal, default)
+        if not ok or not title.strip():
+            return
+        notes = "From %s · %s%s" % (frm, when, ("\n" + snippet) if snippet else "")
+        try:
+            sys.path.insert(0, os.path.join(REPO, "tools"))
+            from terndo_board import add_task
+            tid = add_task(title.strip(), notes=notes, area="mail",
+                           origin="from mail: %s" % subject[:60])
+        except Exception as e:
+            QMessageBox.warning(self, "Make To-Do", "Couldn't add the task:\n%s" % e)
+            return
+        QMessageBox.information(self, "Added to TernDO", "Task %s created:\n%s" % (tid, title.strip()))
 
     def compose(self):
         self._compose()
