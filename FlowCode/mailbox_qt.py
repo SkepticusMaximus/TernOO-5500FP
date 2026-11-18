@@ -40,15 +40,16 @@ UID = Qt.ItemDataRole.UserRole
 SORT_ROLE = int(Qt.ItemDataRole.UserRole) + 1                  # epoch stashed for chronological sort
 SETTINGS = os.path.expanduser("~/.config/ternoo/mail-settings.json")
 
-# date-format presets (label shown in Settings -> strftime pattern). Default = Australian.
+# date-format presets (label shown in Settings -> strftime pattern). Default = Australian 12h.
 DATE_FORMATS = [
-    ("Day/Month/Year · 24h   31/12/2026 14:05", "%d/%m/%Y %H:%M"),
-    ("Day-Month-Year · 24h   31-12-2026 14:05", "%d-%m-%Y %H:%M"),
-    ("Day Mon Year · 24h      31 Dec 2026 14:05", "%d %b %Y %H:%M"),
-    ("Year-Month-Day · 24h   2026-12-31 14:05", "%Y-%m-%d %H:%M"),
-    ("Month/Day/Year · 12h   12/31/2026 02:05 PM", "%m/%d/%Y %I:%M %p"),
+    ("Day/Month/Year · 12h    31/12/2026 2:05 PM", "%d/%m/%Y %-I:%M %p"),
+    ("Day/Month/Year · 24h    31/12/2026 14:05", "%d/%m/%Y %H:%M"),
+    ("Day-Month-Year · 12h    31-12-2026 2:05 PM", "%d-%m-%Y %-I:%M %p"),
+    ("Day Mon Year · 12h      31 Dec 2026 2:05 PM", "%d %b %Y %-I:%M %p"),
+    ("Year-Month-Day · 24h    2026-12-31 14:05", "%Y-%m-%d %H:%M"),
+    ("Month/Day/Year · 12h    12/31/2026 2:05 PM", "%m/%d/%Y %-I:%M %p"),
 ]
-DEFAULT_DATE_FMT = DATE_FORMATS[0][1]
+DEFAULT_DATE_FMT = DATE_FORMATS[0][1]                          # Australian 12h (captain's preference)
 
 
 def load_settings():
