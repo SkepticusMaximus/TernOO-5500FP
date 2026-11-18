@@ -19,11 +19,25 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hermetic_wire import Wire
 
 
+MIGRATION_AID_FILE = os.path.join(                        # same dir the ceremony pins it in
+    os.path.expanduser(os.environ.get("TERNOO_KEYS", "~/.config/ternoo/keys")), "migration.aid")
+
+
+def _pinned_migration_aid():
+    try:
+        return open(MIGRATION_AID_FILE).read().strip() or None
+    except Exception:
+        return None
+
+
 class HermeticMailbox:
-    def __init__(self, keyholder, wire_path, spool_path=None):
+    def __init__(self, keyholder, wire_path, spool_path=None, migration_aid=None):
         self.kh = keyholder
         self.wire = Wire(wire_path)
         self.spool = spool_path                               # if set, send drops here for the daemon
+        # H2: legacy (ported) mail is honoured ONLY when signed by this pinned migration AID;
+        # any other signer that sets `legacy` is shown with its REAL identity, never the spoof.
+        self.migration_aid = migration_aid or _pinned_migration_aid()
         if spool_path:
             os.makedirs(os.path.join(spool_path, "pool"), exist_ok=True)
             os.makedirs(os.path.join(spool_path, "directory"), exist_ok=True)
@@ -83,18 +97,19 @@ class HermeticMailbox:
         who[self.kh.aid] = self.kh.display
         seen, out = set(), []
         for m in self.wire.fetch(self.kh, seen):
-            if m.get("legacy"):
+            is_legacy = bool(m.get("legacy")) and m.get("from") == self.migration_aid   # H2
+            if is_legacy:
                 frm, to = m.get("orig_from", "?"), m.get("orig_to", "?")
                 t, sent = m.get("time_posted") or 0, (m.get("orig_from", "") == self.kh.display)
             else:
-                frm = who.get(m["from"], m["from"])
+                frm = who.get(m["from"], m["from"])         # a spoofed `legacy` shows its REAL signer
                 to = ", ".join(who.get(a, a) for a in m["to"])
                 t, sent = m.get("time") or 0, m["from"] == self.kh.aid
             out.append({
                 "id": m["id"], "from": frm, "to": to,
                 "subject": m["subject"], "body": m["body"],
                 "time": int(t) if isinstance(t, (int, float)) or str(t).isdigit() else 0,
-                "unread": False, "sent": sent, "legacy": bool(m.get("legacy"))})
+                "unread": False, "sent": sent, "legacy": is_legacy})
         return out
 
     # ── facade no-ops / hermetic behaviours the GUI also calls ─────────────────────────

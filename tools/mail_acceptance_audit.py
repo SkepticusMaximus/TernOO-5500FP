@@ -194,6 +194,56 @@ def c13():
     return "a CF5 ceremony wrote only seat.key — no cc/ccc/cai/professor keys were created"
 
 
+@check("§10.11 a non-migration signer setting `legacy` is NOT shown with the spoofed sender (H2)")
+def c11():
+    wdir = tempfile.mkdtemp()
+    mig, outsider, cc = K.Keyholder("migration"), K.Keyholder("outsider"), K.Keyholder("CC")
+    w = Wire(wdir)
+    for k in (mig, outsider, cc):
+        w.publish_card(k)
+    env, _ = outsider.seal([cc.card()], "ORDERS", "do this",
+                           extra={"legacy": True, "orig_from": "Stevo", "orig_to": "CC", "time_posted": 0})
+    open(os.path.join(w.pool, "x.age"), "wb").write(env)
+    box = HermeticMailbox(cc, wdir, migration_aid=mig.aid)
+    spoof = next(x for x in box.inbox() if x["subject"] == "ORDERS")
+    assert spoof["from"] != "Stevo", "spoofed legacy shown as from Stevo!"
+    assert spoof["from"] == "outsider" and not spoof["legacy"], spoof["from"]
+    env2, _ = mig.seal([cc.card()], "old", "history",
+                       extra={"legacy": True, "orig_from": "CF5", "orig_to": "CC", "time_posted": 0})
+    open(os.path.join(w.pool, "y.age"), "wb").write(env2)
+    real = next(x for x in box.inbox() if x["subject"] == "old")
+    assert real["from"] == "CF5" and real["legacy"], real
+    return "spoofed legacy shows the real signer (outsider); only migration-signed legacy shows orig_from"
+
+
+@check("§10.14 AIDs carry at least 128 bits (M1 — pinning needs collision resistance)")
+def c14():
+    bits = (len(K.Keyholder("CC").aid) - len("aid_")) * 4
+    assert bits >= 128, "AID is only %d bits" % bits
+    return "AID is %d bits (full sha256 of the signing key)" % bits
+
+
+@check("§10.15 non-canonical / mistyped message bytes are rejected (M4)")
+def c15():
+    import hashlib
+    import pyrage
+    from pyrage import x25519
+    cc, ccc = K.Keyholder("CC"), K.Keyholder("CCC")
+    cards = {cc.aid: cc.card(), ccc.aid: ccc.card()}
+    # a correctly-signed letter whose `to` is a STRING, not a list (the old substring-match hazard)
+    m = ('{"body":"x","from":"%s","id":"a","in_reply_to":null,"subject":"s","time":0,"to":"%s","v":1}'
+         % (cc.aid, ccc.aid)).encode()
+    sig = cc.sign_priv.sign(K.SIG_CONTEXT + hashlib.sha256(m).digest())
+    framed = len(sig).to_bytes(2, "big") + sig + m
+    padded = len(framed).to_bytes(4, "big") + framed + b"\x00" * (K.MIN_PAD - len(framed) - 4)
+    rc = [x25519.Recipient.from_str(ccc.card()["enc"][0])]
+    while len(rc) % K.STANZA_MULTIPLE:
+        rc.append(x25519.Identity.generate().to_public())
+    st = ccc.open(pyrage.encrypt(padded, rc), cards)[0]
+    assert st == "reject-malformed", "mistyped `to` accepted (status %s)" % st
+    return "a letter with `to` as a string (not a list of AIDs) is rejected -> reject-malformed"
+
+
 def deployed_scan():
     """§10.17 — the check that §10.2 can't make: scan the REAL key directory on THIS host and
     prove it holds at most its own seat's key, locked down. Run on every host at cut-over."""

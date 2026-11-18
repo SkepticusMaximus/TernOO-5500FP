@@ -32,12 +32,27 @@ def _canon(obj):
     return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()
 
 
+def _well_formed(msg):
+    """M4: the required schema + exact types. `to` MUST be a list of strings (Python used to
+    accept a string and substring-match it); ints must not be bools; floats/NaN are out."""
+    return (isinstance(msg, dict)
+            and type(msg.get("v")) is int
+            and isinstance(msg.get("from"), str)
+            and isinstance(msg.get("to"), list) and all(isinstance(x, str) for x in msg["to"])
+            and type(msg.get("time")) is int
+            and isinstance(msg.get("id"), str)
+            and isinstance(msg.get("subject"), str)
+            and isinstance(msg.get("body"), str))
+
+
 def _raw_pub(sign_priv):
     return sign_priv.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
 
 
 def _aid(sign_pub_hex):
-    return "aid_" + hashlib.sha256(bytes.fromhex(sign_pub_hex)).hexdigest()[:24]
+    # Full 256-bit digest (M1, CF5 re-audit): a truncated 96-bit AID cost only ~2^48 to
+    # collide, which would undermine pinning — the one thing an AID exists for.
+    return "aid_" + hashlib.sha256(bytes.fromhex(sign_pub_hex)).hexdigest()
 
 
 class Keyholder:
@@ -116,7 +131,12 @@ class Keyholder:
         framed = padded[4:4 + flen]
         slen = int.from_bytes(framed[:2], "big")
         sig, m = framed[2:2 + slen], framed[2 + slen:]
-        msg = json.loads(m)
+        try:
+            msg = json.loads(m)
+        except Exception:
+            return ("reject-malformed", None)
+        if not _well_formed(msg) or m != _canon(msg):        # M4: canonical + typed, or reject
+            return ("reject-malformed", None)
         card = cards_by_aid.get(msg["from"])
         if not card:
             return ("quarantine", msg)
