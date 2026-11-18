@@ -1,0 +1,3 @@
+#!/bin/bash
+# Activate with:  git config core.hooksPath .githooks
+exec "$(git rev-parse --show-toplevel)/tools/guard_no_pobox.sh" staged
