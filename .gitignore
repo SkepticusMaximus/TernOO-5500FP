@@ -42,3 +42,7 @@ state/carried-drive-ids.json
 
 # Claude Code session folder (worktrees, shell snapshots, local settings) — machine-local
 .claude/
+
+# Security operational docs — attack-surface maps / threat models of UNFIXED gaps are
+# hand-carried to CF5 + the outside auditor, NEVER published to this PUBLIC repo.
+private/CC-to-CF5-hermetic-mail-reaudit.md
