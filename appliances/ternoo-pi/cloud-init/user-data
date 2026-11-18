@@ -85,3 +85,6 @@ runcmd:
 # boot-speed trims: the offline appliance has no internet to check for updates
 - [ systemctl, disable, --now, update-notifier-download.timer ]
 - [ systemctl, mask, update-notifier-download.service ]
+# provision once, then skip cloud-init on later boots (we manage the appliance from the repo).
+# To re-provision: rm /etc/cloud/cloud-init.disabled and bump meta-data instance_id.
+- [ touch, /etc/cloud/cloud-init.disabled ]
