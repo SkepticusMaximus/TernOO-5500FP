@@ -1,0 +1,3 @@
+dsmode: local
+# Bump instance_id to force cloud-init to re-run first-boot provisioning (write_files + runcmd).
+instance_id: ternoo-pi

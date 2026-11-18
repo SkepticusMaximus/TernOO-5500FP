@@ -1,0 +1,11 @@
+[Unit]
+Description=TernOO USB CDC-ECM gadget
+After=sys-kernel-config.mount systemd-modules-load.service
+Wants=sys-kernel-config.mount
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=40
+ExecStart=/usr/local/sbin/ternoo-usb-gadget.sh
+[Install]
+WantedBy=multi-user.target

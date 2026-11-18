@@ -1,0 +1,84 @@
+#cloud-config
+# TernOO-Pi first-boot provisioning (NoCloud). SECRETS REDACTED — set a real password hash
+# (openssl passwd -5) and your own ssh key at flash time; never commit the real values.
+hostname: ternoo-pi
+manage_etc_hosts: true
+
+users:
+- name: stevo
+  groups: [adm, sudo, dialout, netdev, video, plugdev, gpio, i2c, spi, render]
+  shell: /bin/bash
+  lock_passwd: false
+  passwd: "<REDACTED — generate per-device: openssl passwd -5>"
+  ssh_authorized_keys:
+  - "<REDACTED — your own ssh public key>"
+
+ssh_pwauth: true
+timezone: Australia/Adelaide
+
+write_files:
+- path: /usr/local/sbin/ternoo-usb-gadget.sh
+  permissions: '0755'
+  content: |
+    #!/bin/bash
+    # TernOO USB CDC-ECM gadget - clean cdc_ether link to the host
+    GDIR=/sys/kernel/config/usb_gadget/ternoo
+    modprobe libcomposite 2>/dev/null || true
+    mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config 2>/dev/null || true
+    if [ ! -s "$GDIR/UDC" ]; then
+      mkdir -p "$GDIR"
+      cd "$GDIR" || exit 1
+      echo 0x1d6b > idVendor
+      echo 0x0104 > idProduct
+      echo 0x0100 > bcdDevice
+      echo 0x0200 > bcdUSB
+      mkdir -p strings/0x409
+      echo TernOO > strings/0x409/manufacturer
+      echo "TernOO-Pi Gadget" > strings/0x409/product
+      echo ternoopi0001 > strings/0x409/serialnumber
+      mkdir -p configs/c.1/strings/0x409
+      echo "CDC ECM" > configs/c.1/strings/0x409/configuration
+      echo 250 > configs/c.1/MaxPower
+      mkdir -p functions/ecm.usb0
+      echo "3a:f0:0d:00:00:01" > functions/ecm.usb0/dev_addr
+      echo "3a:f0:0d:00:00:02" > functions/ecm.usb0/host_addr
+      ln -sf functions/ecm.usb0 configs/c.1/
+      UDC=""
+      for _ in $(seq 1 20); do
+        UDC=$(ls /sys/class/udc 2>/dev/null | head -n1)
+        [ -n "$UDC" ] && break
+        sleep 0.5
+      done
+      if [ -n "$UDC" ]; then echo "$UDC" > UDC; else echo "ternoo-gadget: no UDC after 10s" >&2; exit 1; fi
+    fi
+    exit 0
+- path: /etc/systemd/system/ternoo-usb-gadget.service
+  permissions: '0644'
+  content: |
+    [Unit]
+    Description=TernOO USB CDC-ECM gadget
+    After=sys-kernel-config.mount systemd-modules-load.service
+    Wants=sys-kernel-config.mount
+    [Service]
+    Type=oneshot
+    RemainAfterExit=yes
+    TimeoutStartSec=40
+    ExecStart=/usr/local/sbin/ternoo-usb-gadget.sh
+    [Install]
+    WantedBy=multi-user.target
+- path: /etc/systemd/network/10-usb0.network
+  permissions: '0644'
+  content: |
+    [Match]
+    Name=usb0
+    [Network]
+    Address=10.55.0.1/24
+    DHCPServer=yes
+    [DHCPServer]
+    PoolOffset=20
+    PoolSize=30
+    EmitDNS=no
+
+runcmd:
+- [ systemctl, enable, --now, ternoo-usb-gadget.service ]
+- [ systemctl, restart, systemd-networkd ]
