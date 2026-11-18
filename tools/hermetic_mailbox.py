@@ -17,6 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hermetic_wire import Wire
+from hermetic_store import LocalStore
 from ternid_pins import classify, fingerprint, load_pins
 
 
@@ -32,7 +33,7 @@ def _pinned_migration_aid():
 
 
 class HermeticMailbox:
-    def __init__(self, keyholder, wire_path, spool_path=None, migration_aid=None, pins=None):
+    def __init__(self, keyholder, wire_path, spool_path=None, migration_aid=None, pins=None, store=None):
         self.kh = keyholder
         self.wire = Wire(wire_path)
         self.spool = spool_path                               # if set, send drops here for the daemon
@@ -41,6 +42,8 @@ class HermeticMailbox:
         self.migration_aid = migration_aid or _pinned_migration_aid()
         # H3: pinned display->AID bindings. An impostor card (pinned name, wrong AID) is refused.
         self.pins = pins if pins is not None else load_pins()
+        # M2: a retention-safe local copy, so a wiped wire can't empty the inbox.
+        self.store = store if store is not None else LocalStore(keyholder.aid)
         if spool_path:
             os.makedirs(os.path.join(spool_path, "pool"), exist_ok=True)
             os.makedirs(os.path.join(spool_path, "directory"), exist_ok=True)
@@ -76,6 +79,18 @@ class HermeticMailbox:
         if on_wire != self.kh.card():
             return (False, "your card on the wire does NOT match your key")
         return (True, "")
+
+    def alarms(self):
+        """M2 + H3: loud, recoverable warnings for the GUI — mail deleted from the wire (still
+        held locally), or this seat's own card missing/changed. Empty list = all well."""
+        out = []
+        gone = self.store.disappeared(self.wire.pool_files())
+        if gone:
+            out.append("%d message(s) you had were DELETED from the wire — kept in your local store." % len(gone))
+        ok, detail = self.own_card_ok()
+        if not ok:
+            out.append("YOUR CARD: " + detail)
+        return out
 
     def publish_card(self):
         """Put this seat's signed card on the wire (spool if daemon-backed, else straight in)."""
@@ -114,11 +129,12 @@ class HermeticMailbox:
 
         Ported history (legacy=True) renders with its ORIGINAL sender/recipients/date — the
         migration key sealed it, but the letter is shown as the real correspondence it was."""
+        self.store.record(self.wire.open_pool(self.kh))      # M2: pull new mail, persist it locally
         dir_cards = self.wire.directory()
         who = {c["aid"]: c["display"] for c in dir_cards.values()}
         who[self.kh.aid] = self.kh.display
-        seen, out = set(), []
-        for m in self.wire.fetch(self.kh, seen):
+        out = []
+        for m in self.store.messages():                      # render from the RETENTION-safe store
             is_legacy = bool(m.get("legacy")) and m.get("from") == self.migration_aid   # H2
             if is_legacy:
                 frm, to = m.get("orig_from", "?"), m.get("orig_to", "?")
@@ -166,6 +182,7 @@ class HermeticMailbox:
 def _selftest():
     import tempfile
     import keyholder as K
+    os.environ["TERNOO_MAIL_STORE"] = tempfile.mkdtemp()      # isolate the local store
     print("Hermetic mailbox self-test — Tmail backend over a shared wire")
     wdir = tempfile.mkdtemp()
     cc = K.Keyholder("CC")
@@ -181,7 +198,15 @@ def _selftest():
         print(f"    {name:6} inbox:", got if got else "(empty — correct)")
     assert any(m["body"] == "CCC only — not the captain" for m in boxes["CCC"].inbox())
     assert boxes["Stevo"].inbox() == [], "captain must NOT see a CC->CCC letter"
-    print("ALL GREEN — Tmail backend seals/opens hermetically; captain sees nothing not his.")
+
+    # M2: wipe the wire pool; CCC still has the letter locally, and an alarm fires
+    import glob as _glob
+    for f in _glob.glob(os.path.join(boxes["CCC"].wire.pool, "*.age")):
+        os.remove(f)
+    assert any(m["body"] == "CCC only — not the captain" for m in boxes["CCC"].inbox()), "wipe lost the mail"
+    assert boxes["CCC"].alarms(), "no alarm raised for a wiped wire"
+    print("  wire wiped -> CCC still holds the letter + alarms:", boxes["CCC"].alarms()[0][:48], "…")
+    print("ALL GREEN — hermetic + retention-safe; a wiped wire alarms and loses nothing.")
 
 
 if __name__ == "__main__":

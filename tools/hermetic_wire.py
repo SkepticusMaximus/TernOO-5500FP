@@ -87,6 +87,20 @@ class Wire:
                     out.append(msg)
         return out
 
+    def open_pool(self, kh):
+        """Yield (basename, msg) for every pool envelope this seat can open (feeds the local store)."""
+        cards = self.directory()
+        for f in sorted(glob.glob(os.path.join(self.pool, "*.age"))):
+            try:
+                st, msg = kh.open(open(f, "rb").read(), cards)
+            except Exception:
+                continue
+            if st == "ok":
+                yield os.path.basename(f), msg
+
+    def pool_files(self):
+        return sorted(os.path.basename(f) for f in glob.glob(os.path.join(self.pool, "*.age")))
+
 
 def _selftest():
     import tempfile

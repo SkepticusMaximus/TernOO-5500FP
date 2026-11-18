@@ -25,6 +25,7 @@ sys.path.insert(0, HERE)
 import keyholder as K
 from hermetic_wire import Wire
 from hermetic_mailbox import HermeticMailbox
+from hermetic_store import LocalStore
 
 CHECKS = []
 
@@ -260,6 +261,23 @@ def c12():
     return "the real Stevo is verified + shown; the second 'Stevo' is refused from the roster entirely"
 
 
+@check("§10.16 a deleted envelope stays in the local store and raises an alarm (M2)")
+def c16():
+    wdir = tempfile.mkdtemp()
+    cc, ccc = K.Keyholder("CC"), K.Keyholder("CCC")
+    w = Wire(wdir)
+    w.publish_card(cc)
+    w.publish_card(ccc)
+    w.post(cc, [ccc.card()], "keep", "do not lose me")
+    box = HermeticMailbox(ccc, wdir, store=LocalStore(ccc.aid, tempfile.mkdtemp()))
+    assert any(m["body"] == "do not lose me" for m in box.inbox()), "letter not delivered/stored"
+    for f in glob.glob(os.path.join(w.pool, "*.age")):
+        os.remove(f)                                          # wipe the wire
+    assert any(m["body"] == "do not lose me" for m in box.inbox()), "letter lost when the wire was wiped"
+    assert box.alarms(), "no alarm raised when a seen envelope was deleted"
+    return "a letter deleted from the wire is retained locally and raises a deletion alarm"
+
+
 def deployed_scan():
     """§10.17 — the check that §10.2 can't make: scan the REAL key directory on THIS host and
     prove it holds at most its own seat's key, locked down. Run on every host at cut-over."""
@@ -291,6 +309,7 @@ def deployed_scan():
 
 # ── runner ────────────────────────────────────────────────────────────────────────────
 def main():
+    os.environ["TERNOO_MAIL_STORE"] = tempfile.mkdtemp()     # isolate local stores from the real one
     if "--deployed" in sys.argv:
         return deployed_scan()
     quiet = "-q" in sys.argv

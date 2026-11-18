@@ -988,7 +988,14 @@ class MailApp(QMainWindow):
         self.table.sortItems(0, Qt.SortOrder.DescendingOrder)   # newest first by default
         self.read.clear()
         n = self.table.rowCount()
-        self.status.setText("%s · %s — %d message%s" % (self._me(), self.folder, n, "" if n == 1 else "s"))
+        base = "%s · %s — %d message%s" % (self._me(), self.folder, n, "" if n == 1 else "s")
+        al = self.agent.alarms() if hasattr(self.agent, "alarms") else []   # M2/H3 tripwires
+        if al:
+            self.status.setText("⚠ " + " · ".join(al))
+            self.status.setStyleSheet("color:#ffb0b0;font-weight:bold;")
+        else:
+            self.status.setText(base)
+            self.status.setStyleSheet("")
 
     def _sel_msg(self):
         items = self.table.selectedItems()
