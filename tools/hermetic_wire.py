@@ -80,9 +80,11 @@ class Wire:
                 st, msg = kh.open(open(f, "rb").read(), cards)
             except Exception:
                 continue
-            if st == "ok" and msg.get("id") not in seen:
-                seen.add(msg["id"])
-                out.append(msg)
+            if st == "ok":
+                key = (msg.get("from"), msg.get("id"))       # L5: dedup on (signer, id), not id alone,
+                if key not in seen:                          # so a decoy with a stolen id can't hide a letter
+                    seen.add(key)
+                    out.append(msg)
         return out
 
 

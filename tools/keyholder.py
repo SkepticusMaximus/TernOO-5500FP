@@ -76,11 +76,14 @@ class Keyholder:
             blob = pyrage.passphrase.encrypt(blob, passphrase)
         os.makedirs(os.path.dirname(os.path.abspath(path)), mode=0o700, exist_ok=True)
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        os.fchmod(fd, 0o600)                                  # L4: reset mode even on an existing file
         with os.fdopen(fd, "wb") as f:
             f.write(blob)
 
     @classmethod
     def load(cls, path, passphrase=None):
+        if os.stat(path).st_mode & 0o077:                    # L4: refuse a group/other-accessible key
+            raise PermissionError("key file %s is accessible to group/other; chmod 600 it" % path)
         blob = open(path, "rb").read()
         if passphrase:
             import pyrage.passphrase

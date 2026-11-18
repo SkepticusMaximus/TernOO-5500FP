@@ -17,6 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hermetic_wire import Wire
+from ternid_pins import classify, fingerprint, load_pins
 
 
 MIGRATION_AID_FILE = os.path.join(                        # same dir the ceremony pins it in
@@ -31,13 +32,15 @@ def _pinned_migration_aid():
 
 
 class HermeticMailbox:
-    def __init__(self, keyholder, wire_path, spool_path=None, migration_aid=None):
+    def __init__(self, keyholder, wire_path, spool_path=None, migration_aid=None, pins=None):
         self.kh = keyholder
         self.wire = Wire(wire_path)
         self.spool = spool_path                               # if set, send drops here for the daemon
         # H2: legacy (ported) mail is honoured ONLY when signed by this pinned migration AID;
         # any other signer that sets `legacy` is shown with its REAL identity, never the spoof.
         self.migration_aid = migration_aid or _pinned_migration_aid()
+        # H3: pinned display->AID bindings. An impostor card (pinned name, wrong AID) is refused.
+        self.pins = pins if pins is not None else load_pins()
         if spool_path:
             os.makedirs(os.path.join(spool_path, "pool"), exist_ok=True)
             os.makedirs(os.path.join(spool_path, "directory"), exist_ok=True)
@@ -52,9 +55,27 @@ class HermeticMailbox:
     INFRA = {"migration"}                                     # cards present only so ported sigs verify
 
     def contacts(self, account=None):
-        return [{"display_name": c["display"], "handle": c["aid"]}
-                for c in self.wire.directory().values()
-                if c["aid"] != self.kh.aid and c["display"] not in self.INFRA]
+        """Roster from the wire, with pinning (H3): an IMPOSTOR (pinned name, wrong AID) is never
+        offered; unpinned cards are flagged unverified; each carries a short AID fingerprint."""
+        out = []
+        for c in self.wire.directory().values():
+            if c["aid"] == self.kh.aid or c["display"] in self.INFRA:
+                continue
+            cls = classify(c, self.pins)
+            if cls == "impostor":
+                continue                                      # never present an impostor by name
+            out.append({"display_name": c["display"], "handle": c["aid"],
+                        "verified": cls == "verified", "fingerprint": fingerprint(c["aid"])})
+        return out
+
+    def own_card_ok(self):
+        """H3: confirm MY card on the wire still matches my key (unchanged, present). (ok, detail)."""
+        on_wire = self.wire.directory().get(self.kh.aid)
+        if on_wire is None:
+            return (False, "your card is MISSING from the wire")
+        if on_wire != self.kh.card():
+            return (False, "your card on the wire does NOT match your key")
+        return (True, "")
 
     def publish_card(self):
         """Put this seat's signed card on the wire (spool if daemon-backed, else straight in)."""
@@ -93,7 +114,8 @@ class HermeticMailbox:
 
         Ported history (legacy=True) renders with its ORIGINAL sender/recipients/date — the
         migration key sealed it, but the letter is shown as the real correspondence it was."""
-        who = {c["aid"]: c["display"] for c in self.wire.directory().values()}
+        dir_cards = self.wire.directory()
+        who = {c["aid"]: c["display"] for c in dir_cards.values()}
         who[self.kh.aid] = self.kh.display
         seen, out = set(), []
         for m in self.wire.fetch(self.kh, seen):
@@ -101,15 +123,21 @@ class HermeticMailbox:
             if is_legacy:
                 frm, to = m.get("orig_from", "?"), m.get("orig_to", "?")
                 t, sent = m.get("time_posted") or 0, (m.get("orig_from", "") == self.kh.display)
+                verified, fp = True, ""                      # migration-signed: the ported record
             else:
-                frm = who.get(m["from"], m["from"])         # a spoofed `legacy` shows its REAL signer
+                frm = who.get(m["from"], m["from"])          # a spoofed `legacy` shows its REAL signer
                 to = ", ".join(who.get(a, a) for a in m["to"])
                 t, sent = m.get("time") or 0, m["from"] == self.kh.aid
+                # H3: is this sender's card pinned to this name? mark it so the GUI can warn.
+                scard = dir_cards.get(m["from"])
+                verified = sent or (scard is not None and classify(scard, self.pins) == "verified")
+                fp = fingerprint(m["from"])
             out.append({
                 "id": m["id"], "from": frm, "to": to,
                 "subject": m["subject"], "body": m["body"],
                 "time": int(t) if isinstance(t, (int, float)) or str(t).isdigit() else 0,
-                "unread": False, "sent": sent, "legacy": is_legacy})
+                "unread": False, "sent": sent, "legacy": is_legacy,
+                "verified": verified, "fingerprint": fp})
         return out
 
     # ── facade no-ops / hermetic behaviours the GUI also calls ─────────────────────────

@@ -93,12 +93,20 @@ def run(pobox_dir=None):
         print("  RESTORE DEFERRED — each seat must mint on its OWN machine and publish its card first.")
         print("  Re-run once all %d are present; the restore seals to PUBLIC cards only (no private keys)." % len(SEATS))
         return kh, wire, 0
+
+    # all seats present: PIN the roster (H3). Each seat confirms these fingerprints OUT OF BAND.
+    from ternid_pins import fingerprint, save_pins
+    seat_cards = {aid: c for aid, c in cards.items() if c["display"] in SEATS}
+    pinmap = save_pins({c["display"]: aid for aid, c in seat_cards.items()})
+    print("  PINNED display->AID — CONFIRM these fingerprints out of band (chat/paper):")
+    for name in sorted(pinmap):
+        print("    %-10s %s" % (name, fingerprint(pinmap[name])))
+
     if glob.glob(os.path.join(wire.pool, "*.age")):
         print("  pool already has sealed mail — skipping import (delete %s to re-restore)" % wire.pool)
         return kh, wire, 0
 
     # every seat has published: restore history to the PUBLIC cards. No private keys are touched.
-    seat_cards = {aid: c for aid, c in cards.items() if c["display"] in SEATS}
     migration = K.Keyholder("migration")                     # signs legacy mail; its AID is PINNED (H2)
     wire.publish_card(migration)                             # published only so legacy signatures verify
     open(os.path.join(KEYS, "migration.aid"), "w").write(migration.aid)

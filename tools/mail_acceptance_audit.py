@@ -244,6 +244,22 @@ def c15():
     return "a letter with `to` as a string (not a list of AIDs) is rejected -> reject-malformed"
 
 
+@check("§10.12 a second card under a PINNED display name is refused + never resolves by name (H3)")
+def c12():
+    wdir = tempfile.mkdtemp()
+    real_stevo, cc = K.Keyholder("Stevo"), K.Keyholder("CC")
+    impostor = K.Keyholder("Stevo")                           # same display, different key/AID
+    w = Wire(wdir)
+    for k in (real_stevo, cc, impostor):
+        w.publish_card(k)
+    pins = {"Stevo": real_stevo.aid, "CC": cc.aid}
+    roster = HermeticMailbox(cc, wdir, pins=pins).contacts()
+    stevos = [c for c in roster if c["display_name"] == "Stevo"]
+    assert len(stevos) == 1 and stevos[0]["handle"] == real_stevo.aid and stevos[0]["verified"], stevos
+    assert impostor.aid not in [c["handle"] for c in roster], "impostor present in the roster"
+    return "the real Stevo is verified + shown; the second 'Stevo' is refused from the roster entirely"
+
+
 def deployed_scan():
     """§10.17 — the check that §10.2 can't make: scan the REAL key directory on THIS host and
     prove it holds at most its own seat's key, locked down. Run on every host at cut-over."""

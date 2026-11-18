@@ -1005,12 +1005,19 @@ class MailApp(QMainWindow):
             self.agent.mark_read(account=self.account, message_id=m.get("id"))
         except Exception:
             pass
+        fp = str(m.get("fingerprint") or "")
+        fpline = " <span style='color:#6ea8fe'>· %s</span>" % _esc(fp) if fp else ""
+        # H3: a sender whose name isn't pinned to this key gets a loud warning, never silent trust.
+        warn = ("" if m.get("verified", True) or m.get("sent") else
+                "<div style='background:#5a1e1e;color:#ffd0d0;padding:5px 9px;border-radius:4px;margin:4px 0'>"
+                "⚠ UNVERIFIED SENDER — this display name is <b>not pinned</b> to this key "
+                "(fingerprint %s). Do not trust it without confirming out of band.</div>" % _esc(fp))
         self.read.setHtml(
             "<div style='color:#3fd08f;font-size:14px'>%s</div>"
-            "<div style='color:#9696a5'>from <b style='color:#e6e6ec'>%s</b> · to %s · %s</div><hr>"
+            "<div style='color:#9696a5'>from <b style='color:#e6e6ec'>%s</b>%s · to %s · %s</div>%s<hr>"
             "<div style='color:#e6e6ec;white-space:pre-wrap;font-family:DejaVu Sans Mono'>%s</div>"
-            % (_esc(str(m.get("subject"))), _esc(str(m.get("from"))), _esc(str(m.get("to"))),
-               _esc(_fmt_time(m.get("time"))), _md_body(str(m.get("body")))))
+            % (_esc(str(m.get("subject"))), _esc(str(m.get("from"))), fpline, _esc(str(m.get("to"))),
+               _esc(_fmt_time(m.get("time"))), warn, _md_body(str(m.get("body")))))
 
     def _table_dblclick(self, _item):
         if self.folder != "Drafts":
@@ -1193,7 +1200,9 @@ class MailApp(QMainWindow):
 
 
 def _esc(s):
-    return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    # L2 (CF5 re-audit): escape quotes too, so a crafted URL can't add attributes inside a link
+    return ((s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace('"', "&quot;").replace("'", "&#39;"))
 
 
 def _md_body(text):
