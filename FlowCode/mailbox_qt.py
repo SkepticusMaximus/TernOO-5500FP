@@ -805,7 +805,7 @@ class MailApp(QMainWindow):
         self.acct.currentIndexChanged.connect(self._switch)
         top.addWidget(self.acct)
         for label, slot in (("Compose", self.compose), ("Reply", self.reply),
-                            ("→ To-Do", self.make_todo),
+                            ("→ To-Do", self.make_todo), ("Trust sender", self.trust_sender),
                             ("Contacts", self.manage_contacts), ("Refresh", lambda: self._sync_async())):
             b = QPushButton(label)
             b.clicked.connect(slot)
@@ -1018,7 +1018,8 @@ class MailApp(QMainWindow):
         warn = ("" if m.get("verified", True) or m.get("sent") else
                 "<div style='background:#5a1e1e;color:#ffd0d0;padding:5px 9px;border-radius:4px;margin:4px 0'>"
                 "⚠ UNVERIFIED SENDER — this display name is <b>not pinned</b> to this key "
-                "(fingerprint %s). Do not trust it without confirming out of band.</div>" % _esc(fp))
+                "(fingerprint %s). If the sender gave you this exact fingerprint out of band, "
+                "click <b>Trust sender</b> to pin it.</div>" % _esc(fp))
         self.read.setHtml(
             "<div style='color:#3fd08f;font-size:14px'>%s</div>"
             "<div style='color:#9696a5'>from <b style='color:#e6e6ec'>%s</b>%s · to %s · %s</div>%s<hr>"
@@ -1121,6 +1122,39 @@ class MailApp(QMainWindow):
             QMessageBox.warning(self, "Make To-Do", "Couldn't add the task:\n%s" % e)
             return
         QMessageBox.information(self, "Added to TernDO", "Task %s created:\n%s" % (tid, title.strip()))
+
+    def trust_sender(self):
+        """H3: confirm a sender's fingerprint out of band, then pin it so the warning clears."""
+        if not hasattr(self.agent, "pin"):
+            QMessageBox.information(self, "Trust sender", "Only available on the hermetic mailbox.")
+            return
+        m = self._sel_msg()
+        if not m:
+            QMessageBox.information(self, "Trust sender", "Select a message first.")
+            return
+        if m.get("verified") or m.get("sent") or m.get("legacy"):
+            QMessageBox.information(self, "Trust sender",
+                                    "This sender is already verified (or it's your own / ported mail).")
+            return
+        who, aid, fp = str(m.get("from")), m.get("from_aid"), str(m.get("fingerprint") or "")
+        if not aid:
+            QMessageBox.warning(self, "Trust sender", "No key to pin for this message.")
+            return
+        r = QMessageBox.question(
+            self, "Confirm this fingerprint",
+            "Pin \"%s\" to this key?\n\n    fingerprint:   %s\n\n"
+            "Only confirm if %s gave you THIS EXACT fingerprint through a channel you already "
+            "trust — a chat, a call, on paper — NOT through the mail itself." % (who, fp, who),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+        if r != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.agent.pin(who, aid)
+        except Exception as e:
+            QMessageBox.warning(self, "Trust sender", "Couldn't pin: %s" % e)
+            return
+        QMessageBox.information(self, "Trusted", "%s is now pinned and verified." % who)
+        self._reload()
 
     def compose(self):
         self._compose()

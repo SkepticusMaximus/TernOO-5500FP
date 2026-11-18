@@ -309,9 +309,10 @@ def deployed_scan():
 
 # ── runner ────────────────────────────────────────────────────────────────────────────
 def main():
-    os.environ["TERNOO_MAIL_STORE"] = tempfile.mkdtemp()     # isolate local stores from the real one
     if "--deployed" in sys.argv:
-        return deployed_scan()
+        return deployed_scan()                               # scans the REAL key dir — don't isolate it
+    os.environ["TERNOO_MAIL_STORE"] = tempfile.mkdtemp()     # isolate local stores + pins from the real ones
+    os.environ["TERNOO_KEYS"] = tempfile.mkdtemp()
     quiet = "-q" in sys.argv
     print("HERMETIC MAIL — ACCEPTANCE AUDIT (CF5 §10)\n" + "=" * 60)
     failed = 0

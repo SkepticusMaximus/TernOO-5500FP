@@ -41,7 +41,9 @@ class HermeticMailbox:
         # any other signer that sets `legacy` is shown with its REAL identity, never the spoof.
         self.migration_aid = migration_aid or _pinned_migration_aid()
         # H3: pinned display->AID bindings. An impostor card (pinned name, wrong AID) is refused.
-        self.pins = pins if pins is not None else load_pins()
+        # Read fresh each use (so a new pin takes effect without a restart); an injected dict is
+        # for tests only.
+        self._pins_override = pins
         # M2: a retention-safe local copy, so a wiped wire can't empty the inbox.
         self.store = store if store is not None else LocalStore(keyholder.aid)
         if spool_path:
@@ -57,14 +59,27 @@ class HermeticMailbox:
 
     INFRA = {"migration"}                                     # cards present only so ported sigs verify
 
+    def _pins(self):
+        return self._pins_override if self._pins_override is not None else load_pins()
+
+    def pin(self, display, aid):
+        """Trust a sender: record display->AID after the human confirmed the fingerprint out of
+        band. Writes the local pins; clears the unverified warning on next read."""
+        from ternid_pins import save_pins
+        p = load_pins()
+        p[display] = aid
+        save_pins(p)
+        return p
+
     def contacts(self, account=None):
         """Roster from the wire, with pinning (H3): an IMPOSTOR (pinned name, wrong AID) is never
         offered; unpinned cards are flagged unverified; each carries a short AID fingerprint."""
+        pins = self._pins()
         out = []
         for c in self.wire.directory().values():
             if c["aid"] == self.kh.aid or c["display"] in self.INFRA:
                 continue
-            cls = classify(c, self.pins)
+            cls = classify(c, pins)
             if cls == "impostor":
                 continue                                      # never present an impostor by name
             out.append({"display_name": c["display"], "handle": c["aid"],
@@ -130,12 +145,14 @@ class HermeticMailbox:
         Ported history (legacy=True) renders with its ORIGINAL sender/recipients/date — the
         migration key sealed it, but the letter is shown as the real correspondence it was."""
         self.store.record(self.wire.open_pool(self.kh))      # M2: pull new mail, persist it locally
+        pins = self._pins()                                  # read fresh so a new pin takes effect now
         dir_cards = self.wire.directory()
         who = {c["aid"]: c["display"] for c in dir_cards.values()}
         who[self.kh.aid] = self.kh.display
         out = []
         for m in self.store.messages():                      # render from the RETENTION-safe store
             is_legacy = bool(m.get("legacy")) and m.get("from") == self.migration_aid   # H2
+            from_aid = ""
             if is_legacy:
                 frm, to = m.get("orig_from", "?"), m.get("orig_to", "?")
                 t, sent = m.get("time_posted") or 0, (m.get("orig_from", "") == self.kh.display)
@@ -144,12 +161,13 @@ class HermeticMailbox:
                 frm = who.get(m["from"], m["from"])          # a spoofed `legacy` shows its REAL signer
                 to = ", ".join(who.get(a, a) for a in m["to"])
                 t, sent = m.get("time") or 0, m["from"] == self.kh.aid
-                # H3: is this sender's card pinned to this name? mark it so the GUI can warn.
+                # H3: is this sender's card pinned to this name? mark it so the GUI can warn/trust.
                 scard = dir_cards.get(m["from"])
-                verified = sent or (scard is not None and classify(scard, self.pins) == "verified")
+                verified = sent or (scard is not None and classify(scard, pins) == "verified")
                 fp = fingerprint(m["from"])
+                from_aid = m["from"]
             out.append({
-                "id": m["id"], "from": frm, "to": to,
+                "id": m["id"], "from": frm, "to": to, "from_aid": from_aid,
                 "subject": m["subject"], "body": m["body"],
                 "time": int(t) if isinstance(t, (int, float)) or str(t).isdigit() else 0,
                 "unread": False, "sent": sent, "legacy": is_legacy,
