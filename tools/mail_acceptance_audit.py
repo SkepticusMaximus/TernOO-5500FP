@@ -181,8 +181,52 @@ def c10():
     return r.stdout.strip().splitlines()[-1]
 
 
+@check("§10.13 the key ceremony mints EXACTLY ONE key — never another seat's (H1, CF5 re-audit)")
+def c13():
+    d = tempfile.mkdtemp()
+    env = dict(os.environ, TERNOO_KEYS=os.path.join(d, "keys"), TERNOO_WIRE=os.path.join(d, "wire"),
+               TERNOO_SEAT="CF5", TERNOO_CAPTAIN_PASS="x")
+    subprocess.run([sys.executable, "-c",
+                    "import sys; sys.path.insert(0, %r); import hermetic_ceremony as C; C.mint_key()" % HERE],
+                   env=env, capture_output=True, text=True, check=True)
+    keys = sorted(os.listdir(os.path.join(d, "keys")))
+    assert keys == ["seat.key"], "a single-seat ceremony wrote %s (must be only seat.key)" % keys
+    return "a CF5 ceremony wrote only seat.key — no cc/ccc/cai/professor keys were created"
+
+
+def deployed_scan():
+    """§10.17 — the check that §10.2 can't make: scan the REAL key directory on THIS host and
+    prove it holds at most its own seat's key, locked down. Run on every host at cut-over."""
+    import stat
+    kd = os.path.expanduser(os.environ.get("TERNOO_KEYS", "~/.config/ternoo/keys"))
+    print("DEPLOYED-STATE SCAN (§10.17) — %s\n%s" % (kd, "=" * 60))
+    if not os.path.isdir(kd):
+        print("[PASS] no key directory here — no seat runs on this host")
+        return 0
+    keys = sorted(f for f in os.listdir(kd) if f.endswith(".key"))
+    fails = 0
+    if len(keys) > 1:
+        print("[FAIL] host holds %d seat keys %s — a machine must hold at most ITS OWN (H1)" % (len(keys), keys)); fails += 1
+    else:
+        print("[PASS] host holds %d seat key: %s" % (len(keys), keys or "none"))
+    dmode = stat.S_IMODE(os.stat(kd).st_mode)
+    print("[%s] key dir mode %o (want 0700)" % ("PASS" if not dmode & 0o077 else "FAIL", dmode))
+    fails += 1 if dmode & 0o077 else 0
+    for k in keys:
+        st = os.stat(os.path.join(kd, k)); m = stat.S_IMODE(st.st_mode)
+        if m & 0o077:
+            print("[FAIL] %s mode %o (want 0600)" % (k, m)); fails += 1
+        if st.st_uid != os.getuid():
+            print("[FAIL] %s not owned by this user" % k); fails += 1
+    print("=" * 60)
+    print("DEPLOYED SCAN " + ("PASSED" if not fails else "FAILED (%d)" % fails))
+    return 1 if fails else 0
+
+
 # ── runner ────────────────────────────────────────────────────────────────────────────
 def main():
+    if "--deployed" in sys.argv:
+        return deployed_scan()
     quiet = "-q" in sys.argv
     print("HERMETIC MAIL — ACCEPTANCE AUDIT (CF5 §10)\n" + "=" * 60)
     failed = 0

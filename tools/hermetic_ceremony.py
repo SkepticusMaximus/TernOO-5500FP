@@ -48,55 +48,65 @@ def _captain_pass():
     return os.environ.get("TERNOO_CAPTAIN_PASS") or getpass.getpass("Captain's key passphrase: ")
 
 
-def mint_keys():
-    """One key file per seat. Existing files are loaded, never clobbered. Returns {seat: Keyholder}."""
+def mint_key():
+    """Mint/load ONLY the seat that owns THIS machine (H1 fix, CF5 re-audit 18-11).
+
+    A ceremony NEVER mints another seat's private key — each seat mints its own, on its own
+    side (spec §5). This is the whole point: no machine ends up holding the crew's keys.
+    """
     os.makedirs(KEYS, mode=0o700, exist_ok=True)
-    seats = {}
-    for name in SEATS:
-        path = _keyfile(name)
-        if os.path.exists(path):
-            pw = _captain_pass() if name == "Stevo" else None
-            seats[name] = K.Keyholder.load(path, passphrase=pw)
-            print("  kept   %-10s %s" % (name, path))
-        else:
-            kh = K.Keyholder(name)
-            kh.save(path, passphrase=_captain_pass() if name == "Stevo" else None)
-            seats[name] = kh
-            print("  minted %-10s %s%s" % (name, path, "  (passphrase-wrapped)" if name == "Stevo" else ""))
-    return seats
+    path = _keyfile(SEAT)
+    pw = _captain_pass() if SEAT == "Stevo" else None
+    if os.path.exists(path):
+        kh = K.Keyholder.load(path, passphrase=pw)
+        print("  kept   %-10s %s" % (SEAT, path))
+    else:
+        kh = K.Keyholder(SEAT)
+        kh.save(path, passphrase=pw)
+        print("  minted %-10s %s%s" % (SEAT, path, "  (passphrase-wrapped)" if SEAT == "Stevo" else ""))
+    return kh
+
+
+def _history_src(pobox_dir):
+    if pobox_dir:
+        return pobox_dir
+    if os.path.isdir(POBOX):
+        return POBOX
+    import subprocess
+    import tempfile
+    src = os.path.join(tempfile.mkdtemp(), "pobox")
+    print("  cloning the private history from the wire remote…")
+    subprocess.run(["git", "-c", "credential.helper=store", "clone", "--quiet", POBOX, src], check=True)
+    return src
 
 
 def run(pobox_dir=None):
-    print("Hermetic ceremony — seat on this machine: %s" % SEAT)
-    seats = mint_keys()
+    print("Hermetic ceremony — seat on this machine: %s (mints ONLY this seat's key — H1)" % SEAT)
+    kh = mint_key()
     wire = Wire(WIRE)
-    migration = K.Keyholder("migration")                     # signs the ported history
-    for k in list(seats.values()) + [migration]:             # publish cards so legacy sigs verify
-        wire.publish_card(k)
-    print("  directory: %d cards published (+ migration)" % len(seats))
+    wire.publish_card(kh)                                     # publish MY PUBLIC card; no private key leaves
+    cards = wire.directory()
+    have = sorted(c["display"] for c in cards.values() if c["display"] in SEATS)
+    print("  published %s's card; seats present on the wire: %d/%d %s" % (SEAT, len(have), len(SEATS), have))
 
+    if sorted(have) != sorted(SEATS):
+        print("  RESTORE DEFERRED — each seat must mint on its OWN machine and publish its card first.")
+        print("  Re-run once all %d are present; the restore seals to PUBLIC cards only (no private keys)." % len(SEATS))
+        return kh, wire, 0
     if glob.glob(os.path.join(wire.pool, "*.age")):
         print("  pool already has sealed mail — skipping import (delete %s to re-restore)" % wire.pool)
-        return seats, wire, 0
+        return kh, wire, 0
 
-    src = pobox_dir
-    if src is None:
-        if os.path.isdir(POBOX):
-            src = POBOX
-        else:
-            import subprocess
-            import tempfile
-            src = os.path.join(tempfile.mkdtemp(), "pobox")
-            print("  cloning the private history from the wire remote…")
-            subprocess.run(["git", "-c", "credential.helper=store", "clone", "--quiet", POBOX, src], check=True)
-    cards = {k.aid: k.card() for k in seats.values()}
-    n, per, lost = import_all(src, wire.pool, migration, cards, restore_open=True)
-    print("  restored %d letters into the sealed pool (%d unroutable -> flagged)" % (n, lost))
-    for name in SEATS:
-        print("    %-10s %d letters" % (name, len(wire.fetch(seats[name], set()))))
-    print("Done. `python3 FlowCode/mailbox_qt.py` now opens the hermetic mailbox for %s." % SEAT)
-    print("(The old system is untouched — cut-over stays gated.)")
-    return seats, wire, n
+    # every seat has published: restore history to the PUBLIC cards. No private keys are touched.
+    seat_cards = {aid: c for aid, c in cards.items() if c["display"] in SEATS}
+    migration = K.Keyholder("migration")                     # signs legacy mail; its AID is PINNED (H2)
+    wire.publish_card(migration)                             # published only so legacy signatures verify
+    open(os.path.join(KEYS, "migration.aid"), "w").write(migration.aid)
+    src = _history_src(pobox_dir)
+    n, per, lost = import_all(src, wire.pool, migration, seat_cards, restore_open=True)
+    print("  restored %d letters to the sealed pool (%d unroutable -> flagged); migration AID pinned" % (n, lost))
+    print("Done — each seat opens its own history with ITS OWN key. (Cut-over stays gated.)")
+    return kh, wire, n
 
 
 if __name__ == "__main__":
