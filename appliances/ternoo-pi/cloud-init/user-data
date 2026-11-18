@@ -82,3 +82,6 @@ write_files:
 runcmd:
 - [ systemctl, enable, --now, ternoo-usb-gadget.service ]
 - [ systemctl, restart, systemd-networkd ]
+# boot-speed trims: the offline appliance has no internet to check for updates
+- [ systemctl, disable, --now, update-notifier-download.timer ]
+- [ systemctl, mask, update-notifier-download.service ]
