@@ -62,9 +62,10 @@ def classify(card, pins):
 
 
 def fingerprint(aid):
-    """A short, human-checkable form of an AID for out-of-band confirmation."""
+    """A human-checkable form of an AID for out-of-band confirmation. 20 hex = 80 bits (CF5
+    re-audit: 48 bits was grindable for a look-alike); long enough to resist a forged prefix."""
     h = aid[4:] if aid.startswith("aid_") else aid
-    return " ".join(h[i:i + 4] for i in range(0, 12, 4))  # e.g. '3af0 0d12 ab34'
+    return " ".join(h[i:i + 4] for i in range(0, 20, 4))  # e.g. 'ba61 7383 998b 4be6 3efa'
 
 
 def _selftest():

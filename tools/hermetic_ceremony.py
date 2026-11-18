@@ -100,13 +100,16 @@ def run(pobox_dir=None):
     if len(have) < len(SEATS):
         print("  restoring history to the %d seat(s) present now — others get theirs when they mint." % len(have))
 
-    # PIN the roster present (H3). Each seat confirms these fingerprints OUT OF BAND.
-    from ternid_pins import fingerprint, save_pins
-    seat_cards = {aid: c for aid, c in cards.items() if c["display"] in SEATS}
-    pinmap = save_pins({c["display"]: aid for aid, c in seat_cards.items()})
-    print("  PINNED display->AID — CONFIRM these fingerprints out of band (chat/paper):")
-    for name in sorted(pinmap):
-        print("    %-10s %s" % (name, fingerprint(pinmap[name])))
+    # H3 (CF5 re-audit): pin ONLY yourself. Auto-pinning whatever is on the wire at mint time is
+    # trust-on-first-use — an impostor present at that moment would be silently pinned. Other seats
+    # are confirmed one at a time, out of band, via Tmail's "Trust sender".
+    from ternid_pins import fingerprint, load_pins, save_pins
+    pins = load_pins()
+    pins[SEAT] = kh.aid
+    save_pins(pins)
+    print("  PINNED your own identity: %-10s %s" % (SEAT, fingerprint(kh.aid)))
+    print("  -> READ this fingerprint to the crew OUT OF BAND so each of them can confirm + pin you.")
+    print("  -> Other seats are NOT auto-trusted; confirm each of theirs via Trust sender.")
 
     marker = os.path.join(KEYS, "history-restored")
     if os.path.exists(marker):
