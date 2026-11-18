@@ -11,21 +11,12 @@ absent here.
   send      = seal to the recipient's card -> drop in the spool (daemon pushes) or the pool
   inbox     = open every pool envelope addressed to this seat (self-copies = Sent)
 """
-import datetime
 import os
 import secrets
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hermetic_wire import Wire
-
-
-def _stamp(t):
-    """Epoch int -> the ship's stamp. 0/blank -> '' (legacy mail with an unparseable date)."""
-    try:
-        return datetime.datetime.fromtimestamp(int(t)).strftime("%H:%M %d/%m/%Y") if t else ""
-    except (ValueError, OSError, OverflowError):
-        return ""
 
 
 class HermeticMailbox:
@@ -94,14 +85,15 @@ class HermeticMailbox:
         for m in self.wire.fetch(self.kh, seen):
             if m.get("legacy"):
                 frm, to = m.get("orig_from", "?"), m.get("orig_to", "?")
-                stamp, sent = _stamp(m.get("time_posted")), (m.get("orig_from", "") == self.kh.display)
+                t, sent = m.get("time_posted") or 0, (m.get("orig_from", "") == self.kh.display)
             else:
                 frm = who.get(m["from"], m["from"])
                 to = ", ".join(who.get(a, a) for a in m["to"])
-                stamp, sent = _stamp(m.get("time")), m["from"] == self.kh.aid
+                t, sent = m.get("time") or 0, m["from"] == self.kh.aid
             out.append({
                 "id": m["id"], "from": frm, "to": to,
-                "subject": m["subject"], "body": m["body"], "time": stamp,
+                "subject": m["subject"], "body": m["body"],
+                "time": int(t) if isinstance(t, (int, float)) or str(t).isdigit() else 0,
                 "unread": False, "sent": sent, "legacy": bool(m.get("legacy"))})
         return out
 

@@ -37,6 +37,41 @@ MAILLISTS = os.path.expanduser("~/.config/ternoo/maillists.json")   # named dist
 os.makedirs(OUTBOX, exist_ok=True)
 SEATS = ["Stevo", "CC", "CCC", "CF5", "CAI", "CO5", "Professor"]
 UID = Qt.ItemDataRole.UserRole
+SORT_ROLE = int(Qt.ItemDataRole.UserRole) + 1                  # epoch stashed for chronological sort
+SETTINGS = os.path.expanduser("~/.config/ternoo/mail-settings.json")
+
+# date-format presets (label shown in Settings -> strftime pattern). Default = Australian.
+DATE_FORMATS = [
+    ("Day/Month/Year · 24h   31/12/2026 14:05", "%d/%m/%Y %H:%M"),
+    ("Day-Month-Year · 24h   31-12-2026 14:05", "%d-%m-%Y %H:%M"),
+    ("Day Mon Year · 24h      31 Dec 2026 14:05", "%d %b %Y %H:%M"),
+    ("Year-Month-Day · 24h   2026-12-31 14:05", "%Y-%m-%d %H:%M"),
+    ("Month/Day/Year · 12h   12/31/2026 02:05 PM", "%m/%d/%Y %I:%M %p"),
+]
+DEFAULT_DATE_FMT = DATE_FORMATS[0][1]
+
+
+def load_settings():
+    try:
+        return json.load(open(SETTINGS))
+    except Exception:
+        return {}
+
+
+def save_settings(s):
+    os.makedirs(os.path.dirname(SETTINGS), exist_ok=True)
+    json.dump(s, open(SETTINGS, "w"), indent=1)
+
+
+def date_fmt():
+    return load_settings().get("date_format", DEFAULT_DATE_FMT)
+
+
+class _TimeItem(QTableWidgetItem):
+    """A Date cell that sorts by the epoch stashed in SORT_ROLE, not by its shown text — so
+    DD/MM/YYYY (or any format) still sorts newest-to-oldest correctly."""
+    def __lt__(self, other):
+        return (self.data(SORT_ROLE) or 0) < (other.data(SORT_ROLE) or 0)
 
 
 # ── AgentClient facade (CCC handoff §B) — crypto-free; the real agent swaps in here ──
@@ -786,7 +821,7 @@ class MailApp(QMainWindow):
 
         right = QSplitter(Qt.Orientation.Vertical)            # RIGHT: header table over reading pane
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["Time", "From", "To", "Subject"])
+        self.table.setHorizontalHeaderLabels(["Date", "From", "To", "Subject"])
         self.table.setSortingEnabled(True)                   # click a column header to sort
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -831,6 +866,21 @@ class MailApp(QMainWindow):
             self._synced.emit()
         threading.Thread(target=work, daemon=True).start()
 
+    def _settings(self):
+        """Settings — currently the date/time format (more to come). Applies on OK, re-renders."""
+        labels = [lbl for lbl, _ in DATE_FORMATS]
+        cur = date_fmt()
+        idx = next((i for i, (_, f) in enumerate(DATE_FORMATS) if f == cur), 0)
+        lbl, ok = QInputDialog.getItem(self, "Settings — date format",
+                                       "How should dates and times be shown?", labels, idx, False)
+        if not ok or not lbl:
+            return
+        fmt = dict(DATE_FORMATS).get(lbl, DEFAULT_DATE_FMT)
+        s = load_settings()
+        s["date_format"] = fmt
+        save_settings(s)
+        self._reload()                                        # re-render the table + reading pane
+
     def _names_for(self, handles, contacts):
         by = {c["handle"]: c["display_name"] for c in contacts}
         return [by.get(h, str(h)) for h in handles]
@@ -854,6 +904,8 @@ class MailApp(QMainWindow):
         fm.addAction(QAction("Reply", self, shortcut="Ctrl+R", triggered=self.reply))
         fm.addAction(QAction("Contacts && Groups…", self, shortcut="Ctrl+B", triggered=self.manage_contacts))
         fm.addAction(QAction("Refresh", self, shortcut="F5", triggered=lambda: self._sync_async()))
+        fm.addSeparator()
+        fm.addAction(QAction("Settings…", self, shortcut="Ctrl+,", triggered=self._settings))
         fm.addSeparator()
         fm.addAction(QAction("Quit", self, shortcut="Ctrl+Q", triggered=self.close))
         hm = mb.addMenu("Help")
@@ -922,13 +974,13 @@ class MailApp(QMainWindow):
         for m in raw:
             row = self.table.rowCount()
             self.table.insertRow(row)
-            cells = (_table_time(m.get("time")), str(m.get("from", "?")),
-                     str(m.get("to", "?")), str(m.get("subject", "")))
-            for col, text in enumerate(cells):
-                cell = QTableWidgetItem(text)
-                if col == 0:
-                    cell.setData(UID, m)                      # stash the whole message on the Time cell
-                self.table.setItem(row, col, cell)
+            tcell = _TimeItem(_table_time(m.get("time")))
+            tcell.setData(SORT_ROLE, _epoch(m.get("time")))   # the real chronological sort key
+            tcell.setData(UID, m)                             # stash the whole message on the Date cell
+            self.table.setItem(row, 0, tcell)
+            for col, text in ((1, str(m.get("from", "?"))), (2, str(m.get("to", "?"))),
+                              (3, str(m.get("subject", "")))):
+                self.table.setItem(row, col, QTableWidgetItem(text))
         self.table.setSortingEnabled(True)
         self.table.sortItems(0, Qt.SortOrder.DescendingOrder)   # newest first by default
         self.read.clear()
@@ -1136,20 +1188,31 @@ def _md_body(text):
     return t
 
 
+def _epoch(t):
+    """Best-effort unix epoch for SORTING. An int stays an int; a known stamp string is parsed;
+    anything undated -> 0 (sinks to the bottom). This is why the date column sorts chronologically
+    no matter which display format the user picks."""
+    if isinstance(t, (int, float)):
+        return int(t)
+    s = re.sub(r"\s+[A-Z]{2,5}$", "", str(t or "").strip())   # drop a trailing " ACST"/" ACDT"
+    if s.isdigit():
+        return int(s)
+    for f in ("%H:%M %d/%m/%Y", "%d/%m/%Y %H:%M", "%d-%m-%Y %H:%M",
+              "%Y-%m-%d %H:%M", "%Y-%m-%d-%H%M", "%d %b %Y %H:%M", "%m/%d/%Y %I:%M %p"):
+        try:
+            return int(datetime.datetime.strptime(s, f).timestamp())
+        except ValueError:
+            pass
+    return 0
+
+
 def _fmt_time(t):
-    """Agent sends `time` as a unix int; the old stub sent a string. Format either."""
-    try:
-        return datetime.datetime.fromtimestamp(int(t)).strftime("%H:%M %d/%m/%Y")
-    except (ValueError, TypeError, OSError):
-        return str(t)
+    """Human date/time in the user's chosen format — used by both the table and the reading pane."""
+    e = _epoch(t)
+    return datetime.datetime.fromtimestamp(e).strftime(date_fmt()) if e else ""
 
 
-def _table_time(t):
-    """Timestamp for the sortable Time column: ISO-ish, so lexical sort == chronological."""
-    try:
-        return datetime.datetime.fromtimestamp(int(t)).strftime("%Y-%m-%d %H:%M")
-    except (ValueError, TypeError, OSError):
-        return str(t)
+_table_time = _fmt_time                                        # same display; the sort key is the epoch
 
 
 def load_lists():
