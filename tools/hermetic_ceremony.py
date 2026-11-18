@@ -28,6 +28,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import keyholder as K
+import hermetic_seed
 from hermetic_import import import_all
 from hermetic_wire import Wire
 
@@ -65,6 +66,18 @@ def mint_key():
     """
     os.makedirs(KEYS, mode=0o700, exist_ok=True)
     path = _keyfile(SEAT)
+
+    # Cloud seats (spec §12 D4): the durable identity is a per-seat secret on the session
+    # environment, not the key file — the container's filesystem is wiped on rebuild. When that
+    # seed is present, derive the keypair deterministically so every session rebuilds the SAME
+    # identity. The key file becomes a mere cache, always reproducible from the seed.
+    seed = hermetic_seed.seed_from_env()
+    if seed:
+        kh = hermetic_seed.derive_keyholder(SEAT, seed, K)
+        kh.save(path, passphrase=None)
+        print("  derived %-10s from %s (durable seat seed — survives container wipe)" % (SEAT, hermetic_seed.ENV_SEED))
+        return kh
+
     pw = _captain_pass() if SEAT == "Stevo" else None
     if os.path.exists(path):
         kh = K.Keyholder.load(path, passphrase=pw)
