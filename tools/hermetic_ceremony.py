@@ -108,17 +108,21 @@ def run(pobox_dir=None):
     for name in sorted(pinmap):
         print("    %-10s %s" % (name, fingerprint(pinmap[name])))
 
-    if glob.glob(os.path.join(wire.pool, "*.age")):
-        print("  pool already has sealed mail — skipping import (delete %s to re-restore)" % wire.pool)
+    marker = os.path.join(KEYS, "history-restored")
+    if os.path.exists(marker):
+        print("  history already restored for %s — skipping (delete %s to redo)" % (SEAT, marker))
         return kh, wire, 0
 
-    # every seat has published: restore history to the PUBLIC cards. No private keys are touched.
-    migration = K.Keyholder("migration")                     # signs legacy mail; its AID is PINNED (H2)
+    # Restore the shared history to THIS seat ONLY — its own private copy, sealed to its own card.
+    # Each seat does this independently, so it never duplicates into another seat's inbox on the
+    # shared wire. The migration key signs it and its AID is pinned locally (H2).
+    migration = K.Keyholder("migration")
     wire.publish_card(migration)                             # published only so legacy signatures verify
     open(os.path.join(KEYS, "migration.aid"), "w").write(migration.aid)
     src = _history_src(pobox_dir)
-    n, per, lost = import_all(src, wire.pool, migration, seat_cards, restore_open=True)
-    print("  restored %d letters to the sealed pool (%d unroutable -> flagged); migration AID pinned" % (n, lost))
+    n, per, lost = import_all(src, wire.pool, migration, {kh.aid: kh.card()}, restore_open=True)
+    open(marker, "w").write(SEAT)
+    print("  restored %d letters to %s's own sealed pool (%d unroutable -> flagged)" % (n, SEAT, lost))
     print("Done — each seat opens its own history with ITS OWN key. (Cut-over stays gated.)")
     return kh, wire, n
 
