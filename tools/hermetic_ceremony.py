@@ -97,13 +97,10 @@ def run(pobox_dir=None):
     cards = wire.directory()
     have = sorted(c["display"] for c in cards.values() if c["display"] in SEATS)
     print("  published %s's card; seats present on the wire: %d/%d %s" % (SEAT, len(have), len(SEATS), have))
+    if len(have) < len(SEATS):
+        print("  restoring history to the %d seat(s) present now — others get theirs when they mint." % len(have))
 
-    if sorted(have) != sorted(SEATS):
-        print("  RESTORE DEFERRED — each seat must mint on its OWN machine and publish its card first.")
-        print("  Re-run once all %d are present; the restore seals to PUBLIC cards only (no private keys)." % len(SEATS))
-        return kh, wire, 0
-
-    # all seats present: PIN the roster (H3). Each seat confirms these fingerprints OUT OF BAND.
+    # PIN the roster present (H3). Each seat confirms these fingerprints OUT OF BAND.
     from ternid_pins import fingerprint, save_pins
     seat_cards = {aid: c for aid, c in cards.items() if c["display"] in SEATS}
     pinmap = save_pins({c["display"]: aid for aid, c in seat_cards.items()})
