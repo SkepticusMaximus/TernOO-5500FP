@@ -1,0 +1,12 @@
+# M3 (CF5 re-audit): a change to the security-critical mail code is a security change in its
+# own right and requires the captain's review. Enforced once branch protection has
+# "require review from Code Owners" enabled on this repo.
+/tools/keyholder.py         @SkepticusMaximus
+/tools/hermetic_wire.py     @SkepticusMaximus
+/tools/hermetic_mailbox.py  @SkepticusMaximus
+/tools/hermetic_store.py    @SkepticusMaximus
+/tools/hermetic_import.py   @SkepticusMaximus
+/tools/hermetic_ceremony.py @SkepticusMaximus
+/tools/ternid_pins.py       @SkepticusMaximus
+/tools/release_manifest.py  @SkepticusMaximus
+/FlowCode/mailbox_qt.py     @SkepticusMaximus

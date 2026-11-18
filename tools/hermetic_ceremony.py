@@ -44,8 +44,17 @@ def _keyfile(seat):
 
 
 def _captain_pass():
-    # env override exists ONLY for the automated self-test; a real run uses getpass (no echo)
-    return os.environ.get("TERNOO_CAPTAIN_PASS") or getpass.getpass("Captain's key passphrase: ")
+    # env override exists ONLY for the automated self-test; a real run uses getpass (no echo).
+    # L3: ask for a real passphrase (>= 12 chars). Note: Python can't reliably wipe it from
+    # memory afterwards — acceptable for v1, stated plainly.
+    env = os.environ.get("TERNOO_CAPTAIN_PASS")
+    if env:
+        return env
+    while True:
+        pw = getpass.getpass("Captain's key passphrase (>= 12 chars): ")
+        if len(pw) >= 12:
+            return pw
+        print("  too short — use at least 12 characters (a passphrase, not a password).")
 
 
 def mint_key():

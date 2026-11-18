@@ -1312,6 +1312,15 @@ def _hermetic_agent():
     wire. The backend seals every outgoing letter and opens only what this key can — there is no
     admin, no shared keystore, no plaintext. This is the real mail system (CF5 spec §11)."""
     sys.path.insert(0, os.path.join(REPO, "tools"))
+    from release_manifest import verify as _verify_release   # M3: don't unlock a key for untrusted code
+    ok, detail = _verify_release()
+    if not ok:
+        QMessageBox.critical(None, "Mail code not trusted",
+                             "The mail code does not match the release you signed:\n\n%s\n\n"
+                             "Refusing to unlock your key. Review the change and re-sign "
+                             "(python3 tools/release_manifest.py sign), or restore the signed version."
+                             % detail)
+        sys.exit(1)
     from keyholder import Keyholder
     from hermetic_mailbox import HermeticMailbox
     try:
