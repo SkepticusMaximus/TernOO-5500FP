@@ -22,11 +22,11 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QPushButton, QDialog, QLineEdit, QDialogButtonBox, QSplitter,
                                QMessageBox, QTreeWidget, QTreeWidgetItem, QTableWidget,
                                QTableWidgetItem, QHeaderView, QAbstractItemView, QInputDialog,
-                               QCompleter, QCheckBox, QFormLayout)
+                               QCompleter, QCheckBox, QFormLayout, QColorDialog, QSystemTrayIcon)
 from PySide6.QtGui import (QAction, QFont, QBrush, QColor, QIcon, QShortcut, QKeySequence,
                            QTextCursor, QSyntaxHighlighter, QTextCharFormat, QTextBlockFormat,
                            QTextListFormat)
-from PySide6.QtCore import Qt, Signal, QStringListModel
+from PySide6.QtCore import Qt, Signal, QStringListModel, QTimer
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # repo root — portable across machines
 POBOX = os.path.join(REPO, "private", "POBOX")
@@ -83,6 +83,18 @@ def seal_confirm():
 
 def signature():
     return load_settings().get("signature", "")
+
+
+def auto_read():
+    return bool(load_settings().get("auto_read", False))      # g93: default manual
+
+
+def sync_min():
+    return int(load_settings().get("sync_min", 1))            # g95: minutes; 0 = manual only
+
+
+def notify_on():
+    return bool(load_settings().get("notify", True))          # g95: desktop toast on new mail
 
 
 class _TimeItem(QTableWidgetItem):
@@ -805,7 +817,8 @@ class MailApp(QMainWindow):
         v.setContentsMargins(8, 6, 8, 8)
         top = QHBoxLayout()
         hdr = QLabel("TernOO · POBOX Mail")
-        hdr.setStyleSheet("color:#3fd08f;font-size:16px;")
+        self._hdr = hdr
+        hdr.setStyleSheet("color:%s;font-size:16px;" % theme_colors()["accent"])
         top.addWidget(hdr)
         top.addStretch(1)
         top.addWidget(QLabel("Account:"))
@@ -864,9 +877,57 @@ class MailApp(QMainWindow):
         v.addWidget(split, 1)
 
         self.status = QLabel("")
-        self.status.setStyleSheet("color:#9696a5;")
+        self.status.setStyleSheet("color:%s;" % theme_colors()["muted"])
         v.addWidget(self.status)
+        # g93 read-state (local; hermetic mail has no server read flag) + g95 auto-sync + notify
+        self._read = set(self._load_read())
+        self._seen_ids = set()
+        self._tray = QSystemTrayIcon(QIcon(ICON), self)
+        if QSystemTrayIcon.isSystemTrayAvailable():
+            self._tray.show()
+        self._synctimer = QTimer(self)
+        self._synctimer.timeout.connect(self._sync_async)
+        self._apply_sync_timer()
         self._build_tree()                                   # selects Inbox -> drives the first reload
+
+    # ── g95 auto-sync + g93 read-state helpers ──
+    READ_STATE = os.path.expanduser("~/.config/ternoo/mail-read.json")
+
+    def _apply_sync_timer(self):
+        m = sync_min()
+        self._synctimer.start(m * 60000) if m > 0 else self._synctimer.stop()
+
+    def _load_read(self):
+        try:
+            return json.load(open(self.READ_STATE))
+        except Exception:
+            return []
+
+    def _save_read(self):
+        try:
+            json.dump(sorted(self._read), open(self.READ_STATE, "w"))
+        except Exception:
+            pass
+
+    def _mark_read(self, mid, read=True):
+        """g93: local read-state. Updates the store and re-styles the selected row (no full reload)."""
+        if not mid:
+            return
+        self._read.add(mid) if read else self._read.discard(mid)
+        self._save_read()
+        items = self.table.selectedItems()
+        if items:
+            f = QFont()
+            f.setBold(not read)
+            for col in range(4):
+                it = self.table.item(items[0].row(), col)
+                if it:
+                    it.setFont(f)
+
+    def _toggle_read(self):
+        m = self._sel_msg()
+        if m and not m.get("sent"):
+            self._mark_read(m.get("id"), m.get("id") not in self._read)
 
     def _sync_async(self):
         """Run the agent<->wire bridge once on a background thread (worktree-isolated), then
@@ -906,6 +967,58 @@ class MailApp(QMainWindow):
         sigf = QLineEdit(signature())
         sigf.setPlaceholderText("appended to new letters after a '-- ' line")
         form.addRow("Signature:", sigf)
+
+        # ── Appearance (g91): theme preset + per-element custom colours via Qt's picker ──
+        from PySide6.QtGui import QColor
+        s0 = load_settings()
+        themef = QComboBox()
+        themef.addItems(list(THEMES.keys()))
+        themef.setCurrentText(s0.get("theme_name", DEFAULT_THEME))
+        form.addRow("Theme:", themef)
+        custom = dict(s0.get("theme_custom", {}) or {})
+        btns = {}
+
+        def _cur(key):
+            return custom.get(key) or THEMES[themef.currentText()].get(key)
+
+        def _paint():
+            for k, b in btns.items():
+                b.setStyleSheet("background:%s;border:1px solid #888;border-radius:3px;" % _cur(k))
+
+        def _mkpick(key):
+            def pick():
+                col = QColorDialog.getColor(QColor(_cur(key)), d, "Pick the %s colour" % key)
+                if col.isValid():
+                    custom[key] = col.name()
+                    _paint()
+            return pick
+
+        row = QHBoxLayout()
+        for label, key in COLOR_KEYS:
+            b = QPushButton()
+            b.setFixedSize(34, 22)
+            b.clicked.connect(_mkpick(key))
+            btns[key] = b
+            row.addWidget(QLabel(label))
+            row.addWidget(b)
+        themef.currentTextChanged.connect(lambda _=None: (custom.clear(), _paint()))
+        _paint()
+        cw = QWidget()
+        cw.setLayout(row)
+        form.addRow("Custom colours:", cw)
+
+        # ── g93 mark-as-read · g95 auto-sync + notifications ──
+        autoread = QCheckBox("Mark a message read automatically when I open it")
+        autoread.setChecked(bool(s0.get("auto_read", False)))
+        form.addRow("Mark as read:", autoread)
+        syncf = QComboBox()
+        syncf.addItems(["Manual only", "Every 1 min", "Every 3 min", "Every 5 min"])
+        syncf.setCurrentIndex({0: 0, 1: 1, 3: 2, 5: 3}.get(int(s0.get("sync_min", 1)), 1))
+        form.addRow("Auto-sync the wire:", syncf)
+        notifyf = QCheckBox("Desktop notification when new mail arrives")
+        notifyf.setChecked(bool(s0.get("notify", True)))
+        form.addRow("Notifications:", notifyf)
+
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(d.accept)
         bb.rejected.connect(d.reject)
@@ -917,7 +1030,15 @@ class MailApp(QMainWindow):
         s["reading_pt"] = dict(FONT_SIZES).get(fontf.currentText(), DEFAULT_FONT_PT)
         s["seal_confirm"] = sealc.isChecked()
         s["signature"] = sigf.text().strip()
+        s["theme_name"] = themef.currentText()
+        s["theme_custom"] = custom
+        s["auto_read"] = autoread.isChecked()
+        s["sync_min"] = [0, 1, 3, 5][syncf.currentIndex()]
+        s["notify"] = notifyf.isChecked()
         save_settings(s)
+        apply_theme(QApplication.instance())                  # re-skin the whole app live
+        self._hdr.setStyleSheet("color:%s;font-size:16px;" % theme_colors()["accent"])
+        self._apply_sync_timer()                              # g95: adjust the auto-sync cadence
         self._reload()                                        # re-render the table + reading pane
 
     def _save_sort(self, col, order):
@@ -950,6 +1071,7 @@ class MailApp(QMainWindow):
         fm.addAction(QAction("Compose", self, shortcut="Ctrl+N", triggered=self.compose))
         fm.addAction(QAction("Reply", self, shortcut="Ctrl+R", triggered=self.reply))
         fm.addAction(QAction("Make To-Do from message", self, shortcut="Ctrl+T", triggered=self.make_todo))
+        fm.addAction(QAction("Toggle read / unread", self, shortcut="Ctrl+U", triggered=self._toggle_read))
         fm.addAction(QAction("Contacts && Groups…", self, shortcut="Ctrl+B", triggered=self.manage_contacts))
         fm.addAction(QAction("Refresh", self, shortcut="F5", triggered=lambda: self._sync_async()))
         fm.addSeparator()
@@ -1019,9 +1141,12 @@ class MailApp(QMainWindow):
             raw = self.agent.inbox(account=self.account)
         self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
+        bold = QFont()
+        bold.setBold(True)
         for m in raw:
             row = self.table.rowCount()
             self.table.insertRow(row)
+            unread = self.folder == "Inbox" and not m.get("sent") and m.get("id") not in self._read
             tcell = _TimeItem(_table_time(m.get("time")))
             tcell.setData(SORT_ROLE, _epoch(m.get("time")))   # the real chronological sort key
             tcell.setData(UID, m)                             # stash the whole message on the Date cell
@@ -1029,11 +1154,22 @@ class MailApp(QMainWindow):
             for col, text in ((1, str(m.get("from", "?"))), (2, str(m.get("to", "?"))),
                               (3, str(m.get("subject", "")))):
                 self.table.setItem(row, col, QTableWidgetItem(text))
+            if unread:                                        # g93: unread letters are bold
+                for col in range(4):
+                    self.table.item(row, col).setFont(bold)
         self.table.setSortingEnabled(True)
         s = load_settings()                                     # g97: restore the saved sort
         self._loading = True
         self.table.sortItems(int(s.get("sort_col", 0)), Qt.SortOrder(int(s.get("sort_order", 1))))
         self._loading = False
+        if self.folder == "Inbox":                             # g95: notify on genuinely new mail
+            cur = {m.get("id") for m in raw if not m.get("sent")}
+            new = cur - self._seen_ids
+            if new and self._seen_ids and notify_on() and self._tray.isSystemTrayAvailable():
+                self._tray.showMessage("TernOO · POBOX Mail",
+                                       "%d new sealed letter%s" % (len(new), "" if len(new) == 1 else "s"),
+                                       QSystemTrayIcon.MessageIcon.Information, 5000)
+            self._seen_ids = cur
         self.read.clear()
         n = self.table.rowCount()
         base = "%s · %s — %d message%s" % (self._me(), self.folder, n, "" if n == 1 else "s")
@@ -1060,8 +1196,11 @@ class MailApp(QMainWindow):
             self.agent.mark_read(account=self.account, message_id=m.get("id"))
         except Exception:
             pass
+        if auto_read() and not m.get("sent"):                 # g93: auto-mark read on open (if enabled)
+            self._mark_read(m.get("id"), True)
+        c = theme_colors()                                    # g91: reading pane follows the theme
         fp = str(m.get("fingerprint") or "")
-        fpline = " <span style='color:#6ea8fe'>· %s</span>" % _esc(fp) if fp else ""
+        fpline = " <span style='color:%s'>· %s</span>" % (c["link"], _esc(fp)) if fp else ""
         # H3: a sender whose name isn't pinned to this key gets a loud warning, never silent trust.
         warn = ("" if m.get("verified", True) or m.get("sent") else
                 "<div style='background:#5a1e1e;color:#ffd0d0;padding:5px 9px;border-radius:4px;margin:4px 0'>"
@@ -1070,11 +1209,12 @@ class MailApp(QMainWindow):
                 "click <b>Trust sender</b> to pin it.</div>" % _esc(fp))
         self.read.setStyleSheet("font-size:%dpt" % reading_pt())   # g92: reading-pane text size
         self.read.setHtml(
-            "<div style='color:#3fd08f;font-size:14px'>%s</div>"
-            "<div style='color:#9696a5'>from <b style='color:#e6e6ec'>%s</b>%s · to %s · %s</div>%s<hr>"
-            "<div style='color:#e6e6ec;white-space:pre-wrap;font-family:DejaVu Sans Mono'>%s</div>"
-            % (_esc(str(m.get("subject"))), _esc(str(m.get("from"))), fpline, _esc(str(m.get("to"))),
-               _esc(_fmt_time(m.get("time"))), warn, _md_body(str(m.get("body")))))
+            "<div style='color:%s;font-size:14px'>%s</div>"
+            "<div style='color:%s'>from <b style='color:%s'>%s</b>%s · to %s · %s</div>%s<hr>"
+            "<div style='color:%s;white-space:pre-wrap;font-family:DejaVu Sans Mono'>%s</div>"
+            % (c["accent"], _esc(str(m.get("subject"))), c["muted"], c["text"], _esc(str(m.get("from"))),
+               fpline, _esc(str(m.get("to"))), _esc(_fmt_time(m.get("time"))), warn,
+               c["text"], _md_body(str(m.get("body")))))
 
     def _table_dblclick(self, _item):
         if self.folder != "Drafts":
@@ -1304,16 +1444,18 @@ def _md_body(text):
     white-space:pre-wrap). Deliberately NOT a full markdown parser: it must never mangle a
     plain-text letter (a `---` separator, an aligned column, a stray `*`), only light up
     real markup. Proven on real mail shapes (g62)."""
+    c = theme_colors()                                        # g91: markdown colours follow the theme
+    code, head, link = c["border"], c["accent"], c["link"]
     t = _esc(text)
-    t = re.sub(r'`([^`\n]+)`', r"<code style='background:#2a2a3a;padding:0 3px;border-radius:3px'>\1</code>", t)
-    t = re.sub(r'(?m)^(\s{0,3})###\s+(.+)$', r"\1<b style='color:#8fd0ff'>\2</b>", t)
-    t = re.sub(r'(?m)^(\s{0,3})##\s+(.+)$', r"\1<b style='color:#8fd0ff;font-size:15px'>\2</b>", t)
-    t = re.sub(r'(?m)^(\s{0,3})#\s+(.+)$', r"\1<b style='color:#8fd0ff;font-size:17px'>\2</b>", t)
+    t = re.sub(r'`([^`\n]+)`', r"<code style='background:%s;padding:0 3px;border-radius:3px'>\1</code>" % code, t)
+    t = re.sub(r'(?m)^(\s{0,3})###\s+(.+)$', r"\1<b style='color:%s'>\2</b>" % head, t)
+    t = re.sub(r'(?m)^(\s{0,3})##\s+(.+)$', r"\1<b style='color:%s;font-size:15px'>\2</b>" % head, t)
+    t = re.sub(r'(?m)^(\s{0,3})#\s+(.+)$', r"\1<b style='color:%s;font-size:17px'>\2</b>" % head, t)
     t = re.sub(r'\*\*(\S(?:.*?\S)?)\*\*', r'<b>\1</b>', t)
     t = re.sub(r'(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)', r'<i>\1</i>', t)
-    t = re.sub(r'\[([^\]]+)\]\((https?://[^\s)]+)\)', r"<a href='\2' style='color:#79b8ff'>\1</a>", t)
+    t = re.sub(r'\[([^\]]+)\]\((https?://[^\s)]+)\)', r"<a href='\2' style='color:%s'>\1</a>" % link, t)
     # bare URLs — but NOT ones already inside an href (exclude a preceding ' " > = /)
-    t = re.sub(r"(?<![\"'>=/])(https?://[^\s<]+)", r"<a href='\1' style='color:#79b8ff'>\1</a>", t)
+    t = re.sub(r"(?<![\"'>=/])(https?://[^\s<]+)", r"<a href='\1' style='color:%s'>\1</a>" % link, t)
     t = re.sub(r'(?m)^(\s*)[-*]\s+', r'\1• ', t)
     return t
 
@@ -1381,11 +1523,54 @@ def _display(agent, account):
         return str(account)
 
 
-DARK = ("QWidget{background:#1a1f2b;color:#e6e6ec;}"
-        "QListWidget,QTextEdit,QLineEdit,QComboBox{background:#15151f;border:1px solid #3a3a52;}"
-        "QListWidget::item:selected{background:#2e466e;}"
-        "QPushButton{background:#2e466e;border:1px solid #5a82be;border-radius:4px;padding:3px 10px;}"
-        "QMenuBar,QMenu{background:#1e2431;} QMenu::item:selected{background:#2e466e;}")
+# ── Appearance (g91): curated themes + per-element custom colours via Qt's native picker ──
+THEMES = {
+    "TernOO Dark":   dict(bg="#1a1f2b", surface="#15151f", text="#e6e6ec", muted="#9696a5",
+                          accent="#3fd08f", sel="#2e466e", border="#3a3a52", link="#79b8ff"),
+    "Paper (Light)": dict(bg="#f3f3ee", surface="#ffffff", text="#20232a", muted="#6b6f7a",
+                          accent="#1f9d6b", sel="#d2e4ff", border="#d4d4dd", link="#1a66cc"),
+    "Midnight":      dict(bg="#0d1017", surface="#151a24", text="#dbe2ee", muted="#7a8498",
+                          accent="#6ea8fe", sel="#213a5c", border="#283040", link="#8fb8ff"),
+    "Dusk":          dict(bg="#272230", surface="#322a3b", text="#ece6ef", muted="#a596aa",
+                          accent="#e2a862", sel="#463a52", border="#463c52", link="#e2a862"),
+    "Solar":         dict(bg="#002b36", surface="#073642", text="#eee8d5", muted="#93a1a1",
+                          accent="#2aa198", sel="#0a4a56", border="#0f4b58", link="#268bd2"),
+    "High Contrast": dict(bg="#000000", surface="#0b0b0b", text="#ffffff", muted="#c8c8c8",
+                          accent="#ffd400", sel="#004a99", border="#555555", link="#66ccff"),
+}
+DEFAULT_THEME = "TernOO Dark"
+COLOR_KEYS = [("Background", "bg"), ("Text", "text"), ("Accent", "accent"), ("Links", "link")]
+
+
+def theme_colors():
+    """Active palette: the chosen preset, with any per-element custom overrides on top."""
+    s = load_settings()
+    c = dict(THEMES.get(s.get("theme_name", DEFAULT_THEME), THEMES[DEFAULT_THEME]))
+    c.update(s.get("theme_custom", {}) or {})
+    return c
+
+
+def build_qss(c):
+    """A full flat/modern stylesheet from the active palette, with a subtle accent hover."""
+    return ("QWidget{background:%(bg)s;color:%(text)s;}"
+            "QListWidget,QTextEdit,QLineEdit,QComboBox,QTableWidget,QTreeWidget"
+            "{background:%(surface)s;border:1px solid %(border)s;border-radius:4px;}"
+            "QListWidget::item:selected,QTableWidget::item:selected,QTreeWidget::item:selected"
+            "{background:%(sel)s;color:%(text)s;}"
+            "QHeaderView::section{background:%(bg)s;color:%(muted)s;border:none;"
+            "border-bottom:1px solid %(border)s;padding:4px;}"
+            "QPushButton{background:%(sel)s;border:1px solid %(accent)s;border-radius:5px;padding:4px 12px;}"
+            "QPushButton:hover{background:%(accent)s;color:%(bg)s;}"
+            "QPushButton:pressed{background:%(border)s;}"
+            "QMenuBar{background:%(bg)s;} QMenu{background:%(surface)s;border:1px solid %(border)s;}"
+            "QMenu::item:selected,QMenuBar::item:selected{background:%(sel)s;}"
+            "QScrollBar:vertical{background:%(bg)s;width:11px;margin:0;}"
+            "QScrollBar::handle:vertical{background:%(border)s;border-radius:5px;min-height:24px;}"
+            "QScrollBar::add-line,QScrollBar::sub-line{height:0;}" % c)
+
+
+def apply_theme(app):
+    app.setStyleSheet(build_qss(theme_colors()))
 
 
 HERMETIC_KEY = os.environ.get("TERNOO_KEY", os.path.expanduser("~/.config/ternoo/keys/seat.key"))
@@ -1447,7 +1632,7 @@ def main():
     app.setApplicationName("POBOX Mail")
     app.setDesktopFileName("pobox-mail-qt")   # so Cinnamon matches the window to the .desktop icon
     app.setWindowIcon(QIcon(ICON))
-    app.setStyleSheet(DARK)
+    apply_theme(app)
     w = MailApp(make_agent())
     w.show()
     sys.exit(app.exec())
