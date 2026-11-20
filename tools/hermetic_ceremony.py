@@ -89,6 +89,21 @@ def mint_key():
     return kh
 
 
+def _pool_has_legacy(wire, kh):
+    """True if this seat can ALREADY open a ported-history (legacy) letter in the pool — the
+    content-based 'already restored' check that survives a cloud container wipe (the local marker
+    doesn't). Early-exits on the first hit."""
+    cards = wire.directory()
+    for f in sorted(glob.glob(os.path.join(wire.pool, "*.age"))):
+        try:
+            st, msg = kh.open(open(f, "rb").read(), cards)
+        except Exception:
+            continue
+        if st == "ok" and msg.get("legacy"):
+            return True
+    return False
+
+
 def _history_src(pobox_dir):
     if pobox_dir:
         return pobox_dir
@@ -124,15 +139,19 @@ def run(pobox_dir=None):
     print("  -> READ this fingerprint to the crew OUT OF BAND so each of them can confirm + pin you.")
     print("  -> Other seats are NOT auto-trusted; confirm each of theirs via Trust sender.")
 
+    # Idempotency (CCC's flag 19-11): a cloud container is wiped on rebuild, losing the local
+    # marker — so re-running would DUPLICATE this seat's history into the shared pool. The durable
+    # guard is the pool's CONTENT: if this seat can already open its legacy history, don't restore
+    # again. Checked before touching anything, so a restored seat is left exactly as it was.
     marker = os.path.join(KEYS, "history-restored")
-    if os.path.exists(marker):
-        print("  history already restored for %s — skipping (delete %s to redo)" % (SEAT, marker))
+    if os.path.exists(marker) or _pool_has_legacy(wire, kh):
+        print("  history already on the wire for %s — not re-restoring (idempotent)" % SEAT)
         return kh, wire, 0
 
-    # Restore the shared history to THIS seat ONLY — its own private copy, sealed to its own card.
-    # Each seat does this independently, so it never duplicates into another seat's inbox on the
-    # shared wire. The migration key signs it and its AID is pinned locally (H2).
-    migration = K.Keyholder("migration")
+    # First restore for this seat. The migration key is DERIVED from this seat's identity, so a
+    # container rebuild reproduces the SAME migration AID and the legacy stays honoured. Restore to
+    # THIS seat only — its own private copy, so it never duplicates into another seat's inbox.
+    migration = hermetic_seed.derive_keyholder("migration", kh.sign_pub_hex + "-ternid-migration-v1", K)
     wire.publish_card(migration)                             # published only so legacy signatures verify
     open(os.path.join(KEYS, "migration.aid"), "w").write(migration.aid)
     src = _history_src(pobox_dir)
