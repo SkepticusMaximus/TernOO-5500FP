@@ -1,5 +1,5 @@
 #!/home/stevo/.venvs/p2pcp/bin/python3
-"""TernOO · POBOX Mail — PySide6 reference face (list item g1).
+"""Tmail POBOX — PySide6 reference face (list item g1).
 
 Built against CCC's crypto-free AgentClient facade (handoff 2026-10-10-1107). The
 UI only ever handles display names + opaque handles — never a key, hash, grant id,
@@ -807,7 +807,7 @@ class MailApp(QMainWindow):
         self._synced.connect(self._reload)       # bridge sync finished (off-thread) -> reload on GUI thread
         self.account = "Stevo"
         self.folder = "Inbox"
-        self.setWindowTitle("TernOO · POBOX Mail")
+        self.setWindowTitle("Tmail POBOX")
         self.setWindowIcon(QIcon(ICON))
         self.resize(960, 600)
         self._menus()
@@ -816,7 +816,7 @@ class MailApp(QMainWindow):
         v = QVBoxLayout(central)
         v.setContentsMargins(8, 6, 8, 8)
         top = QHBoxLayout()
-        hdr = QLabel("TernOO · POBOX Mail")
+        hdr = QLabel("Tmail POBOX")
         self._hdr = hdr
         hdr.setStyleSheet("color:%s;font-size:16px;" % theme_colors()["accent"])
         top.addWidget(hdr)
@@ -1166,7 +1166,7 @@ class MailApp(QMainWindow):
             cur = {m.get("id") for m in raw if not m.get("sent")}
             new = cur - self._seen_ids
             if new and self._seen_ids and notify_on() and self._tray.isSystemTrayAvailable():
-                self._tray.showMessage("TernOO · POBOX Mail",
+                self._tray.showMessage("Tmail POBOX",
                                        "%d new sealed letter%s" % (len(new), "" if len(new) == 1 else "s"),
                                        QSystemTrayIcon.MessageIcon.Information, 5000)
             self._seen_ids = cur
@@ -1425,8 +1425,8 @@ class MailApp(QMainWindow):
                 return
 
     def _about(self):
-        QMessageBox.information(self, "POBOX Mail",
-                                "TernOO · POBOX Mail — PySide6 face on the live TernID agent.\n"
+        QMessageBox.information(self, "Tmail POBOX",
+                                "Tmail POBOX — PySide6 face on the live TernID agent.\n"
                                 "3-pane: mailboxes + contacts · sortable headers · reading pane.\n"
                                 "Compose / Reply send real sealed mail; Drafts stay local.")
 
@@ -1539,7 +1539,8 @@ THEMES = {
                           accent="#ffd400", sel="#004a99", border="#555555", link="#66ccff"),
 }
 DEFAULT_THEME = "TernOO Dark"
-COLOR_KEYS = [("Background", "bg"), ("Text", "text"), ("Accent", "accent"), ("Links", "link")]
+COLOR_KEYS = [("Background", "bg"), ("Panels", "surface"), ("Text", "text"),
+              ("Accent", "accent"), ("Links", "link")]
 
 
 def theme_colors():
@@ -1629,7 +1630,7 @@ def make_agent():
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("POBOX Mail")
+    app.setApplicationName("Tmail POBOX")
     app.setDesktopFileName("pobox-mail-qt")   # so Cinnamon matches the window to the .desktop icon
     app.setWindowIcon(QIcon(ICON))
     apply_theme(app)
