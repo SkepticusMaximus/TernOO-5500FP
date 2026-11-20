@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QPushButton, QDialog, QLineEdit, QDialogButtonBox, QSplitter,
                                QMessageBox, QTreeWidget, QTreeWidgetItem, QTableWidget,
                                QTableWidgetItem, QHeaderView, QAbstractItemView, QInputDialog,
-                               QCompleter)
+                               QCompleter, QCheckBox, QFormLayout)
 from PySide6.QtGui import (QAction, QFont, QBrush, QColor, QIcon, QShortcut, QKeySequence,
                            QTextCursor, QSyntaxHighlighter, QTextCharFormat, QTextBlockFormat,
                            QTextListFormat)
@@ -66,6 +66,23 @@ def save_settings(s):
 
 def date_fmt():
     return load_settings().get("date_format", DEFAULT_DATE_FMT)
+
+
+# reading-pane font size (g92), seal-recipient confirmation (g96), signature (g94)
+FONT_SIZES = [("Small — 10", 10), ("Medium — 12 (default)", 12), ("Large — 14", 14), ("Extra large — 17", 17)]
+DEFAULT_FONT_PT = 12
+
+
+def reading_pt():
+    return int(load_settings().get("reading_pt", DEFAULT_FONT_PT))
+
+
+def seal_confirm():
+    return load_settings().get("seal_confirm", True)         # default ON (hermetic safety)
+
+
+def signature():
+    return load_settings().get("signature", "")
 
 
 class _TimeItem(QTableWidgetItem):
@@ -831,6 +848,8 @@ class MailApp(QMainWindow):
         self.table.verticalHeader().setVisible(False)
         hh = self.table.horizontalHeader()
         hh.setStretchLastSection(True)
+        self._loading = False
+        hh.sortIndicatorChanged.connect(self._save_sort)     # g97: remember the user's chosen sort
         for col in (0, 1, 2):
             hh.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         self.table.itemSelectionChanged.connect(self._open)
@@ -869,19 +888,45 @@ class MailApp(QMainWindow):
         threading.Thread(target=work, daemon=True).start()
 
     def _settings(self):
-        """Settings — currently the date/time format (more to come). Applies on OK, re-renders."""
-        labels = [lbl for lbl, _ in DATE_FORMATS]
-        cur = date_fmt()
-        idx = next((i for i, (_, f) in enumerate(DATE_FORMATS) if f == cur), 0)
-        lbl, ok = QInputDialog.getItem(self, "Settings — date format",
-                                       "How should dates and times be shown?", labels, idx, False)
-        if not ok or not lbl:
+        """Settings dialog — date format, reading-pane text size, signature, seal-confirm."""
+        d = QDialog(self)
+        d.setWindowTitle("Tmail — Settings")
+        form = QFormLayout(d)
+        datef = QComboBox()
+        datef.addItems([lbl for lbl, _ in DATE_FORMATS])
+        datef.setCurrentIndex(next((i for i, (_, f) in enumerate(DATE_FORMATS) if f == date_fmt()), 0))
+        form.addRow("Date / time format:", datef)
+        fontf = QComboBox()
+        fontf.addItems([lbl for lbl, _ in FONT_SIZES])
+        fontf.setCurrentIndex(next((i for i, (_, pt) in enumerate(FONT_SIZES) if pt == reading_pt()), 1))
+        form.addRow("Reading-pane text size:", fontf)
+        sealc = QCheckBox("Confirm recipients before sealing each letter")
+        sealc.setChecked(bool(seal_confirm()))
+        form.addRow("Security:", sealc)
+        sigf = QLineEdit(signature())
+        sigf.setPlaceholderText("appended to new letters after a '-- ' line")
+        form.addRow("Signature:", sigf)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(d.accept)
+        bb.rejected.connect(d.reject)
+        form.addRow(bb)
+        if d.exec() != QDialog.DialogCode.Accepted:
             return
-        fmt = dict(DATE_FORMATS).get(lbl, DEFAULT_DATE_FMT)
         s = load_settings()
-        s["date_format"] = fmt
+        s["date_format"] = dict(DATE_FORMATS).get(datef.currentText(), DEFAULT_DATE_FMT)
+        s["reading_pt"] = dict(FONT_SIZES).get(fontf.currentText(), DEFAULT_FONT_PT)
+        s["seal_confirm"] = sealc.isChecked()
+        s["signature"] = sigf.text().strip()
         save_settings(s)
         self._reload()                                        # re-render the table + reading pane
+
+    def _save_sort(self, col, order):
+        """g97: persist the user's chosen sort column + direction (skip while we restore it)."""
+        if getattr(self, "_loading", False):
+            return
+        s = load_settings()
+        s["sort_col"], s["sort_order"] = int(col), int(getattr(order, "value", order))
+        save_settings(s)
 
     def _names_for(self, handles, contacts):
         by = {c["handle"]: c["display_name"] for c in contacts}
@@ -985,7 +1030,10 @@ class MailApp(QMainWindow):
                               (3, str(m.get("subject", "")))):
                 self.table.setItem(row, col, QTableWidgetItem(text))
         self.table.setSortingEnabled(True)
-        self.table.sortItems(0, Qt.SortOrder.DescendingOrder)   # newest first by default
+        s = load_settings()                                     # g97: restore the saved sort
+        self._loading = True
+        self.table.sortItems(int(s.get("sort_col", 0)), Qt.SortOrder(int(s.get("sort_order", 1))))
+        self._loading = False
         self.read.clear()
         n = self.table.rowCount()
         base = "%s · %s — %d message%s" % (self._me(), self.folder, n, "" if n == 1 else "s")
@@ -1020,6 +1068,7 @@ class MailApp(QMainWindow):
                 "⚠ UNVERIFIED SENDER — this display name is <b>not pinned</b> to this key "
                 "(fingerprint %s). If the sender gave you this exact fingerprint out of band, "
                 "click <b>Trust sender</b> to pin it.</div>" % _esc(fp))
+        self.read.setStyleSheet("font-size:%dpt" % reading_pt())   # g92: reading-pane text size
         self.read.setHtml(
             "<div style='color:#3fd08f;font-size:14px'>%s</div>"
             "<div style='color:#9696a5'>from <b style='color:#e6e6ec'>%s</b>%s · to %s · %s</div>%s<hr>"
@@ -1191,6 +1240,8 @@ class MailApp(QMainWindow):
             self._write_draft(to_text, subject, body)
             self._select_box("Drafts")
             return
+        if signature():                                       # g94: signature on sent mail (not drafts)
+            body = body + "\n\n-- \n" + signature()
         if isinstance(to_data, str) and to_data.startswith("list:"):
             lname = to_data[5:]
             targets = resolve_list(lname, d.contacts)
@@ -1203,7 +1254,7 @@ class MailApp(QMainWindow):
 
         if hasattr(self.agent, "send_group"):             # hermetic: ONE seal to all, after confirming
             names = self._names_for(targets, d.contacts)
-            if not self._confirm_seal(names):
+            if seal_confirm() and not self._confirm_seal(names):   # g96: confirm is toggleable
                 return
             res = self.agent.send_group(from_account=self.account, to_contacts=targets,
                                         subject=subj_out, body=body)
