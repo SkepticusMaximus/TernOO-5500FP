@@ -509,9 +509,17 @@ class TernDO(QMainWindow):
         return it.data(0, UID) if it else None
 
     def _clicked(self, item, col):
-        if col == 1:
-            self.store.cycle(item.data(0, UID))
-            self.refresh()
+        if col == 1:                                      # click the Objective to cycle its status
+            iid = item.data(0, UID)
+            self.store.cycle(iid)                          # persists (set_status saves)
+            it = self.store.by_id(iid)
+            if it:                                         # update THIS row IN PLACE — no full tree
+                st = it["status"]                          # rebuild, so the list keeps its scroll spot
+                item.setText(2, GLYPH[st])
+                item.setForeground(2, QBrush(SCOLOR[st]))
+                c = self.store.counts()
+                self.count.setText("%d records · %d pending · %d in progress · %d complete"
+                                   % (len(self.store.db["items"]), c["pending"], c["progress"], c["complete"]))
 
     def open_props(self, iid):
         if not iid:
