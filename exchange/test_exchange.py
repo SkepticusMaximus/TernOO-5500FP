@@ -9,8 +9,14 @@ BOTH currencies. The tests that pass on both are the inheritable core of the obj
 overdraft). Then the atomic-swap and exchange tests prove the trustless settlement plumbing.
 """
 from __future__ import annotations
+import os
+import sys
 import unittest
 from fractions import Fraction
+
+# run from anywhere: `python3 <repo>/exchange/test_exchange.py` as well as
+# `cd <repo> && python3 -m unittest exchange.test_exchange`
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from exchange.currency import CompuCoin, AutonomiToken, new_secret, sha256_hex
 from exchange.atomic_swap import atomic_swap
