@@ -1157,6 +1157,15 @@ class MailApp(QMainWindow):
             if unread:                                        # g93: unread letters are bold
                 for col in range(4):
                     self.table.item(row, col).setFont(bold)
+            if m.get("pending"):                              # sealed to the spool, not yet carried
+                self.table.item(row, 3).setText("⧖ sealed · " + str(m.get("subject", "")))
+                amber = QColor("#d9a441")
+                for col in range(4):
+                    cell = self.table.item(row, col)
+                    cell.setForeground(amber)
+                    f = cell.font(); f.setItalic(True); cell.setFont(f)
+                    cell.setToolTip("Sealed — not yet pushed to the wire. "
+                                    "The carrier ships it within ~3 min; it is NOT yet delivered.")
         self.table.setSortingEnabled(True)
         s = load_settings()                                     # g97: restore the saved sort
         self._loading = True
@@ -1173,10 +1182,14 @@ class MailApp(QMainWindow):
         self.read.clear()
         n = self.table.rowCount()
         base = "%s · %s — %d message%s" % (self._me(), self.folder, n, "" if n == 1 else "s")
+        npend = sum(1 for m in raw if m.get("pending"))         # sealed, not yet on the wire
         al = self.agent.alarms() if hasattr(self.agent, "alarms") else []   # M2/H3 tripwires
         if al:
             self.status.setText("⚠ " + " · ".join(al))
             self.status.setStyleSheet("color:#ffb0b0;font-weight:bold;")
+        elif npend:
+            self.status.setText("%s  ·  ⧖ %d sealed, not yet sent (carrier ships every 3 min)" % (base, npend))
+            self.status.setStyleSheet("color:#d9a441;font-weight:bold;")
         else:
             self.status.setText(base)
             self.status.setStyleSheet("")
@@ -1207,13 +1220,17 @@ class MailApp(QMainWindow):
                 "⚠ UNVERIFIED SENDER — this display name is <b>not pinned</b> to this key "
                 "(fingerprint %s). If the sender gave you this exact fingerprint out of band, "
                 "click <b>Trust sender</b> to pin it.</div>" % _esc(fp))
+        pend = ("" if not m.get("pending") else
+                "<div style='background:#4a3a12;color:#ffe1a6;padding:5px 9px;border-radius:4px;margin:4px 0'>"
+                "⧖ SEALED — NOT YET SENT. This letter is sealed in your outbox and waiting for the carrier, "
+                "which pushes it to the wire within ~3 min. Until then it is <b>not delivered</b>.</div>")
         self.read.setStyleSheet("font-size:%dpt" % reading_pt())   # g92: reading-pane text size
         self.read.setHtml(
             "<div style='color:%s;font-size:14px'>%s</div>"
-            "<div style='color:%s'>from <b style='color:%s'>%s</b>%s · to %s · %s</div>%s<hr>"
+            "<div style='color:%s'>from <b style='color:%s'>%s</b>%s · to %s · %s</div>%s%s<hr>"
             "<div style='color:%s;white-space:pre-wrap;font-family:DejaVu Sans Mono'>%s</div>"
             % (c["accent"], _esc(str(m.get("subject"))), c["muted"], c["text"], _esc(str(m.get("from"))),
-               fpline, _esc(str(m.get("to"))), _esc(_fmt_time(m.get("time"))), warn,
+               fpline, _esc(str(m.get("to"))), _esc(_fmt_time(m.get("time"))), warn, pend,
                c["text"], _md_body(str(m.get("body")))))
 
     def _table_dblclick(self, _item):

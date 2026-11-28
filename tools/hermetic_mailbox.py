@@ -171,7 +171,36 @@ class HermeticMailbox:
                 "subject": m["subject"], "body": m["body"],
                 "time": int(t) if isinstance(t, (int, float)) or str(t).isdigit() else 0,
                 "unread": False, "sent": sent, "legacy": is_legacy,
-                "verified": verified, "fingerprint": fp})
+                "verified": verified, "fingerprint": fp, "pending": False})
+        # PENDING: letters sealed to the local spool but NOT yet carried to the wire. inbox()
+        # above reads the wire clone, so a just-sent letter is invisible until the daemon ships
+        # it — which is exactly how "sealed in a drawer" got mistaken for "sent". Surface them.
+        have = {m["id"] for m in out}
+        for pm in self._spool_pending(who):
+            if pm["id"] not in have:
+                out.append(pm)
+        return out
+
+    def _spool_pending(self, who):
+        """Self-copies sitting in the spool pool/ — sealed, awaiting the carrier. [] if no spool."""
+        import glob
+        if not self.spool:
+            return []
+        cards = self.wire.directory()
+        out = []
+        for f in sorted(glob.glob(os.path.join(self.spool, "pool", "*.age"))):
+            try:
+                st, m = self.kh.open(open(f, "rb").read(), cards)
+            except Exception:
+                continue
+            if st != "ok":
+                continue
+            out.append({
+                "id": m["id"], "from": who.get(m["from"], self.kh.display),
+                "to": ", ".join(who.get(a, a) for a in m.get("to", [])), "from_aid": m["from"],
+                "subject": m["subject"], "body": m["body"],
+                "time": int(m.get("time") or 0), "unread": False, "sent": True,
+                "legacy": False, "verified": True, "fingerprint": "", "pending": True})
         return out
 
     # ── facade no-ops / hermetic behaviours the GUI also calls ─────────────────────────
