@@ -7,6 +7,7 @@ that is the exact state that got mistaken for "sent". Run under the p2pcp venv (
     ~/.venvs/p2pcp/bin/python3 -m unittest tools.test_pending_indicator
 """
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -63,6 +64,43 @@ class PendingIndicator(unittest.TestCase):
     def test_no_spool_no_crash(self):
         mbx = HermeticMailbox(self.kh, self.wire_p, spool_path=None, store=_DummyStore())
         self.assertEqual(mbx._spool_pending(self.who), [])
+
+
+class UnsentToWire(unittest.TestCase):
+    """Tmail's direct-to-wire path: 'sealed but not sent' = in the local clone, not on origin."""
+
+    def _git(self, repo, *a):
+        subprocess.run(["git", "-C", repo, *a], check=True,
+                       capture_output=True, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+
+    def test_counts_uncommitted_then_unpushed_then_zero(self):
+        tmp = tempfile.mkdtemp()
+        origin = os.path.join(tmp, "origin.git")
+        clone = os.path.join(tmp, "clone")
+        subprocess.run(["git", "init", "-q", "--bare", "--initial-branch=master", origin], check=True)
+        subprocess.run(["git", "clone", "-q", origin, clone], check=True)
+        self._git(clone, "checkout", "-q", "-B", "master")
+        self._git(clone, "config", "user.email", "t@t")
+        self._git(clone, "config", "user.name", "t")
+        os.makedirs(os.path.join(clone, "pool"))
+        open(os.path.join(clone, "pool", ".keep"), "w").close()
+        self._git(clone, "add", "-A")
+        self._git(clone, "commit", "-q", "-m", "init")
+        self._git(clone, "push", "-q", "-u", "origin", "master")
+
+        kh = K.Keyholder("CC")
+        mbx = HermeticMailbox(kh, clone, store=_DummyStore())
+        self.assertEqual(mbx.unsent_to_wire(), 0)              # clean, on the wire
+
+        open(os.path.join(clone, "pool", "a.age"), "wb").write(b"x")
+        self.assertEqual(mbx.unsent_to_wire(), 1)              # uncommitted envelope
+
+        self._git(clone, "add", "-A")
+        self._git(clone, "commit", "-q", "-m", "seal")
+        self.assertEqual(mbx.unsent_to_wire(), 1)              # committed, not pushed
+
+        self._git(clone, "push", "-q", "origin", "master")
+        self.assertEqual(mbx.unsent_to_wire(), 0)              # pushed = actually sent
 
 
 if __name__ == "__main__":

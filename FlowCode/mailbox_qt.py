@@ -1182,13 +1182,17 @@ class MailApp(QMainWindow):
         self.read.clear()
         n = self.table.rowCount()
         base = "%s · %s — %d message%s" % (self._me(), self.folder, n, "" if n == 1 else "s")
-        npend = sum(1 for m in raw if m.get("pending"))         # sealed, not yet on the wire
+        npend = sum(1 for m in raw if m.get("pending"))         # spool path (daemon-backed seats)
+        try:
+            npend += self.agent.unsent_to_wire()                # direct path: committed, not yet pushed
+        except Exception:
+            pass
         al = self.agent.alarms() if hasattr(self.agent, "alarms") else []   # M2/H3 tripwires
         if al:
             self.status.setText("⚠ " + " · ".join(al))
             self.status.setStyleSheet("color:#ffb0b0;font-weight:bold;")
         elif npend:
-            self.status.setText("%s  ·  ⧖ %d sealed, not yet sent (carrier ships every 3 min)" % (base, npend))
+            self.status.setText("%s  ·  ⧖ %d sealed, NOT yet on the wire (carrier pushes every 3 min)" % (base, npend))
             self.status.setStyleSheet("color:#d9a441;font-weight:bold;")
         else:
             self.status.setText(base)

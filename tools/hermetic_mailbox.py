@@ -203,6 +203,29 @@ class HermeticMailbox:
                 "legacy": False, "verified": True, "fingerprint": "", "pending": True})
         return out
 
+    def unsent_to_wire(self):
+        """Count our own letters sealed into the LOCAL wire clone but NOT yet on origin — i.e.
+        uncommitted .age in pool/, plus envelopes added in commits that haven't been pushed.
+        Non-zero = mail is stuck on this box (offline / push failing). This is the honest
+        'sealed but not sent' state for Tmail's direct-to-wire path, which never uses the spool.
+        0 the instant a push succeeds. Cheap, local, no network."""
+        import subprocess
+        p = self.wire.path
+
+        def g(*a):
+            try:
+                return subprocess.run(["git", "-C", p, *a], capture_output=True, text=True, timeout=10)
+            except Exception:
+                return None
+        n = 0
+        st = g("status", "--porcelain", "--", "pool")                     # uncommitted new envelopes
+        if st and st.returncode == 0:
+            n += sum(1 for ln in st.stdout.splitlines() if ln.rstrip().endswith(".age"))
+        df = g("diff", "--name-only", "--diff-filter=A", "origin/master..HEAD", "--", "pool")  # committed, unpushed
+        if df and df.returncode == 0:
+            n += sum(1 for ln in df.stdout.splitlines() if ln.rstrip().endswith(".age"))
+        return n
+
     # ── facade no-ops / hermetic behaviours the GUI also calls ─────────────────────────
     def mark_read(self, account=None, message_id=None):
         return {"ok": True}                                   # read-state is local, not on the wire
